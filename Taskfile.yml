@@ -14,6 +14,16 @@ tasks:
       - pnpm --version
       - find vendor -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort
 
+  ideas:list:
+    desc: Show Idea Lab backlog
+    cmds:
+      - cat ideas/backlog.md
+
+  ideas:evolve:
+    desc: Run Forward Evolution — cross two ideas from the pool
+    cmds:
+      - echo "TODO: automated evolve — for now, manually review the pool and create a new EXP"
+
   setup:
     desc: Sync locked Python and JS dependencies
     cmds:
@@ -204,3 +214,20 @@ tasks:
     desc: Run a paper order with written thesis, risk gate, cancel, and receipt
     cmds:
       - uv run python scripts/alpaca_paper_strategy_order.py --execute
+
+  # === Health Layer ===
+
+  health:import:
+    desc: Import Huawei Health export data
+    cmds:
+      - uv run python health/import_health.py {{.CLI_ARGS}}
+
+  health:summary:
+    desc: Show health summary (last 7 days)
+    cmds:
+      - uv run python health/summary.py {{.CLI_ARGS}}
+
+  health:today:
+    desc: Show today's health summary
+    cmds:
+      - uv run python health/summary.py --days 1
