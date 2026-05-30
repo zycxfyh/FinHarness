@@ -1,0 +1,17 @@
+{
+  "name": "finharness",
+  "version": "1.0.0",
+  "description": "AI finance research and harness engineering lab.",
+  "type": "module",
+  "scripts": {
+    "promptfoo:version": "pnpm exec promptfoo --version",
+    "promptfoo:smoke": "PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.33.2",
+  "devDependencies": {
+    "promptfoo": "^0.121.12"
+  }
+}

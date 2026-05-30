@@ -1,0 +1,38 @@
+[project]
+name = "finharness"
+version = "0.1.0"
+description = "AI finance research and harness engineering lab."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "backtrader>=1.9.78.123",
+    "deepeval>=3.7.0",
+    "langgraph>=1.2.1",
+    "nautilus-trader>=1.227.0",
+    "openai-agents>=0.6.1",
+    "openbb>=4.7.1",
+    "pandas>=2.2.0",
+    "plotly>=5.20.0",
+    "quantstats>=0.0.81",
+    "riskfolio-lib>=7.2.1",
+    "vectorbt>=1.0.0",
+    "yfinance>=0.2.60",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "scripts", "experiments"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

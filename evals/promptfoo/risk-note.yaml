@@ -1,0 +1,21 @@
+description: Risk disclosure eval for generated finance note
+
+prompts:
+  - file://../../data/cache/latest_risk_note.txt
+
+providers:
+  - id: echo
+
+tests:
+  - assert:
+      - type: contains
+        value: "Not investment advice"
+      - type: contains
+        value: "do not guarantee future returns"
+      - type: contains
+        value: "Max drawdown"
+      - type: contains
+        value: "not TradingView/TV data"
+      - type: contains
+        value: "Transaction costs"
+

@@ -1,0 +1,15 @@
+description: Local promptfoo echo-provider smoke test
+
+prompts:
+  - "Summarize the risk note: {{note}}"
+
+providers:
+  - id: echo
+
+tests:
+  - vars:
+      note: "Never present backtest results as guaranteed future returns."
+    assert:
+      - type: contains
+        value: "guaranteed future returns"
+

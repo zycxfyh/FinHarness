@@ -1,0 +1,17 @@
+vendor/
+data/raw/
+data/cache/
+data/*.csv
+data/*.parquet
+.env
+.env.*
+!.env.example
+.venv/
+.deepeval/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/
+target/

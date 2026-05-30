@@ -1,0 +1,201 @@
+version: '3'
+
+env:
+  PYTHONPATH: src
+  PROMPTFOO_DISABLE_TELEMETRY: '1'
+  PROMPTFOO_DISABLE_UPDATE: '1'
+
+tasks:
+  status:
+    desc: Show lab status
+    cmds:
+      - git status --short
+      - uv run python --version
+      - pnpm --version
+      - find vendor -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort
+
+  setup:
+    desc: Sync locked Python and JS dependencies
+    cmds:
+      - uv sync --locked
+      - pnpm install --frozen-lockfile
+
+  check:
+    desc: Run the standard local verification suite
+    cmds:
+      - task: rust:check
+      - task: lint
+      - task: test
+      - task: experiments
+      - task: eval:smoke
+
+  rust:check:
+    desc: Run Rust format and tests
+    cmds:
+      - cargo fmt --check
+      - cargo test
+
+  lint:
+    desc: Run Python lint checks
+    cmds:
+      - uv run ruff check .
+
+  format:
+    desc: Format Python code
+    cmds:
+      - uv run ruff format .
+
+  test:
+    desc: Run Python compile and unit tests
+    cmds:
+      - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
+      - uv run python -m unittest discover -s tests
+
+  experiments:
+    desc: Run mature-wheel local backtest experiments
+    cmds:
+      - uv run python experiments/backtrader_ma.py
+
+  wheels:size:
+    desc: Show local wheel sizes
+    cmds:
+      - du -sh vendor/* 2>/dev/null | sort -h
+
+  docs:list:
+    desc: List project docs
+    cmds:
+      - find docs -type f | sort
+
+  smoke:
+    desc: Run a minimal Python smoke test
+    cmds:
+      - task: test
+      - task: experiments
+
+  wheels:check:
+    desc: Check installed top wheels
+    cmds:
+      - uv run python scripts/check_python_wheels.py
+      - pnpm exec promptfoo --version
+
+  wheels:data-check:
+    desc: Check installed wheels plus provider-backed network data
+    cmds:
+      - uv run python scripts/check_python_wheels.py --network
+      - pnpm exec promptfoo --version
+
+  agent:describe:
+    desc: Describe registered OpenAI Agents SDK tools
+    cmds:
+      - uv run python scripts/describe_agent_tools.py
+
+  agent:run:
+    desc: Run the real agent when OPENAI_API_KEY is configured
+    cmds:
+      - uv run python scripts/run_agent_once.py
+
+  eval:smoke:
+    desc: Run promptfoo local echo eval
+    cmds:
+      - pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache
+
+  data:entry:
+    desc: Run OpenBB quote + yfinance history + Backtrader workflow
+    cmds:
+      - uv run python scripts/run_data_entry_workflow.py
+
+  eval:risk:
+    desc: Evaluate generated finance risk note
+    cmds:
+      - pnpm exec promptfoo eval -c evals/promptfoo/risk-note.yaml --no-cache
+
+  okx:market:
+    desc: Fetch read-only OKX public market snapshots
+    cmds:
+      - uv run python scripts/okx_market_snapshot.py --watchlist --limit 10
+
+  okx:live-status:
+    desc: Read live OKX account, configuration, positions, and open orders
+    cmds:
+      - uv run python scripts/okx_live_status.py
+
+  okx:live-read:
+    desc: Run an allowlisted live read-only OKX command, e.g. task okx:live-read -- account balance
+    cmds:
+      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+
+  okx:demo:
+    desc: Run an allowlisted OKX demo command
+    cmds:
+      - cargo run -q -p finharness-cli -- okx --demo {{.CLI_ARGS}}
+
+  okx:live-write:
+    desc: Run an allowlisted live mutating OKX command after env and flag gates
+    cmds:
+      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+
+  trading:reset-check:
+    desc: Run behavioral trading guard example for large drawdown
+    cmds:
+      - cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
+
+  receipt:rust:
+    desc: Write a minimal Rust receipt
+    cmds:
+      - cargo run -q -p finharness-cli -- receipt --kind manual --symbol NA --status ok
+
+  workflow:data-entry:
+    desc: Run data entry workflow and risk eval
+    cmds:
+      - task: data:entry
+      - task: eval:risk
+
+  workflow:paper-trade:
+    desc: Run LangGraph institutional Alpaca paper trade workflow
+    cmds:
+      - uv run python scripts/run_institutional_paper_trade.py --execute
+
+  alpaca:paper-check:
+    desc: Check Alpaca paper account, positions, and open orders
+    cmds:
+      - uv run python scripts/check_alpaca_paper.py
+
+  alpaca:paper-capabilities:
+    desc: Inspect Alpaca paper account configuration, orders, positions, and activities
+    cmds:
+      - uv run python scripts/alpaca_paper_capabilities.py
+
+  alpaca:paper-config-dry-run:
+    desc: Show the broad Alpaca paper experiment configuration payload
+    cmds:
+      - uv run python scripts/alpaca_paper_configure.py
+
+  alpaca:paper-config-experiment:
+    desc: Apply broad Alpaca paper experiment settings
+    cmds:
+      - uv run python scripts/alpaca_paper_configure.py --apply
+
+  alpaca:paper-assets:
+    desc: List active Alpaca paper US equity assets
+    cmds:
+      - uv run python scripts/alpaca_paper_assets.py --asset-class us_equity --limit 20
+
+  alpaca:paper-crypto-assets:
+    desc: List active Alpaca paper crypto assets
+    cmds:
+      - uv run python scripts/alpaca_paper_assets.py --asset-class crypto --limit 20
+
+  alpaca:paper-option-contracts:
+    desc: List Alpaca paper option contracts for SPY
+    cmds:
+      - uv run python scripts/alpaca_paper_options.py --underlying SPY --limit 20
+
+  alpaca:paper-order-cycle:
+    desc: Place and cancel a tiny Alpaca paper limit order
+    cmds:
+      - uv run python scripts/alpaca_paper_order_cycle.py
+
+  alpaca:paper-strategy-order:
+    desc: Run a paper order with written thesis, risk gate, cancel, and receipt
+    cmds:
+      - uv run python scripts/alpaca_paper_strategy_order.py --execute

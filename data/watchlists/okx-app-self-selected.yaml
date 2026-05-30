@@ -1,0 +1,63 @@
+name: okx-app-self-selected
+source: user screenshots from OKX app self-selected tab
+captured_at: 2026-05-27
+notes:
+  - OKX CLI does not currently expose the app watchlist/favorites list.
+  - This file is a local reconstruction from screenshots and can be edited.
+symbols:
+  - LITEUSDT
+  - OPENAIUSDT
+  - INFOUSDT
+  - CRCLUSDT
+  - CBRSUSDT
+  - NBISUSDT
+  - CSCOUSDT
+  - COHRUSDT
+  - COSTUSDT
+  - NVDAUSDT
+  - SPACEXUSDT
+  - GLWUSDT
+  - COINUSDT
+  - ANTHROPICUSDT
+  - AMZNUSDT
+  - INTCUSDT
+  - XAGUSDT
+  - ORCLUSDT
+  - HOODUSDT
+  - CRWVUSDT
+  - MSFTUSDT
+  - NFLXUSDT
+  - EWJUSDT
+  - TSMUSDT
+  - XAUUSDT
+  - METAUSDT
+  - XPTUSDT
+  - BTCUSDT
+  - MSTRUSDT
+  - AVGOUSDT
+  - GOOGLUSDT
+  - XPDUSDT
+  - AAPLUSDT
+  - SPYUSDT
+  - TSLAUSDT
+  - QQQUSDT
+  - RKLBUSDT
+  - MRVLUSDT
+  - IWMUSDT
+  - LLYUSDT
+  - NGUSDT
+  - SHLDUSDT
+  - QCOMUSDT
+  - BMNRUSDT
+  - ARMUSDT
+  - HIMSUSDT
+  - BZUSDT
+  - SNDKUSDT
+  - CLUSDT
+  - AMDUSDT
+  - EWYUSDT
+  - USARUSDT
+  - DRAMUSDT
+  - WDCUSDT
+  - MUUSDT
+
