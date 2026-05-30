@@ -139,6 +139,11 @@ tasks:
     cmds:
       - cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
 
+  guard:interactive:
+    desc: Interactive pre-trade guard — entry, stop, equity, thesis
+    cmds:
+      - cargo run -q -p finharness-cli -- guard --interactive
+
   receipt:rust:
     desc: Write a minimal Rust receipt
     cmds:

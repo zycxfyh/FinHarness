@@ -172,6 +172,10 @@ fn print_usage() {
 }
 
 fn run_guard(args: &[String]) -> CliResult<()> {
+    if args.iter().any(|a| a == "--interactive") {
+        return run_guard_interactive();
+    }
+
     let mut state = TradingState {
         drawdown_pct: 0.0,
         consecutive_losses: 0,
@@ -203,6 +207,119 @@ fn run_guard(args: &[String]) -> CliResult<()> {
 
     let decision = evaluate_trading_state(&state, &GuardThresholds::default());
     println!("{}", guard_json(&decision));
+    Ok(())
+}
+
+fn run_guard_interactive() -> CliResult<()> {
+    use std::io::{self, Write};
+
+    let mut stdin = io::stdin();
+    let mut stdout = io::stdout();
+    let mut buf = String::new();
+
+    macro_rules! ask {
+        ($prompt:expr, $var:ident, $type:ty) => {
+            loop {
+                print!($prompt);
+                stdout.flush()?;
+                buf.clear();
+                stdin.read_line(&mut buf)?;
+                match buf.trim().parse::<$type>() {
+                    Ok(v) => {
+                        $var = v;
+                        break;
+                    }
+                    Err(_) => eprintln!("  Invalid input, try again."),
+                }
+            }
+        };
+    }
+
+    let entry: f64;
+    let stop: f64;
+    let equity: f64;
+    let risk_pct: f64 = 2.0;
+
+    println!("=== Pre-Trade Guard ===\n");
+
+    ask!("Entry price:         ", entry, f64);
+    ask!("Stop-loss price:     ", stop, f64);
+    ask!("Account equity ($):  ", equity, f64);
+
+    let is_long = entry > stop;
+    let r_distance = if is_long {
+        (entry - stop).abs()
+    } else {
+        (stop - entry).abs()
+    };
+    let one_r_pct = (r_distance / entry) * 100.0;
+    let max_risk_dollars = equity * (risk_pct / 100.0);
+    let max_position_size = max_risk_dollars / r_distance;
+    let max_position_pct = (max_position_size * entry / equity) * 100.0;
+
+    println!();
+    println!("--- Position Sizing ---");
+    println!("  Direction:     {}", if is_long { "LONG" } else { "SHORT" });
+    println!("  1R distance:   ${:.2} ({:.2}%)", r_distance, one_r_pct);
+    println!("  Max risk ({}%): ${:.2}", risk_pct, max_risk_dollars);
+    println!("  Max position:   {:.4} units", max_position_size);
+    println!("  Position value: ${:.2} ({:.1}% of equity)", max_position_size * entry, max_position_pct);
+
+    println!();
+    println!("--- Rule Check ---");
+
+    let mut passed = true;
+
+    if r_distance <= 0.0 {
+        println!("  FAIL: Entry and stop must differ.");
+        passed = false;
+    }
+
+    if one_r_pct > 5.0 {
+        println!("  WARN: 1R > 5% of price — wide stop may indicate poor entry.");
+    }
+
+    if max_risk_dollars <= 0.0 {
+        println!("  FAIL: Invalid equity or risk parameters.");
+        passed = false;
+    }
+
+    if max_position_size <= 0.0 {
+        println!("  FAIL: Cannot calculate position size.");
+        passed = false;
+    }
+
+    if max_position_pct > 50.0 {
+        println!("  WARN: Position > 50% of equity — consider reducing.");
+    }
+
+    println!();
+    println!("--- Thesis ---");
+    println!("  What invalidation would prove this trade wrong?");
+    print!("  > ");
+    stdout.flush()?;
+    buf.clear();
+    stdin.read_line(&mut buf)?;
+    let thesis = buf.trim().to_string();
+
+    if thesis.is_empty() {
+        println!("  FAIL: No written thesis.");
+        passed = false;
+    } else {
+        println!("  Thesis recorded.");
+    }
+
+    println!();
+    if passed {
+        println!("RESULT: TRADE ALLOWED");
+        println!("  Max size: {:.4} units (${:.2})", max_position_size, max_position_size * entry);
+        println!("  Max risk: ${:.2} ({}% of equity)", max_risk_dollars, risk_pct);
+        println!("  Invalidation: {}", thesis);
+    } else {
+        println!("RESULT: TRADE BLOCKED");
+        println!("  Fix the issues above before re-submitting.");
+    }
+
     Ok(())
 }
 
