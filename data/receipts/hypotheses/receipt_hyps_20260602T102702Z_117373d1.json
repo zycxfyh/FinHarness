@@ -1,0 +1,329 @@
+{
+  "created_at_utc": "2026-06-02T10:27:02.061317+00:00",
+  "kind": "hypothesis_processing",
+  "receipt_id": "receipt_hyps_20260602T102702Z_117373d1",
+  "snapshot": {
+    "as_of_utc": "2026-06-02T10:27:02.061257+00:00",
+    "execution_allowed": false,
+    "hypothesis_snapshot_id": "hyps_20260602T102702Z_117373d1",
+    "input_interpretation_snapshot_id": "ints_20260602T102702Z_3aab3bed",
+    "lineage": {
+      "computed_at_utc": "2026-06-02T10:27:02.061196+00:00",
+      "event_record_ids": [
+        "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+        "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+        "sec-edgar:AAPL:0001140361-26-015711:2026-04-20"
+      ],
+      "indicator_snapshot_refs": [],
+      "input_event_snapshot_id": "evs_20260602T102702Z_87de1353",
+      "input_interpretation_receipt_ref": "data/receipts/interpretations/receipt_ints_20260602T102702Z_3aab3bed.json",
+      "input_interpretation_snapshot_id": "ints_20260602T102702Z_3aab3bed",
+      "interpretation_record_ids": [
+        "interp_eb5ad5e7a4e5",
+        "interp_70db19cb5a48",
+        "interp_10534f3d6fb4"
+      ],
+      "market_snapshot_refs": [],
+      "method": "rule_guided_template",
+      "model_provider": "hermes-agent",
+      "output_hash": "1f45808ce3c3ef6cfb1e446485179a1c392eafeae6e8b090e6de85f502b4127d",
+      "output_ref": "data/normalized/hypotheses/hyps_20260602T102702Z_117373d1.json",
+      "prompt_template_version": "finharness.hypotheses.template.v1",
+      "source": {
+        "config": {
+          "forms": [
+            "8-K",
+            "10-Q",
+            "10-K"
+          ],
+          "max_hypotheses": 3,
+          "max_records": 3,
+          "symbols": [
+            "AAPL"
+          ],
+          "universe": [
+            "AAPL",
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "hermes_root": "/root/projects/hermes-agent",
+        "input_layer": "interpretation",
+        "llm_enabled": true,
+        "llm_interface": "HermesHypothesisDraftProvider",
+        "llm_provider": "hermes-agent",
+        "method": "rule_guided_template",
+        "provider": "FinHarness rule-guided hypotheses",
+        "template_version": "finharness.hypotheses.template.v1"
+      },
+      "transform_version": "finharness.hypotheses.v1"
+    },
+    "payload_ref": "data/normalized/hypotheses/hyps_20260602T102702Z_117373d1.json",
+    "quality": {
+      "blocked_language_hits": {},
+      "claim_not_marked_validated": true,
+      "disconfirming_evidence_present": true,
+      "duplicate_hypothesis_check": true,
+      "duplicate_hypothesis_ids": [],
+      "horizon_present": true,
+      "missing_required_fields": {},
+      "no_execution_language": true,
+      "no_recommendation_language": true,
+      "notes": [],
+      "ok": true,
+      "record_count": 3,
+      "source_backed_hypotheses": true,
+      "temporal_context_separated": true,
+      "testable_predictions_present": true,
+      "validation_plan_present": true
+    },
+    "receipt_ref": "data/receipts/hypotheses/receipt_hyps_20260602T102702Z_117373d1.json",
+    "record_count": 3,
+    "records": [
+      {
+        "assumptions": [
+          "The InterpretationSnapshot source facts are accurate and not stale.",
+          "Market reaction must be interpreted with explicit event timing.",
+          "A single event may not isolate the mechanism without basket and index context."
+        ],
+        "confidence_prior": "low",
+        "created_at_utc": "2026-06-02T10:27:02.058522+00:00",
+        "disconfirming_observations": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "draft_provider": "hermes-agent",
+        "draft_ref": null,
+        "expected_observations": [
+          "Source updates for AAPL continue to mention revenue, margin, cash_flow as material drivers.",
+          "Market and indicator context for AAPL shows a reaction consistent with revenue, margin, cash_flow.",
+          "SPY, QQQ, and related basket context do not fully explain the single-name reaction."
+        ],
+        "horizon": "quarters",
+        "hypothesis": "If source event sec-edgar:AAPL:0000320193-26-000013:2026-05-01 supports the interpretation that AAPL 10-Q may be relevant to revenue, margin, cash_flow over a quarters horizon. is useful, then source updates, market reaction, and index/basket context should provide observable support or disconfirmation over a quarters horizon.",
+        "hypothesis_id": "hyp_556cc0b39126",
+        "mechanism": "AAPL may transmit the source event through revenue, margin, cash_flow.",
+        "source_event_ids": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01"
+        ],
+        "source_interpretation_ids": [
+          "interp_eb5ad5e7a4e5"
+        ],
+        "source_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T102702Z_87de1353-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T102702Z_87de1353.json"
+        ],
+        "status": "ready_for_validation",
+        "symbol": "AAPL",
+        "validation_plan": [
+          {
+            "check_type": "event_follow_up",
+            "description": "Review later filings, transcripts, or official updates for AAPL that directly mention revenue, margin.",
+            "expected_disconfirm": "Later source evidence contradicts or omits the mechanism.",
+            "expected_support": "Later source evidence reinforces the same mechanism.",
+            "required_inputs": [
+              "later_filings",
+              "transcripts_or_official_updates"
+            ]
+          },
+          {
+            "check_type": "market_reaction",
+            "description": "Compare AAPL price and volume reaction after the source event with pre-event context.",
+            "expected_disconfirm": "Reaction fades or contradicts the stated mechanism.",
+            "expected_support": "Reaction persists with liquidity/volume confirmation.",
+            "required_inputs": [
+              "MarketDataSnapshot",
+              "IndicatorSnapshot"
+            ]
+          },
+          {
+            "check_type": "basket_comparison",
+            "description": "Compare AAPL with SPY, QQQ, and affected basket exposures.",
+            "expected_disconfirm": "Index or basket movement explains most of the reaction.",
+            "expected_support": "Single-name reaction is not fully explained by index context.",
+            "required_inputs": [
+              "MarketDataSnapshot:SPY",
+              "MarketDataSnapshot:QQQ"
+            ]
+          }
+        ]
+      },
+      {
+        "assumptions": [
+          "The InterpretationSnapshot source facts are accurate and not stale.",
+          "Market reaction must be interpreted with explicit event timing.",
+          "A single event may not isolate the mechanism without basket and index context."
+        ],
+        "confidence_prior": "low",
+        "created_at_utc": "2026-06-02T10:27:02.058550+00:00",
+        "disconfirming_observations": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "draft_provider": "hermes-agent",
+        "draft_ref": null,
+        "expected_observations": [
+          "Source updates for AAPL continue to mention management, guidance, capital_allocation as material drivers.",
+          "Market and indicator context for AAPL shows a reaction consistent with management, guidance, capital_allocation.",
+          "SPY, QQQ, and related basket context do not fully explain the single-name reaction."
+        ],
+        "horizon": "days",
+        "hypothesis": "If source event sec-edgar:AAPL:0000320193-26-000011:2026-04-30 supports the interpretation that AAPL 8-K may be relevant to management, guidance, capital_allocation over a days horizon. is useful, then source updates, market reaction, and index/basket context should provide observable support or disconfirmation over a days horizon.",
+        "hypothesis_id": "hyp_dd2c938f9a46",
+        "mechanism": "AAPL may transmit the source event through management, guidance, capital_allocation.",
+        "source_event_ids": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30"
+        ],
+        "source_interpretation_ids": [
+          "interp_70db19cb5a48"
+        ],
+        "source_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T102702Z_87de1353-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T102702Z_87de1353.json"
+        ],
+        "status": "ready_for_validation",
+        "symbol": "AAPL",
+        "validation_plan": [
+          {
+            "check_type": "event_follow_up",
+            "description": "Review later filings, transcripts, or official updates for AAPL that directly mention management, guidance.",
+            "expected_disconfirm": "Later source evidence contradicts or omits the mechanism.",
+            "expected_support": "Later source evidence reinforces the same mechanism.",
+            "required_inputs": [
+              "later_filings",
+              "transcripts_or_official_updates"
+            ]
+          },
+          {
+            "check_type": "market_reaction",
+            "description": "Compare AAPL price and volume reaction after the source event with pre-event context.",
+            "expected_disconfirm": "Reaction fades or contradicts the stated mechanism.",
+            "expected_support": "Reaction persists with liquidity/volume confirmation.",
+            "required_inputs": [
+              "MarketDataSnapshot",
+              "IndicatorSnapshot"
+            ]
+          },
+          {
+            "check_type": "basket_comparison",
+            "description": "Compare AAPL with SPY, QQQ, and affected basket exposures.",
+            "expected_disconfirm": "Index or basket movement explains most of the reaction.",
+            "expected_support": "Single-name reaction is not fully explained by index context.",
+            "required_inputs": [
+              "MarketDataSnapshot:SPY",
+              "MarketDataSnapshot:QQQ"
+            ]
+          }
+        ]
+      },
+      {
+        "assumptions": [
+          "The InterpretationSnapshot source facts are accurate and not stale.",
+          "Market reaction must be interpreted with explicit event timing.",
+          "A single event may not isolate the mechanism without basket and index context."
+        ],
+        "confidence_prior": "low",
+        "created_at_utc": "2026-06-02T10:27:02.058567+00:00",
+        "disconfirming_observations": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "draft_provider": "hermes-agent",
+        "draft_ref": null,
+        "expected_observations": [
+          "Source updates for AAPL continue to mention management, guidance, capital_allocation as material drivers.",
+          "Market and indicator context for AAPL shows a reaction consistent with management, guidance, capital_allocation.",
+          "SPY, QQQ, and related basket context do not fully explain the single-name reaction."
+        ],
+        "horizon": "days",
+        "hypothesis": "If source event sec-edgar:AAPL:0001140361-26-015711:2026-04-20 supports the interpretation that AAPL 8-K may be relevant to management, guidance, capital_allocation over a days horizon. is useful, then source updates, market reaction, and index/basket context should provide observable support or disconfirmation over a days horizon.",
+        "hypothesis_id": "hyp_c206d61450ab",
+        "mechanism": "AAPL may transmit the source event through management, guidance, capital_allocation.",
+        "source_event_ids": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20"
+        ],
+        "source_interpretation_ids": [
+          "interp_10534f3d6fb4"
+        ],
+        "source_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T102702Z_87de1353-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T102702Z_87de1353.json"
+        ],
+        "status": "ready_for_validation",
+        "symbol": "AAPL",
+        "validation_plan": [
+          {
+            "check_type": "event_follow_up",
+            "description": "Review later filings, transcripts, or official updates for AAPL that directly mention management, guidance.",
+            "expected_disconfirm": "Later source evidence contradicts or omits the mechanism.",
+            "expected_support": "Later source evidence reinforces the same mechanism.",
+            "required_inputs": [
+              "later_filings",
+              "transcripts_or_official_updates"
+            ]
+          },
+          {
+            "check_type": "market_reaction",
+            "description": "Compare AAPL price and volume reaction after the source event with pre-event context.",
+            "expected_disconfirm": "Reaction fades or contradicts the stated mechanism.",
+            "expected_support": "Reaction persists with liquidity/volume confirmation.",
+            "required_inputs": [
+              "MarketDataSnapshot",
+              "IndicatorSnapshot"
+            ]
+          },
+          {
+            "check_type": "basket_comparison",
+            "description": "Compare AAPL with SPY, QQQ, and affected basket exposures.",
+            "expected_disconfirm": "Index or basket movement explains most of the reaction.",
+            "expected_support": "Single-name reaction is not fully explained by index context.",
+            "required_inputs": [
+              "MarketDataSnapshot:SPY",
+              "MarketDataSnapshot:QQQ"
+            ]
+          }
+        ]
+      }
+    ],
+    "review_questions": [
+      "Which hypothesis has the weakest source backing?",
+      "Which disconfirming observation should be tested first?",
+      "Which validation plan is too vague for layer 6?",
+      "Did any hypothesis drift into recommendation language?",
+      "Which hypothesis should be rejected before validation to reduce bias?"
+    ],
+    "universe": [
+      "AAPL",
+      "SPY",
+      "QQQ"
+    ],
+    "validation_handoff": [
+      "hyp_556cc0b39126: validate AAPL through event_follow_up, market_reaction, basket_comparison",
+      "hyp_dd2c938f9a46: validate AAPL through event_follow_up, market_reaction, basket_comparison",
+      "hyp_c206d61450ab: validate AAPL through event_follow_up, market_reaction, basket_comparison"
+    ]
+  },
+  "stage_flow": {
+    "candidate_selection": "source-backed InterpretationRecord selection",
+    "consumer_handoff": "validation/review inputs only",
+    "disconfirming_evidence": "explicit failure observations required",
+    "formulate": "rule-guided falsifiable hypothesis template",
+    "lineage": "InterpretationSnapshot refs, ids, output hash/ref",
+    "quality": "source, testability, disconfirmation, no-recommendation gates",
+    "receipt": "HypothesisReceipt",
+    "review_hook": "human review before validation promotion",
+    "snapshot": "HypothesisSnapshot",
+    "source_input": "HypothesisSourceSpec + InterpretationSnapshot",
+    "validation_plan": "next-layer validation checks only"
+  },
+  "status": "ok"
+}

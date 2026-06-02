@@ -1,0 +1,103 @@
+{
+  "receipt_id": "engineering_delivery_20260602T102807Z_hypotheses-layer-mvp",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-02T10:28:07.235803+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260602T102807Z_hypotheses-layer-mvp",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-02T10:28:07.235803+00:00",
+    "goal": "Hypotheses Layer MVP",
+    "source_ref": "user-request: implement layer 5 hypotheses with reserved Hermes LLM interface",
+    "proposal_ref": "docs/proposals/2026-06-02-hypotheses-layer-sec-edgar-mvp.md",
+    "module_refs": [
+      "docs/modules/05-hypotheses.md"
+    ],
+    "change_type": "new_layer",
+    "scope": "Implement Layer 5 Hypotheses Graph consuming InterpretationSnapshot, producing HypothesisSnapshot and Receipt, retaining a Hermes LLM draft interface, and keeping execution disabled.",
+    "non_goals": [
+      "authorize financial execution",
+      "produce buy/sell/hold recommendations",
+      "perform validation or backtesting in layer 5",
+      "activate Hermes subprocess/API integration in MVP"
+    ],
+    "success_criteria": [
+      "HypothesisSnapshot and HypothesisReceipt implemented",
+      "Hypotheses Graph runs from InterpretationSnapshot",
+      "Hermes LLM interface retained and disabled by default",
+      "quality gates block recommendation language and missing disconfirmation",
+      "task check passed"
+    ],
+    "planned_files": [
+      "src/finharness/hypotheses.py",
+      "src/finharness/hypotheses_graph.py",
+      "scripts/run_hypotheses_graph.py",
+      "tests/test_hypotheses.py",
+      "Taskfile.yml",
+      "docs/modules/05-hypotheses.md",
+      "docs/proposals/2026-06-02-hypotheses-layer-sec-edgar-mvp.md"
+    ],
+    "changed_files": [
+      "src/finharness/hypotheses.py",
+      "src/finharness/hypotheses_graph.py",
+      "scripts/run_hypotheses_graph.py",
+      "tests/test_hypotheses.py",
+      "Taskfile.yml",
+      "docs/modules/05-hypotheses.md",
+      "docs/proposals/2026-06-02-hypotheses-layer-sec-edgar-mvp.md",
+      "data/receipts/hypotheses/receipt_hyps_20260602T102702Z_117373d1.json"
+    ],
+    "docs_updated": [
+      "docs/modules/05-hypotheses.md",
+      "docs/proposals/2026-06-02-hypotheses-layer-sec-edgar-mvp.md"
+    ],
+    "checks": [
+      {
+        "name": "focused-hypotheses-unittest",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "focused-hypotheses-ruff",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "hypotheses-graph-cli",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task-test",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task-check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": true
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "acb96635d16397f3c66f90fcc323aa2c2e88b23bf5e9c65360d81757e8aa242c"
+  },
+  "lineage": {
+    "source_ref": "user-request: implement layer 5 hypotheses with reserved Hermes LLM interface",
+    "proposal_ref": "docs/proposals/2026-06-02-hypotheses-layer-sec-edgar-mvp.md",
+    "module_refs": [
+      "docs/modules/05-hypotheses.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

@@ -1,6 +1,6 @@
 # Module: Hypotheses
 
-Status: planned MVP
+Status: implemented MVP
 Owner: FinHarness
 Layer: 5 - Hypotheses / thesis generation
 Last updated: 2026-06-02
@@ -28,7 +28,7 @@ Should we trade?
 
 ## Current Responsibilities
 
-Planned MVP responsibilities:
+Implemented MVP responsibilities:
 
 ```text
 consume InterpretationSnapshot evidence
@@ -103,13 +103,16 @@ data/receipts/hypotheses/
 Current implementation:
 
 ```text
-not implemented yet
+src/finharness/hypotheses.py
+src/finharness/hypotheses_graph.py
+scripts/run_hypotheses_graph.py
+tests/test_hypotheses.py
 ```
 
 Tasks:
 
 ```text
-planned: task hypotheses:graph
+task hypotheses:graph
 ```
 
 ## Mature Wheels / External Systems
@@ -140,6 +143,15 @@ Local first MVP should use:
 rules and structured templates first
 LLM assistance only as draft text after source-linking exists
 quality gates that block recommendation language and untestable claims
+```
+
+Current LLM boundary:
+
+```text
+HypothesisDraftProvider protocol
+NullHypothesisDraftProvider default
+HermesHypothesisDraftProvider reserved for /root/projects/hermes-agent
+llm_enabled=false by default
 ```
 
 References:
@@ -286,4 +298,51 @@ Implement HypothesisSnapshot and HypothesisReceipt.
 Add a strict LangGraph subgraph.
 Run it from an InterpretationSnapshot only.
 Keep execution permission disabled.
+```
+
+### 2026-06-02: Hypotheses Layer MVP Implementation
+
+Why:
+
+```text
+The fourth layer could produce source-backed InterpretationSnapshot evidence.
+The project needed a fifth layer that turns those interpretations into
+falsifiable, validation-ready hypotheses without creating proposals or trades.
+```
+
+What changed:
+
+```text
+Added HypothesisSourceSpec, HypothesisRecord, HypothesisQuality,
+HypothesisLineage, HypothesisSnapshot, HypothesisReceipt, and HypothesisBundle.
+Added rule-guided hypothesis formulation with expected observations,
+disconfirming observations, and validation plans.
+Added a strict LangGraph hypotheses subgraph.
+Added task hypotheses:graph.
+Added tests for quality gates, persistence, graph output, and the reserved
+Hermes LLM interface.
+```
+
+Evidence:
+
+```text
+src/finharness/hypotheses.py
+src/finharness/hypotheses_graph.py
+scripts/run_hypotheses_graph.py
+tests/test_hypotheses.py
+```
+
+Result:
+
+```text
+Layer 5 can now consume InterpretationSnapshot evidence and produce
+HypothesisSnapshot + HypothesisReceipt with execution_allowed=false.
+```
+
+Remaining risks:
+
+```text
+LLM interface is reserved but not an active Hermes subprocess/API integration.
+Validation plans are structured handoff plans, not validation results.
+No duplicate semantic clustering beyond exact hypothesis text yet.
 ```

@@ -1,7 +1,7 @@
 # Proposal: Hypotheses Layer SEC EDGAR MVP
 
 Date: 2026-06-02
-Status: planned
+Status: implemented MVP
 Related module: docs/modules/05-hypotheses.md
 
 ## Problem
@@ -208,3 +208,39 @@ Build this as a strict, non-execution layer.
 Use deterministic templates first. Add LLM drafting later only if the output is
 source-linked, quality-gated, and clearly marked as draft reasoning rather than
 evidence.
+
+## Implementation Evidence
+
+Implemented files:
+
+```text
+src/finharness/hypotheses.py
+src/finharness/hypotheses_graph.py
+scripts/run_hypotheses_graph.py
+tests/test_hypotheses.py
+docs/modules/05-hypotheses.md
+Taskfile.yml
+```
+
+Task:
+
+```text
+task hypotheses:graph
+```
+
+LLM boundary:
+
+```text
+HypothesisDraftProvider protocol
+NullHypothesisDraftProvider default
+HermesHypothesisDraftProvider reserved for /root/projects/hermes-agent
+llm_enabled=false by default
+```
+
+MVP result:
+
+```text
+Hypotheses Graph consumes InterpretationSnapshot evidence and writes
+HypothesisSnapshot + HypothesisReceipt. It preserves validation handoff only,
+keeps execution_allowed=false, and blocks recommendation/execution language.
+```
