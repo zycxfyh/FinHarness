@@ -22,7 +22,7 @@ tasks:
   ideas:evolve:
     desc: Run Forward Evolution — cross two ideas from the pool
     cmds:
-      - echo "TODO: automated evolve — for now, manually review the pool and create a new EXP"
+      - 'echo "TODO: automated evolve — for now, manually review the pool and create a new EXP"'
 
   setup:
     desc: Sync locked Python and JS dependencies
@@ -114,6 +114,51 @@ tasks:
     cmds:
       - uv run python scripts/run_data_entry_workflow.py
 
+  market-data:graph:
+    desc: Run first-layer market data LangGraph workflow
+    cmds:
+      - uv run python scripts/run_market_data_graph.py {{.CLI_ARGS}}
+
+  indicators:graph:
+    desc: Run second-layer indicator LangGraph workflow
+    cmds:
+      - uv run python scripts/run_indicator_graph.py {{.CLI_ARGS}}
+
+  feature:macd:
+    desc: Run MACD feature snapshot
+    cmds:
+      - uv run python scripts/run_macd_snapshot.py {{.CLI_ARGS}}
+
+  feature:squeeze:
+    desc: Run Squeeze Momentum feature snapshot
+    cmds:
+      - uv run python scripts/run_squeeze_snapshot.py {{.CLI_ARGS}}
+
+  feature:smc:
+    desc: Run SMC/MSB-OB feature snapshot
+    cmds:
+      - uv run python scripts/run_smc_snapshot.py {{.CLI_ARGS}}
+
+  feature:snapshot:
+    desc: Run combined MACD, Squeeze, and SMC feature snapshot
+    cmds:
+      - uv run python scripts/run_indicator_snapshot.py {{.CLI_ARGS}}
+
+  events:snapshot:
+    desc: Run third-layer SEC EDGAR event snapshot
+    cmds:
+      - uv run python scripts/run_events_snapshot.py {{.CLI_ARGS}}
+
+  interpretation:graph:
+    desc: Run fourth-layer source-backed interpretation LangGraph workflow
+    cmds:
+      - uv run python scripts/run_interpretation_graph.py {{.CLI_ARGS}}
+
+  workflow:daily-evidence:
+    desc: Run first-four-layer daily evidence LangGraph workflow
+    cmds:
+      - uv run python scripts/run_daily_evidence_graph.py {{.CLI_ARGS}}
+
   eval:risk:
     desc: Evaluate generated finance risk note
     cmds:
@@ -169,6 +214,16 @@ tasks:
     desc: Run LangGraph institutional Alpaca paper trade workflow
     cmds:
       - uv run python scripts/run_institutional_paper_trade.py --execute
+
+  workflow:cognitive:
+    desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."
+    cmds:
+      - uv run python scripts/run_cognitive_flow.py {{.CLI_ARGS}}
+
+  workflow:engineering-delivery:
+    desc: Run Engineering Delivery Graph; pass evidence args with -- --goal "..."
+    cmds:
+      - uv run python scripts/run_engineering_delivery_graph.py {{.CLI_ARGS}}
 
   alpaca:paper-check:
     desc: Check Alpaca paper account, positions, and open orders

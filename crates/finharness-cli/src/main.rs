@@ -213,7 +213,7 @@ fn run_guard(args: &[String]) -> CliResult<()> {
 fn run_guard_interactive() -> CliResult<()> {
     use std::io::{self, Write};
 
-    let mut stdin = io::stdin();
+    let stdin = io::stdin();
     let mut stdout = io::stdout();
     let mut buf = String::new();
 
@@ -259,11 +259,18 @@ fn run_guard_interactive() -> CliResult<()> {
 
     println!();
     println!("--- Position Sizing ---");
-    println!("  Direction:     {}", if is_long { "LONG" } else { "SHORT" });
+    println!(
+        "  Direction:     {}",
+        if is_long { "LONG" } else { "SHORT" }
+    );
     println!("  1R distance:   ${:.2} ({:.2}%)", r_distance, one_r_pct);
     println!("  Max risk ({}%): ${:.2}", risk_pct, max_risk_dollars);
     println!("  Max position:   {:.4} units", max_position_size);
-    println!("  Position value: ${:.2} ({:.1}% of equity)", max_position_size * entry, max_position_pct);
+    println!(
+        "  Position value: ${:.2} ({:.1}% of equity)",
+        max_position_size * entry,
+        max_position_pct
+    );
 
     println!();
     println!("--- Rule Check ---");
@@ -312,8 +319,15 @@ fn run_guard_interactive() -> CliResult<()> {
     println!();
     if passed {
         println!("RESULT: TRADE ALLOWED");
-        println!("  Max size: {:.4} units (${:.2})", max_position_size, max_position_size * entry);
-        println!("  Max risk: ${:.2} ({}% of equity)", max_risk_dollars, risk_pct);
+        println!(
+            "  Max size: {:.4} units (${:.2})",
+            max_position_size,
+            max_position_size * entry
+        );
+        println!(
+            "  Max risk: ${:.2} ({}% of equity)",
+            max_risk_dollars, risk_pct
+        );
         println!("  Invalidation: {}", thesis);
     } else {
         println!("RESULT: TRADE BLOCKED");

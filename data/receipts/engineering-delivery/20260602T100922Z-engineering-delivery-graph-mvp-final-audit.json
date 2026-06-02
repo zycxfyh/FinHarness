@@ -1,0 +1,101 @@
+{
+  "receipt_id": "engineering_delivery_20260602T100922Z_engineering-delivery-graph-mvp-final-audit",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-02T10:09:22.270104+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260602T100922Z_engineering-delivery-graph-mvp-final-audit",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-02T10:09:22.270104+00:00",
+    "goal": "Engineering Delivery Graph MVP final audit",
+    "source_ref": "user-request: implement Engineering Delivery Graph, self-audit, and final test",
+    "proposal_ref": "docs/proposals/2026-06-02-engineering-delivery-graph-mvp.md",
+    "module_refs": [
+      "docs/modules/engineering-delivery.md"
+    ],
+    "change_type": "new_workflow",
+    "scope": "Final audit for the first Engineering Delivery Graph implementation after focused tests and full task check.",
+    "non_goals": [
+      "authorize financial execution",
+      "replace Cognitive Graph",
+      "replace Daily Evidence Graph"
+    ],
+    "success_criteria": [
+      "graph compiles",
+      "pass and failure paths tested",
+      "engineering receipt and review produced",
+      "task check passed"
+    ],
+    "planned_files": [
+      "src/finharness/engineering_delivery_graph.py",
+      "scripts/run_engineering_delivery_graph.py",
+      "tests/test_engineering_delivery_graph.py",
+      "Taskfile.yml",
+      "docs/modules/engineering-delivery.md",
+      "docs/proposals/2026-06-02-engineering-delivery-graph-mvp.md"
+    ],
+    "changed_files": [
+      "src/finharness/engineering_delivery_graph.py",
+      "scripts/run_engineering_delivery_graph.py",
+      "tests/test_engineering_delivery_graph.py",
+      "Taskfile.yml",
+      "docs/modules/engineering-delivery.md",
+      "docs/proposals/2026-06-02-engineering-delivery-graph-mvp.md",
+      "docs/reviews/2026-06-02-engineering-delivery-graph-mvp-engineering-delivery.md",
+      "data/receipts/engineering-delivery/20260602T100716Z-engineering-delivery-graph-mvp.json"
+    ],
+    "docs_updated": [
+      "docs/modules/engineering-delivery.md",
+      "docs/proposals/2026-06-02-engineering-delivery-graph-mvp.md",
+      "docs/reviews/2026-06-02-engineering-delivery-graph-mvp-engineering-delivery.md"
+    ],
+    "checks": [
+      {
+        "name": "focused-unittest",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "focused-ruff",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task-lint",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task-test",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task-check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": true
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "b64910922132a603112234fef9690e87040f9c82d538ceecd9b338b97de86e0c"
+  },
+  "lineage": {
+    "source_ref": "user-request: implement Engineering Delivery Graph, self-audit, and final test",
+    "proposal_ref": "docs/proposals/2026-06-02-engineering-delivery-graph-mvp.md",
+    "module_refs": [
+      "docs/modules/engineering-delivery.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

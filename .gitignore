@@ -1,6 +1,15 @@
 vendor/
 data/raw/
 data/cache/
+data/catalog/
+data/features/
+data/normalized/
+data/receipts/events/
+data/receipts/interpretations/
+data/receipts/indicators/
+data/receipts/market-data/
+data/receipts/cognitive-graph/
+data/receipts/daily-evidence/
 data/*.csv
 data/*.parquet
 .env

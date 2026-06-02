@@ -15,10 +15,10 @@ from uuid import uuid4
 
 import pandas as pd
 import vectorbt as vbt
-import yfinance as yf
 from langgraph.graph import END, START, StateGraph
 
 from finharness.alpaca_client import AlpacaPaperClient
+from finharness.market_data import fetch_yfinance_close_snapshot
 from finharness.trading_guard import TradingState, evaluate_trading_state
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,32 +44,15 @@ class TradeGraphState(TypedDict, total=False):
     final: dict[str, Any]
 
 
-def _download_close(universe: list[str], period: str = "6mo") -> pd.DataFrame:
-    raw = yf.download(
-        universe,
-        period=period,
-        auto_adjust=False,
-        progress=False,
-        threads=False,
-    )
-    if raw.empty:
-        raise ValueError(f"no yfinance data returned for {universe}")
-
-    close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw[["Close"]]
-    if isinstance(close, pd.Series):
-        close = close.to_frame(name=universe[0])
-    close = close.dropna(axis=1, how="all").dropna()
-    if close.empty:
-        raise ValueError("close price matrix is empty after normalization")
-    return close
-
-
 def market_data_node(state: TradeGraphState) -> TradeGraphState:
     universe = state.get("universe", ["SPY", "QQQ", "AAPL", "MSFT", "NVDA"])
-    close = _download_close(universe)
+    bundle = fetch_yfinance_close_snapshot(universe)
+    close = bundle.close
     return {
         "market_data": {
             "provider": "yfinance",
+            "snapshot": bundle.snapshot.model_dump(mode="json"),
+            "receipt_path": bundle.snapshot.receipt_ref,
             "rows": len(close),
             "symbols": list(close.columns),
             "last_close": {symbol: float(close[symbol].iloc[-1]) for symbol in close.columns},

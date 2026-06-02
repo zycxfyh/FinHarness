@@ -12,9 +12,11 @@ dependencies = [
     "openai-agents>=0.6.1",
     "openbb>=4.7.1",
     "pandas>=2.2.0",
+    "pandas-ta>=0.4.71b0",
     "plotly>=5.20.0",
     "quantstats>=0.0.81",
     "riskfolio-lib>=7.2.1",
+    "ta-lib>=0.6.8",
     "vectorbt>=1.0.0",
     "yfinance>=0.2.60",
 ]

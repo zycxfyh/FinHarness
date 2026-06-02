@@ -13,6 +13,8 @@ from finharness.data_entry import (
     fetch_yfinance_history,
     write_history_csv,
 )
+from finharness.indicator_layer import build_indicator_snapshot
+from finharness.market_data import SourceSpec, build_ohlcv_snapshot_from_history, package_version
 from finharness.metrics import RiskReturnSummary, summarize
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -85,6 +87,33 @@ def run_data_entry_workflow(
 
     quote = fetch_openbb_quote(symbol)
     history = fetch_yfinance_history(symbol, start, end)
+    data_receipt = build_ohlcv_snapshot_from_history(
+        history,
+        symbol=symbol,
+        source=SourceSpec(
+            provider="yfinance",
+            upstream_source="Yahoo Finance",
+            asset_class="equity",
+            dataset="ohlcv_history",
+            access_method="api_pull",
+            wheel="yfinance",
+            wheel_version=package_version("yfinance"),
+        ),
+        fetch_config={"symbol": symbol, "start": start, "end": end, "auto_adjust": False},
+        raw_payload={
+            "symbol": symbol,
+            "start": start,
+            "end": end,
+            "source": "yfinance.download",
+            "rows": len(history),
+        },
+        adjusted=False,
+    )
+    indicator_receipt = build_indicator_snapshot(
+        symbol=symbol,
+        history=history,
+        market_data_snapshot=data_receipt.snapshot,
+    )
     history_path = CACHE / f"{symbol.lower()}_history.csv"
     write_history_csv(history, history_path)
 
@@ -108,6 +137,11 @@ def run_data_entry_workflow(
             "yfinance package/Yahoo Finance for historical prices",
         ],
         "not_data_source": "TradingView/TV",
+        "market_data_snapshot": data_receipt.snapshot.model_dump(mode="json"),
+        "data_receipt_path": data_receipt.snapshot.receipt_ref,
+        "nautilus_catalog_ref": data_receipt.snapshot.lineage.catalog_ref,
+        "indicator_snapshot": indicator_receipt.snapshot.model_dump(mode="json"),
+        "indicator_receipt_path": indicator_receipt.snapshot.receipt_ref,
         "backtest": asdict(backtest),
         "metrics": asdict(metrics),
         "quote": asdict(quote),

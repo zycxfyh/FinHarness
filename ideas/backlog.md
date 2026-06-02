@@ -184,6 +184,11 @@ decision: |
 | EXP-009 | agent | 风控 Agent 自动拦截能减少情绪化交易 | — |
 | EXP-010 | career | 每周自动抓取岗位要求 → 生成差距报告 | — |
 | EXP-011 | trading | RSI 反抽 × 强势板块过滤 | EXP-006 × EXP-007 |
+| EXP-012 | agent | API-native trading harness：read → proposal → risk gate → receipt | — |
+| EXP-013 | research | Bottleneck Rent Alpha Model：给复杂系统中的绑定约束定价 | — |
+| EXP-014 | agent | 多 Agent 投委会只生成 proposal，不拥有 live execution 权限 | — |
+| EXP-015 | trading | 交易所 API 必须拆成 read / preview / demo / live-write 四层权限 | — |
+| EXP-016 | research | 每个金融判断必须拆成事实、推断、假设、猜测和反证条件 | — |
 
 ## Killed
 
