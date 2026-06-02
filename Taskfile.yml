@@ -159,6 +159,11 @@ tasks:
     cmds:
       - uv run python scripts/run_hypotheses_graph.py {{.CLI_ARGS}}
 
+  validation:graph:
+    desc: Run sixth-layer validation LangGraph workflow
+    cmds:
+      - uv run python scripts/run_validation_graph.py {{.CLI_ARGS}}
+
   workflow:daily-evidence:
     desc: Run first-four-layer daily evidence LangGraph workflow
     cmds:

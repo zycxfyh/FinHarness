@@ -1,0 +1,869 @@
+{
+  "created_at_utc": "2026-06-02T10:47:22.744939+00:00",
+  "kind": "validation_processing",
+  "receipt_id": "receipt_vals_20260602T104722Z_5ded4ff1",
+  "snapshot": {
+    "as_of_utc": "2026-06-02T10:47:22.744876+00:00",
+    "execution_allowed": false,
+    "input_hypothesis_snapshot_id": "hyps_20260602T104722Z_620335b5",
+    "job_count": 3,
+    "jobs": [
+      {
+        "created_at_utc": "2026-06-02T10:47:22.741401+00:00",
+        "disconfirmation_items": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "planned_check_types": [
+          "event_follow_up",
+          "market_reaction",
+          "basket_comparison"
+        ],
+        "required_inputs": [
+          "IndicatorSnapshot",
+          "MarketDataSnapshot",
+          "MarketDataSnapshot:QQQ",
+          "MarketDataSnapshot:SPY",
+          "later_filings",
+          "transcripts_or_official_updates"
+        ],
+        "symbol": "AAPL",
+        "validation_job_id": "valjob_358883011f39"
+      },
+      {
+        "created_at_utc": "2026-06-02T10:47:22.741418+00:00",
+        "disconfirmation_items": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "planned_check_types": [
+          "event_follow_up",
+          "market_reaction",
+          "basket_comparison"
+        ],
+        "required_inputs": [
+          "IndicatorSnapshot",
+          "MarketDataSnapshot",
+          "MarketDataSnapshot:QQQ",
+          "MarketDataSnapshot:SPY",
+          "later_filings",
+          "transcripts_or_official_updates"
+        ],
+        "symbol": "AAPL",
+        "validation_job_id": "valjob_23fb20b791b5"
+      },
+      {
+        "created_at_utc": "2026-06-02T10:47:22.741426+00:00",
+        "disconfirmation_items": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "planned_check_types": [
+          "event_follow_up",
+          "market_reaction",
+          "basket_comparison"
+        ],
+        "required_inputs": [
+          "IndicatorSnapshot",
+          "MarketDataSnapshot",
+          "MarketDataSnapshot:QQQ",
+          "MarketDataSnapshot:SPY",
+          "later_filings",
+          "transcripts_or_official_updates"
+        ],
+        "symbol": "AAPL",
+        "validation_job_id": "valjob_4ee02299529b"
+      }
+    ],
+    "lineage": {
+      "computed_at_utc": "2026-06-02T10:47:22.744819+00:00",
+      "event_snapshot_id": "evs_20260602T104722Z_b9f7a614",
+      "hypothesis_ids": [
+        "hyp_f6fe17833b3e",
+        "hyp_5eb68f916b28",
+        "hyp_4cd28b9208b0"
+      ],
+      "indicator_snapshot_refs": [],
+      "input_hypothesis_receipt_ref": "data/receipts/hypotheses/receipt_hyps_20260602T104722Z_620335b5.json",
+      "input_hypothesis_snapshot_id": "hyps_20260602T104722Z_620335b5",
+      "interpretation_snapshot_id": "ints_20260602T104722Z_ec341c80",
+      "market_snapshot_refs": [],
+      "method": "rule_guided_validation_mvp",
+      "model_provider": "hermes-agent",
+      "output_hash": "96dc68cec63f12893a482b63270028d505625d71c30fb268ac73016c1e3551fe",
+      "output_ref": "data/normalized/validations/vals_20260602T104722Z_5ded4ff1.json",
+      "prompt_template_version": "finharness.validation.template.v1",
+      "source": {
+        "config": {
+          "forms": [
+            "8-K",
+            "10-Q",
+            "10-K"
+          ],
+          "max_hypotheses": 3,
+          "max_records": 3,
+          "symbols": [
+            "AAPL"
+          ],
+          "universe": [
+            "AAPL",
+            "SPY",
+            "QQQ"
+          ]
+        },
+        "hermes_root": "/root/projects/hermes-agent",
+        "input_layer": "hypotheses",
+        "llm_enabled": true,
+        "llm_interface": "HermesValidationDraftProvider",
+        "llm_provider": "hermes-agent",
+        "method": "rule_guided_validation_mvp",
+        "provider": "FinHarness rule-guided validation",
+        "template_version": "finharness.validation.template.v1"
+      },
+      "transform_version": "finharness.validation.v1"
+    },
+    "payload_ref": "data/normalized/validations/vals_20260602T104722Z_5ded4ff1.json",
+    "proposal_handoff": [
+      "hyp_f6fe17833b3e: validation evidence includes inconclusive, not_testable, supported; human review required before proposal.",
+      "hyp_5eb68f916b28: validation evidence includes inconclusive, not_testable, supported; human review required before proposal.",
+      "hyp_4cd28b9208b0: validation evidence includes inconclusive, not_testable, supported; human review required before proposal."
+    ],
+    "quality": {
+      "at_least_one_disconfirmation_check": true,
+      "at_least_one_market_check": true,
+      "benchmark_context_present": true,
+      "blocked_language_hits": {},
+      "hypothesis_source_linked": true,
+      "job_count": 3,
+      "limitations_present": true,
+      "lineage_complete": true,
+      "missing_required_fields": {},
+      "no_proposal_or_execution_language": true,
+      "notes": [],
+      "ok": true,
+      "result_count": 27,
+      "result_not_overclaimed": true,
+      "source_validity_checked": true,
+      "validation_jobs_created": true
+    },
+    "receipt_ref": "data/receipts/validations/receipt_vals_20260602T104722Z_5ded4ff1.json",
+    "result_count": 27,
+    "results": [
+      {
+        "check_id": "valchk_4f6b823a2de8",
+        "check_type": "source_validity",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742580+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Source-link presence does not prove source content is economically material."
+        ],
+        "method": "source_ref_presence_check",
+        "metrics": {
+          "source_event_count": 1,
+          "source_interpretation_count": 1,
+          "source_ref_count": 3
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_2d0d6fe4cecd",
+        "check_type": "mechanism",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742595+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Mechanism presence is a conceptual check, not empirical validation."
+        ],
+        "method": "mechanism_and_assumption_presence_check",
+        "metrics": {
+          "assumption_count": 3,
+          "mechanism_present": true
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_b0cf177fd197",
+        "check_type": "event_reaction",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742604+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [],
+        "limitations": [
+          "MVP records whether event-reaction inputs exist; it does not compute returns yet."
+        ],
+        "method": "event_reaction_input_availability_check",
+        "metrics": {
+          "expected_observation_count": 3,
+          "indicator_snapshot_ref_count": 0,
+          "market_snapshot_ref_count": 0
+        },
+        "result": "not_testable",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_f6a9474df565",
+        "check_type": "benchmark_context",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742612+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [],
+        "limitations": [
+          "Benchmark presence does not estimate beta, factor exposure, or abnormal return."
+        ],
+        "method": "benchmark_universe_context_check",
+        "metrics": {
+          "has_qqq_context": true,
+          "has_spy_context": true,
+          "universe": [
+            "AAPL",
+            "QQQ",
+            "SPY"
+          ]
+        },
+        "result": "supported",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_361be88b4009",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742619+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "The interpretation is mostly backward-looking or already disclosed.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_f8da588f13a5",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742626+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_994416a8bba0",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742631+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_6eea66f650e3",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742637+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Human review finds the source facts too weak or too temporally mixed for validation.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_70d0ec9928d8",
+        "check_type": "limitations",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742652+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_f6fe17833b3e",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000013:2026-05-01",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Layer 6 MVP does not run return, factor, cost, or liquidity calculations.",
+          "Validation result remains evidence packaging until layer-specific metrics are computed.",
+          "LLM interface hermes-agent reserved; no external assessment used."
+        ],
+        "method": "mvp_limitation_report",
+        "metrics": {
+          "llm_enabled": true,
+          "llm_provider": "hermes-agent"
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_358883011f39",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_af7930fd8731",
+        "check_type": "source_validity",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742660+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Source-link presence does not prove source content is economically material."
+        ],
+        "method": "source_ref_presence_check",
+        "metrics": {
+          "source_event_count": 1,
+          "source_interpretation_count": 1,
+          "source_ref_count": 3
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_1066d4b3c399",
+        "check_type": "mechanism",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742666+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Mechanism presence is a conceptual check, not empirical validation."
+        ],
+        "method": "mechanism_and_assumption_presence_check",
+        "metrics": {
+          "assumption_count": 3,
+          "mechanism_present": true
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_11db7ed1b7a3",
+        "check_type": "event_reaction",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742672+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [],
+        "limitations": [
+          "MVP records whether event-reaction inputs exist; it does not compute returns yet."
+        ],
+        "method": "event_reaction_input_availability_check",
+        "metrics": {
+          "expected_observation_count": 3,
+          "indicator_snapshot_ref_count": 0,
+          "market_snapshot_ref_count": 0
+        },
+        "result": "not_testable",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_cd6ed69e92e4",
+        "check_type": "benchmark_context",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742678+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [],
+        "limitations": [
+          "Benchmark presence does not estimate beta, factor exposure, or abnormal return."
+        ],
+        "method": "benchmark_universe_context_check",
+        "metrics": {
+          "has_qqq_context": true,
+          "has_spy_context": true,
+          "universe": [
+            "AAPL",
+            "QQQ",
+            "SPY"
+          ]
+        },
+        "result": "supported",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_2280ea496caf",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742684+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "The interpretation is mostly backward-looking or already disclosed.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_84a048b71eac",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742689+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_021c613a0058",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742695+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_7ab0a83e410b",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742700+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Human review finds the source facts too weak or too temporally mixed for validation.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_500cb1ba87b9",
+        "check_type": "limitations",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742707+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5eb68f916b28",
+        "input_refs": [
+          "sec-edgar:AAPL:0000320193-26-000011:2026-04-30",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Layer 6 MVP does not run return, factor, cost, or liquidity calculations.",
+          "Validation result remains evidence packaging until layer-specific metrics are computed.",
+          "LLM interface hermes-agent reserved; no external assessment used."
+        ],
+        "method": "mvp_limitation_report",
+        "metrics": {
+          "llm_enabled": true,
+          "llm_provider": "hermes-agent"
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_23fb20b791b5",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_d727a628c431",
+        "check_type": "source_validity",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742713+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Source-link presence does not prove source content is economically material."
+        ],
+        "method": "source_ref_presence_check",
+        "metrics": {
+          "source_event_count": 1,
+          "source_interpretation_count": 1,
+          "source_ref_count": 3
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_413c0c280a1f",
+        "check_type": "mechanism",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742718+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Mechanism presence is a conceptual check, not empirical validation."
+        ],
+        "method": "mechanism_and_assumption_presence_check",
+        "metrics": {
+          "assumption_count": 3,
+          "mechanism_present": true
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_d62a26392658",
+        "check_type": "event_reaction",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742724+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [],
+        "limitations": [
+          "MVP records whether event-reaction inputs exist; it does not compute returns yet."
+        ],
+        "method": "event_reaction_input_availability_check",
+        "metrics": {
+          "expected_observation_count": 3,
+          "indicator_snapshot_ref_count": 0,
+          "market_snapshot_ref_count": 0
+        },
+        "result": "not_testable",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_879b61fc72f8",
+        "check_type": "benchmark_context",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:47:22.742730+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [],
+        "limitations": [
+          "Benchmark presence does not estimate beta, factor exposure, or abnormal return."
+        ],
+        "method": "benchmark_universe_context_check",
+        "metrics": {
+          "has_qqq_context": true,
+          "has_spy_context": true,
+          "universe": [
+            "AAPL",
+            "QQQ",
+            "SPY"
+          ]
+        },
+        "result": "supported",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_18495a9b5ccc",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742735+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "The interpretation is mostly backward-looking or already disclosed.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_161086bad3d1",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742740+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "AAPL reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_46ec7e77adea",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742745+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_5c03b72ea743",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742750+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Human review finds the source facts too weak or too temporally mixed for validation.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_c6c62aeca346",
+        "check_type": "limitations",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:47:22.742756+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4cd28b9208b0",
+        "input_refs": [
+          "sec-edgar:AAPL:0001140361-26-015711:2026-04-20",
+          "data/raw/events/sec-edgar/evs_20260602T104722Z_b9f7a614-AAPL.json",
+          "data/normalized/events/sec-edgar/evs_20260602T104722Z_b9f7a614.json"
+        ],
+        "limitations": [
+          "Layer 6 MVP does not run return, factor, cost, or liquidity calculations.",
+          "Validation result remains evidence packaging until layer-specific metrics are computed.",
+          "LLM interface hermes-agent reserved; no external assessment used."
+        ],
+        "method": "mvp_limitation_report",
+        "metrics": {
+          "llm_enabled": true,
+          "llm_provider": "hermes-agent"
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_4ee02299529b",
+        "window": "days"
+      }
+    ],
+    "review_questions": [
+      "Which validation result is most dependent on missing market data?",
+      "Which disconfirmation item should be tested with real metrics first?",
+      "Did any validation language drift toward proposal or execution?",
+      "Which hypothesis should be rejected before proposal to reduce bias?",
+      "Which not-testable result needs better data or a narrower hypothesis?"
+    ],
+    "universe": [
+      "AAPL",
+      "SPY",
+      "QQQ"
+    ],
+    "validation_snapshot_id": "vals_20260602T104722Z_5ded4ff1"
+  },
+  "stage_flow": {
+    "benchmark_context": "SPY/QQQ benchmark context checked",
+    "consumer_handoff": "proposal/human review only",
+    "disconfirmation": "hypothesis disconfirmation items mapped",
+    "event_reaction": "event-reaction input availability checked",
+    "jobs": "ValidationJob per HypothesisRecord",
+    "limitations": "known validation limitations recorded",
+    "mechanism": "mechanism and assumptions checked",
+    "quality": "no overclaim, no execution/proposal language, lineage gates",
+    "receipt": "ValidationReceipt",
+    "snapshot": "ValidationSnapshot",
+    "source_input": "ValidationSourceSpec + HypothesisSnapshot",
+    "source_validity": "source refs and upstream ids checked"
+  },
+  "status": "ok"
+}

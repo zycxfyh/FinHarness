@@ -1,0 +1,616 @@
+{
+  "created_at_utc": "2026-06-02T10:46:55.635198+00:00",
+  "kind": "validation_processing",
+  "receipt_id": "receipt_vals_20260602T104655Z_6d99fa0e",
+  "snapshot": {
+    "as_of_utc": "2026-06-02T10:46:55.635139+00:00",
+    "execution_allowed": false,
+    "input_hypothesis_snapshot_id": "hyps_20260602T104655Z_490576cf",
+    "job_count": 2,
+    "jobs": [
+      {
+        "created_at_utc": "2026-06-02T10:46:55.634471+00:00",
+        "disconfirmation_items": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "NVDA reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "planned_check_types": [
+          "event_follow_up",
+          "market_reaction",
+          "basket_comparison"
+        ],
+        "required_inputs": [
+          "IndicatorSnapshot",
+          "MarketDataSnapshot",
+          "MarketDataSnapshot:QQQ",
+          "MarketDataSnapshot:SPY",
+          "later_filings",
+          "transcripts_or_official_updates"
+        ],
+        "symbol": "NVDA",
+        "validation_job_id": "valjob_e85983173f68"
+      },
+      {
+        "created_at_utc": "2026-06-02T10:46:55.634484+00:00",
+        "disconfirmation_items": [
+          "The interpretation is mostly backward-looking or already disclosed.",
+          "NVDA reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "Human review finds the source facts too weak or too temporally mixed for validation."
+        ],
+        "hypothesis_id": "hyp_5426188adbbc",
+        "planned_check_types": [
+          "event_follow_up",
+          "market_reaction",
+          "basket_comparison"
+        ],
+        "required_inputs": [
+          "IndicatorSnapshot",
+          "MarketDataSnapshot",
+          "MarketDataSnapshot:QQQ",
+          "MarketDataSnapshot:SPY",
+          "later_filings",
+          "transcripts_or_official_updates"
+        ],
+        "symbol": "NVDA",
+        "validation_job_id": "valjob_c5c68dd1ac0c"
+      }
+    ],
+    "lineage": {
+      "computed_at_utc": "2026-06-02T10:46:55.635088+00:00",
+      "event_snapshot_id": "evs_20260602T104655Z_83a70bcf",
+      "hypothesis_ids": [
+        "hyp_4ce3fc1802cf",
+        "hyp_5426188adbbc"
+      ],
+      "indicator_snapshot_refs": [
+        "indicator-ref"
+      ],
+      "input_hypothesis_receipt_ref": "/tmp/tmpbxnpp4xy/hyp_receipts/receipt_hyps_20260602T104655Z_490576cf.json",
+      "input_hypothesis_snapshot_id": "hyps_20260602T104655Z_490576cf",
+      "interpretation_snapshot_id": "ints_20260602T104655Z_96e261e3",
+      "market_snapshot_refs": [
+        "market-ref"
+      ],
+      "method": "rule_guided_validation_mvp",
+      "model_provider": null,
+      "output_hash": "2b3d51f1614d8ef1a4a619d0192ade62d4e2ab168c93286591c3376200e96286",
+      "output_ref": "data/normalized/validations/vals_20260602T104655Z_6d99fa0e.json",
+      "prompt_template_version": "finharness.validation.template.v1",
+      "source": {
+        "config": {
+          "input_hypothesis_snapshot_id": "hyps_20260602T104655Z_490576cf",
+          "record_count": 2
+        },
+        "hermes_root": "/root/projects/hermes-agent",
+        "input_layer": "hypotheses",
+        "llm_enabled": false,
+        "llm_interface": null,
+        "llm_provider": null,
+        "method": "rule_guided_validation_mvp",
+        "provider": "FinHarness rule-guided validation",
+        "template_version": "finharness.validation.template.v1"
+      },
+      "transform_version": "finharness.validation.v1"
+    },
+    "payload_ref": "data/normalized/validations/vals_20260602T104655Z_6d99fa0e.json",
+    "proposal_handoff": [
+      "hyp_4ce3fc1802cf: validation evidence includes inconclusive, supported; human review required before proposal.",
+      "hyp_5426188adbbc: validation evidence includes inconclusive, supported; human review required before proposal."
+    ],
+    "quality": {
+      "at_least_one_disconfirmation_check": true,
+      "at_least_one_market_check": true,
+      "benchmark_context_present": true,
+      "blocked_language_hits": {},
+      "hypothesis_source_linked": true,
+      "job_count": 2,
+      "limitations_present": true,
+      "lineage_complete": true,
+      "missing_required_fields": {},
+      "no_proposal_or_execution_language": true,
+      "notes": [],
+      "ok": true,
+      "result_count": 18,
+      "result_not_overclaimed": true,
+      "source_validity_checked": true,
+      "validation_jobs_created": true
+    },
+    "receipt_ref": "data/receipts/validations/receipt_vals_20260602T104655Z_6d99fa0e.json",
+    "result_count": 18,
+    "results": [
+      {
+        "check_id": "valchk_7956bc340590",
+        "check_type": "source_validity",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:46:55.634492+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Source-link presence does not prove source content is economically material."
+        ],
+        "method": "source_ref_presence_check",
+        "metrics": {
+          "source_event_count": 1,
+          "source_interpretation_count": 1,
+          "source_ref_count": 3
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_63f98c027505",
+        "check_type": "mechanism",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634504+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Mechanism presence is a conceptual check, not empirical validation."
+        ],
+        "method": "mechanism_and_assumption_presence_check",
+        "metrics": {
+          "assumption_count": 3,
+          "mechanism_present": true
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_3128a2124278",
+        "check_type": "event_reaction",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634511+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "market-ref",
+          "indicator-ref"
+        ],
+        "limitations": [
+          "MVP records whether event-reaction inputs exist; it does not compute returns yet."
+        ],
+        "method": "event_reaction_input_availability_check",
+        "metrics": {
+          "expected_observation_count": 3,
+          "indicator_snapshot_ref_count": 1,
+          "market_snapshot_ref_count": 1
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_f9ace42b72c8",
+        "check_type": "benchmark_context",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:46:55.634518+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "market-ref",
+          "indicator-ref"
+        ],
+        "limitations": [
+          "Benchmark presence does not estimate beta, factor exposure, or abnormal return."
+        ],
+        "method": "benchmark_universe_context_check",
+        "metrics": {
+          "has_qqq_context": true,
+          "has_spy_context": true,
+          "universe": [
+            "NVDA",
+            "QQQ",
+            "SPY"
+          ]
+        },
+        "result": "supported",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_ed8cd7979653",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634524+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "The interpretation is mostly backward-looking or already disclosed.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_1f80633cb57c",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634529+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "NVDA reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_5a4ee9a0f12f",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634534+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_b2330bd022a2",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634540+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Human review finds the source facts too weak or too temporally mixed for validation.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_5bee2b66a14a",
+        "check_type": "limitations",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634547+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_4ce3fc1802cf",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000001:2026-05-30",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Layer 6 MVP does not run return, factor, cost, or liquidity calculations.",
+          "Validation result remains evidence packaging until layer-specific metrics are computed."
+        ],
+        "method": "mvp_limitation_report",
+        "metrics": {
+          "llm_enabled": false,
+          "llm_provider": "none"
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_e85983173f68",
+        "window": "days"
+      },
+      {
+        "check_id": "valchk_e1e8888334c1",
+        "check_type": "source_validity",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:46:55.634553+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Source-link presence does not prove source content is economically material."
+        ],
+        "method": "source_ref_presence_check",
+        "metrics": {
+          "source_event_count": 1,
+          "source_interpretation_count": 1,
+          "source_ref_count": 3
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_33e3a4c249fe",
+        "check_type": "mechanism",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634558+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Mechanism presence is a conceptual check, not empirical validation."
+        ],
+        "method": "mechanism_and_assumption_presence_check",
+        "metrics": {
+          "assumption_count": 3,
+          "mechanism_present": true
+        },
+        "result": "supported",
+        "supports_hypothesis": true,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_8c2d19e04cc2",
+        "check_type": "event_reaction",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634563+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "market-ref",
+          "indicator-ref"
+        ],
+        "limitations": [
+          "MVP records whether event-reaction inputs exist; it does not compute returns yet."
+        ],
+        "method": "event_reaction_input_availability_check",
+        "metrics": {
+          "expected_observation_count": 3,
+          "indicator_snapshot_ref_count": 1,
+          "market_snapshot_ref_count": 1
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_9fd22c567efa",
+        "check_type": "benchmark_context",
+        "confidence": "medium",
+        "created_at_utc": "2026-06-02T10:46:55.634569+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "market-ref",
+          "indicator-ref"
+        ],
+        "limitations": [
+          "Benchmark presence does not estimate beta, factor exposure, or abnormal return."
+        ],
+        "method": "benchmark_universe_context_check",
+        "metrics": {
+          "has_qqq_context": true,
+          "has_spy_context": true,
+          "universe": [
+            "NVDA",
+            "QQQ",
+            "SPY"
+          ]
+        },
+        "result": "supported",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_2d3e5221e53b",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634574+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "The interpretation is mostly backward-looking or already disclosed.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_857576a70f24",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634579+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "NVDA reaction fades while SPY, QQQ, or related baskets explain the move.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_a7f34c90dcad",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634584+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Later filings, transcripts, or official updates contradict the proposed mechanism.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_2ada77a705b5",
+        "check_type": "disconfirmation",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634589+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "MVP maps the disconfirmation item; later layers must test it with data."
+        ],
+        "method": "disconfirmation_item_mapping",
+        "metrics": {
+          "disconfirming_observation": "Human review finds the source facts too weak or too temporally mixed for validation.",
+          "mapped": true
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      },
+      {
+        "check_id": "valchk_76c670c05d54",
+        "check_type": "limitations",
+        "confidence": "low",
+        "created_at_utc": "2026-06-02T10:46:55.634595+00:00",
+        "disconfirms_hypothesis": false,
+        "hypothesis_id": "hyp_5426188adbbc",
+        "input_refs": [
+          "sec-edgar:NVDA:0000000000-26-000002:2026-05-20",
+          "/tmp/tmpbxnpp4xy/events_raw/evs_20260602T104655Z_83a70bcf-NVDA.json",
+          "/tmp/tmpbxnpp4xy/events_normalized/evs_20260602T104655Z_83a70bcf.json"
+        ],
+        "limitations": [
+          "Layer 6 MVP does not run return, factor, cost, or liquidity calculations.",
+          "Validation result remains evidence packaging until layer-specific metrics are computed."
+        ],
+        "method": "mvp_limitation_report",
+        "metrics": {
+          "llm_enabled": false,
+          "llm_provider": "none"
+        },
+        "result": "inconclusive",
+        "supports_hypothesis": false,
+        "validation_job_id": "valjob_c5c68dd1ac0c",
+        "window": "quarters"
+      }
+    ],
+    "review_questions": [
+      "Which validation result is most dependent on missing market data?",
+      "Which disconfirmation item should be tested with real metrics first?",
+      "Did any validation language drift toward proposal or execution?",
+      "Which hypothesis should be rejected before proposal to reduce bias?"
+    ],
+    "universe": [
+      "NVDA",
+      "SPY",
+      "QQQ"
+    ],
+    "validation_snapshot_id": "vals_20260602T104655Z_6d99fa0e"
+  },
+  "stage_flow": {
+    "benchmark_context": "SPY/QQQ benchmark context checked",
+    "consumer_handoff": "proposal/human review only",
+    "disconfirmation": "hypothesis disconfirmation items mapped",
+    "event_reaction": "event-reaction input availability checked",
+    "jobs": "ValidationJob per HypothesisRecord",
+    "limitations": "known validation limitations recorded",
+    "mechanism": "mechanism and assumptions checked",
+    "quality": "no overclaim, no execution/proposal language, lineage gates",
+    "receipt": "ValidationReceipt",
+    "snapshot": "ValidationSnapshot",
+    "source_input": "ValidationSourceSpec + HypothesisSnapshot",
+    "source_validity": "source refs and upstream ids checked"
+  },
+  "status": "ok"
+}
