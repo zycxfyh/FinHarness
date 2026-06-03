@@ -1,0 +1,13 @@
+{
+  "id": "reference.tool.vectorbt.v0",
+  "source_type": "open_source_tool",
+  "domain": "vectorized_research",
+  "status": "reference_only",
+  "applies_to_layers": ["L2", "L6"],
+  "what_to_learn": ["fast parameter sweeps", "vectorized indicators", "research result comparison"],
+  "do_not_claim": ["governance authority", "execution approval", "validated alpha"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Mature computation tool; FinHarness owns evidence lineage and risk language.",
+  "references": ["docs/notes/top-wheel-integration-plan.md"],
+  "no_execution_authority": true
+}

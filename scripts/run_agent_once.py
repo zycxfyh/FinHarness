@@ -17,7 +17,7 @@ async def main() -> None:
     result = await Runner.run(
         finance_research_agent,
         (
-            "Run the data entry workflow for SPY from 2025-01-01 to 2025-06-30, "
+            "Fetch historical risk metrics for SPY from 2025-01-01 to 2025-06-30, "
             "evaluate the latest risk note, and summarize the result. "
             "Mention the data source and whether it is TradingView data."
         ),
@@ -27,4 +27,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

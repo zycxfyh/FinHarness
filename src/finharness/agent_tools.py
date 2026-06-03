@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+from pathlib import Path
 
 from agents import Agent, function_tool
 
 from finharness.data_entry import fetch_openbb_quote, fetch_yfinance_history
-from finharness.finance_graph import run_finance_graph
 from finharness.metrics import summarize
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @function_tool
@@ -34,15 +38,34 @@ def get_historical_risk_metrics(symbol: str, start: str, end: str) -> dict[str, 
 
 
 @function_tool
-def run_finance_graph_workflow(symbol: str, start: str, end: str) -> dict[str, object]:
-    """Run the LangGraph finance workflow: data entry, Backtrader baseline, and risk eval."""
-    return run_finance_graph(symbol=symbol, start=start, end=end)
-
-
-@function_tool
 def evaluate_latest_risk_note() -> dict[str, object]:
     """Run promptfoo assertions against the latest generated risk note."""
-    return run_finance_graph()["eval"]
+    result = subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "promptfoo",
+            "eval",
+            "-c",
+            "evals/promptfoo/risk-note.yaml",
+            "--no-cache",
+        ],
+        cwd=ROOT,
+        env={
+            **dict(os.environ),
+            "PROMPTFOO_DISABLE_TELEMETRY": "1",
+            "PROMPTFOO_DISABLE_UPDATE": "1",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return {
+        "ok": result.returncode == 0,
+        "returncode": result.returncode,
+        "stdout_tail": result.stdout[-2000:],
+        "stderr_tail": result.stderr[-2000:],
+    }
 
 
 finance_research_agent = Agent(
@@ -56,7 +79,6 @@ finance_research_agent = Agent(
     tools=[
         get_quote_snapshot,
         get_historical_risk_metrics,
-        run_finance_graph_workflow,
         evaluate_latest_risk_note,
     ],
 )
@@ -66,7 +88,6 @@ def tool_names() -> list[str]:
     return [
         get_quote_snapshot.name,
         get_historical_risk_metrics.name,
-        run_finance_graph_workflow.name,
         evaluate_latest_risk_note.name,
     ]
 

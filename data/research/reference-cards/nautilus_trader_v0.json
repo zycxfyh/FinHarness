@@ -1,0 +1,13 @@
+{
+  "id": "reference.tool.nautilus_trader.v0",
+  "source_type": "open_source_tool",
+  "domain": "execution_engine_reference",
+  "status": "reference_only",
+  "applies_to_layers": ["L9", "L10"],
+  "what_to_learn": ["execution semantics", "fill model separation", "portfolio accounting boundaries"],
+  "do_not_claim": ["local homemade execution engine is sufficient", "live routing authority", "settlement proof"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Execution-engine reference; FinHarness MVP remains paper/fake-first.",
+  "references": ["CONTEXT.md"],
+  "no_execution_authority": true
+}

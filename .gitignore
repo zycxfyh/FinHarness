@@ -10,6 +10,14 @@ data/receipts/indicators/
 data/receipts/market-data/
 data/receipts/cognitive-graph/
 data/receipts/daily-evidence/
+data/receipts/executions/
+data/receipts/hardening/
+data/receipts/hypotheses/
+data/receipts/post-trade/
+data/receipts/proposals/
+data/receipts/risk-gates/
+data/receipts/validations/
+data/redteam/exports/
 data/*.csv
 data/*.parquet
 .env

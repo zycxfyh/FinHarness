@@ -1,0 +1,15 @@
+{
+  "id": "math.robustness.parameter_sensitivity.v0",
+  "domain": "robustness",
+  "status": "draft",
+  "used_by_layers": ["L6", "L8"],
+  "purpose": "Detect whether a research claim depends on a narrow fragile parameter choice.",
+  "assumptions": ["parameter ranges are declared before evaluation", "metrics are comparable across variants"],
+  "formula_or_definition": "Evaluate a predeclared parameter grid and compare metric stability, tail loss, and failure rates.",
+  "failure_modes": ["cherry_picked_parameter", "unstable_edge", "hidden_multiple_testing"],
+  "implementation_boundary": "FinHarness defines the declared grid and pass/fail language; libraries may run parameter sweeps.",
+  "allowed_libraries": ["vectorbt", "qlib", "pandas"],
+  "tests_required": ["declared_grid_present", "sensitivity_summary_present"],
+  "references": ["reference.tool.vectorbt.v0"],
+  "no_execution_authority": true
+}

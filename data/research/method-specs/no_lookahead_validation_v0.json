@@ -1,0 +1,15 @@
+{
+  "id": "math.validation.no_lookahead.v0",
+  "domain": "validation",
+  "status": "draft",
+  "used_by_layers": ["L6", "L8", "L10"],
+  "purpose": "Prevent future data from entering research, validation, proposal, risk, or review evidence.",
+  "assumptions": ["timestamps are comparable", "input snapshots preserve lineage"],
+  "formula_or_definition": "For every derived claim, max(input_timestamp) must be less than or equal to decision_timestamp.",
+  "failure_modes": ["lookahead_bias", "timestamp_mismatch", "implicit_future_window"],
+  "implementation_boundary": "FinHarness defines the invariant; mature libraries may compute derived features only after lineage checks.",
+  "allowed_libraries": ["pandas", "vectorbt"],
+  "tests_required": ["future_timestamp_rejected", "snapshot_lineage_present"],
+  "references": [],
+  "no_execution_authority": true
+}

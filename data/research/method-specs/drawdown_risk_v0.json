@@ -1,0 +1,15 @@
+{
+  "id": "math.risk.drawdown.v0",
+  "domain": "risk",
+  "status": "draft",
+  "used_by_layers": ["L6", "L8", "L10"],
+  "purpose": "Measure realized or simulated peak-to-trough loss and enforce risk review boundaries.",
+  "assumptions": ["equity curve or return series is available", "cash and exposure basis are disclosed"],
+  "formula_or_definition": "drawdown_t = equity_t / max(equity_0..equity_t) - 1; max_drawdown = min(drawdown_t).",
+  "failure_modes": ["missing_cash_basis", "survivorship_bias", "unreported_leverage"],
+  "implementation_boundary": "FinHarness defines required disclosure; libraries may compute drawdown series.",
+  "allowed_libraries": ["quantstats", "riskfolio-lib", "pandas"],
+  "tests_required": ["max_drawdown_reproducible", "risk_threshold_disclosed"],
+  "references": ["reference.tool.riskfolio_lib.v0"],
+  "no_execution_authority": true
+}

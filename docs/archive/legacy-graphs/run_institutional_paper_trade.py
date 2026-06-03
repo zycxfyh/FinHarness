@@ -1,4 +1,7 @@
-"""Run the LangGraph institutional paper trade workflow."""
+"""Archived runner for the legacy institutional paper trade workflow.
+
+Archived on 2026-06-03 with docs/archive/legacy-graphs/trade_graph.py.
+"""
 
 from __future__ import annotations
 

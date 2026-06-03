@@ -1,0 +1,13 @@
+{
+  "id": "reference.standard.gips_performance_presentation.v0",
+  "source_type": "institutional_standard",
+  "domain": "performance_presentation",
+  "status": "reference_only",
+  "applies_to_layers": ["L6", "L10"],
+  "what_to_learn": ["fair presentation", "full disclosure", "separate backtest paper and live claims"],
+  "do_not_claim": ["formal GIPS compliance", "audited track record", "future performance"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Disclosure reference only; no compliance representation.",
+  "references": [],
+  "no_execution_authority": true
+}

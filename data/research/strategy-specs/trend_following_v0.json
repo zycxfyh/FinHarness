@@ -1,0 +1,40 @@
+{
+  "id": "strategy.trend_following.v0",
+  "status": "draft",
+  "used_by_layers": ["L5", "L6", "L7", "L8", "L9", "L10"],
+  "universe": {
+    "asset_class": "equity_or_liquid_etf",
+    "symbols": ["SPY", "QQQ"],
+    "liquidity_requirement": "high"
+  },
+  "timeframe": "daily",
+  "thesis": {
+    "claim": "Persistent directional moves may continue after confirmed trend evidence.",
+    "assumptions": [
+      "trend persistence can exceed transaction costs",
+      "lookback windows are not selected from future outcomes"
+    ]
+  },
+  "data_requirements": ["OHLCV", "adjusted_close", "corporate_action_awareness"],
+  "indicators": ["moving_average", "volatility", "drawdown"],
+  "validation_protocol": {
+    "required_methods": ["math.validation.no_lookahead.v0", "math.validation.walk_forward.v0"],
+    "out_of_sample_required": true,
+    "transaction_cost_required": true
+  },
+  "risk_contract": {
+    "max_position_pct": 0.1,
+    "must_rerun_risk_gate_on": ["limit_change", "liquidity_change", "drawdown_breach"]
+  },
+  "execution_constraints": {
+    "mode": "paper_or_fake_only",
+    "order_creation_authority": false,
+    "human_review_required": true
+  },
+  "post_trade_review": {
+    "required_metrics": ["slippage", "realized_pnl", "rule_adherence", "attribution"]
+  },
+  "references": ["reference.tool.vectorbt.v0", "reference.tool.nautilus_trader.v0"],
+  "receipt_refs": [],
+  "no_execution_authority": true
+}

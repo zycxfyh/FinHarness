@@ -1,0 +1,93 @@
+name: security
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  local-checks:
+    name: Local verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: arduino/setup-task@v2
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run standard project checks
+        run: task check
+
+      - name: Run adversarial boundary checks
+        run: task hardening:redteam
+
+      - name: Record red-team tool readiness
+        run: task redteam:tools-check
+
+      - name: Validate promptfoo redteam dry-run contract
+        run: task redteam:dryrun-config-check
+
+      - name: Run promptfoo red-team boundary corpus smoke eval
+        run: task eval:redteam-boundary
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - uses: github/codeql-action/analyze@v3
+
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  trivy:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aquasecurity/trivy-action@0.32.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          skip-dirs: .venv,vendor
+          severity: HIGH,CRITICAL
+          exit-code: "1"

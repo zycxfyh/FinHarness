@@ -1,0 +1,128 @@
+{
+  "receipt_id": "engineering_delivery_20260602T171609Z_research-asset-id-handoff-mvp",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-02T17:16:09.164196+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260602T171609Z_research-asset-id-handoff-mvp",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-02T17:16:09.164196+00:00",
+    "goal": "Research Asset ID Handoff MVP",
+    "source_ref": "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+    "proposal_ref": "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+    "module_refs": [
+      "src/finharness/ten_layer_graph.py",
+      "src/finharness/research_assets.py",
+      "docs/research/README.md"
+    ],
+    "change_type": "architecture",
+    "scope": "Implement cite-only research asset id handoff from ten_layer_graph into L5-L10 SourceSpec.config and final output, with CLI support, tests, docs, and receipts.",
+    "non_goals": [
+      "turn StrategySpec into trading signals",
+      "run MathMethodSpec calculations",
+      "claim compliance from ReferenceCard",
+      "bypass Risk Gate",
+      "authorize paper or live orders from asset ids"
+    ],
+    "success_criteria": [
+      "asset ids resolve by type and report missing ids",
+      "ten_layer_graph final reports research_asset_refs",
+      "L5-L10 SourceSpec.config records layer-filtered research_asset_context",
+      "asset context execution_allowed remains false",
+      "focused tests pass",
+      "task test and task check pass"
+    ],
+    "planned_files": [
+      "src/finharness/research_assets.py",
+      "src/finharness/ten_layer_graph.py",
+      "src/finharness/*_graph.py",
+      "scripts/run_ten_layer_graph.py",
+      "tests/test_research_assets.py",
+      "tests/test_ten_layer_graph.py",
+      "tests/test_research_asset_handoff.py",
+      "docs/research/README.md",
+      "docs/architecture/ten-layer-langgraph-map.md"
+    ],
+    "changed_files": [
+      "src/finharness/research_assets.py",
+      "src/finharness/ten_layer_graph.py",
+      "src/finharness/hypotheses_graph.py",
+      "src/finharness/validation_graph.py",
+      "src/finharness/proposal_graph.py",
+      "src/finharness/risk_gate_graph.py",
+      "src/finharness/execution_graph.py",
+      "src/finharness/post_trade_graph.py",
+      "scripts/run_ten_layer_graph.py",
+      "tests/test_research_assets.py",
+      "tests/test_ten_layer_graph.py",
+      "tests/test_research_asset_handoff.py",
+      "docs/research/README.md",
+      "docs/architecture/ten-layer-langgraph-map.md",
+      "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+      "docs/reviews/2026-06-02-research-asset-id-handoff.md",
+      "docs/lessons/2026-06-02-research-asset-id-handoff.md"
+    ],
+    "docs_updated": [
+      "docs/research/README.md",
+      "docs/architecture/ten-layer-langgraph-map.md",
+      "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+      "docs/reviews/2026-06-02-research-asset-id-handoff.md",
+      "docs/lessons/2026-06-02-research-asset-id-handoff.md"
+    ],
+    "checks": [
+      {
+        "name": "focused ruff",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "focused unittest",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "CLI asset-id smoke",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "receipt rg source-config evidence",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task test",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": true
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "263c8cc1dad32facf1f099262255c11c3d4f3f5e54a548bdf9fbde8e5af64b00"
+  },
+  "lineage": {
+    "source_ref": "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+    "proposal_ref": "docs/proposals/2026-06-02-research-asset-id-handoff.md",
+    "module_refs": [
+      "src/finharness/ten_layer_graph.py",
+      "src/finharness/research_assets.py",
+      "docs/research/README.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

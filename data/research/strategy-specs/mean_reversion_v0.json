@@ -1,0 +1,43 @@
+{
+  "id": "strategy.mean_reversion.v0",
+  "status": "draft",
+  "used_by_layers": ["L5", "L6", "L7", "L8", "L10"],
+  "universe": {
+    "asset_class": "liquid_equity_or_etf",
+    "symbols": ["SPY", "QQQ"],
+    "liquidity_requirement": "high"
+  },
+  "timeframe": "daily_or_intraday_research_only",
+  "thesis": {
+    "claim": "Short-term dislocations may revert when the move is not supported by source evidence.",
+    "assumptions": [
+      "spread and fees do not overwhelm expected reversion",
+      "the apparent dislocation is not a regime change"
+    ]
+  },
+  "data_requirements": ["OHLCV", "spread_proxy", "volatility", "event_context"],
+  "indicators": ["z_score", "volatility", "relative_strength"],
+  "validation_protocol": {
+    "required_methods": [
+      "math.validation.no_lookahead.v0",
+      "math.cost.transaction_cost_analysis.v0",
+      "math.robustness.parameter_sensitivity.v0"
+    ],
+    "regime_filter_required": true
+  },
+  "risk_contract": {
+    "max_position_pct": 0.05,
+    "stop_condition": "failed_reversion_or_regime_shift"
+  },
+  "execution_constraints": {
+    "mode": "paper_or_fake_only",
+    "order_creation_authority": false,
+    "human_review_required": true
+  },
+  "post_trade_review": {
+    "required_metrics": ["slippage", "holding_period", "rule_adherence", "loss_tail"]
+  },
+  "references": ["reference.tool.vectorbt.v0", "reference.standard.finra_best_execution.v0"],
+  "receipt_refs": [],
+  "no_execution_authority": true
+}

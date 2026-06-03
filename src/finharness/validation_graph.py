@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from finharness.hypotheses import HypothesisSnapshot
 from finharness.hypotheses_graph import run_hypotheses_graph
+from finharness.research_assets import compact_research_asset_context
 from finharness.validation import (
     HermesValidationDraftProvider,
     ValidationCheckResult,
@@ -28,6 +29,7 @@ class ValidationGraphState(TypedDict, total=False):
     symbols: list[str]
     llm_enabled: bool
     hermes_root: str
+    research_asset_context: dict[str, Any]
     hypothesis_snapshot: dict[str, Any]
     source: dict[str, Any]
     validation_jobs: list[dict[str, Any]]
@@ -60,6 +62,9 @@ def source_config_node(state: ValidationGraphState) -> ValidationGraphState:
             "max_records": state.get("max_records", 30),
             "max_hypotheses": state.get("max_hypotheses", 10),
             "symbols": state.get("symbols", []),
+            "research_asset_context": compact_research_asset_context(
+                state.get("research_asset_context"), "L6"
+            ),
         },
     )
     return {"source": source.model_dump(mode="json")}
@@ -76,6 +81,7 @@ def load_hypothesis_snapshot_node(state: ValidationGraphState) -> ValidationGrap
         symbols=state.get("symbols") or None,
         llm_enabled=state.get("llm_enabled", False),
         hermes_root=state.get("hermes_root", "/root/projects/hermes-agent"),
+        research_asset_context=state.get("research_asset_context"),
     )
     return {"hypothesis_snapshot": result["snapshot"]}
 
@@ -322,6 +328,7 @@ def run_validation_graph(
     hypothesis_snapshot: dict[str, Any] | None = None,
     llm_enabled: bool = False,
     hermes_root: str = "/root/projects/hermes-agent",
+    research_asset_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "universe": universe,
@@ -331,6 +338,7 @@ def run_validation_graph(
         "symbols": symbols or [],
         "llm_enabled": llm_enabled,
         "hermes_root": hermes_root,
+        "research_asset_context": research_asset_context or {},
     }
     if hypothesis_snapshot is not None:
         payload["hypothesis_snapshot"] = hypothesis_snapshot

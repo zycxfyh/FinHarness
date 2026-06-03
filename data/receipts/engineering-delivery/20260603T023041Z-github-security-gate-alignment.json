@@ -1,0 +1,101 @@
+{
+  "receipt_id": "engineering_delivery_20260603T023041Z_github-security-gate-alignment",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-03T02:30:41.687862+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260603T023041Z_github-security-gate-alignment",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-03T02:30:41.687862+00:00",
+    "goal": "GitHub Security Gate Alignment",
+    "source_ref": "mvp-hardening-gate-follow-up",
+    "proposal_ref": "docs/security/mvp-hardening-gate.md",
+    "module_refs": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "change_type": "security_ci_alignment",
+    "scope": "Align GitHub gitleaks workflow with local hardening gate, add gitleaks config, and test CI security entrypoints.",
+    "non_goals": [
+      "Do not push to GitHub or claim remote CI has passed.",
+      "Do not add new production dependencies."
+    ],
+    "success_criteria": [
+      "configured gitleaks scan finds no leaks",
+      "hardening tests cover CI security entrypoints",
+      "hardening gate and standard project check pass"
+    ],
+    "planned_files": [
+      ".gitleaks.toml",
+      ".github/workflows/security.yml",
+      "tests/test_hardening_gate.py",
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "changed_files": [
+      ".gitleaks.toml",
+      ".github/workflows/security.yml",
+      "tests/test_hardening_gate.py",
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "docs_updated": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "checks": [
+      {
+        "name": "gitleaks configured scan",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "test_hardening_gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "ruff-focused",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task hardening:redteam",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task security:scan",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task hardening:gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "cf59d86b77d6ebb55d2e0abb14672db42fcf1b5a2b2c868c642eb56f17eefdfc"
+  },
+  "lineage": {
+    "source_ref": "mvp-hardening-gate-follow-up",
+    "proposal_ref": "docs/security/mvp-hardening-gate.md",
+    "module_refs": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

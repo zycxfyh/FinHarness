@@ -1,0 +1,13 @@
+{
+  "id": "reference.provider.openbb.v0",
+  "source_type": "provider",
+  "domain": "financial_data_access",
+  "status": "reference_only",
+  "applies_to_layers": ["L1", "L3"],
+  "what_to_learn": ["provider abstraction", "broad data access", "research data ergonomics"],
+  "do_not_claim": ["single source of market truth", "data completeness", "execution authority"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Data provider interface; snapshots must record provider and quality evidence.",
+  "references": ["docs/notes/data-entry-layer.md"],
+  "no_execution_authority": true
+}

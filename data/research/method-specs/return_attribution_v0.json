@@ -1,0 +1,15 @@
+{
+  "id": "math.attribution.return_attribution.v0",
+  "domain": "attribution",
+  "status": "draft",
+  "used_by_layers": ["L6", "L10"],
+  "purpose": "Separate return claims by signal, market beta, timing, cost, leverage, and residual effects.",
+  "assumptions": ["benchmark context is declared", "positions or exposure proxy is available"],
+  "formula_or_definition": "realized_return = benchmark_component + signal_component + cost_component + residual_component.",
+  "failure_modes": ["benchmark_omitted", "costs_folded_into_alpha", "leverage_not_disclosed"],
+  "implementation_boundary": "FinHarness governs attribution categories and disclosure; libraries may compute components.",
+  "allowed_libraries": ["quantstats", "riskfolio-lib", "pandas"],
+  "tests_required": ["benchmark_present", "cost_component_present", "residual_disclosed"],
+  "references": ["reference.standard.gips_performance_presentation.v0"],
+  "no_execution_authority": true
+}

@@ -1,0 +1,13 @@
+{
+  "id": "reference.provider.okx_read_write_gate.v0",
+  "source_type": "broker_or_exchange",
+  "domain": "exchange_cli_gate",
+  "status": "reference_only",
+  "applies_to_layers": ["L1", "L8", "L9", "L10"],
+  "what_to_learn": ["read/write separation", "explicit live mutation gate", "venue receipt boundary"],
+  "do_not_claim": ["autonomous live trading", "exchange accounting replacement", "risk gate bypass"],
+  "integration_status": "live_read",
+  "trust_boundary": "Official CLI and explicit environment gates supply venue facts; FinHarness must not blur read and write authority.",
+  "references": ["README.md", "docs/notes/okx-official-integration.md"],
+  "no_execution_authority": true
+}

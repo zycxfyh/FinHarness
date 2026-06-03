@@ -1,0 +1,117 @@
+{
+  "receipt_id": "engineering_delivery_20260602T130137Z_risk-gate-layer-mvp",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-02T13:01:37.368663+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260602T130137Z_risk-gate-layer-mvp",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-02T13:01:37.368663+00:00",
+    "goal": "Risk Gate Layer MVP",
+    "source_ref": "user request: implement layer 8 through LangGraph execution shape",
+    "proposal_ref": "docs/proposals/2026-06-02-risk-gate-layer-institutional-practices.md",
+    "module_refs": [
+      "docs/modules/08-risk-gate.md"
+    ],
+    "change_type": "new_layer",
+    "scope": "Implement Layer 8 Risk Gate as independent pre-execution control decisions over ProposalSnapshot evidence",
+    "non_goals": [
+      "authorize live financial execution",
+      "produce broker orders or final sizing",
+      "call Hermes subprocess/API in MVP"
+    ],
+    "success_criteria": [
+      "RiskGateSnapshot and RiskGateReceipt are produced",
+      "execution_allowed remains false",
+      "default paper-review path can produce approved_for_paper_review",
+      "live-requested path is hard blocked",
+      "missing human review produces needs_human_review",
+      "notional cap breach produces blocked"
+    ],
+    "planned_files": [
+      "src/finharness/risk_gate.py",
+      "src/finharness/risk_gate_graph.py",
+      "scripts/run_risk_gate_graph.py",
+      "tests/test_risk_gate.py",
+      "docs/modules/08-risk-gate.md",
+      "docs/proposals/2026-06-02-risk-gate-layer-institutional-practices.md",
+      "Taskfile.yml"
+    ],
+    "changed_files": [
+      "src/finharness/risk_gate.py",
+      "src/finharness/risk_gate_graph.py",
+      "scripts/run_risk_gate_graph.py",
+      "tests/test_risk_gate.py",
+      "docs/modules/08-risk-gate.md",
+      "docs/proposals/2026-06-02-risk-gate-layer-institutional-practices.md",
+      "Taskfile.yml"
+    ],
+    "docs_updated": [
+      "docs/modules/08-risk-gate.md",
+      "docs/proposals/2026-06-02-risk-gate-layer-institutional-practices.md"
+    ],
+    "checks": [
+      {
+        "name": "ruff risk gate files",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "python unittest tests.test_risk_gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "python unittest tests.test_risk_gate tests.test_proposal tests.test_validation",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task risk-gate:graph default",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task risk-gate:graph live-requested",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task risk-gate:graph human-review-missing",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task risk-gate:graph notional breach",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": true
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "435d0ae1ca0016667452c076caa392a287003489419568c32dbe647670daa6e6"
+  },
+  "lineage": {
+    "source_ref": "user request: implement layer 8 through LangGraph execution shape",
+    "proposal_ref": "docs/proposals/2026-06-02-risk-gate-layer-institutional-practices.md",
+    "module_refs": [
+      "docs/modules/08-risk-gate.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

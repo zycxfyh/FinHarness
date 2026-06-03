@@ -1,0 +1,13 @@
+{
+  "id": "reference.standard.finra_best_execution.v0",
+  "source_type": "institutional_standard",
+  "domain": "best_execution_boundary",
+  "status": "reference_only",
+  "applies_to_layers": ["L8", "L9", "L10"],
+  "what_to_learn": ["execution-quality vocabulary", "broker responsibility framing", "TCA disclosure pressure"],
+  "do_not_claim": ["best execution compliance", "broker duty transfer", "live routing adequacy"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Regulatory-context reference; FinHarness MVP does not claim best execution.",
+  "references": [],
+  "no_execution_authority": true
+}

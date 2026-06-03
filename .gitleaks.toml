@@ -1,0 +1,11 @@
+title = "FinHarness gitleaks config"
+
+[[allowlists]]
+description = "Vendored upstream fixtures and generated evidence are reviewed by the local hardening gate."
+paths = [
+  '''^vendor/''',
+  '''^node_modules/''',
+  '''^\.venv/''',
+  '''^data/normalized/''',
+  '''^data/receipts/''',
+]

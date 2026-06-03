@@ -123,7 +123,6 @@ Tasks:
 ```text
 task data:entry
 task market-data:graph
-task workflow:data-entry
 task test
 task check
 ```

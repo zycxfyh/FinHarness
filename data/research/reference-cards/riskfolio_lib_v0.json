@@ -1,0 +1,13 @@
+{
+  "id": "reference.tool.riskfolio_lib.v0",
+  "source_type": "open_source_tool",
+  "domain": "portfolio_risk_optimization",
+  "status": "reference_only",
+  "applies_to_layers": ["L6", "L8", "L10"],
+  "what_to_learn": ["risk measures", "portfolio construction experiments", "optimization vocabulary"],
+  "do_not_claim": ["approved sizing", "portfolio accounting truth", "live allocation authority"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Optimization reference; Risk Gate still owns permission boundary.",
+  "references": ["docs/notes/adopt-not-invent-trading-stack.md"],
+  "no_execution_authority": true
+}

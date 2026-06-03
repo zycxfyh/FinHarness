@@ -1,8 +1,34 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 
-from finharness.finance_graph import run_finance_graph
+from finharness.workflow import ROOT, run_data_entry_workflow
+
+
+def run_risk_eval() -> dict[str, object]:
+    result = subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "promptfoo",
+            "eval",
+            "-c",
+            "evals/promptfoo/risk-note.yaml",
+            "--no-cache",
+        ],
+        cwd=ROOT,
+        env={
+            **dict(os.environ),
+            "PROMPTFOO_DISABLE_TELEMETRY": "1",
+            "PROMPTFOO_DISABLE_UPDATE": "1",
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return {"ok": result.returncode == 0}
 
 
 def main() -> None:
@@ -14,21 +40,21 @@ def main() -> None:
     parser.add_argument("--slow", type=int, default=50)
     args = parser.parse_args()
 
-    result = run_finance_graph(
+    summary = run_data_entry_workflow(
         symbol=args.symbol,
         start=args.start,
         end=args.end,
         fast=args.fast,
         slow=args.slow,
     )
-    summary = result["workflow"]
+    risk_eval = run_risk_eval()
 
     print(f"symbol={args.symbol}")
     print(f"history_rows={summary['history_rows']}")
     print(f"history_path={summary['history_path']}")
     print(f"risk_note_path={summary['risk_note_path']}")
     print(f"backtest_return={summary['backtest']['total_return']:.2%}")
-    print(f"risk_eval_ok={result['eval']['ok']}")
+    print(f"risk_eval_ok={risk_eval['ok']}")
     print("data_source=OpenBB:yfinance quote + yfinance/Yahoo Finance history; not TradingView/TV")
 
 

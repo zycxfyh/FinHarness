@@ -1,0 +1,108 @@
+{
+  "receipt_id": "engineering_delivery_20260603T024920Z_red-team-tool-readiness-gate",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-03T02:49:20.582950+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260603T024920Z_red-team-tool-readiness-gate",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-03T02:49:20.582950+00:00",
+    "goal": "Red-Team Tool Readiness Gate",
+    "source_ref": "tool-neutral-red-team-artifact-export-follow-up",
+    "proposal_ref": "docs/security/mvp-hardening-gate.md",
+    "module_refs": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "change_type": "security_redteam_readiness",
+    "scope": "Add local red-team tool readiness report and include it in hardening gate, CI local-checks, and corpus manifest.",
+    "non_goals": [
+      "Do not install PyRIT or garak.",
+      "Do not claim promptfoo redteam attacks have been executed."
+    ],
+    "success_criteria": [
+      "readiness report records promptfoo and promptfoo redteam CLI availability",
+      "PyRIT and garak missing status is recorded without blocking current smoke gate",
+      "hardening gate and standard checks pass"
+    ],
+    "planned_files": [
+      "src/finharness/hardening.py",
+      "scripts/check_redteam_tool_readiness.py",
+      "scripts/export_redteam_artifacts.py",
+      "scripts/run_hardening_gate.py",
+      "Taskfile.yml",
+      ".github/workflows/security.yml",
+      "tests/test_hardening_gate.py",
+      "docs/security/mvp-hardening-gate.md",
+      "data/redteam/exports/tool-readiness.json",
+      "data/redteam/exports/manifest.json"
+    ],
+    "changed_files": [
+      "src/finharness/hardening.py",
+      "scripts/check_redteam_tool_readiness.py",
+      "scripts/export_redteam_artifacts.py",
+      "scripts/run_hardening_gate.py",
+      "Taskfile.yml",
+      ".github/workflows/security.yml",
+      "tests/test_hardening_gate.py",
+      "docs/security/mvp-hardening-gate.md",
+      "data/redteam/exports/tool-readiness.json",
+      "data/redteam/exports/manifest.json"
+    ],
+    "docs_updated": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "checks": [
+      {
+        "name": "task redteam:tools-check",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "test_hardening_gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "ruff-focused",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task hardening:gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task eval:redteam-boundary",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "1d4dfe601bc05f3610be3cc83848da10988c1763a5c37eebf45f8214856955d1"
+  },
+  "lineage": {
+    "source_ref": "tool-neutral-red-team-artifact-export-follow-up",
+    "proposal_ref": "docs/security/mvp-hardening-gate.md",
+    "module_refs": [
+      "docs/security/mvp-hardening-gate.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

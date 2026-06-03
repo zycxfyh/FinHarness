@@ -1,4 +1,9 @@
-"""LangGraph workflow for finance data entry and risk evaluation."""
+"""Archived LangGraph workflow for finance data entry and risk evaluation.
+
+Archived on 2026-06-03 after the ten-layer chain became the authoritative
+project workflow. Kept as historical reference only; do not import from active
+source paths.
+"""
 
 from __future__ import annotations
 
@@ -112,4 +117,3 @@ def run_finance_graph(
         }
     )
     return dict(result)
-

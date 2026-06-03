@@ -1,0 +1,15 @@
+{
+  "id": "math.cost.transaction_cost_analysis.v0",
+  "domain": "transaction_cost",
+  "status": "draft",
+  "used_by_layers": ["L6", "L7", "L8", "L10"],
+  "purpose": "Make fees, spread, slippage, and market-impact assumptions explicit before proposal or review.",
+  "assumptions": ["fee schedule or proxy is disclosed", "spread or slippage proxy is disclosed"],
+  "formula_or_definition": "net_edge = gross_edge - fees - spread_cost - slippage - estimated_impact.",
+  "failure_modes": ["undisclosed_fee", "optimistic_slippage", "size_impact_ignored"],
+  "implementation_boundary": "FinHarness records assumptions and receipt refs; provider fills remain external facts.",
+  "allowed_libraries": ["pandas", "nautilus-trader"],
+  "tests_required": ["cost_inputs_disclosed", "net_edge_not_overclaimed"],
+  "references": ["reference.standard.finra_best_execution.v0", "reference.tool.nautilus_trader.v0"],
+  "no_execution_authority": true
+}

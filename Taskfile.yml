@@ -39,6 +39,31 @@ tasks:
       - task: experiments
       - task: eval:smoke
 
+  hardening:gate:
+    desc: Run local MVP hardening checks without printing secret material
+    cmds:
+      - uv run python scripts/run_hardening_gate.py
+
+  hardening:redteam:
+    desc: Run local adversarial boundary checks
+    cmds:
+      - uv run python scripts/run_hardening_gate.py --checks redteam
+
+  redteam:tools-check:
+    desc: Record local red-team tool readiness
+    cmds:
+      - uv run python scripts/check_redteam_tool_readiness.py
+
+  redteam:dryrun-config-check:
+    desc: Validate promptfoo redteam dry-run contract
+    cmds:
+      - uv run python scripts/validate_promptfoo_redteam_dryrun.py
+
+  security:scan:
+    desc: Run local dependency, gitleaks, and Trivy security scans
+    cmds:
+      - uv run python scripts/run_hardening_gate.py --checks dependency gitleaks trivy
+
   rust:check:
     desc: Run Rust format and tests
     cmds:
@@ -109,6 +134,12 @@ tasks:
     cmds:
       - pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache
 
+  eval:redteam-boundary:
+    desc: Export and run local promptfoo red-team boundary corpus smoke eval
+    cmds:
+      - uv run python scripts/export_redteam_artifacts.py
+      - pnpm exec promptfoo eval -c evals/promptfoo/redteam-boundary.yaml --no-cache
+
   data:entry:
     desc: Run OpenBB quote + yfinance history + Backtrader workflow
     cmds:
@@ -164,6 +195,31 @@ tasks:
     cmds:
       - uv run python scripts/run_validation_graph.py {{.CLI_ARGS}}
 
+  proposal:graph:
+    desc: Run seventh-layer structured proposal LangGraph workflow
+    cmds:
+      - uv run python scripts/run_proposal_graph.py {{.CLI_ARGS}}
+
+  risk-gate:graph:
+    desc: Run eighth-layer independent risk gate LangGraph workflow
+    cmds:
+      - uv run python scripts/run_risk_gate_graph.py {{.CLI_ARGS}}
+
+  execution:graph:
+    desc: Run ninth-layer paper execution LangGraph workflow
+    cmds:
+      - uv run python scripts/run_execution_graph.py {{.CLI_ARGS}}
+
+  post-trade:graph:
+    desc: Run tenth-layer post-trade reconciliation LangGraph workflow
+    cmds:
+      - uv run python scripts/run_post_trade_graph.py {{.CLI_ARGS}}
+
+  ten-layer:graph:
+    desc: Run top-level ten-layer FinHarness LangGraph orchestrator
+    cmds:
+      - uv run python scripts/run_ten_layer_graph.py {{.CLI_ARGS}}
+
   workflow:daily-evidence:
     desc: Run first-four-layer daily evidence LangGraph workflow
     cmds:
@@ -213,17 +269,6 @@ tasks:
     desc: Write a minimal Rust receipt
     cmds:
       - cargo run -q -p finharness-cli -- receipt --kind manual --symbol NA --status ok
-
-  workflow:data-entry:
-    desc: Run data entry workflow and risk eval
-    cmds:
-      - task: data:entry
-      - task: eval:risk
-
-  workflow:paper-trade:
-    desc: Run LangGraph institutional Alpaca paper trade workflow
-    cmds:
-      - uv run python scripts/run_institutional_paper_trade.py --execute
 
   workflow:cognitive:
     desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."

@@ -1,0 +1,13 @@
+{
+  "id": "reference.tool.quantconnect_lean.v0",
+  "source_type": "open_source_tool",
+  "domain": "algorithmic_trading_engine_architecture",
+  "status": "reference_only",
+  "applies_to_layers": ["L6", "L9", "L10"],
+  "what_to_learn": ["engine architecture", "research-to-execution separation", "multi-asset workflow shape"],
+  "do_not_claim": ["FinHarness implements LEAN", "broker compatibility", "production trading readiness"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Architecture reference only; no active dependency or execution path.",
+  "references": ["docs/notes/top-institutional-trading-flow.md"],
+  "no_execution_authority": true
+}

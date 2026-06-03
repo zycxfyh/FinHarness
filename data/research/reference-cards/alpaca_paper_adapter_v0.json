@@ -1,0 +1,13 @@
+{
+  "id": "reference.provider.alpaca_paper_adapter.v0",
+  "source_type": "broker_or_exchange",
+  "domain": "paper_broker_adapter",
+  "status": "reference_only",
+  "applies_to_layers": ["L1", "L9", "L10"],
+  "what_to_learn": ["paper account facts", "order ack and cancel evidence", "activity receipts"],
+  "do_not_claim": ["live broker integration", "settlement truth", "autonomous order authority"],
+  "integration_status": "paper_adapter",
+  "trust_boundary": "Paper broker facts only; live Alpaca endpoint remains intentionally unwired.",
+  "references": ["README.md"],
+  "no_execution_authority": true
+}

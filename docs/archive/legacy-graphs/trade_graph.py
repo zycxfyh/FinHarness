@@ -1,4 +1,9 @@
-"""LangGraph trade workflow using mature wheels and paper execution adapters."""
+"""Archived LangGraph trade workflow using paper execution adapters.
+
+Archived on 2026-06-03 after Layers 7-10 split proposal, risk, execution, and
+post-trade responsibilities into the authoritative ten-layer chain. Kept as
+historical reference only; do not import from active source paths.
+"""
 
 from __future__ import annotations
 

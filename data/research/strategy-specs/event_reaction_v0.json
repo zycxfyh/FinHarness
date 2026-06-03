@@ -1,0 +1,43 @@
+{
+  "id": "strategy.event_reaction.v0",
+  "status": "draft",
+  "used_by_layers": ["L3", "L4", "L5", "L6", "L7", "L8", "L10"],
+  "universe": {
+    "asset_class": "equity_or_etf",
+    "symbols": ["NVDA", "AAPL", "MSFT", "SPY"],
+    "source_requirement": "source_backed_event"
+  },
+  "timeframe": "event_window",
+  "thesis": {
+    "claim": "Source-backed events may create interpretable market reactions that can be hypothesized and tested.",
+    "assumptions": [
+      "event timing is captured before interpretation",
+      "interpretation distinguishes evidence from market narrative"
+    ]
+  },
+  "data_requirements": ["SEC_EDGAR_event", "market_snapshot_refs", "indicator_snapshot_refs"],
+  "indicators": ["event_window_return", "abnormal_move_proxy", "volatility"],
+  "validation_protocol": {
+    "required_methods": [
+      "math.validation.no_lookahead.v0",
+      "math.validation.walk_forward.v0",
+      "math.attribution.return_attribution.v0"
+    ],
+    "source_lineage_required": true
+  },
+  "risk_contract": {
+    "max_position_pct": 0.05,
+    "must_rerun_risk_gate_on": ["new_filing", "interpretation_change", "volatility_spike"]
+  },
+  "execution_constraints": {
+    "mode": "paper_or_fake_only",
+    "order_creation_authority": false,
+    "human_review_required": true
+  },
+  "post_trade_review": {
+    "required_metrics": ["event_timing", "reaction_window", "attribution", "source_adherence"]
+  },
+  "references": ["reference.provider.openbb.v0", "reference.tool.qlib.v0"],
+  "receipt_refs": [],
+  "no_execution_authority": true
+}

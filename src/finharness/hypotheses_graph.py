@@ -17,6 +17,7 @@ from finharness.hypotheses import (
 )
 from finharness.interpretation import InterpretationRecord, InterpretationSnapshot
 from finharness.interpretation_graph import run_interpretation_graph
+from finharness.research_assets import compact_research_asset_context
 
 
 class HypothesesGraphState(TypedDict, total=False):
@@ -27,6 +28,7 @@ class HypothesesGraphState(TypedDict, total=False):
     symbols: list[str]
     llm_enabled: bool
     hermes_root: str
+    research_asset_context: dict[str, Any]
     interpretation_snapshot: dict[str, Any]
     source: dict[str, Any]
     candidate_interpretations: list[dict[str, Any]]
@@ -55,6 +57,9 @@ def source_config_node(state: HypothesesGraphState) -> HypothesesGraphState:
             "max_records": state.get("max_records", 30),
             "max_hypotheses": state.get("max_hypotheses", 10),
             "symbols": state.get("symbols", []),
+            "research_asset_context": compact_research_asset_context(
+                state.get("research_asset_context"), "L5"
+            ),
         },
     )
     return {"source": source.model_dump(mode="json")}
@@ -279,6 +284,7 @@ def run_hypotheses_graph(
     interpretation_snapshot: dict[str, Any] | None = None,
     llm_enabled: bool = False,
     hermes_root: str = "/root/projects/hermes-agent",
+    research_asset_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "universe": universe,
@@ -288,6 +294,7 @@ def run_hypotheses_graph(
         "symbols": symbols or [],
         "llm_enabled": llm_enabled,
         "hermes_root": hermes_root,
+        "research_asset_context": research_asset_context or {},
     }
     if interpretation_snapshot is not None:
         payload["interpretation_snapshot"] = interpretation_snapshot

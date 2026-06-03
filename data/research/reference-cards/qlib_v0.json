@@ -1,0 +1,13 @@
+{
+  "id": "reference.tool.qlib.v0",
+  "source_type": "open_source_tool",
+  "domain": "ai_quant_research_workflow",
+  "status": "reference_only",
+  "applies_to_layers": ["L5", "L6"],
+  "what_to_learn": ["AI quant workflow", "dataset discipline", "model evaluation framing"],
+  "do_not_claim": ["model alpha", "automated trading permission", "research result validity without local evidence"],
+  "integration_status": "reference_only",
+  "trust_boundary": "Workflow reference; local evidence and tests decide FinHarness claims.",
+  "references": [],
+  "no_execution_authority": true
+}

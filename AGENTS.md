@@ -249,17 +249,30 @@ Use the agent loop for local reasoning inside a node. Use the workflow graph for
 sequence, gates, and state. Use the goal object for persistence, exit criteria,
 and completion evidence.
 
-Initial workflow bindings:
+Current workflow bindings:
 
 ```text
 cognitive_graph:
   ideas, research scans, proposals, reviews, lessons.
 
+engineering_delivery_graph:
+  engineering delivery quality gates, receipts, reviews, and lessons.
+
+ten-layer domain chain:
+  market data -> indicators -> events -> interpretation -> hypotheses ->
+  validation -> proposal -> risk gate -> execution -> post-trade.
+```
+
+Archived workflow bindings:
+
+```text
 finance_graph:
-  market data, indicators, risk-note evaluation, research summaries.
+  archived under docs/archive/legacy-graphs after the ten-layer chain became
+  authoritative.
 
 trade_graph:
-  paper execution experiments with risk gates and receipts.
+  archived under docs/archive/legacy-graphs after Layers 7-10 split proposal,
+  risk, execution, and post-trade responsibilities.
 ```
 
 Do not mark a goal complete just because the agent produced a convincing answer.

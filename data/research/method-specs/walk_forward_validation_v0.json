@@ -1,0 +1,15 @@
+{
+  "id": "math.validation.walk_forward.v0",
+  "domain": "validation",
+  "status": "draft",
+  "used_by_layers": ["L6", "L8"],
+  "purpose": "Check whether a strategy claim survives rolling train/test separation.",
+  "assumptions": ["historical samples are ordered", "train and test windows do not overlap improperly"],
+  "formula_or_definition": "Iterate ordered windows: fit or select only on train window, evaluate only on later test window, aggregate out-of-sample metrics.",
+  "failure_modes": ["data_snooping", "overfitting", "regime_shift", "small_sample"],
+  "implementation_boundary": "FinHarness records windows and criteria; mature libraries may compute metrics.",
+  "allowed_libraries": ["vectorbt", "qlib", "pandas"],
+  "tests_required": ["window_order_integrity", "out_of_sample_metric_present"],
+  "references": ["reference.tool.vectorbt.v0", "reference.tool.qlib.v0"],
+  "no_execution_authority": true
+}
