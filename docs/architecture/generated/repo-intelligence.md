@@ -1,23 +1,22 @@
 # Repo Intelligence
 
-Generated at: `2026-06-03T12:32:56Z`
+Generated at: `2026-06-03T12:39:02Z`
 
 ## Summary
 
 - Files: `311`
-- Total lines: `57865`
+- Total lines: `57866`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `src/finharness/execution.py`
+- `.github/SECURITY.md`
 
 ## Required Checks
 
 - `task check`
-- `task eval:redteam-boundary`
 - `task hardening:gate`
-- `uv run python -m unittest tests/test_execution.py`
+- `task security:scan`
 
 ## Mermaid
 

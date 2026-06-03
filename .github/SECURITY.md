@@ -10,10 +10,11 @@ behind explicit gates.
 
 ## Reporting A Vulnerability
 
-Use GitHub private vulnerability reporting or a private maintainer channel when
-available. Do not publish exploit details, credentials, tokens, private keys,
-or live account data in public issues, pull requests, logs, screenshots, or
-receipts.
+Use GitHub private vulnerability reporting when available:
+https://github.com/zycxfyh/FinHarness/security/advisories/new
+
+Do not publish exploit details, credentials, tokens, private keys, or live
+account data in public issues, pull requests, logs, screenshots, or receipts.
 
 If a private channel is not available, open a public issue with only a minimal
 non-sensitive summary and ask for a private follow-up path.
