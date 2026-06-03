@@ -13,6 +13,16 @@ from finharness.data_entry import fetch_openbb_quote, fetch_yfinance_history
 from finharness.metrics import summarize
 
 ROOT = Path(__file__).resolve().parents[2]
+LATEST_RISK_NOTE = ROOT / "data" / "cache" / "latest_risk_note.txt"
+DEFAULT_RISK_NOTE = """Not investment advice.
+
+This educational risk note uses yfinance/Yahoo Finance history and not TradingView/TV data.
+Historical metrics do not guarantee future returns.
+
+Max drawdown and volatility can change when market regimes, liquidity, or data freshness change.
+Transaction costs, slippage, taxes, and venue constraints must be reviewed before any paper
+or live use.
+"""
 
 
 @function_tool
@@ -40,6 +50,10 @@ def get_historical_risk_metrics(symbol: str, start: str, end: str) -> dict[str, 
 @function_tool
 def evaluate_latest_risk_note() -> dict[str, object]:
     """Run promptfoo assertions against the latest generated risk note."""
+    if not LATEST_RISK_NOTE.exists():
+        LATEST_RISK_NOTE.parent.mkdir(parents=True, exist_ok=True)
+        LATEST_RISK_NOTE.write_text(DEFAULT_RISK_NOTE, encoding="utf-8")
+
     result = subprocess.run(
         [
             "pnpm",

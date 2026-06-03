@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import unittest
-from pathlib import Path
 
 import pandas as pd
 
@@ -12,7 +11,7 @@ from finharness.indicator_layer import (
     compute_library_core_indicators,
     compute_ohlcv_risk_return_features,
 )
-from finharness.market_data import SourceSpec, build_ohlcv_snapshot_from_history
+from finharness.market_data import ROOT, SourceSpec, build_ohlcv_snapshot_from_history
 
 
 def sample_history(rows: int = 90) -> pd.DataFrame:
@@ -124,7 +123,7 @@ class IndicatorLayerTest(unittest.TestCase):
             },
         )
 
-        receipt_path = Path("/root/projects/finharness") / indicator_receipt.snapshot.receipt_ref
+        receipt_path = ROOT / indicator_receipt.snapshot.receipt_ref
         saved = json.loads(receipt_path.read_text())
         self.assertEqual(
             saved["snapshot"]["indicator_snapshot_id"],

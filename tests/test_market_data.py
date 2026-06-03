@@ -9,6 +9,7 @@ import pandas as pd
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from finharness.market_data import (
+    ROOT,
     SourceSpec,
     build_ohlcv_snapshot_from_history,
     build_quality_report,
@@ -87,7 +88,7 @@ class MarketDataGovernanceTest(unittest.TestCase):
         self.assertEqual(set(receipt.eight_layer_map), expected_layers)
         self.assertTrue(receipt.snapshot.quality.ok)
 
-        receipt_path = Path("/root/projects/finharness") / receipt.snapshot.receipt_ref
+        receipt_path = ROOT / receipt.snapshot.receipt_ref
         saved = json.loads(receipt_path.read_text())
         self.assertEqual(saved["snapshot"]["snapshot_id"], receipt.snapshot.snapshot_id)
 
