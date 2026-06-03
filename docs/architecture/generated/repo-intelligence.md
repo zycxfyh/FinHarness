@@ -1,11 +1,11 @@
 # Repo Intelligence
 
-Generated at: `2026-06-03T12:08:15Z`
+Generated at: `2026-06-03T12:14:21Z`
 
 ## Summary
 
 - Files: `310`
-- Total lines: `57828`
+- Total lines: `57827`
 - Execution allowed: `false`
 
 ## Changed Surface
