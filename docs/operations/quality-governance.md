@@ -52,7 +52,7 @@ scorecard / OpenSSF Scorecard
 | P6 Blast Radius | Changed files map to focused checks | `tests/test_repo_intelligence.py` |
 | P7 Architecture Visualization | Generated Mermaid repo map | `docs/architecture/generated/repo-intelligence.md` |
 | P8 Human Review Gates | Execution/security changes require review | quality decision `human_review` |
-| P9 Performance Baseline | Check duration and slow-node tracking | future receipt extension |
+| P9 Performance Baseline | Check duration and slow-node tracking | quality receipt `performance_baseline` |
 | P10 Operating Model | Agent-readable docs and tasks | this document |
 
 ## Occam Boundary

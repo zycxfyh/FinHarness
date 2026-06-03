@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
@@ -21,16 +22,23 @@ from finharness.repo_intelligence_graph import run_repo_intelligence_graph
 WORKFLOW_VERSION = "langgraph_quality_governance_v1"
 
 DEFAULT_CHECKS = [
-    {"name": "task check", "command": ["task", "check"], "required": True},
+    {
+        "name": "task check",
+        "command": ["task", "check"],
+        "required": True,
+        "budget_seconds": 180.0,
+    },
     {
         "name": "task hardening:gate",
         "command": ["task", "hardening:gate"],
         "required": True,
+        "budget_seconds": 90.0,
     },
     {
         "name": "task eval:redteam-boundary",
         "command": ["task", "eval:redteam-boundary"],
         "required": True,
+        "budget_seconds": 45.0,
     },
 ]
 
@@ -44,6 +52,7 @@ class QualityGovernanceGraphState(TypedDict, total=False):
     check_results: list[dict[str, Any]]
     security_gate: dict[str, Any]
     redteam_gate: dict[str, Any]
+    performance_baseline: dict[str, Any]
     release_decision: dict[str, Any]
     receipt_ref: str
     final: dict[str, Any]
@@ -74,6 +83,7 @@ def repo_intelligence_node(
 
 
 def _run_command(command: list[str], *, cwd: Path) -> dict[str, Any]:
+    started = time.perf_counter()
     completed = subprocess.run(
         command,
         cwd=cwd,
@@ -81,9 +91,11 @@ def _run_command(command: list[str], *, cwd: Path) -> dict[str, Any]:
         text=True,
         capture_output=True,
     )
+    duration_seconds = round(time.perf_counter() - started, 3)
     return {
         "command": command,
         "returncode": completed.returncode,
+        "duration_seconds": duration_seconds,
         "stdout_tail": completed.stdout.splitlines()[-20:],
         "stderr_tail": completed.stderr.splitlines()[-20:],
     }
@@ -102,6 +114,8 @@ def checks_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphSta
                     "status": "passed" if run["returncode"] == 0 else "failed",
                     "returncode": run["returncode"],
                     "command": run["command"],
+                    "duration_seconds": run["duration_seconds"],
+                    "budget_seconds": float(check.get("budget_seconds", 0.0)),
                     "stdout_tail": run["stdout_tail"],
                     "stderr_tail": run["stderr_tail"],
                 }
@@ -115,6 +129,8 @@ def checks_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphSta
                     "status": check.get("status", "not_run"),
                     "returncode": check.get("returncode"),
                     "command": check.get("command", []),
+                    "duration_seconds": float(check.get("duration_seconds", 0.0)),
+                    "budget_seconds": float(check.get("budget_seconds", 0.0)),
                 }
             )
     return {"check_results": results}
@@ -152,6 +168,40 @@ def redteam_gate_node(state: QualityGovernanceGraphState) -> QualityGovernanceGr
     }
 
 
+def performance_baseline_node(
+    state: QualityGovernanceGraphState,
+) -> QualityGovernanceGraphState:
+    check_results = state["check_results"]
+    measured = [
+        item
+        for item in check_results
+        if isinstance(item.get("duration_seconds"), int | float)
+    ]
+    slow_checks = [
+        {
+            "name": item["name"],
+            "duration_seconds": item["duration_seconds"],
+            "budget_seconds": item["budget_seconds"],
+        }
+        for item in measured
+        if item.get("budget_seconds", 0.0) > 0
+        and item["duration_seconds"] > item["budget_seconds"]
+    ]
+    return {
+        "performance_baseline": {
+            "measured_check_count": len(measured),
+            "total_duration_seconds": round(
+                sum(float(item["duration_seconds"]) for item in measured), 3
+            ),
+            "slow_checks": slow_checks,
+            "slow_check_count": len(slow_checks),
+            "status": "slow" if slow_checks else "within_budget",
+            "release_blocking": False,
+            "execution_allowed": False,
+        }
+    }
+
+
 def decision_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphState:
     failed_required = [
         item["name"]
@@ -169,6 +219,7 @@ def decision_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphS
             "release_blocked": release_blocked,
             "failed_required_checks": failed_required,
             "requires_human_review": human_review,
+            "performance_status": state["performance_baseline"]["status"],
             "execution_allowed": False,
         }
     }
@@ -188,6 +239,7 @@ def receipt_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphSt
         "check_results": state["check_results"],
         "security_gate": state["security_gate"],
         "redteam_gate": state["redteam_gate"],
+        "performance_baseline": state["performance_baseline"],
         "release_decision": state["release_decision"],
     }
     path = root / "data" / "receipts" / "quality-governance" / "latest.json"
@@ -206,6 +258,7 @@ def build_quality_governance_graph():
     graph.add_node("checks", checks_node)
     graph.add_node("security_gate", security_gate_node)
     graph.add_node("redteam_gate", redteam_gate_node)
+    graph.add_node("performance_baseline", performance_baseline_node)
     graph.add_node("decision", decision_node)
     graph.add_node("receipt", receipt_node)
     graph.add_edge(START, "source")
@@ -213,7 +266,8 @@ def build_quality_governance_graph():
     graph.add_edge("repo_intelligence", "checks")
     graph.add_edge("checks", "security_gate")
     graph.add_edge("security_gate", "redteam_gate")
-    graph.add_edge("redteam_gate", "decision")
+    graph.add_edge("redteam_gate", "performance_baseline")
+    graph.add_edge("performance_baseline", "decision")
     graph.add_edge("decision", "receipt")
     graph.add_edge("receipt", END)
     return graph.compile()
