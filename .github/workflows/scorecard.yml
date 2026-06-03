@@ -16,16 +16,16 @@ jobs:
     name: OpenSSF Scorecard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@v2.4.0
+      - uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46 # v2.4.0
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
           publish_results: false
 
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v4.36.1
         with:
           sarif_file: scorecard-results.sarif
