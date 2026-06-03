@@ -44,6 +44,26 @@ tasks:
     cmds:
       - uv run python scripts/run_hardening_gate.py
 
+  repo:intelligence:
+    desc: Build local repo intelligence graph, Mermaid doc, and receipt
+    cmds:
+      - uv run python scripts/run_repo_intelligence_graph.py
+
+  quality:governance:
+    desc: Run quality governance graph with authoritative local checks
+    cmds:
+      - uv run python scripts/run_quality_governance_graph.py --run-checks
+
+  quality:governance-checks:
+    desc: Alias for quality governance with authoritative local checks
+    cmds:
+      - uv run python scripts/run_quality_governance_graph.py --run-checks
+
+  release:preflight:
+    desc: Run release preflight graph with authoritative local checks
+    cmds:
+      - uv run python scripts/run_release_preflight_graph.py --run-checks
+
   hardening:redteam:
     desc: Run local adversarial boundary checks
     cmds:

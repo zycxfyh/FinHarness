@@ -15,6 +15,9 @@ data/receipts/hardening/
 data/receipts/hypotheses/
 data/receipts/post-trade/
 data/receipts/proposals/
+data/receipts/quality-governance/
+data/receipts/release-preflight/
+data/receipts/repo-intelligence/
 data/receipts/risk-gates/
 data/receipts/validations/
 data/redteam/exports/
