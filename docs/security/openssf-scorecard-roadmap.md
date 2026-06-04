@@ -39,6 +39,7 @@ After this pass:
 - `aiohttp` lockfile is upgraded to the patched `3.14.0` version.
 - Apache-2.0 license and GitHub rulesets are active.
 - Threat model and SSDF control map are established for RC0.2 maturity work.
+- Local SBOM and provenance baseline task exists as `task security:sbom`.
 
 ## Remaining Decisions
 
@@ -48,4 +49,6 @@ After this pass:
 - Decide whether to move `main` from medium protection to PR-only review
   workflow later.
 - Decide if a real fuzzing service is worth the operational weight for RC0.1.
-- Add SBOM/SLSA baseline and security response runbook in RC0.2.
+- Add security response runbook in RC0.2.
+- Upgrade local SBOM/provenance baseline to formal SBOM/SLSA attestation once
+  the release artifact shape is chosen.

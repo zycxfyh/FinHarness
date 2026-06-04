@@ -1,6 +1,6 @@
 # Governance Dashboard
 
-Generated at: `2026-06-04T08:33:18Z`
+Generated at: `2026-06-04T08:43:55Z`
 
 ## RC0.1 Posture
 
@@ -12,9 +12,9 @@ Generated at: `2026-06-04T08:33:18Z`
 
 ## Repo Intelligence
 
-- Files: `326`
-- Total lines: `59420`
-- Changed files: `5`
+- Files: `332`
+- Total lines: `68356`
+- Changed files: `9`
 
 ## Required Checks
 

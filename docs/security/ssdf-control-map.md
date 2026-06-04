@@ -33,7 +33,7 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 | --- | --- | --- |
 | Protect code repository | Apache-2.0 `LICENSE`, active main and release rulesets | Add CODEOWNERS for high-risk paths |
 | Protect secrets | `.gitleaks.toml`, `src/finharness/hardening.py`, `task hardening:gate` | Add rotation checklist and local secret inventory policy |
-| Protect build/release integrity | SHA-pinned GitHub Actions, `uv.lock`, `pnpm-lock.yaml`, Dependabot | Add SBOM and SLSA provenance baseline |
+| Protect build/release integrity | SHA-pinned GitHub Actions, `uv.lock`, `pnpm-lock.yaml`, Dependabot, `task security:sbom` | Upgrade local SBOM to formal CycloneDX/SPDX and signed SLSA provenance after artifact shape is chosen |
 | Protect generated evidence | Receipts under `data/receipts/`, release preflight receipt | Add receipt schema/checksum verification |
 
 ## PW: Produce Well-Secured Software
@@ -58,8 +58,9 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 
 1. Add `docs/security/security-response-runbook.md` with severity, triage,
    rotation, and disclosure steps.
-2. Add SBOM generation as `task security:sbom`.
-3. Add a provenance/SLSA plan for future packaged releases.
+2. Upgrade `task security:sbom` from local baseline to a mature generator if
+   packaging/release artifacts become public.
+3. Add signed provenance/SLSA attestation for future packaged releases.
 4. Add CODEOWNERS for high-risk paths.
 5. Add a formal fuzzing baseline that Scorecard can recognize or document why
    the project intentionally stays with property tests for RC0.2.
@@ -71,4 +72,3 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 - This map does not claim broker, exchange, custody, settlement, tax, or
   performance-reporting correctness.
 - This map does not replace `task release:preflight` or GitHub branch rulesets.
-

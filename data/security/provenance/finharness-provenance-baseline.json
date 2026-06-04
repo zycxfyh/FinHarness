@@ -1,0 +1,48 @@
+{
+  "builder": {
+    "script": "scripts/generate_security_sbom.py",
+    "task": "task security:sbom",
+    "type": "local_task"
+  },
+  "execution_allowed": false,
+  "generated_at": "2026-06-04T08:39:43Z",
+  "git_head": "d32d860f52396e530cd353ec39df2410638229ba",
+  "materials": [
+    {
+      "path": "pyproject.toml",
+      "sha256": "faebc64c0888c66795bfa78ffc0604330b0a8fdc8ccbe4a77bd9bbc56016bcdd"
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "d86d6828601b2d64a97ea2b36bf1ae85639596822ebf86de60049a28dff7bdd9"
+    },
+    {
+      "path": "package.json",
+      "sha256": "eee7cead238f36ae2bf2d314e68eb2d67962ee936cf087f56acaa9de8e3a0635"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "31c0ae71a194eee5b2a40697b2114224516c4b3f6ac2e825a8f0fa357b918154"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "6764e7526948d29e78c7653c15bd5956f9dc7bd7b58ae94ecab258d851b44e9d"
+    },
+    {
+      "path": "crates/finharness-cli/Cargo.toml",
+      "sha256": "4dff40c27679835ef8744d51afc7245d563f889b7edca1683a50094219b2f6bf"
+    }
+  ],
+  "non_claims": [
+    "Not a signed SLSA provenance statement.",
+    "Not a complete runtime artifact attestation.",
+    "Does not authorize live trading."
+  ],
+  "schema": "finharness.provenance_baseline.v1",
+  "slsa_status": "planning_baseline_not_attestation",
+  "subject": {
+    "component_count": 757,
+    "name": "FinHarness source dependency baseline",
+    "sbom_ref": "data/security/sbom/finharness-sbom.json"
+  }
+}

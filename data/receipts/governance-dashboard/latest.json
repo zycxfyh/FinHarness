@@ -1,7 +1,7 @@
 {
   "dashboard_status": "ready",
   "execution_allowed": false,
-  "generated_at": "2026-06-04T08:33:18Z",
+  "generated_at": "2026-06-04T08:43:55Z",
   "hardening_gate": {
     "checks": [
       {
@@ -36,7 +36,7 @@
       }
     ],
     "execution_allowed": false,
-    "generated_at": "2026-06-04T08:33:11Z",
+    "generated_at": "2026-06-04T08:43:48Z",
     "present": true,
     "release_blocked": false,
     "status": "passed"
@@ -49,27 +49,27 @@
     "slow_check_count": 0,
     "slow_checks": [],
     "status": "within_budget",
-    "total_duration_seconds": 121.763
+    "total_duration_seconds": 102.824
   },
   "quality_governance": {
     "checks": [
       {
         "budget_seconds": 180.0,
-        "duration_seconds": 81.344,
+        "duration_seconds": 80.787,
         "name": "task check",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 90.0,
-        "duration_seconds": 38.607,
+        "duration_seconds": 20.243,
         "name": "task hardening:gate",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 45.0,
-        "duration_seconds": 1.812,
+        "duration_seconds": 1.794,
         "name": "task eval:redteam-boundary",
         "ok": true,
         "status": "passed"
@@ -90,7 +90,7 @@
   },
   "redteam_boundary": {
     "budget_seconds": 45.0,
-    "duration_seconds": 1.812,
+    "duration_seconds": 1.794,
     "name": "task eval:redteam-boundary",
     "ok": true,
     "status": "passed"
@@ -104,25 +104,29 @@
   },
   "repo_intelligence": {
     "changed_surface": [
+      "Taskfile.yml",
+      "data/security/",
       "docs/architecture/generated/repo-intelligence.md",
-      "docs/security/finharness-threat-model.md",
       "docs/security/openssf-scorecard-roadmap.md",
+      "docs/security/sbom-and-provenance.md",
       "docs/security/ssdf-control-map.md",
-      "tests/test_security_maturity_docs.py"
+      "package.json",
+      "scripts/generate_security_sbom.py",
+      "tests/test_security_sbom.py"
     ],
     "inventory_summary": {
       "by_role": {
         "build_or_task": 4,
-        "docs": 138,
-        "other": 28,
+        "docs": 140,
+        "other": 30,
         "research_asset": 20,
-        "script": 41,
+        "script": 42,
         "security": 14,
         "source": 49,
-        "test": 32
+        "test": 33
       },
-      "file_count": 326,
-      "total_lines": 59420
+      "file_count": 332,
+      "total_lines": 68356
     },
     "receipt_ref": "/root/projects/finharness/data/receipts/repo-intelligence/latest.json",
     "required_checks": [

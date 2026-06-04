@@ -1,20 +1,24 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T08:33:18Z`
+Generated at: `2026-06-04T08:43:55Z`
 
 ## Summary
 
-- Files: `326`
-- Total lines: `59420`
+- Files: `332`
+- Total lines: `68356`
 - Execution allowed: `false`
 
 ## Changed Surface
 
+- `Taskfile.yml`
+- `data/security/`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/security/finharness-threat-model.md`
 - `docs/security/openssf-scorecard-roadmap.md`
+- `docs/security/sbom-and-provenance.md`
 - `docs/security/ssdf-control-map.md`
-- `tests/test_security_maturity_docs.py`
+- `package.json`
+- `scripts/generate_security_sbom.py`
+- `tests/test_security_sbom.py`
 
 ## Required Checks
 
