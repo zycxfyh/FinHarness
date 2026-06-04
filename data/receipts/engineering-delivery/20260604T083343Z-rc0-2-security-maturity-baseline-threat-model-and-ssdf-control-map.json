@@ -1,0 +1,105 @@
+{
+  "receipt_id": "engineering_delivery_20260604T083343Z_rc0-2-security-maturity-baseline-threat-model-and-ssdf-control-map",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-04T08:33:43.169327+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260604T083343Z_rc0-2-security-maturity-baseline-threat-model-and-ssdf-control-map",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-04T08:33:43.169327+00:00",
+    "goal": "RC0.2 security maturity baseline: threat model and SSDF control map",
+    "source_ref": "user-approved RC0.2 maturity plan",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security"
+    ],
+    "change_type": "security-governance",
+    "scope": "Add repository-grounded threat model, SSDF control map, and documentation drift tests without changing trading authority.",
+    "non_goals": [
+      "No live trading authorization",
+      "No broker/exchange compliance certification"
+    ],
+    "success_criteria": [
+      "Threat model covers provider credentials, live mutation gates, research assets, receipts, CI, and release governance",
+      "SSDF map ties PO/PS/PW/RV practices to current evidence and gaps",
+      "Security maturity docs are covered by tests"
+    ],
+    "planned_files": [
+      "docs/security/finharness-threat-model.md",
+      "docs/security/ssdf-control-map.md",
+      "tests/test_security_maturity_docs.py"
+    ],
+    "changed_files": [
+      "docs/security/finharness-threat-model.md",
+      "docs/security/ssdf-control-map.md",
+      "tests/test_security_maturity_docs.py",
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/architecture/generated/repo-intelligence.md",
+      "docs/operations/governance-dashboard-latest.md",
+      "data/receipts/governance-dashboard/latest.json"
+    ],
+    "docs_updated": [
+      "docs/security/finharness-threat-model.md",
+      "docs/security/ssdf-control-map.md",
+      "docs/security/openssf-scorecard-roadmap.md"
+    ],
+    "checks": [
+      {
+        "name": "uv run ruff check tests/test_security_maturity_docs.py",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "uv run python -m unittest tests.test_security_maturity_docs",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task repo:intelligence",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task hardening:gate",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task release:preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task governance:dashboard",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "e1c389f01699227eb49425c3d330f0e2374a9e88643f0ff7aa049ec8f41969bc"
+  },
+  "lineage": {
+    "source_ref": "user-approved RC0.2 maturity plan",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

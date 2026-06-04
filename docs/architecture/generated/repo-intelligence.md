@@ -1,21 +1,20 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T04:12:51Z`
+Generated at: `2026-06-04T08:33:18Z`
 
 ## Summary
 
-- Files: `323`
-- Total lines: `59007`
+- Files: `326`
+- Total lines: `59420`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `LICENSE`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/governance/license-decision-memo.md`
-- `docs/operations/repository-governance.md`
+- `docs/security/finharness-threat-model.md`
 - `docs/security/openssf-scorecard-roadmap.md`
-- `pyproject.toml`
+- `docs/security/ssdf-control-map.md`
+- `tests/test_security_maturity_docs.py`
 
 ## Required Checks
 

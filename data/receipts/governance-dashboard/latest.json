@@ -1,7 +1,7 @@
 {
   "dashboard_status": "ready",
   "execution_allowed": false,
-  "generated_at": "2026-06-04T04:12:51Z",
+  "generated_at": "2026-06-04T08:33:18Z",
   "hardening_gate": {
     "checks": [
       {
@@ -36,7 +36,7 @@
       }
     ],
     "execution_allowed": false,
-    "generated_at": "2026-06-04T04:12:44Z",
+    "generated_at": "2026-06-04T08:33:11Z",
     "present": true,
     "release_blocked": false,
     "status": "passed"
@@ -49,27 +49,27 @@
     "slow_check_count": 0,
     "slow_checks": [],
     "status": "within_budget",
-    "total_duration_seconds": 101.883
+    "total_duration_seconds": 121.763
   },
   "quality_governance": {
     "checks": [
       {
         "budget_seconds": 180.0,
-        "duration_seconds": 79.531,
+        "duration_seconds": 81.344,
         "name": "task check",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 90.0,
-        "duration_seconds": 20.547,
+        "duration_seconds": 38.607,
         "name": "task hardening:gate",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 45.0,
-        "duration_seconds": 1.805,
+        "duration_seconds": 1.812,
         "name": "task eval:redteam-boundary",
         "ok": true,
         "status": "passed"
@@ -90,7 +90,7 @@
   },
   "redteam_boundary": {
     "budget_seconds": 45.0,
-    "duration_seconds": 1.805,
+    "duration_seconds": 1.812,
     "name": "task eval:redteam-boundary",
     "ok": true,
     "status": "passed"
@@ -104,26 +104,25 @@
   },
   "repo_intelligence": {
     "changed_surface": [
-      "LICENSE",
       "docs/architecture/generated/repo-intelligence.md",
-      "docs/governance/license-decision-memo.md",
-      "docs/operations/repository-governance.md",
+      "docs/security/finharness-threat-model.md",
       "docs/security/openssf-scorecard-roadmap.md",
-      "pyproject.toml"
+      "docs/security/ssdf-control-map.md",
+      "tests/test_security_maturity_docs.py"
     ],
     "inventory_summary": {
       "by_role": {
         "build_or_task": 4,
-        "docs": 136,
+        "docs": 138,
         "other": 28,
         "research_asset": 20,
         "script": 41,
         "security": 14,
         "source": 49,
-        "test": 31
+        "test": 32
       },
-      "file_count": 323,
-      "total_lines": 59007
+      "file_count": 326,
+      "total_lines": 59420
     },
     "receipt_ref": "/root/projects/finharness/data/receipts/repo-intelligence/latest.json",
     "required_checks": [
