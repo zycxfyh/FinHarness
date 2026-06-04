@@ -1,29 +1,38 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T08:43:55Z`
+Generated at: `2026-06-04T09:05:27Z`
 
 ## Summary
 
-- Files: `332`
-- Total lines: `68356`
+- Files: `339`
+- Total lines: `68938`
 - Execution allowed: `false`
 
 ## Changed Surface
 
+- `.github/workflows/fuzz.yml`
 - `Taskfile.yml`
-- `data/security/`
+- `data/receipts/engineering-delivery/20260604T090037Z-rc0-2-deterministic-fuzzing-baseline.json`
+- `data/receipts/governance-dashboard/latest.json`
+- `data/security/fuzzing/`
 - `docs/architecture/generated/repo-intelligence.md`
+- `docs/architecture/release-preflight-graph.md`
+- `docs/operations/governance-dashboard-latest.md`
+- `docs/reviews/2026-06-04-rc0-2-deterministic-fuzzing-baseline-engineering-delivery.md`
+- `docs/security/finharness-threat-model.md`
 - `docs/security/openssf-scorecard-roadmap.md`
-- `docs/security/sbom-and-provenance.md`
 - `docs/security/ssdf-control-map.md`
-- `package.json`
-- `scripts/generate_security_sbom.py`
-- `tests/test_security_sbom.py`
+- `docs/testing/property-and-fuzz-baseline.md`
+- `scripts/run_fuzz_baseline.py`
+- `src/finharness/release_preflight_graph.py`
+- `tests/test_release_preflight_graph.py`
+- `tests/test_security_fuzz.py`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
+- `task security:scan`
 
 ## Mermaid
 

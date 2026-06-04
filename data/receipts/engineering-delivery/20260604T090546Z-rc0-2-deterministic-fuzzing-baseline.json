@@ -1,0 +1,123 @@
+{
+  "receipt_id": "engineering_delivery_20260604T090546Z_rc0-2-deterministic-fuzzing-baseline",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-04T09:05:46.160861+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260604T090546Z_rc0-2-deterministic-fuzzing-baseline",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-04T09:05:46.160861+00:00",
+    "goal": "RC0.2 deterministic fuzzing baseline",
+    "source_ref": "docs/testing/property-and-fuzz-baseline.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/architecture/release-preflight-graph.md"
+    ],
+    "change_type": "security_maturity",
+    "scope": "Add deterministic governance-boundary fuzz task, corpus, report, tests, CI workflow, and release-preflight workflow presence gate",
+    "non_goals": [
+      "No OSS-Fuzz or ClusterFuzzLite claim; no live exchange fuzzing; no new dependency"
+    ],
+    "success_criteria": [
+      "task security:fuzz passes with failed_case_count=0",
+      "task check passes",
+      "release preflight records fuzz_workflow_present and release_ready=true"
+    ],
+    "planned_files": [
+      ".github/workflows/fuzz.yml",
+      "scripts/run_fuzz_baseline.py",
+      "tests/test_security_fuzz.py",
+      "data/security/fuzzing/corpus.json"
+    ],
+    "changed_files": [
+      ".github/workflows/fuzz.yml",
+      "Taskfile.yml",
+      "scripts/run_fuzz_baseline.py",
+      "tests/test_security_fuzz.py",
+      "data/security/fuzzing/corpus.json",
+      "data/security/fuzzing/latest.json",
+      "src/finharness/release_preflight_graph.py",
+      "tests/test_release_preflight_graph.py",
+      "docs/architecture/release-preflight-graph.md",
+      "docs/testing/property-and-fuzz-baseline.md",
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/security/ssdf-control-map.md",
+      "docs/security/finharness-threat-model.md",
+      "docs/architecture/generated/repo-intelligence.md",
+      "docs/operations/governance-dashboard-latest.md",
+      "data/receipts/governance-dashboard/latest.json"
+    ],
+    "docs_updated": [
+      "docs/testing/property-and-fuzz-baseline.md",
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/security/ssdf-control-map.md",
+      "docs/security/finharness-threat-model.md",
+      "docs/architecture/release-preflight-graph.md"
+    ],
+    "checks": [
+      {
+        "name": "ruff fuzz preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "unittest fuzz preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task security fuzz",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task repo intelligence",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task security scan",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task release preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task governance dashboard",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "8f96074b1724649095695aca67cf3ac1d481cc8e527873dd724169126a6d8e41"
+  },
+  "lineage": {
+    "source_ref": "docs/testing/property-and-fuzz-baseline.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/architecture/release-preflight-graph.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

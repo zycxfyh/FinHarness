@@ -41,7 +41,7 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 | Practice intent | Current evidence | Residual work |
 | --- | --- | --- |
 | Design with trust boundaries | `docs/security/finharness-threat-model.md`, ten-layer map | Keep threat model updated when provider/live surfaces change |
-| Review and test security properties | `tests/test_hardening_gate.py`, `tests/test_property_baseline.py`, `task check` | Add formal fuzzing recognized by Scorecard |
+| Review and test security properties | `tests/test_hardening_gate.py`, `tests/test_property_baseline.py`, `tests/test_security_fuzz.py`, `task check`, `task security:fuzz` | Decide whether to add formal fuzzing recognized by Scorecard |
 | Verify dependencies and configs | Trivy, CodeQL, Dependabot, Scorecard workflow | Add periodic dependency review receipt |
 | Prevent unsafe execution semantics | `src/finharness/risk_gate.py`, `src/finharness/execution.py`, `src/finharness/okx_cli.py` | Add dual-control approval before any live-write expansion |
 
@@ -62,8 +62,8 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
    packaging/release artifacts become public.
 3. Add signed provenance/SLSA attestation for future packaged releases.
 4. Add CODEOWNERS for high-risk paths.
-5. Add a formal fuzzing baseline that Scorecard can recognize or document why
-   the project intentionally stays with property tests for RC0.2.
+5. Evaluate whether RC0.3 should add Hypothesis, Atheris, OSS-Fuzz, or
+   ClusterFuzzLite beyond the current deterministic governance fuzz baseline.
 
 ## Non-Claims
 

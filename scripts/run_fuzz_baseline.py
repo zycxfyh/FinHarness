@@ -1,0 +1,255 @@
+"""Run the FinHarness deterministic fuzzing baseline.
+
+This is a local fuzz-style boundary harness for governance inputs. It avoids
+new dependencies and does not claim OSS-Fuzz, ClusterFuzzLite, or SLSA coverage.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from finharness.market_data import ROOT
+from finharness.repo_intelligence import classify_security_surface
+from finharness.research_assets import resolve_research_assets
+from finharness.trading_guard import TradingState, evaluate_trading_state
+
+DEFAULT_CORPUS = ROOT / "data" / "security" / "fuzzing" / "corpus.json"
+DEFAULT_REPORT = ROOT / "data" / "security" / "fuzzing" / "latest.json"
+VALID_LAYERS: set[str] = {"L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10"}
+
+
+def repo_path(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def load_corpus(path: Path = DEFAULT_CORPUS) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return list(payload.get("cases", []))
+
+
+def generated_cases(*, seed: int, count: int) -> list[dict[str, Any]]:
+    rng = random.Random(seed)
+    cases: list[dict[str, Any]] = []
+    path_fragments = [
+        "src/finharness/execution.py",
+        "src/finharness/risk-gate.py",
+        "docs/ordinary.md",
+        ".github/workflows/security.yml",
+        "data/receipts/generated.json",
+        "../outside.env",
+        "src/finharness/okx_cli.py",
+        "tests/test_execution.py",
+    ]
+    asset_fragments = [
+        "trend_following_v0",
+        "no_lookahead_validation_v0",
+        "unknown_asset",
+        "live_write_enable",
+        "../secret",
+        "",
+        "alpaca_paper_adapter",
+    ]
+    for index in range(count):
+        cases.append(
+            {
+                "id": f"generated_trading_guard_{index}",
+                "target": "trading_guard",
+                "drawdown_pct": rng.choice([-1000.0, -10.0, -3.0, -1.6, -0.1, 0.0, 5.0]),
+                "consecutive_losses": rng.choice([-3, -1, 0, 1, 2, 3, 99]),
+                "minutes_since_last_trade": rng.choice([None, -5, 0, 1, 29, 30, 9999]),
+                "planned_trade_has_written_thesis": rng.choice([True, False]),
+            }
+        )
+        cases.append(
+            {
+                "id": f"generated_security_surface_{index}",
+                "target": "security_surface",
+                "paths": rng.sample(path_fragments, k=rng.randint(1, 4)),
+            }
+        )
+        cases.append(
+            {
+                "id": f"generated_research_assets_{index}",
+                "target": "research_assets",
+                "asset_ids": rng.sample(asset_fragments, k=rng.randint(1, 4)),
+                "layer": rng.choice(sorted(VALID_LAYERS)),
+            }
+        )
+    return cases
+
+
+def run_trading_guard_case(case: dict[str, Any]) -> dict[str, Any]:
+    state = TradingState(
+        drawdown_pct=float(case.get("drawdown_pct", 0.0)),
+        consecutive_losses=int(case.get("consecutive_losses", 0)),
+        minutes_since_last_trade=case.get("minutes_since_last_trade"),
+        planned_trade_has_written_thesis=bool(case.get("planned_trade_has_written_thesis")),
+    )
+    decision = evaluate_trading_state(state)
+    invariant_ok = decision.level in {"clear", "caution", "hard_stop"} and bool(
+        decision.reasons and decision.required_actions
+    )
+    if not state.planned_trade_has_written_thesis:
+        invariant_ok = invariant_ok and not decision.trade_allowed
+    if state.drawdown_pct <= -3.0 or state.consecutive_losses >= 3:
+        invariant_ok = invariant_ok and decision.level == "hard_stop" and not decision.trade_allowed
+    return {
+        "target": "trading_guard",
+        "case_id": str(case.get("id", "unnamed")),
+        "invariant_ok": invariant_ok,
+        "summary": {"level": decision.level, "trade_allowed": decision.trade_allowed},
+    }
+
+
+def run_security_surface_case(case: dict[str, Any]) -> dict[str, Any]:
+    paths = [str(item) for item in case.get("paths", [])]
+    surface = classify_security_surface(paths)
+    invariant_ok = surface["execution_allowed"] is False
+    if any(
+        path.startswith(".github/")
+        or "execution" in path.replace("-", "_")
+        or "risk_gate" in path.replace("-", "_")
+        or "okx" in path.replace("-", "_")
+        or "alpaca" in path.replace("-", "_")
+        for path in paths
+    ):
+        invariant_ok = invariant_ok and surface["requires_human_review"] is True
+    return {
+        "target": "security_surface",
+        "case_id": str(case.get("id", "unnamed")),
+        "invariant_ok": invariant_ok,
+        "summary": surface,
+    }
+
+
+def run_research_assets_case(case: dict[str, Any]) -> dict[str, Any]:
+    layer = str(case.get("layer", "L9"))
+    if layer not in VALID_LAYERS:
+        layer = "L9"
+    selection = resolve_research_assets(
+        research_asset_ids=[str(item) for item in case.get("asset_ids", [])],
+    )
+    context = selection.context_for_layer(layer)  # type: ignore[arg-type]
+    invariant_ok = (
+        selection.execution_allowed is False
+        and context["execution_allowed"] is False
+        and context["policy"] == "cite_only"
+    )
+    return {
+        "target": "research_assets",
+        "case_id": str(case.get("id", "unnamed")),
+        "invariant_ok": invariant_ok,
+        "summary": {
+            "layer": layer,
+            "missing_ids": selection.missing_ids,
+            "strategy_ids": context["strategy_ids"],
+            "method_ids": context["method_ids"],
+            "reference_ids": context["reference_ids"],
+            "execution_allowed": False,
+        },
+    }
+
+
+def run_case(case: dict[str, Any]) -> dict[str, Any]:
+    target = case.get("target")
+    try:
+        if target == "trading_guard":
+            return run_trading_guard_case(case)
+        if target == "security_surface":
+            return run_security_surface_case(case)
+        if target == "research_assets":
+            return run_research_assets_case(case)
+        return {
+            "target": str(target),
+            "case_id": str(case.get("id", "unnamed")),
+            "invariant_ok": False,
+            "error": "unknown target",
+        }
+    except Exception as exc:  # noqa: BLE001 - fuzz harness records all unexpected failures.
+        return {
+            "target": str(target),
+            "case_id": str(case.get("id", "unnamed")),
+            "invariant_ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def build_fuzz_report(
+    *,
+    seed: int,
+    generated_count: int,
+    corpus_path: Path = DEFAULT_CORPUS,
+) -> dict[str, Any]:
+    corpus_cases = load_corpus(corpus_path)
+    cases = [*corpus_cases, *generated_cases(seed=seed, count=generated_count)]
+    results = [run_case(case) for case in cases]
+    failed = [item for item in results if not item["invariant_ok"]]
+    targets = sorted({str(item.get("target")) for item in results})
+    return {
+        "schema": "finharness.fuzz_baseline.v1",
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "seed": seed,
+        "generated_count": generated_count,
+        "corpus_ref": repo_path(corpus_path),
+        "case_count": len(results),
+        "passed_case_count": len(results) - len(failed),
+        "failed_case_count": len(failed),
+        "failed_cases": failed,
+        "targets": targets,
+        "scorecard_status": "local_baseline_not_oss_fuzz_or_clusterfuzzlite",
+        "non_claims": [
+            "Not OSS-Fuzz coverage.",
+            "Not ClusterFuzzLite coverage.",
+            "Not live exchange fuzzing.",
+            "Does not authorize live trading.",
+        ],
+        "execution_allowed": False,
+    }
+
+
+def write_report(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seed", type=int, default=20260604)
+    parser.add_argument("--generated-count", type=int, default=32)
+    parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--report-output", type=Path, default=DEFAULT_REPORT)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    report = build_fuzz_report(
+        seed=args.seed,
+        generated_count=args.generated_count,
+        corpus_path=args.corpus,
+    )
+    write_report(args.report_output, report)
+    print(
+        json.dumps(
+            {
+                "report_ref": repo_path(args.report_output),
+                "case_count": report["case_count"],
+                "failed_case_count": report["failed_case_count"],
+                "targets": report["targets"],
+                "execution_allowed": False,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if report["failed_case_count"] == 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

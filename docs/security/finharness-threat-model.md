@@ -11,8 +11,8 @@ credential exposure, accidental live mutation, research-asset or prompt
 injection crossing into execution authority, receipt/log leakage, supply-chain
 compromise, and false release claims. Current controls are strongest around
 paper/fake-first execution, redacted scanner reporting, release preflight, and
-GitHub security workflows; the largest residual gaps are formal fuzzing, SBOM
-and provenance, and a fully PR-only review model for `main`.
+GitHub security workflows; the largest residual gaps are formal fuzzing-service
+coverage, provenance depth, and a fully PR-only review model for `main`.
 
 ## Scope and assumptions
 
@@ -235,7 +235,7 @@ flowchart TD
 | TM-004 | Developer or PR author | Workflow/Taskfile/preflight changed. | Weaken checks while keeping release-ready language. | False release confidence and missed vulnerabilities. | GitHub workflows, release receipts | `task release:preflight`; `release_preflight_graph`; rulesets in `docs/operations/repository-governance.md`; CodeQL/Gitleaks/Trivy workflow | Main keeps admin bypass; no CODEOWNERS | Add CODEOWNERS and require PR-only for high-risk paths when team workflow is ready | Alert on changes under `.github/`, `Taskfile.yml`, `src/finharness/*execution*`, `risk_gate`, `hardening` | medium | high | high |
 | TM-005 | Dependency or action supply-chain attacker | Malicious or vulnerable dependency enters lockfile or workflow. | Execute attacker-controlled code in CI/local checks. | Code execution, evidence poisoning, data exfiltration. | Dependencies, workflows, release evidence | Dependabot config, SHA-pinned actions, Trivy, `uv.lock`, `pnpm-lock.yaml`, `.github/workflows/security.yml` | No SBOM/provenance baseline yet | Add SBOM task and SLSA provenance plan before packaging artifacts | Monitor Dependabot, lockfile diffs, Scorecard Pinned-Dependencies, Trivy findings | medium | high | high |
 | TM-006 | Local operator or malformed provider response | Provider API/CLI returns unexpected or stale data. | Treat bad quote/order/account data as valid evidence. | Bad research conclusions or unsafe paper workflow. | Market/account evidence, receipts | Response shape checks in `src/finharness/alpaca_client.py` callers and layer quality fields | Freshness and provider outage monitoring are incomplete | Add freshness monitor and provider outage playbook; enforce stale-data status in receipts | Dashboard stale receipt warnings, provider error counters, data age fields | medium | medium | medium |
-| TM-007 | Developer, local process, or malicious generated data | Receipt writer or generated file claims readiness incorrectly. | Poison dashboard or release gate evidence. | Incorrect governance state. | Receipts, dashboard, release preflight | `governance_dashboard_graph`, `release_preflight_graph`, property tests in `tests/test_property_baseline.py` | Receipts are unsigned and mutable local files | Add receipt schema/version checksums and optional signed release receipts | Diff generated receipts; assert `execution_allowed=false` invariants in tests | medium | medium | medium |
+| TM-007 | Developer, local process, or malicious generated data | Receipt writer or generated file claims readiness incorrectly. | Poison dashboard or release gate evidence. | Incorrect governance state. | Receipts, dashboard, release preflight | `governance_dashboard_graph`, `release_preflight_graph`, property tests in `tests/test_property_baseline.py`, fuzz baseline in `tests/test_security_fuzz.py` | Receipts are unsigned and mutable local files | Add receipt schema/version checksums and optional signed release receipts | Diff generated receipts; assert `execution_allowed=false` invariants in tests and fuzz report | medium | medium | medium |
 | TM-008 | External contributor or compromised admin | Main admin bypass used for sensitive change. | Land high-risk change without prior review. | Review gap for security-critical paths. | Rulesets, workflows, trading boundaries | `main` ruleset requires checks and allows admin bypass; `release/*` strict ruleset | Main is not PR-only and lacks CODEOWNERS | Add CODEOWNERS; require PR for release branches now and consider PR-only main later | Scorecard Code-Review and Branch-Protection alerts; ruleset audit logs | medium | medium | medium |
 
 ## Criticality calibration
@@ -282,4 +282,3 @@ flowchart TD
   listed explicitly because the requested path was to proceed.
 - Open questions are documented and should be revisited if FinHarness becomes a
   hosted service or live trading system.
-

@@ -100,6 +100,11 @@ tasks:
     cmds:
       - uv run python scripts/generate_security_sbom.py
 
+  security:fuzz:
+    desc: Run deterministic governance-boundary fuzz baseline
+    cmds:
+      - uv run python scripts/run_fuzz_baseline.py
+
   rust:check:
     desc: Run Rust format and tests
     cmds:

@@ -61,6 +61,7 @@ def supply_chain_node(state: ReleasePreflightGraphState) -> ReleasePreflightGrap
     workflow_paths = [
         ".github/workflows/security.yml",
         ".github/workflows/scorecard.yml",
+        ".github/workflows/fuzz.yml",
     ]
     present = [path for path in workflow_paths if (root / path).exists()]
     missing = sorted(set(workflow_paths) - set(present))
@@ -72,6 +73,7 @@ def supply_chain_node(state: ReleasePreflightGraphState) -> ReleasePreflightGrap
                 root / ".github" / "workflows" / "scorecard.yml"
             ).exists(),
             "codeql_workflow_present": (root / ".github" / "workflows" / "security.yml").exists(),
+            "fuzz_workflow_present": (root / ".github" / "workflows" / "fuzz.yml").exists(),
             "workflow_refs_present": present,
             "missing_workflow_refs": missing,
         }
@@ -90,6 +92,8 @@ def release_gate_node(state: ReleasePreflightGraphState) -> ReleasePreflightGrap
         missing.append("scorecard_workflow")
     if not supply_chain["codeql_workflow_present"]:
         missing.append("codeql_workflow")
+    if not supply_chain["fuzz_workflow_present"]:
+        missing.append("fuzz_workflow")
     return {
         "release_gate": {
             "release_ready": not missing,

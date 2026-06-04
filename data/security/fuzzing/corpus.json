@@ -1,0 +1,67 @@
+{
+  "schema": "finharness.fuzz_corpus.v1",
+  "description": "Deterministic governance-boundary fuzz cases. No secrets, credentials, live provider calls, or autonomous execution.",
+  "cases": [
+    {
+      "id": "trading_guard_hard_drawdown_no_thesis",
+      "target": "trading_guard",
+      "drawdown_pct": -99.0,
+      "consecutive_losses": 0,
+      "minutes_since_last_trade": 0,
+      "planned_trade_has_written_thesis": false
+    },
+    {
+      "id": "trading_guard_large_loss_streak",
+      "target": "trading_guard",
+      "drawdown_pct": 0.0,
+      "consecutive_losses": 999,
+      "minutes_since_last_trade": null,
+      "planned_trade_has_written_thesis": true
+    },
+    {
+      "id": "trading_guard_clear_boundary",
+      "target": "trading_guard",
+      "drawdown_pct": 0.0,
+      "consecutive_losses": 0,
+      "minutes_since_last_trade": 999,
+      "planned_trade_has_written_thesis": true
+    },
+    {
+      "id": "security_surface_execution_paths",
+      "target": "security_surface",
+      "paths": [
+        "src/finharness/execution.py",
+        "src/finharness/risk-gate.py",
+        ".github/workflows/security.yml"
+      ]
+    },
+    {
+      "id": "security_surface_doc_only",
+      "target": "security_surface",
+      "paths": [
+        "docs/ordinary.md"
+      ]
+    },
+    {
+      "id": "research_assets_known_and_unknown",
+      "target": "research_assets",
+      "asset_ids": [
+        "trend_following_v0",
+        "no_lookahead_validation_v0",
+        "unknown_asset",
+        "live_write_enable"
+      ],
+      "layer": "L9"
+    },
+    {
+      "id": "research_assets_path_like_ids",
+      "target": "research_assets",
+      "asset_ids": [
+        "../secret",
+        ".env",
+        "OKX-LIVE-WRITE"
+      ],
+      "layer": "L8"
+    }
+  ]
+}

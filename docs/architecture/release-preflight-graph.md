@@ -16,6 +16,7 @@ source
 - Dependabot configuration.
 - CodeQL workflow in `.github/workflows/security.yml`.
 - OpenSSF Scorecard workflow in `.github/workflows/scorecard.yml`.
+- Deterministic fuzz baseline workflow in `.github/workflows/fuzz.yml`.
 - GitHub dependency graph expected from committed manifests and lockfiles.
 
 ## Local Command

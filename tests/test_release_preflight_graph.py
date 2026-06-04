@@ -13,6 +13,11 @@ class ReleasePreflightGraphTest(unittest.TestCase):
         self.assertTrue(final["supply_chain"]["dependabot_config_present"])
         self.assertTrue(final["supply_chain"]["codeql_workflow_present"])
         self.assertTrue(final["supply_chain"]["scorecard_workflow_present"])
+        self.assertTrue(final["supply_chain"]["fuzz_workflow_present"])
+        self.assertIn(
+            ".github/workflows/fuzz.yml",
+            final["supply_chain"]["workflow_refs_present"],
+        )
         self.assertFalse(final["release_gate"]["execution_allowed"])
 
 

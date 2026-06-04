@@ -9,7 +9,7 @@ Latest inspected Scorecard run: `26885441201` on commit `b3fbddf`.
 | Branch-Protection | Ruleset policy selected | GitHub setting, workflow decision | Main medium protection and release strict protection |
 | Code-Review | No approved changesets observed | GitHub workflow policy | Enable via branch protection after solo workflow decision |
 | License | Apache-2.0 selected | Done | Added top-level `LICENSE` and package metadata |
-| Fuzzing | No recognized fuzzer integration | Future quality investment | Added lightweight property baseline; defer heavy fuzzer |
+| Fuzzing | No recognized OSS-Fuzz/ClusterFuzzLite integration | RC0.2 local baseline, future quality investment | Added `task security:fuzz`, deterministic corpus, CI fuzz workflow; still not a formal fuzzing service |
 | CII-Best-Practices | No badge | External process | Defer until RC process stabilizes |
 | Maintained | Repo created within last 90 days | Time/external | Not directly fixable |
 | Pinned-Dependencies | Prior findings fixed | Code/CI | Keep GitHub Actions SHA-pinned |
@@ -48,7 +48,7 @@ After this pass:
   the repository governance document.
 - Decide whether to move `main` from medium protection to PR-only review
   workflow later.
-- Decide if a real fuzzing service is worth the operational weight for RC0.1.
+- Decide if a real fuzzing service is worth the operational weight after RC0.2.
 - Add security response runbook in RC0.2.
 - Upgrade local SBOM/provenance baseline to formal SBOM/SLSA attestation once
   the release artifact shape is chosen.
