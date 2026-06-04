@@ -1,0 +1,109 @@
+{
+  "receipt_id": "engineering_delivery_20260604T091939Z_rc0-2-trading-validation-report-v1",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-04T09:19:39.303875+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260604T091939Z_rc0-2-trading-validation-report-v1",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-04T09:19:39.303875+00:00",
+    "goal": "RC0.2 trading validation report v1",
+    "source_ref": "docs/reviews/2026-06-02-finharness-ten-layer-mvp-summary.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/reports/trading-validation-report-v1.md"
+    ],
+    "change_type": "validation_report",
+    "scope": "Add regenerable trading validation report that separates MVP boundary validation from performance and live-trading claims",
+    "non_goals": [
+      "No profitable strategy claim; no best-execution certification; no live trading approval"
+    ],
+    "success_criteria": [
+      "task trading:validation-report emits mvp_boundary_validated=true",
+      "task check passes",
+      "release preflight and governance dashboard are ready"
+    ],
+    "planned_files": [
+      "scripts/generate_trading_validation_report.py",
+      "docs/reports/trading-validation-report-v1.md",
+      "data/reports/trading-validation-report-v1.json",
+      "tests/test_trading_validation_report.py"
+    ],
+    "changed_files": [
+      "Taskfile.yml",
+      "scripts/generate_trading_validation_report.py",
+      "tests/test_trading_validation_report.py",
+      "docs/reports/trading-validation-report-v1.md",
+      "data/reports/trading-validation-report-v1.json",
+      "docs/architecture/generated/repo-intelligence.md",
+      "docs/operations/governance-dashboard-latest.md",
+      "data/receipts/governance-dashboard/latest.json"
+    ],
+    "docs_updated": [
+      "docs/reports/trading-validation-report-v1.md"
+    ],
+    "checks": [
+      {
+        "name": "ruff trading validation report",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "unittest trading validation report",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task trading validation report",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task repo intelligence",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task security scan",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task release preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task governance dashboard",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "15de57466deed20b5082ba7b3cbc49a97333269c0d72458bf4cdc1b0d7d372f6"
+  },
+  "lineage": {
+    "source_ref": "docs/reviews/2026-06-02-finharness-ten-layer-mvp-summary.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/reports/trading-validation-report-v1.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

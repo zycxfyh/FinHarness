@@ -1,0 +1,119 @@
+{
+  "claim_ledger": [
+    {
+      "claim": "Ten-layer MVP chain exists and preserves evidence boundaries.",
+      "evidence": [
+        "docs/reviews/2026-06-02-finharness-ten-layer-mvp-summary.md",
+        "task check",
+        "task release:preflight"
+      ],
+      "status": "supported"
+    },
+    {
+      "claim": "Local hardening, dependency, secret, and workflow checks pass.",
+      "evidence": [
+        "security workflow",
+        "task security:scan",
+        "CodeQL/Gitleaks/Trivy"
+      ],
+      "status": "supported"
+    },
+    {
+      "claim": "Governance-boundary fuzzing has a deterministic baseline.",
+      "evidence": [
+        "task security:fuzz",
+        "data/security/fuzzing/latest.json"
+      ],
+      "status": "supported_local_baseline"
+    },
+    {
+      "claim": "FinHarness has validated profitable trading performance.",
+      "evidence": [],
+      "status": "not_supported"
+    },
+    {
+      "claim": "FinHarness is ready for autonomous live trading.",
+      "evidence": [
+        "execution_allowed=false",
+        "live execution blocked by design"
+      ],
+      "status": "rejected"
+    }
+  ],
+  "evidence_refs": {
+    "fuzz_baseline": "data/security/fuzzing/latest.json",
+    "governance_dashboard": "data/receipts/governance-dashboard/latest.json",
+    "provenance_baseline": "data/security/provenance/finharness-provenance-baseline.json",
+    "release_preflight": "data/receipts/release-preflight/latest.json",
+    "sbom": "data/security/sbom/finharness-sbom.json"
+  },
+  "evidence_summary": {
+    "fuzz_case_count": 103,
+    "fuzz_failed_case_count": 0,
+    "provenance_status": "planning_baseline_not_attestation",
+    "release_preflight_ready": true,
+    "sbom_component_count": 757
+  },
+  "execution_allowed": false,
+  "generated_at": "2026-06-04T09:19:19Z",
+  "git_head": "2d5bead7ad99176f6437b9a49ccc6b5d9919e665",
+  "next_validation_steps": [
+    "Add strategy-level validation report templates for StrategySpec assets.",
+    "Add transaction-cost and slippage assumption reports for any paper experiment.",
+    "Add signed/checksummed release receipts before distributing artifacts.",
+    "Decide whether to adopt Hypothesis, Atheris, OSS-Fuzz, or ClusterFuzzLite.",
+    "Add CODEOWNERS and decide if main should become PR-only."
+  ],
+  "non_claims": [
+    "Not investment advice.",
+    "Not a performance presentation.",
+    "Not GIPS, FINRA, SEC, broker, exchange, custody, tax, or accounting compliance.",
+    "Not best-execution certification.",
+    "Not autonomous live trading approval."
+  ],
+  "residual_gaps": [
+    "No statistically significant out-of-sample strategy validation report.",
+    "No broker-certified best execution or venue routing analysis.",
+    "No live trading authorization, dual-control approval, or signed live receipt.",
+    "No formal CycloneDX/SPDX SBOM or signed SLSA provenance yet.",
+    "OpenSSF Scorecard still does not recognize the local fuzz baseline as formal fuzzing.",
+    "Main branch still has admin bypass and is not PR-only."
+  ],
+  "schema": "finharness.trading_validation_report.v1",
+  "scope": "FinHarness ten-layer MVP trading research and governance boundary",
+  "validation_matrix": [
+    {
+      "area": "L1-L10 contracts",
+      "evidence": "unit tests and ten-layer docs",
+      "status": "pass"
+    },
+    {
+      "area": "Execution boundary",
+      "evidence": "risk gate and execution tests",
+      "status": "paper_or_fake_first_only"
+    },
+    {
+      "area": "Post-trade reconciliation",
+      "evidence": "post-trade tests and MVP summary",
+      "status": "local_snapshot_reconciliation_only"
+    },
+    {
+      "area": "Security maturity",
+      "evidence": "threat model, SSDF map, SBOM, fuzz baseline",
+      "status": "rc0_2_baseline"
+    },
+    {
+      "area": "External performance validity",
+      "evidence": "none",
+      "status": "not_validated"
+    }
+  ],
+  "validation_result": {
+    "classification": "research_evidence_chain_ready_for_local_paper_or_fake_first_use",
+    "dashboard_status": "human_review",
+    "execution_allowed": false,
+    "mvp_boundary_validated": true,
+    "release_ready": true,
+    "requires_human_review": true
+  }
+}

@@ -1,7 +1,7 @@
 {
-  "dashboard_status": "human_review",
+  "dashboard_status": "ready",
   "execution_allowed": false,
-  "generated_at": "2026-06-04T09:05:27Z",
+  "generated_at": "2026-06-04T09:19:23Z",
   "hardening_gate": {
     "checks": [
       {
@@ -36,7 +36,7 @@
       }
     ],
     "execution_allowed": false,
-    "generated_at": "2026-06-04T09:05:11Z",
+    "generated_at": "2026-06-04T09:19:09Z",
     "present": true,
     "release_blocked": false,
     "status": "passed"
@@ -49,38 +49,38 @@
     "slow_check_count": 0,
     "slow_checks": [],
     "status": "within_budget",
-    "total_duration_seconds": 104.581
+    "total_duration_seconds": 103.286
   },
   "quality_governance": {
     "checks": [
       {
         "budget_seconds": 180.0,
-        "duration_seconds": 82.397,
+        "duration_seconds": 81.046,
         "name": "task check",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 90.0,
-        "duration_seconds": 20.492,
+        "duration_seconds": 20.493,
         "name": "task hardening:gate",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 45.0,
-        "duration_seconds": 1.692,
+        "duration_seconds": 1.747,
         "name": "task eval:redteam-boundary",
         "ok": true,
         "status": "passed"
       }
     ],
-    "decision": "human_review",
+    "decision": "passed",
     "failed_required_checks": [],
     "performance_status": "within_budget",
     "receipt_ref": "/root/projects/finharness/data/receipts/quality-governance/latest.json",
     "release_blocked": false,
-    "requires_human_review": true
+    "requires_human_review": false
   },
   "receipt_refs": {
     "hardening_gate": "/root/projects/finharness/data/receipts/hardening/latest-hardening-gate.json",
@@ -90,7 +90,7 @@
   },
   "redteam_boundary": {
     "budget_seconds": 45.0,
-    "duration_seconds": 1.692,
+    "duration_seconds": 1.747,
     "name": "task eval:redteam-boundary",
     "ok": true,
     "status": "passed"
@@ -100,60 +100,43 @@
     "receipt_ref": "/root/projects/finharness/data/receipts/release-preflight/latest.json",
     "release_blocked": false,
     "release_ready": true,
-    "requires_human_review": true
+    "requires_human_review": false
   },
   "repo_intelligence": {
     "changed_surface": [
-      ".github/workflows/fuzz.yml",
       "Taskfile.yml",
-      "data/receipts/engineering-delivery/20260604T090037Z-rc0-2-deterministic-fuzzing-baseline.json",
-      "data/receipts/governance-dashboard/latest.json",
-      "data/security/fuzzing/",
+      "data/reports/",
       "docs/architecture/generated/repo-intelligence.md",
-      "docs/architecture/release-preflight-graph.md",
-      "docs/operations/governance-dashboard-latest.md",
-      "docs/reviews/2026-06-04-rc0-2-deterministic-fuzzing-baseline-engineering-delivery.md",
-      "docs/security/finharness-threat-model.md",
-      "docs/security/openssf-scorecard-roadmap.md",
-      "docs/security/ssdf-control-map.md",
-      "docs/testing/property-and-fuzz-baseline.md",
-      "scripts/run_fuzz_baseline.py",
-      "src/finharness/release_preflight_graph.py",
-      "tests/test_release_preflight_graph.py",
-      "tests/test_security_fuzz.py"
+      "docs/reports/",
+      "scripts/generate_trading_validation_report.py",
+      "tests/test_trading_validation_report.py"
     ],
     "inventory_summary": {
       "by_role": {
         "build_or_task": 4,
-        "docs": 142,
-        "other": 32,
+        "docs": 143,
+        "other": 33,
         "research_asset": 20,
-        "script": 43,
+        "script": 44,
         "security": 15,
         "source": 49,
-        "test": 34
+        "test": 35
       },
-      "file_count": 339,
-      "total_lines": 68938
+      "file_count": 343,
+      "total_lines": 69453
     },
     "receipt_ref": "/root/projects/finharness/data/receipts/repo-intelligence/latest.json",
     "required_checks": [
       "task check",
-      "task hardening:gate",
-      "task security:scan"
+      "task hardening:gate"
     ],
     "security_surface": {
       "execution_allowed": false,
-      "high_risk_files": [
-        {
-          "path": ".github/workflows/fuzz.yml",
-          "reason": "security configuration or eval"
-        }
-      ],
-      "requires_human_review": true
+      "high_risk_files": [],
+      "requires_human_review": false
     }
   },
-  "requires_human_review": true,
+  "requires_human_review": false,
   "source": {
     "authority_boundary": "This dashboard aggregates governance evidence; it does not authorize live trading or replace release preflight.",
     "execution_allowed": false,

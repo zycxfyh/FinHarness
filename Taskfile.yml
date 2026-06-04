@@ -301,6 +301,11 @@ tasks:
     cmds:
       - cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
 
+  trading:validation-report:
+    desc: Generate RC0.2 trading validation report v1
+    cmds:
+      - uv run python scripts/generate_trading_validation_report.py
+
   guard:interactive:
     desc: Interactive pre-trade guard — entry, stop, equity, thesis
     cmds:
