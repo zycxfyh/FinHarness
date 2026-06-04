@@ -1,30 +1,29 @@
 # Governance Dashboard
 
-Generated at: `2026-06-04T03:52:25Z`
+Generated at: `2026-06-04T04:12:51Z`
 
 ## RC0.1 Posture
 
 - Release ready: `true`
 - Release blocked: `false`
-- Requires human review: `true`
+- Requires human review: `false`
 - Execution allowed: `false`
-- Dashboard status: `human_review`
+- Dashboard status: `ready`
 
 ## Repo Intelligence
 
-- Files: `322`
-- Total lines: `58772`
-- Changed files: `4`
+- Files: `323`
+- Total lines: `59007`
+- Changed files: `6`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
-- `task security:scan`
 
 ## Quality Governance
 
-- Decision: `human_review`
+- Decision: `passed`
 - Release blocked: `false`
 - Performance status: `within_budget`
 

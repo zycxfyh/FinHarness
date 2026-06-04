@@ -1,13 +1,13 @@
 # License Decision Memo
 
-FinHarness currently has no repository license. This memo compares options for
-RC0.1. It does not create a `LICENSE` file and does not grant usage rights.
+FinHarness uses the Apache License 2.0 for RC0.1 and later repository work
+unless superseded by a future explicit legal decision.
 
-## Decision Needed
+## Decision
 
-Pick a license posture before a public release candidate is announced. Until
-then, external users should treat the repository as all rights reserved except
-where GitHub's normal viewing/forking terms apply.
+Apache-2.0 was selected because FinHarness is infrastructure-style engineering
+software where broad adoption, clear patent terms, and standard open-source
+compatibility matter more than reciprocal source-control restrictions.
 
 ## Options
 
@@ -29,13 +29,18 @@ but also allows closed-source reuse of the governance method. A reciprocal or
 source-available license protects more of the method but may reduce ecosystem
 contribution and integration.
 
-## Recommendation
+## Superseded Recommendation
 
-For RC0.1, keep the repository unlicensed until the product/open-source strategy
-is explicit. Prepare two candidate paths for user decision:
+The earlier RC0.1 recommendation was to keep the repository unlicensed until
+the product/open-source strategy was explicit. That recommendation is now
+superseded by the Apache-2.0 decision.
 
-- If the goal is broad developer adoption: Apache-2.0.
-- If the goal is productization with controlled commercial use: source-available
-  or proprietary-first, then revisit open-source modules later.
+If future productization needs a different posture, handle it as a new legal
+and governance decision rather than as an incidental engineering change.
 
-Do not add `LICENSE` until the user confirms the desired legal posture.
+## Implementation
+
+- Repository license file: `LICENSE`
+- Package metadata: `pyproject.toml` declares `Apache-2.0`
+- Scorecard License finding is expected to close after GitHub reindexes the
+  default branch and the scorecard workflow uploads fresh SARIF.

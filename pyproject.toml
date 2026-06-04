@@ -3,6 +3,7 @@ name = "finharness"
 version = "0.1.0"
 description = "AI finance research and harness engineering lab."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "backtrader>=1.9.78.123",

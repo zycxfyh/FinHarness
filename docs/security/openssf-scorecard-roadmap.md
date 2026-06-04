@@ -6,9 +6,9 @@ Latest inspected Scorecard run: `26885441201` on commit `b3fbddf`.
 
 | Check | Current posture | Class | RC0.1 action |
 | --- | --- | --- | --- |
-| Branch-Protection | Scorecard finding open | GitHub setting, workflow decision | Documented dry-run ruleset; wait for user confirmation before enforcing |
+| Branch-Protection | Ruleset policy selected | GitHub setting, workflow decision | Main medium protection and release strict protection |
 | Code-Review | No approved changesets observed | GitHub workflow policy | Enable via branch protection after solo workflow decision |
-| License | No license file detected | User/legal decision | Added license decision memo; do not create LICENSE yet |
+| License | Apache-2.0 selected | Done | Added top-level `LICENSE` and package metadata |
 | Fuzzing | No recognized fuzzer integration | Future quality investment | Added lightweight property baseline; defer heavy fuzzer |
 | CII-Best-Practices | No badge | External process | Defer until RC process stabilizes |
 | Maintained | Repo created within last 90 days | Time/external | Not directly fixable |
@@ -40,7 +40,9 @@ After this pass:
 
 ## Remaining Decisions
 
-- Confirm branch protection/ruleset enforcement level.
-- Confirm license posture.
-- Decide whether to add PR-only review workflow for `main`.
+- Keep Apache-2.0 unless a future explicit legal decision supersedes it.
+- Keep `main` medium protection and `release/*` strict protection aligned with
+  the repository governance document.
+- Decide whether to move `main` from medium protection to PR-only review
+  workflow later.
 - Decide if a real fuzzing service is worth the operational weight for RC0.1.

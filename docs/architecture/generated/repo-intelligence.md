@@ -1,25 +1,26 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T03:52:25Z`
+Generated at: `2026-06-04T04:12:51Z`
 
 ## Summary
 
-- Files: `322`
-- Total lines: `58772`
+- Files: `323`
+- Total lines: `59007`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `.github/workflows/scorecard.yml`
-- `.github/workflows/security.yml`
+- `LICENSE`
 - `docs/architecture/generated/repo-intelligence.md`
+- `docs/governance/license-decision-memo.md`
+- `docs/operations/repository-governance.md`
 - `docs/security/openssf-scorecard-roadmap.md`
+- `pyproject.toml`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
-- `task security:scan`
 
 ## Mermaid
 
