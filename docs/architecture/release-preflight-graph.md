@@ -14,6 +14,7 @@ source
 ## Supply Chain Inputs
 
 - Dependabot configuration.
+- CODEOWNERS ownership map in `.github/CODEOWNERS`.
 - CodeQL workflow in `.github/workflows/security.yml`.
 - OpenSSF Scorecard workflow in `.github/workflows/scorecard.yml`.
 - Deterministic fuzz baseline workflow in `.github/workflows/fuzz.yml`.
@@ -35,4 +36,4 @@ data/receipts/release-preflight/latest.json
 ## Release Rule
 
 The release gate is ready only when quality governance is not blocked and the
-core supply-chain controls are present.
+core supply-chain and ownership controls are present.

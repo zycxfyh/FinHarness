@@ -1,0 +1,117 @@
+{
+  "receipt_id": "engineering_delivery_20260604T093346Z_rc0-2-security-response-and-ownership-governance",
+  "workflow": "langgraph_engineering_delivery_v1",
+  "status": "pass",
+  "timestamp_utc": "2026-06-04T09:33:46.772204+00:00",
+  "snapshot": {
+    "snapshot_id": "engineering_delivery_20260604T093346Z_rc0-2-security-response-and-ownership-governance",
+    "workflow": "langgraph_engineering_delivery_v1",
+    "timestamp_utc": "2026-06-04T09:33:46.772204+00:00",
+    "goal": "RC0.2 security response and ownership governance",
+    "source_ref": "docs/security/ssdf-control-map.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security/security-response-runbook.md",
+      "docs/operations/repository-governance.md"
+    ],
+    "change_type": "security_governance",
+    "scope": "Add security response runbook, CODEOWNERS coverage, and release-preflight CODEOWNERS presence gate",
+    "non_goals": [
+      "No remote GitHub ruleset change; no live trading authorization; no compliance certification"
+    ],
+    "success_criteria": [
+      "security runbook records severity, triage, rotation, release-blocking, and closure evidence",
+      "CODEOWNERS covers high-risk security, provider, risk, execution, governance, and report paths",
+      "release preflight records codeowners_present=true"
+    ],
+    "planned_files": [
+      ".github/CODEOWNERS",
+      "docs/security/security-response-runbook.md",
+      "src/finharness/release_preflight_graph.py",
+      "tests/test_security_maturity_docs.py"
+    ],
+    "changed_files": [
+      ".github/CODEOWNERS",
+      ".github/SECURITY.md",
+      "docs/security/security-response-runbook.md",
+      "docs/security/ssdf-control-map.md",
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/security/finharness-threat-model.md",
+      "docs/operations/repository-governance.md",
+      "docs/architecture/release-preflight-graph.md",
+      "src/finharness/release_preflight_graph.py",
+      "tests/test_release_preflight_graph.py",
+      "tests/test_security_maturity_docs.py",
+      "docs/architecture/generated/repo-intelligence.md",
+      "docs/operations/governance-dashboard-latest.md",
+      "data/receipts/governance-dashboard/latest.json"
+    ],
+    "docs_updated": [
+      "docs/security/security-response-runbook.md",
+      "docs/security/ssdf-control-map.md",
+      "docs/security/openssf-scorecard-roadmap.md",
+      "docs/security/finharness-threat-model.md",
+      "docs/operations/repository-governance.md",
+      "docs/architecture/release-preflight-graph.md"
+    ],
+    "checks": [
+      {
+        "name": "ruff security ownership governance",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "unittest security maturity release preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task check",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task repo intelligence",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task security scan",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task release preflight",
+        "status": "passed",
+        "detail": ""
+      },
+      {
+        "name": "task governance dashboard",
+        "status": "passed",
+        "detail": ""
+      }
+    ],
+    "design_gate": {
+      "ok": true,
+      "missing": [],
+      "required_proposal": false
+    },
+    "quality_gate": {
+      "ok": true,
+      "status": "pass",
+      "missing_or_failed": []
+    },
+    "execution_allowed": false,
+    "output_hash": "edc88b441a0fe775a972d725e606fb52b7084a87f7af943f30c1c18f3f8ef6ba"
+  },
+  "lineage": {
+    "source_ref": "docs/security/ssdf-control-map.md",
+    "proposal_ref": null,
+    "module_refs": [
+      "docs/security/security-response-runbook.md",
+      "docs/operations/repository-governance.md"
+    ],
+    "transform_version": "langgraph_engineering_delivery_v1"
+  },
+  "remaining_debt": []
+}

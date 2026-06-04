@@ -69,6 +69,7 @@ def supply_chain_node(state: ReleasePreflightGraphState) -> ReleasePreflightGrap
         "supply_chain": {
             "dependency_graph_expected": True,
             "dependabot_config_present": (root / ".github" / "dependabot.yml").exists(),
+            "codeowners_present": (root / ".github" / "CODEOWNERS").exists(),
             "scorecard_workflow_present": (
                 root / ".github" / "workflows" / "scorecard.yml"
             ).exists(),
@@ -88,6 +89,8 @@ def release_gate_node(state: ReleasePreflightGraphState) -> ReleasePreflightGrap
         missing.append("quality_governance_pass")
     if not supply_chain["dependabot_config_present"]:
         missing.append("dependabot_config")
+    if not supply_chain["codeowners_present"]:
+        missing.append("codeowners")
     if not supply_chain["scorecard_workflow_present"]:
         missing.append("scorecard_workflow")
     if not supply_chain["codeql_workflow_present"]:

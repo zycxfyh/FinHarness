@@ -13,17 +13,17 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 
 | SSDF family | FinHarness current evidence | Status | Gap |
 | --- | --- | --- | --- |
-| PO: Prepare the Organization | Apache-2.0 license, repository rulesets, security policy, governance docs | partial | No formal role matrix or incident owner model |
-| PS: Protect the Software | Gitleaks, Trivy, CodeQL, Dependabot, pinned actions, branch rulesets | partial | No SBOM or SLSA/provenance artifact yet |
-| PW: Produce Well-Secured Software | Typed layer contracts, tests, hardening gate, red-team corpus, release preflight | partial | No formal threat-model gate in `task check`; fuzzing is lightweight only |
-| RV: Respond to Vulnerabilities | `.github/SECURITY.md`, Dependabot, scanner receipts | partial | No vulnerability triage SLA or rotation playbook |
+| PO: Prepare the Organization | Apache-2.0 license, repository rulesets, CODEOWNERS, security policy, governance docs | partial | Main is not PR-only and current rulesets do not require code-owner review |
+| PS: Protect the Software | Gitleaks, Trivy, CodeQL, Dependabot, pinned actions, branch rulesets, local SBOM/provenance baseline | partial | No formal CycloneDX/SPDX SBOM or signed SLSA provenance yet |
+| PW: Produce Well-Secured Software | Typed layer contracts, tests, hardening gate, red-team corpus, deterministic fuzz baseline, release preflight | partial | No formal fuzzing service recognized by Scorecard |
+| RV: Respond to Vulnerabilities | `.github/SECURITY.md`, security response runbook, Dependabot, scanner receipts | partial | No recurring vulnerability review cadence or live-provider dual-control process |
 
 ## PO: Prepare the Organization
 
 | Practice intent | Current evidence | Residual work |
 | --- | --- | --- |
 | Define security requirements | `docs/security/mvp-hardening-gate.md`, `docs/security/finharness-threat-model.md` | Turn high-priority threats into tracked tasks |
-| Define roles and responsibilities | `docs/operations/repository-governance.md`, GitHub rulesets | Add CODEOWNERS and maintainer/reviewer role notes |
+| Define roles and responsibilities | `.github/CODEOWNERS`, `docs/operations/repository-governance.md`, GitHub rulesets | Decide whether to require code-owner review in rulesets |
 | Establish secure development workflow | `Taskfile.yml`, `task release:preflight`, `task governance:dashboard` | Decide if/when `main` becomes PR-only |
 | Define acceptable release evidence | `docs/architecture/release-preflight-graph.md`, `docs/operations/governance-dashboard-latest.md` | Add signed release receipt or checksum policy |
 
@@ -31,7 +31,7 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 
 | Practice intent | Current evidence | Residual work |
 | --- | --- | --- |
-| Protect code repository | Apache-2.0 `LICENSE`, active main and release rulesets | Add CODEOWNERS for high-risk paths |
+| Protect code repository | Apache-2.0 `LICENSE`, `.github/CODEOWNERS`, active main and release rulesets | Decide if/when `main` becomes PR-only and code-owner review is enforced |
 | Protect secrets | `.gitleaks.toml`, `src/finharness/hardening.py`, `task hardening:gate` | Add rotation checklist and local secret inventory policy |
 | Protect build/release integrity | SHA-pinned GitHub Actions, `uv.lock`, `pnpm-lock.yaml`, Dependabot, `task security:sbom` | Upgrade local SBOM to formal CycloneDX/SPDX and signed SLSA provenance after artifact shape is chosen |
 | Protect generated evidence | Receipts under `data/receipts/`, release preflight receipt | Add receipt schema/checksum verification |
@@ -49,19 +49,20 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 
 | Practice intent | Current evidence | Residual work |
 | --- | --- | --- |
-| Receive vulnerability reports | `.github/SECURITY.md` private reporting link | Add response SLA and severity rubric |
+| Receive vulnerability reports | `.github/SECURITY.md` private reporting link, `docs/security/security-response-runbook.md` | Add recurring security review cadence |
 | Identify vulnerable dependencies | Dependabot and Trivy | Add recurring review receipt for ignored/deferred alerts |
 | Analyze and remediate findings | `task hardening:gate`, redacted scanner receipts | Add post-remediation lesson template for security incidents |
 | Disclose or document residual risk | Scorecard roadmap and governance docs | Add release notes section for security posture changes |
 
 ## RC0.2 Recommended Work Items
 
-1. Add `docs/security/security-response-runbook.md` with severity, triage,
-   rotation, and disclosure steps.
+1. Decide whether to require code-owner review for `release/*` and later
+   `main`.
 2. Upgrade `task security:sbom` from local baseline to a mature generator if
    packaging/release artifacts become public.
 3. Add signed provenance/SLSA attestation for future packaged releases.
-4. Add CODEOWNERS for high-risk paths.
+4. Add recurring security review receipts for open Scorecard and vulnerability
+   posture.
 5. Evaluate whether RC0.3 should add Hypothesis, Atheris, OSS-Fuzz, or
    ClusterFuzzLite beyond the current deterministic governance fuzz baseline.
 

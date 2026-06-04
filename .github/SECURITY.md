@@ -38,3 +38,9 @@ FinHarness security work should preserve these boundaries:
   changes.
 - Local checks, hardening gates, red-team boundary evals, and CI evidence before
   release claims.
+
+For triage, severity, rotation, release-blocking, and closure evidence, use:
+
+```text
+docs/security/security-response-runbook.md
+```

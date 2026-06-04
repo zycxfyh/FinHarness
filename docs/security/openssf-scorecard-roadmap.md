@@ -1,13 +1,13 @@
 # OpenSSF Scorecard Roadmap
 
-Latest inspected Scorecard run: `26885441201` on commit `b3fbddf`.
+Latest inspected Scorecard run: `26942343943` on commit `2d5bead`.
 
 ## Classification
 
 | Check | Current posture | Class | RC0.1 action |
 | --- | --- | --- | --- |
-| Branch-Protection | Ruleset policy selected | GitHub setting, workflow decision | Main medium protection and release strict protection |
-| Code-Review | No approved changesets observed | GitHub workflow policy | Enable via branch protection after solo workflow decision |
+| Branch-Protection | Main medium protection with admin bypass; release strict protection | GitHub setting, workflow decision | Keep current solo-maintainer posture or move main to PR-only later |
+| Code-Review | CODEOWNERS exists, but rulesets do not require code-owner review | GitHub workflow policy | Decide when to enforce code-owner review |
 | License | Apache-2.0 selected | Done | Added top-level `LICENSE` and package metadata |
 | Fuzzing | No recognized OSS-Fuzz/ClusterFuzzLite integration | RC0.2 local baseline, future quality investment | Added `task security:fuzz`, deterministic corpus, CI fuzz workflow; still not a formal fuzzing service |
 | CII-Best-Practices | No badge | External process | Defer until RC process stabilizes |
@@ -40,6 +40,10 @@ After this pass:
 - Apache-2.0 license and GitHub rulesets are active.
 - Threat model and SSDF control map are established for RC0.2 maturity work.
 - Local SBOM and provenance baseline task exists as `task security:sbom`.
+- Deterministic fuzz baseline exists as `task security:fuzz` and a CI workflow,
+  but Scorecard still does not recognize it as formal fuzzing.
+- Trading validation report v1 exists and rejects live/performance overclaims.
+- Security response runbook and CODEOWNERS exist as RC0.2 governance evidence.
 
 ## Remaining Decisions
 
@@ -48,7 +52,7 @@ After this pass:
   the repository governance document.
 - Decide whether to move `main` from medium protection to PR-only review
   workflow later.
+- Decide whether to require code-owner review on `release/*` and later `main`.
 - Decide if a real fuzzing service is worth the operational weight after RC0.2.
-- Add security response runbook in RC0.2.
 - Upgrade local SBOM/provenance baseline to formal SBOM/SLSA attestation once
   the release artifact shape is chosen.

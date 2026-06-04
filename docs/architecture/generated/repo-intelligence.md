@@ -1,26 +1,33 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T09:19:23Z`
+Generated at: `2026-06-04T09:33:27Z`
 
 ## Summary
 
-- Files: `343`
-- Total lines: `69453`
+- Files: `346`
+- Total lines: `69708`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `Taskfile.yml`
-- `data/reports/`
+- `.github/CODEOWNERS`
+- `.github/SECURITY.md`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/reports/`
-- `scripts/generate_trading_validation_report.py`
-- `tests/test_trading_validation_report.py`
+- `docs/architecture/release-preflight-graph.md`
+- `docs/operations/repository-governance.md`
+- `docs/security/finharness-threat-model.md`
+- `docs/security/openssf-scorecard-roadmap.md`
+- `docs/security/security-response-runbook.md`
+- `docs/security/ssdf-control-map.md`
+- `src/finharness/release_preflight_graph.py`
+- `tests/test_release_preflight_graph.py`
+- `tests/test_security_maturity_docs.py`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
+- `task security:scan`
 
 ## Mermaid
 

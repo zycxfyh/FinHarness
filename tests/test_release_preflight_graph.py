@@ -11,6 +11,7 @@ class ReleasePreflightGraphTest(unittest.TestCase):
         final = result["final"]
         self.assertEqual(final["source"]["graph"], "release_preflight_graph")
         self.assertTrue(final["supply_chain"]["dependabot_config_present"])
+        self.assertTrue(final["supply_chain"]["codeowners_present"])
         self.assertTrue(final["supply_chain"]["codeql_workflow_present"])
         self.assertTrue(final["supply_chain"]["scorecard_workflow_present"])
         self.assertTrue(final["supply_chain"]["fuzz_workflow_present"])

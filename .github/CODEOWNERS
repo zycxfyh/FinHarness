@@ -1,0 +1,39 @@
+# FinHarness ownership map.
+#
+# This file documents review ownership for high-risk paths. It does not by
+# itself change branch ruleset enforcement unless GitHub code-owner review is
+# required by a ruleset.
+
+* @zycxfyh
+
+# Security, CI, release, and repository governance.
+.github/ @zycxfyh
+.gitleaks.toml @zycxfyh
+Taskfile.yml @zycxfyh
+pyproject.toml @zycxfyh
+uv.lock @zycxfyh
+package.json @zycxfyh
+pnpm-lock.yaml @zycxfyh
+Cargo.lock @zycxfyh
+
+# Trading, provider, execution, risk, and governance code.
+src/finharness/execution.py @zycxfyh
+src/finharness/execution_graph.py @zycxfyh
+src/finharness/risk_gate.py @zycxfyh
+src/finharness/risk_gate_graph.py @zycxfyh
+src/finharness/okx_cli.py @zycxfyh
+src/finharness/alpaca_client.py @zycxfyh
+src/finharness/release_preflight_graph.py @zycxfyh
+src/finharness/quality_governance_graph.py @zycxfyh
+src/finharness/governance_dashboard.py @zycxfyh
+src/finharness/governance_dashboard_graph.py @zycxfyh
+src/finharness/hardening.py @zycxfyh
+src/finharness/research_assets.py @zycxfyh
+src/finharness/ten_layer_graph.py @zycxfyh
+
+# Security, governance, and validation evidence.
+docs/security/ @zycxfyh
+docs/operations/ @zycxfyh
+docs/reports/ @zycxfyh
+data/security/ @zycxfyh
+data/reports/ @zycxfyh

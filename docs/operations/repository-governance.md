@@ -20,12 +20,15 @@ Generated for RC0.1 hardening on 2026-06-04.
 - Dependabot config: present
 - Code scanning workflow: present
 - Scorecard workflow: present
+- CODEOWNERS: present as ownership documentation for high-risk paths
 
 ## Current Alerts
 
-- Dependabot: no open alerts after the `aiohttp 3.14.0` lockfile update.
-- Code scanning: Token-Permissions is fixed. Branch-Protection and License are
-  expected to improve after ruleset/license indexing and a fresh scorecard run.
+- Dependabot: no open alerts after the current lockfile updates.
+- Code scanning: remaining open alerts are Scorecard governance posture items:
+  Branch-Protection, Code-Review, Fuzzing, CII-Best-Practices, and Maintained.
+  The local deterministic fuzz baseline exists, but Scorecard does not
+  recognize it as OSS-Fuzz or ClusterFuzzLite coverage.
 
 ## RC0.1 Ruleset Policy
 
@@ -36,6 +39,9 @@ The selected policy is:
   dismissal, last-push approval, and review-thread resolution. New release
   branch creation is allowed so a release branch can be cut from a checked
   commit before stricter update rules apply.
+- `.github/CODEOWNERS`: documents current owner coverage for security,
+  governance, provider, risk, execution, release, and report paths. Current
+  rulesets do not yet require code-owner review.
 
 Main ruleset:
 
