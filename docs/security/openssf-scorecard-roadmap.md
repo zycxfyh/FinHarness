@@ -30,6 +30,8 @@ After this pass:
 
 - Security policy is detected and has a private report link.
 - GitHub Actions are pinned to full commit SHAs.
+- Security workflow uses Node 24-ready setup actions where available
+  (`astral-sh/setup-uv` v8.2.0 and `go-task/setup-task` v2.1.0).
 - Governance dashboard task and receipt exist.
 - Property-style boundary tests exist and are part of `task check`.
 - `aiohttp` lockfile is upgraded to the patched `3.14.0` version.

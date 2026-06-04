@@ -1,36 +1,24 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T03:37:28Z`
+Generated at: `2026-06-04T03:45:35Z`
 
 ## Summary
 
 - Files: `322`
-- Total lines: `58770`
+- Total lines: `58760`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `Taskfile.yml`
-- `data/receipts/governance-dashboard/`
-- `data/receipts/repository-governance/`
+- `.github/workflows/security.yml`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/governance-dashboard.md`
-- `docs/governance/`
-- `docs/operations/governance-dashboard-latest.md`
-- `docs/operations/repository-governance.md`
 - `docs/security/openssf-scorecard-roadmap.md`
-- `docs/testing/`
-- `scripts/run_governance_dashboard.py`
-- `src/finharness/governance_dashboard.py`
-- `src/finharness/governance_dashboard_graph.py`
-- `tests/test_governance_dashboard.py`
-- `tests/test_property_baseline.py`
-- `uv.lock`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
+- `task security:scan`
 
 ## Mermaid
 
