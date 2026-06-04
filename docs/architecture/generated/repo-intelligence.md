@@ -1,22 +1,36 @@
 # Repo Intelligence
 
-Generated at: `2026-06-03T12:39:02Z`
+Generated at: `2026-06-04T03:37:28Z`
 
 ## Summary
 
-- Files: `311`
-- Total lines: `57866`
+- Files: `322`
+- Total lines: `58770`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `.github/SECURITY.md`
+- `Taskfile.yml`
+- `data/receipts/governance-dashboard/`
+- `data/receipts/repository-governance/`
+- `docs/architecture/generated/repo-intelligence.md`
+- `docs/architecture/governance-dashboard.md`
+- `docs/governance/`
+- `docs/operations/governance-dashboard-latest.md`
+- `docs/operations/repository-governance.md`
+- `docs/security/openssf-scorecard-roadmap.md`
+- `docs/testing/`
+- `scripts/run_governance_dashboard.py`
+- `src/finharness/governance_dashboard.py`
+- `src/finharness/governance_dashboard_graph.py`
+- `tests/test_governance_dashboard.py`
+- `tests/test_property_baseline.py`
+- `uv.lock`
 
 ## Required Checks
 
 - `task check`
 - `task hardening:gate`
-- `task security:scan`
 
 ## Mermaid
 
@@ -35,6 +49,8 @@ flowchart LR
   n_src_finharness_events_graph_py["events_graph.py"]
   n_src_finharness_execution_py["execution.py"]
   n_src_finharness_execution_graph_py["execution_graph.py"]
+  n_src_finharness_governance_dashboard_py["governance_dashboard.py"]
+  n_src_finharness_governance_dashboard_graph_py["governance_dashboard_graph.py"]
   n_src_finharness_hardening_py["hardening.py"]
   n_src_finharness_hypotheses_py["hypotheses.py"]
   n_src_finharness_hypotheses_graph_py["hypotheses_graph.py"]
@@ -86,6 +102,11 @@ flowchart LR
   n_src_finharness_execution_graph_py --> n_src_finharness_research_assets_py
   n_src_finharness_execution_graph_py --> n_src_finharness_risk_gate_py
   n_src_finharness_execution_graph_py --> n_src_finharness_risk_gate_graph_py
+  n_src_finharness_governance_dashboard_py --> n_src_finharness_release_preflight_graph_py
+  n_src_finharness_governance_dashboard_py --> n_src_finharness_repo_intelligence_py
+  n_src_finharness_governance_dashboard_py --> n_src_finharness_repo_intelligence_graph_py
+  n_src_finharness_governance_dashboard_graph_py --> n_src_finharness_governance_dashboard_py
+  n_src_finharness_governance_dashboard_graph_py --> n_src_finharness_repo_intelligence_py
   n_src_finharness_hypotheses_py --> n_src_finharness_interpretation_py
   n_src_finharness_hypotheses_py --> n_src_finharness_market_data_py
   n_src_finharness_hypotheses_graph_py --> n_src_finharness_hypotheses_py
@@ -144,9 +165,4 @@ flowchart LR
   n_src_finharness_ten_layer_graph_py --> n_src_finharness_market_data_graph_py
   n_src_finharness_ten_layer_graph_py --> n_src_finharness_post_trade_graph_py
   n_src_finharness_ten_layer_graph_py --> n_src_finharness_proposal_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_research_assets_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_risk_gate_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_validation_graph_py
-  n_src_finharness_validation_py --> n_src_finharness_hypotheses_py
-  n_src_finharness_validation_py --> n_src_finharness_market_data_py
 ```

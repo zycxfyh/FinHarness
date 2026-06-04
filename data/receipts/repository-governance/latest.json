@@ -1,0 +1,21 @@
+{
+  "workflow": "repository_governance_audit_v1",
+  "generated_at": "2026-06-04T00:00:00Z",
+  "repository": "zycxfyh/FinHarness",
+  "default_branch": "main",
+  "viewer_permission": "ADMIN",
+  "security_policy_enabled": true,
+  "license_configured": false,
+  "branch_protection_enabled": false,
+  "rulesets_configured": false,
+  "dependabot_config_present": true,
+  "codeql_workflow_present": true,
+  "scorecard_workflow_present": true,
+  "execution_allowed": false,
+  "decision": "dry_run_only",
+  "notes": [
+    "Main branch protection and rulesets were audited but not applied because they can affect solo direct-push development.",
+    "License remains a user/legal decision.",
+    "Dependabot aiohttp alerts are handled by upgrading uv.lock to aiohttp 3.14.0 in the RC0.1 hardening pass."
+  ]
+}

@@ -36,6 +36,7 @@ tasks:
       - task: rust:check
       - task: lint
       - task: test
+      - task: test:properties
       - task: experiments
       - task: eval:smoke
 
@@ -63,6 +64,16 @@ tasks:
     desc: Run release preflight graph with authoritative local checks
     cmds:
       - uv run python scripts/run_release_preflight_graph.py --run-checks
+
+  governance:dashboard:
+    desc: Build the RC governance dashboard receipt and Markdown report
+    cmds:
+      - uv run python scripts/run_governance_dashboard.py
+
+  test:properties:
+    desc: Run property-style governance and boundary tests
+    cmds:
+      - uv run python -m unittest tests/test_property_baseline.py
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
