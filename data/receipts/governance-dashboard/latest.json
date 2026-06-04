@@ -1,7 +1,7 @@
 {
   "dashboard_status": "human_review",
   "execution_allowed": false,
-  "generated_at": "2026-06-04T03:45:35Z",
+  "generated_at": "2026-06-04T03:52:25Z",
   "hardening_gate": {
     "checks": [
       {
@@ -36,7 +36,7 @@
       }
     ],
     "execution_allowed": false,
-    "generated_at": "2026-06-04T03:45:21Z",
+    "generated_at": "2026-06-04T03:52:11Z",
     "present": true,
     "release_blocked": false,
     "status": "passed"
@@ -49,27 +49,27 @@
     "slow_check_count": 0,
     "slow_checks": [],
     "status": "within_budget",
-    "total_duration_seconds": 102.175
+    "total_duration_seconds": 100.343
   },
   "quality_governance": {
     "checks": [
       {
         "budget_seconds": 180.0,
-        "duration_seconds": 81.062,
+        "duration_seconds": 79.225,
         "name": "task check",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 90.0,
-        "duration_seconds": 19.365,
+        "duration_seconds": 19.395,
         "name": "task hardening:gate",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 45.0,
-        "duration_seconds": 1.748,
+        "duration_seconds": 1.723,
         "name": "task eval:redteam-boundary",
         "ok": true,
         "status": "passed"
@@ -90,7 +90,7 @@
   },
   "redteam_boundary": {
     "budget_seconds": 45.0,
-    "duration_seconds": 1.748,
+    "duration_seconds": 1.723,
     "name": "task eval:redteam-boundary",
     "ok": true,
     "status": "passed"
@@ -104,6 +104,7 @@
   },
   "repo_intelligence": {
     "changed_surface": [
+      ".github/workflows/scorecard.yml",
       ".github/workflows/security.yml",
       "docs/architecture/generated/repo-intelligence.md",
       "docs/security/openssf-scorecard-roadmap.md"
@@ -120,7 +121,7 @@
         "test": 31
       },
       "file_count": 322,
-      "total_lines": 58760
+      "total_lines": 58772
     },
     "receipt_ref": "/root/projects/finharness/data/receipts/repo-intelligence/latest.json",
     "required_checks": [
@@ -131,6 +132,10 @@
     "security_surface": {
       "execution_allowed": false,
       "high_risk_files": [
+        {
+          "path": ".github/workflows/scorecard.yml",
+          "reason": "security configuration or eval"
+        },
         {
           "path": ".github/workflows/security.yml",
           "reason": "security configuration or eval"

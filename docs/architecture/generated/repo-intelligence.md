@@ -1,15 +1,16 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T03:45:35Z`
+Generated at: `2026-06-04T03:52:25Z`
 
 ## Summary
 
 - Files: `322`
-- Total lines: `58760`
+- Total lines: `58772`
 - Execution allowed: `false`
 
 ## Changed Surface
 
+- `.github/workflows/scorecard.yml`
 - `.github/workflows/security.yml`
 - `docs/architecture/generated/repo-intelligence.md`
 - `docs/security/openssf-scorecard-roadmap.md`
