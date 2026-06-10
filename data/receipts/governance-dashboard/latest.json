@@ -1,7 +1,7 @@
 {
-  "dashboard_status": "human_review",
+  "dashboard_status": "ready",
   "execution_allowed": false,
-  "generated_at": "2026-06-04T09:33:27Z",
+  "generated_at": "2026-06-10T09:15:26Z",
   "hardening_gate": {
     "checks": [
       {
@@ -36,7 +36,7 @@
       }
     ],
     "execution_allowed": false,
-    "generated_at": "2026-06-04T09:33:08Z",
+    "generated_at": "2026-06-04T09:42:16Z",
     "present": true,
     "release_blocked": false,
     "status": "passed"
@@ -49,38 +49,38 @@
     "slow_check_count": 0,
     "slow_checks": [],
     "status": "within_budget",
-    "total_duration_seconds": 105.559
+    "total_duration_seconds": 136.136
   },
   "quality_governance": {
     "checks": [
       {
         "budget_seconds": 180.0,
-        "duration_seconds": 82.421,
+        "duration_seconds": 104.938,
         "name": "task check",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 90.0,
-        "duration_seconds": 21.464,
+        "duration_seconds": 29.075,
         "name": "task hardening:gate",
         "ok": true,
         "status": "passed"
       },
       {
         "budget_seconds": 45.0,
-        "duration_seconds": 1.674,
+        "duration_seconds": 2.123,
         "name": "task eval:redteam-boundary",
         "ok": true,
         "status": "passed"
       }
     ],
-    "decision": "human_review",
+    "decision": "passed",
     "failed_required_checks": [],
     "performance_status": "within_budget",
     "receipt_ref": "/root/projects/finharness/data/receipts/quality-governance/latest.json",
     "release_blocked": false,
-    "requires_human_review": true
+    "requires_human_review": false
   },
   "receipt_refs": {
     "hardening_gate": "/root/projects/finharness/data/receipts/hardening/latest-hardening-gate.json",
@@ -90,7 +90,7 @@
   },
   "redteam_boundary": {
     "budget_seconds": 45.0,
-    "duration_seconds": 1.674,
+    "duration_seconds": 2.123,
     "name": "task eval:redteam-boundary",
     "ok": true,
     "status": "passed"
@@ -100,59 +100,39 @@
     "receipt_ref": "/root/projects/finharness/data/receipts/release-preflight/latest.json",
     "release_blocked": false,
     "release_ready": true,
-    "requires_human_review": true
+    "requires_human_review": false
   },
   "repo_intelligence": {
     "changed_surface": [
-      ".github/CODEOWNERS",
-      ".github/SECURITY.md",
       "docs/architecture/generated/repo-intelligence.md",
-      "docs/architecture/release-preflight-graph.md",
-      "docs/operations/repository-governance.md",
-      "docs/security/finharness-threat-model.md",
-      "docs/security/openssf-scorecard-roadmap.md",
-      "docs/security/security-response-runbook.md",
-      "docs/security/ssdf-control-map.md",
-      "src/finharness/release_preflight_graph.py",
-      "tests/test_release_preflight_graph.py",
-      "tests/test_security_maturity_docs.py"
+      "src/finharness.egg-info/"
     ],
     "inventory_summary": {
       "by_role": {
         "build_or_task": 4,
-        "docs": 145,
-        "other": 33,
+        "docs": 148,
+        "other": 38,
         "research_asset": 20,
         "script": 44,
         "security": 16,
         "source": 49,
         "test": 35
       },
-      "file_count": 346,
-      "total_lines": 69708
+      "file_count": 354,
+      "total_lines": 70285
     },
     "receipt_ref": "/root/projects/finharness/data/receipts/repo-intelligence/latest.json",
     "required_checks": [
       "task check",
-      "task hardening:gate",
-      "task security:scan"
+      "task hardening:gate"
     ],
     "security_surface": {
       "execution_allowed": false,
-      "high_risk_files": [
-        {
-          "path": ".github/CODEOWNERS",
-          "reason": "security configuration or eval"
-        },
-        {
-          "path": ".github/SECURITY.md",
-          "reason": "security configuration or eval"
-        }
-      ],
-      "requires_human_review": true
+      "high_risk_files": [],
+      "requires_human_review": false
     }
   },
-  "requires_human_review": true,
+  "requires_human_review": false,
   "source": {
     "authority_boundary": "This dashboard aggregates governance evidence; it does not authorize live trading or replace release preflight.",
     "execution_allowed": false,

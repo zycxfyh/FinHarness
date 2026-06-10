@@ -1,17 +1,19 @@
 # Repo Intelligence
 
-Generated at: `2026-06-04T09:41:41Z`
+Generated at: `2026-06-10T09:25:59Z`
 
 ## Summary
 
-- Files: `348`
-- Total lines: `69971`
+- Files: `354`
+- Total lines: `70285`
 - Execution allowed: `false`
 
 ## Changed Surface
 
+- `data/receipts/governance-dashboard/latest.json`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/post-mvp-maturity-roadmap.md`
+- `docs/operations/governance-dashboard-latest.md`
+- `src/finharness.egg-info/`
 
 ## Required Checks
 
