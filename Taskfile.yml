@@ -70,6 +70,11 @@ tasks:
     cmds:
       - uv run python scripts/run_governance_dashboard.py
 
+  project:governance-adapter:
+    desc: Adapt workstation Project Governance Loop receipt into FinHarness compatibility receipt
+    cmds:
+      - uv run python scripts/run_project_governance_adapter.py
+
   test:properties:
     desc: Run property-style governance and boundary tests
     cmds:

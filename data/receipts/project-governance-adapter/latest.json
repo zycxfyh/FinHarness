@@ -1,0 +1,199 @@
+{
+  "claims": [
+    "FinHarness compatibility surfaces are explicitly mapped to workstation governance stages.",
+    "Existing FinHarness graph APIs, Taskfile entrypoints, and output paths remain the compatibility contract.",
+    "The adapter read workstation governance evidence instead of importing workstation code."
+  ],
+  "cognitive_summary": {
+    "artifact_contract": {
+      "authority_boundary": "cognitive intake plans project knowledge artifacts; it does not create, approve, or update project-local knowledge files",
+      "contract_version": "project_governance_cognitive_artifact_contract_v1",
+      "planned_artifact_kinds": [
+        "idea",
+        "workflow_note",
+        "proposal",
+        "review",
+        "lesson",
+        "cognitive_receipt"
+      ],
+      "reference_object": "cognitive_graph.py",
+      "write_policy": "artifact plans are receipt evidence only until a separate action authorizes project-local writes"
+    },
+    "artifact_count": 6
+  },
+  "compatibility_contract": {
+    "authority_boundary": "This adapter summarizes workstation governance evidence for FinHarness; it does not authorize trading, release, migration, or source movement.",
+    "compatibility_policy": {
+      "preserve_current_output_paths": true,
+      "preserve_public_apis": true,
+      "preserve_taskfile_entrypoints": true,
+      "workstation_loop_dependency": "optional receipt bridge; no import-time dependency"
+    },
+    "project": "finharness",
+    "root": "/root/projects/finharness",
+    "stage_compatibility": [
+      {
+        "current_outputs": [
+          "ideas/*.md",
+          "docs/notes/*-workflow-note.md",
+          "docs/proposals/*.md",
+          "docs/reviews/*.md",
+          "docs/lessons/*.md",
+          "data/receipts/cognitive-graph/*.json"
+        ],
+        "public_api": "run_cognitive_project_flow",
+        "reference_object": "cognitive_graph.py",
+        "stage": "cognitive_intake",
+        "taskfile_entrypoint": "workflow:cognitive"
+      },
+      {
+        "current_outputs": [
+          "data/receipts/repo-intelligence/latest.json",
+          "docs/architecture/generated/repo-intelligence.md"
+        ],
+        "public_api": "run_repo_intelligence_graph",
+        "reference_object": "repo_intelligence_graph.py",
+        "stage": "repo_observation",
+        "taskfile_entrypoint": "repo:intelligence"
+      },
+      {
+        "current_outputs": [
+          "data/receipts/quality-governance/latest.json"
+        ],
+        "public_api": "run_quality_governance_graph",
+        "reference_object": "quality_governance_graph.py",
+        "stage": "quality_gate",
+        "taskfile_entrypoint": "quality:governance"
+      },
+      {
+        "current_outputs": [
+          "data/receipts/engineering-delivery/*.json",
+          "docs/reviews/*-engineering-delivery.md"
+        ],
+        "public_api": "run_engineering_delivery_graph",
+        "reference_object": "engineering_delivery_graph.py",
+        "stage": "delivery_receipt",
+        "taskfile_entrypoint": "workflow:engineering-delivery"
+      }
+    ],
+    "workflow": "finharness_project_governance_adapter_v1",
+    "workstation_receipt_path": "/root/workstation-lab/receipts/project-governance-loop/finharness/latest.json",
+    "workstation_receipt_present": true
+  },
+  "delivery_summary": {
+    "decision": "blocked_by_quality_gate",
+    "local_checks_status": "blocked_checks_not_run",
+    "review_required": true
+  },
+  "draft": true,
+  "generated_at": "2026-06-12T11:04:14Z",
+  "not_claimed": [
+    "No FinHarness source migration is performed.",
+    "No release, trading, deployment, or live execution authority is granted.",
+    "No quality pass is claimed unless the source workstation receipt records executed checks."
+  ],
+  "project": {
+    "project_name": "finharness",
+    "project_root": "/root/projects/finharness"
+  },
+  "quality_summary": {
+    "checks_executed": false,
+    "decision": "blocked_checks_not_run",
+    "quality_claimed": false,
+    "redteam_boundary_gate": {
+      "authority_boundary": "redteam_boundary_gate records local governance evidence; it does not authorize release, security sign-off, red-team sign-off, or remote workflow execution",
+      "categories": [
+        "redteam"
+      ],
+      "commands": [
+        "task eval:redteam-boundary"
+      ],
+      "execution_allowed": false,
+      "name": "redteam_boundary_gate",
+      "observed": true,
+      "release_blocking": true,
+      "required": true,
+      "required_commands": [
+        "task eval:redteam-boundary"
+      ],
+      "result_statuses": [
+        "not_run"
+      ],
+      "status": "not_cleared"
+    },
+    "release_gate": {
+      "authority_boundary": "release gate is advisory evidence only; it does not approve release, deployment, migration, or live execution",
+      "decision": "blocked_checks_not_run",
+      "execution_allowed": false,
+      "missing": [
+        "redteam_boundary_gate_cleared",
+        "required_checks_passed",
+        "security_hardening_gate_cleared"
+      ],
+      "quality_claimed": false,
+      "release_blocked": true,
+      "release_recommendation": "do_not_release_until_required_checks_pass",
+      "requires_human_review": true
+    },
+    "security_hardening_gate": {
+      "authority_boundary": "security_hardening_gate records local governance evidence; it does not authorize release, security sign-off, red-team sign-off, or remote workflow execution",
+      "categories": [
+        "security"
+      ],
+      "commands": [
+        "github workflow: .github/workflows/security.yml",
+        "task hardening:gate",
+        "task security:scan"
+      ],
+      "execution_allowed": false,
+      "name": "security_hardening_gate",
+      "observed": true,
+      "release_blocking": true,
+      "required": true,
+      "required_commands": [
+        "github workflow: .github/workflows/security.yml",
+        "task hardening:gate",
+        "task security:scan"
+      ],
+      "result_statuses": [
+        "not_run"
+      ],
+      "status": "not_cleared"
+    }
+  },
+  "receipt_ref": "/root/projects/finharness/data/receipts/project-governance-adapter/latest.json",
+  "remaining_debt": [
+    "Future wrapper delegation still needs a separate migration plan and FinHarness compatibility tests.",
+    "Human review is required before changing existing FinHarness graph entrypoints or receipt paths."
+  ],
+  "source": {
+    "adapter_mode": "receipt_bridge",
+    "execution_allowed": false,
+    "source_ref": "/root/workstation-lab/receipts/project-governance-loop/finharness/latest.json",
+    "source_workflow": "langgraph_project_governance_loop_v1"
+  },
+  "stage_statuses": {
+    "cognitive_intake": {
+      "feature_parity_status": "feature_parity_met",
+      "mapped_finharness_object": "cognitive_graph.py",
+      "v1_status": "stage_parity_met"
+    },
+    "delivery_receipt": {
+      "feature_parity_status": "feature_parity_met",
+      "mapped_finharness_object": "engineering_delivery_graph.py",
+      "v1_status": "stage_parity_met"
+    },
+    "quality_gate": {
+      "feature_parity_status": "feature_parity_met",
+      "mapped_finharness_object": "quality_governance_graph.py",
+      "v1_status": "stage_parity_met"
+    },
+    "repo_observation": {
+      "feature_parity_status": "feature_parity_met",
+      "mapped_finharness_object": "repo_intelligence_graph.py",
+      "v1_status": "stage_parity_met"
+    }
+  },
+  "status": "adapted",
+  "workflow": "finharness_project_governance_adapter_v1"
+}
