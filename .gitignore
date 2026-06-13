@@ -19,6 +19,7 @@ data/receipts/quality-governance/
 data/receipts/release-preflight/
 data/receipts/repo-intelligence/
 data/receipts/risk-gates/
+data/receipts/receipt-usage-audit/
 data/receipts/validations/
 data/redteam/exports/
 data/state/
