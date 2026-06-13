@@ -1,7 +1,18 @@
 # FinHarness Post-MVP Maturity Roadmap
 
+> DEMOTED 2026-06-13 to keep-warm backlog by
+> docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.md.
+> The governing roadmap is docs/think/2026-06-12-target-state-b-and-loop-
+> topology.md (north star: B4). This document's RC0.3 priorities optimize
+> governance maturity — which the 2026-06-12 audit named as a category error
+> ("governance compounds; judgment does not"). Of the RC0.3 list, only two
+> items survive the B-doc razor: validation depth (#5) and "defer live-write
+> expansion" (#7). The rest are frozen, not deleted. Keep security/CI running;
+> do not add new governance graphs. Useful below as an external-bar reference
+> (SSDF/SLSA/DORA), not as the active plan.
+
 Date: 2026-06-04
-Status: planning baseline
+Status: keep-warm backlog (demoted from planning baseline 2026-06-13)
 
 This document compares FinHarness after the ten-layer MVP with mature software,
 security, and platform practices used by strong engineering organizations and

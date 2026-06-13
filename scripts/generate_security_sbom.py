@@ -231,13 +231,13 @@ def build_sbom(root: Path = ROOT) -> dict[str, Any]:
         "formal_standard": "local_baseline_not_cyclonedx_or_spdx",
         "component_count": len(ordered),
         "component_counts_by_ecosystem": counts,
+        # Rust crate archived 2026-06-13 (docs/archive/legacy-rust-crate); the
+        # SBOM now describes only the built/shipped Python + JS surface.
         "source_files": [
             "pyproject.toml",
             "uv.lock",
             "package.json",
             "pnpm-lock.yaml",
-            "Cargo.lock",
-            "crates/finharness-cli/Cargo.toml",
         ],
         "components": ordered,
         "execution_allowed": False,

@@ -20,11 +20,14 @@ See [docs/wheels.md](docs/wheels.md) for the current map.
 
 Use the project toolchain consistently:
 
-- Local implementation: Rust-first for new adapters, gates, receipts, and
-  workflow executables
+- Local implementation: **pragmatism-first** — Python by default for the local
+  control plane (adapters, gates, receipts, workflow executables), because the
+  rest of the control plane is already Python (one language, one source of
+  truth). A second language is justified only by a measured need and must share
+  the same persisted state and gates. See
+  [docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md](docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md).
 - JavaScript/CLI packages: `pnpm`
-- Python commands and dependencies: `uv`, only for adopted Python-native wheels
-  and narrow bridge commands
+- Python commands and dependencies: `uv`
 - Project tasks: `task`
 - Local tool versions and environment: `mise` + `direnv`
 
@@ -32,8 +35,10 @@ Prefer existing `task ...` entries over ad hoc commands. Do not use `npm`,
 `npx`, `pip`, or a global Python interpreter for project workflows unless a
 tool specifically has no `pnpm`/`uv` path.
 
-Do not add new ad hoc Python trading scripts. New local control-plane code
-should be Rust unless it is only bridging an adopted Python-native tool.
+Do not add new ad hoc trading scripts. New local control-plane code stays thin
+(adapters, guards, receipts, workflows, tests) and must not grow into homemade
+strategy, routing, or accounting engines — that boundary, not the language,
+is what carries the safety value.
 
 First-time local setup:
 
@@ -55,11 +60,12 @@ task wheels:check       # local import/version check
 task wheels:data-check  # includes OpenBB/yfinance provider call
 ```
 
-Rust local control-plane checks:
+Legacy Rust control-plane crate (`crates/finharness-cli`) — kept building until
+its capabilities are reproduced in Python, then archived (see the 2026-06-13
+ADR and live-path proposal):
 
 ```bash
-task rust:check
-cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
+task rust:check   # legacy; not the policy direction
 ```
 
 ## Loops
@@ -134,17 +140,28 @@ task okx:live-read -- swap orders
 task okx:demo -- swap orders
 ```
 
-The OKX read/write gate is now Rust-backed through `finharness-cli`.
+The OKX read/write gate runs through Python (`finharness.okx_cli` /
+`finharness.okx_live_gate`); the legacy Rust crate is archived under
+docs/archive/legacy-rust-crate (2026-06-13 ADR).
 
-Live mutating commands are connected but require both the task and an
-environment gate:
+Every live mutation passes through the fail-closed gate
+([scripts/okx_live_order.py](scripts/okx_live_order.py)): the behavioral guard
+evaluated against persisted trading-state, a notional cap (uncomputable notional
+fails closed), attestation, and a receipt for every attempt. The env gate still
+applies, and authorization is an interactive confirmation that echoes the order:
 
 ```bash
 export FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1
-task okx:live-write -- swap place --instId BTC-USDT-SWAP --side buy --ordType limit --sz 0.01 --tdMode isolated --px 1
+task okx:live-write -- swap place --instId BTC-USDT-SWAP --side buy --ordType limit \
+  --sz 0.01 --tdMode isolated --px 1 \
+  --attester "you" --reason "written plan ref" --thesis
 ```
 
-Do not run live write commands from emotion or without a written plan.
+Add `--dry-run` to see the gate decision without touching the broker. The gate
+refuses before reaching the okx binary on hard-stop drawdown/loss state, an
+over-cap notional, a missing thesis, or missing attestation. See the 2026-06-13
+red-team review and live-path proposal under docs/. Do not run live write
+commands from emotion or without a written plan.
 
 ## Top Wheels
 
@@ -155,5 +172,6 @@ See [docs/notes/top-wheel-integration-plan.md](docs/notes/top-wheel-integration-
 See [docs/notes/adopt-not-invent-trading-stack.md](docs/notes/adopt-not-invent-trading-stack.md)
 for the hard rule: local code is adapters, guards, workflows, and receipts;
 core trading semantics belong to mature projects and official venue tooling.
-See [docs/notes/rust-first-local-implementation.md](docs/notes/rust-first-local-implementation.md)
-for the Rust-first rule for new local implementation.
+See [docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md](docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md)
+for the pragmatism-first rule for new local implementation (supersedes the
+earlier Rust-first note).

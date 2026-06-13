@@ -7,8 +7,11 @@ Decision: FinHarness is not a trading-engine project.
 We use mature, market-tested projects for the hard parts and keep local code as
 thin adapters, risk gates, workflow glue, and receipts.
 
-Second decision: new local implementation is Rust-first. Python is only a
-narrow bridge for mature Python-native wheels that we intentionally adopt.
+Second decision (updated 2026-06-13): new local implementation is
+pragmatism-first — Python by default for the control plane. The first decision
+above (adopt, do not invent; thin local code) is the one that carries the
+safety value and is unchanged. The earlier "Rust-first" language mandate is
+superseded by docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md.
 
 ## Why
 
@@ -113,4 +116,5 @@ the exchange, broker, matching engine, margin engine, or institutional OMS.
 8. Make NautilusTrader the serious simulation/live-parity path before expanding
    automated execution.
 
-See [rust-first-local-implementation.md](rust-first-local-implementation.md).
+See [../adr/2026-06-13-pragmatism-first-supersedes-rust-first.md](../adr/2026-06-13-pragmatism-first-supersedes-rust-first.md)
+(supersedes the earlier rust-first-local-implementation.md note).

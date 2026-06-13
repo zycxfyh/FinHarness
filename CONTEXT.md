@@ -32,17 +32,23 @@ Workflow:
   reporting. Workflow code should orchestrate mature modules rather than hide
   trading logic inside scripts.
 
-Rust Local Layer:
-  The default language for new local FinHarness implementation. Venue adapters,
-  risk gates, receipt writers, command wrappers, and workflow executables should
-  be written in Rust unless they must directly call a mature Python-only wheel.
+Local Control Plane:
+  The language choice for new local FinHarness implementation is
+  pragmatism-first: Python by default, because the rest of the control plane
+  (LangGraph, risk gate, trading-state store, receipts, mature wheels) is
+  already Python — one language, one source of truth. Venue adapters, risk
+  gates, receipt writers, command wrappers, and workflow executables live here.
+  A second language is justified only by a measured need (performance,
+  isolation, a language-only dependency), never by language preference, and it
+  must read the same persisted state and pass the same gates as the Python
+  path. See docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md.
 
-Python Bridge:
-  A small, isolated bridge used only when a mature Python ecosystem tool is the
-  owner of the capability, such as vectorbt, Riskfolio-Lib, QuantStats,
-  NautilusTrader Python APIs, LangGraph, or OpenAI Agents SDK. Python bridge
-  code must not become strategy logic, order routing, portfolio accounting, or
-  long-lived scripts.
+Mature Wheel Boundary:
+  Heavy domain capability stays in the mature tool that owns it — vectorbt,
+  Riskfolio-Lib, QuantStats, NautilusTrader Python APIs, LangGraph, OpenAI
+  Agents SDK, OpenBB. Local code adapts and governs these; it must not become
+  strategy logic, order routing, portfolio accounting, or long-lived ad hoc
+  scripts.
 
 ## Architecture Rule
 
@@ -50,7 +56,8 @@ FinHarness local code may contain adapters, guards, receipts, workflows, and
 tests. It must not grow homemade strategy engines, order routers, portfolio
 accounting, fill models, optimizers, or live execution semantics.
 
-New local implementation is Rust-first. Do not add new Python scripts as the
-default path. If Python is unavoidable because the mature wheel is Python-only,
-keep it behind a narrow Taskfile entry or Rust wrapper and document why the
-bridge exists.
+New local implementation is pragmatism-first: Python by default for the control
+plane, kept thin and behind Taskfile entries. The rule that carries the safety
+value is the boundary above (adapters/guards/receipts/workflows/tests, no
+homemade engines), not the language. A second language must be justified by a
+measured need and must share the same persisted state and gates.

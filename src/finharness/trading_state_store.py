@@ -163,6 +163,31 @@ def update_from_post_trade_snapshot(
     return updated
 
 
+def record_live_order_placed(
+    *,
+    receipt_ref: str | None = None,
+    path: str | Path | None = None,
+) -> TradingStateRecord:
+    """Fold a placed live order into persisted state (closes Loop 3 for the
+    live path, red-team F5).
+
+    Records only the honest fact that a live order was placed: trade occurrence
+    and its source receipt. Win/loss/drawdown stay operator-reported via
+    record_operator_outcome — a placed order is not a known outcome.
+    """
+    record = load_trading_state(path)
+    updated = record.model_copy(
+        update={
+            "trades_recorded": record.trades_recorded + 1,
+            "last_trade_at_utc": _now_utc(),
+            "source_refs": _appended_refs(record, receipt_ref),
+            "updated_at_utc": _now_utc(),
+        }
+    )
+    save_trading_state(updated, path)
+    return updated
+
+
 def reset_behavior_flag(
     *,
     reason: str,
@@ -187,16 +212,44 @@ def merge_into_risk_context(
     *,
     path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Fill risk-context fields from persisted state without overriding
-    explicitly supplied keys. Explicit keys win and stay visible in receipts;
-    persisted state is the default the caller no longer has to hand-feed."""
+    """Merge persisted behavioral state into a risk context conservatively.
+
+    Persisted protective state is a floor, not a default. An explicitly supplied
+    value may only make the gate *stricter*, never weaker: a hand-fed clean
+    context can no longer erase a persisted drawdown, loss streak, or reset
+    flag. This is the fail-closed behavior the Loop 3 feedback edge requires —
+    the previous setdefault let a clean hand-fed context override a tripped hard
+    stop (red-team finding F6, 2026-06-13).
+    """
     context = dict(risk_context or {})
     record = load_trading_state(path)
-    defaults = {
-        "drawdown_pct": record.drawdown_pct,
-        "consecutive_losses": record.consecutive_losses,
-        "behavior_reset_required": record.behavior_reset_required,
-    }
-    for key, value in defaults.items():
-        context.setdefault(key, value)
+
+    # Drawdown is negative when down; the more negative (worse) value wins.
+    if "drawdown_pct" in context:
+        try:
+            context["drawdown_pct"] = min(
+                float(context["drawdown_pct"]), record.drawdown_pct
+            )
+        except (TypeError, ValueError):
+            context["drawdown_pct"] = record.drawdown_pct
+    else:
+        context["drawdown_pct"] = record.drawdown_pct
+
+    # A longer loss streak is stricter; the larger value wins.
+    if "consecutive_losses" in context:
+        try:
+            context["consecutive_losses"] = max(
+                int(context["consecutive_losses"]), record.consecutive_losses
+            )
+        except (TypeError, ValueError):
+            context["consecutive_losses"] = record.consecutive_losses
+    else:
+        context["consecutive_losses"] = record.consecutive_losses
+
+    # A reset requirement from either source must stand.
+    context["behavior_reset_required"] = (
+        bool(context.get("behavior_reset_required", False))
+        or record.behavior_reset_required
+    )
+
     return context

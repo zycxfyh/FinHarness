@@ -80,15 +80,47 @@ class TradingStateStoreTests(unittest.TestCase):
         self.assertFalse(cleared.behavior_reset_required)
         self.assertTrue(any("reviewed receipts" in note for note in cleared.notes))
 
-    def test_merge_fills_missing_keys_but_explicit_keys_win(self) -> None:
+    def test_merge_is_conservative_explicit_keys_cannot_weaken_state(self) -> None:
+        # Red-team F6 (2026-06-13): a hand-fed clean context must not erase
+        # persisted protective state. Persisted state is a floor, not a default.
         save_trading_state(
-            TradingStateRecord(drawdown_pct=-3.5, consecutive_losses=3),
+            TradingStateRecord(
+                drawdown_pct=-3.5,
+                consecutive_losses=3,
+                behavior_reset_required=True,
+            ),
             self.path,
         )
-        merged = merge_into_risk_context({"drawdown_pct": -0.1}, path=self.path)
-        self.assertEqual(merged["drawdown_pct"], -0.1)
+        merged = merge_into_risk_context(
+            {
+                "drawdown_pct": -0.1,
+                "consecutive_losses": 0,
+                "behavior_reset_required": False,
+            },
+            path=self.path,
+        )
+        # The worse persisted values win; the clean hand-fed values are ignored.
+        self.assertEqual(merged["drawdown_pct"], -3.5)
         self.assertEqual(merged["consecutive_losses"], 3)
-        self.assertFalse(merged["behavior_reset_required"])
+        self.assertTrue(merged["behavior_reset_required"])
+
+    def test_merge_lets_explicit_keys_make_state_stricter(self) -> None:
+        # The conservative merge still allows a caller to tighten the gate.
+        save_trading_state(
+            TradingStateRecord(drawdown_pct=-1.0, consecutive_losses=1),
+            self.path,
+        )
+        merged = merge_into_risk_context(
+            {
+                "drawdown_pct": -9.0,
+                "consecutive_losses": 5,
+                "behavior_reset_required": True,
+            },
+            path=self.path,
+        )
+        self.assertEqual(merged["drawdown_pct"], -9.0)
+        self.assertEqual(merged["consecutive_losses"], 5)
+        self.assertTrue(merged["behavior_reset_required"])
 
     def test_persisted_hard_stop_state_blocks_next_risk_gate_run(self) -> None:
         from finharness.risk_gate import RiskGateContext

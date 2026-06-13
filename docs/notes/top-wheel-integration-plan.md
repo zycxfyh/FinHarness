@@ -7,8 +7,10 @@ Decision: FinHarness should not grow a homemade trading engine.
 Use mature wheels for core trading system responsibilities and keep local code
 as thin adapters, safety gates, receipts, and workflow glue.
 
-New local implementation is Rust-first. Python remains only as a narrow bridge
-to mature Python-native wheels that own a capability.
+New local implementation is pragmatism-first — Python by default for the
+control plane (supersedes Rust-first; see
+docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md). Heavy domain
+capability still belongs to the mature wheel that owns it.
 
 ## Current State
 
@@ -120,7 +122,8 @@ eval prompts
 adapter glue
 ```
 
-New local glue should be Rust by default.
+New local glue should be Python by default (pragmatism-first; see the
+2026-06-13 ADR).
 
 Local code must not do:
 
@@ -144,8 +147,8 @@ vectorbt -> QuantStats -> Riskfolio-Lib -> NautilusTrader
 Do not expand live automation until the signal path has a research report, risk
 budget, execution preview, and receipt.
 
-Rust-first migration:
+Control-plane shape (pragmatism-first):
 
 ```text
-Rust control plane -> Python mature-wheel bridge only when unavoidable
+Python control plane -> mature-wheel call where the wheel owns the capability
 ```

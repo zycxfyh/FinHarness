@@ -14,7 +14,7 @@ pyproject.toml @zycxfyh
 uv.lock @zycxfyh
 package.json @zycxfyh
 pnpm-lock.yaml @zycxfyh
-Cargo.lock @zycxfyh
+docs/archive/legacy-rust-crate/ @zycxfyh
 
 # Trading, provider, execution, risk, and governance code.
 src/finharness/execution.py @zycxfyh

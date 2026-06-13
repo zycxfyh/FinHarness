@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -75,7 +76,74 @@ BLOCKED_TOKENS = frozenset(
     }
 )
 
-BLOCKED_ARG_TOKENS = frozenset({"--live", "--demo", "--json", "--env", "--profile"})
+# Red-team F8: an exact-match denylist (--live, --demo, ...) was bypassable via
+# --live=1, --profile=live, abbreviations, etc. Replaced by a per-action flag
+# allowlist: any token that looks like a flag must be explicitly permitted for
+# that command, otherwise it is rejected (fail-closed).
+_COMMON_READ_FLAGS = frozenset(
+    {
+        "--instType",
+        "--instId",
+        "--uly",
+        "--instFamily",
+        "--limit",
+        "--after",
+        "--before",
+        "--bar",
+        "--ccy",
+        "--ordId",
+        "--clOrdId",
+        "--state",
+        "--category",
+    }
+)
+
+_MUTATION_FLAGS: dict[str, frozenset[str]] = {
+    "place": frozenset(
+        {
+            "--instId",
+            "--side",
+            "--ordType",
+            "--sz",
+            "--px",
+            "--tdMode",
+            "--posSide",
+            "--reduceOnly",
+            "--clOrdId",
+            "--tgtCcy",
+            "--ccy",
+            "--lever",
+            "--mgnMode",
+        }
+    ),
+    "amend": frozenset({"--instId", "--ordId", "--clOrdId", "--newSz", "--newPx"}),
+    "cancel": frozenset({"--instId", "--ordId", "--clOrdId"}),
+    "batch": frozenset({"--instId", "--ordId", "--clOrdId"}),
+    "batch-cancel": frozenset({"--instId", "--ordId", "--clOrdId"}),
+    "close": frozenset({"--instId", "--mgnMode", "--posSide", "--ccy"}),
+    "leverage": frozenset({"--instId", "--lever", "--mgnMode", "--posSide"}),
+    "set-position-mode": frozenset({"--posMode"}),
+    "transfer": frozenset({"--ccy", "--amt", "--from", "--to", "--type"}),
+}
+
+# Output keys that must never be surfaced raw (red-team F9).
+_SENSITIVE_KEYS = frozenset(
+    {
+        "apikey",
+        "secretkey",
+        "passphrase",
+        "secret",
+        "key",
+        "privatekey",
+        "sign",
+        "token",
+        "uid",
+        "mainuid",
+        "ip",
+        "label",
+    }
+)
+_REDACTED = "***REDACTED***"
 
 
 class OkxCliError(RuntimeError):
@@ -121,6 +189,62 @@ def live_mutations_enabled() -> bool:
     return os.environ.get("FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS") == "1"
 
 
+def allowed_flags(module: str, action: str) -> frozenset[str]:
+    """Flags this command may carry. Empty means no flags allowed."""
+    if action_is_mutating(module, action):
+        return _MUTATION_FLAGS.get(action, frozenset())
+    if action_is_read_only(module, action):
+        return _COMMON_READ_FLAGS
+    return frozenset()
+
+
+def _looks_like_flag(token: str) -> bool:
+    """True for --flag / -f, but not for negative numbers like -1 or -0.5."""
+    if not token.startswith("-"):
+        return False
+    stripped = token.lstrip("-")
+    return bool(stripped) and not stripped[0].isdigit()
+
+
+def validate_command_args(module: str, action: str, args: list[str]) -> None:
+    """Reject any flag not on the per-action allowlist (red-team F8).
+
+    Catches --live=1, --profile=live, --env=prod, and short/abbreviated forms by
+    construction: a flag-looking token outside the allowlist is refused. Non-flag
+    tokens (instrument ids, sizes, prices) pass through for okx to validate.
+    """
+    allowed = allowed_flags(module, action)
+    for token in args:
+        if not _looks_like_flag(token):
+            continue
+        name = token.split("=", 1)[0]
+        if name not in allowed:
+            raise OkxCliError(
+                f"argument flag not allowed for {module} {action}: {name}"
+            )
+
+
+def redact_okx_output(obj: Any) -> Any:
+    """Recursively mask sensitive fields in an okx response (red-team F9)."""
+    if isinstance(obj, dict):
+        return {
+            key: (_REDACTED if key.lower() in _SENSITIVE_KEYS else redact_okx_output(value))
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [redact_okx_output(item) for item in obj]
+    return obj
+
+
+def redact_text(text: str) -> str:
+    """Mask key/secret-looking assignments in free text such as stderr."""
+    pattern = re.compile(
+        r"(?i)(api[_-]?key|secret[_-]?key|passphrase|secret|private[_-]?key|sign|token)"
+        r"(\"?\s*[:=]\s*\"?)([^\",}\s]+)"
+    )
+    return pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", text)
+
+
 def run_okx_command(
     module: str,
     action: str,
@@ -147,9 +271,10 @@ def run_okx_command(
 
     safe_args = args or []
     blocked = [token for token in [module, action, *safe_args] if token in BLOCKED_TOKENS]
-    blocked.extend(token for token in safe_args if token in BLOCKED_ARG_TOKENS)
     if blocked:
         raise OkxCliError(f"blocked OKX token(s): {blocked}")
+    # F8: per-action flag allowlist (replaces the bypassable arg denylist).
+    validate_command_args(module, action, safe_args)
 
     command = ["okx", "--json"]
     if live:
@@ -165,7 +290,8 @@ def run_okx_command(
         check=False,
     )
     if completed.returncode != 0:
-        stderr = completed.stderr.strip()
+        # F9: never surface raw stderr; secrets can appear in error payloads.
+        stderr = redact_text(completed.stderr.strip())
         raise OkxCliError(f"okx command failed with exit {completed.returncode}: {stderr}")
 
     try:
@@ -173,7 +299,10 @@ def run_okx_command(
     except json.JSONDecodeError as exc:
         raise OkxCliError("okx command did not return JSON") from exc
 
-    return OkxCliResult(module=module, action=action, command=command, data=data)
+    # F9: mask sensitive fields before any caller can log/store the response.
+    return OkxCliResult(
+        module=module, action=action, command=command, data=redact_okx_output(data)
+    )
 
 
 def run_okx_market_command(

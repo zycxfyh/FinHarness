@@ -99,6 +99,50 @@ class OkxCliTest(unittest.TestCase):
                 ["--instId", "BTC-USDT-SWAP", "--side", "buy", "--ordType", "limit", "--sz", "1"],
             )
 
+    # --- F8: per-action flag allowlist ----------------------------------
+
+    def test_arg_allowlist_rejects_equals_form_live(self) -> None:
+        with self.assertRaises(OkxCliError):
+            run_okx_market_command("ticker", ["BTC-USDT", "--live=1"])
+
+    def test_arg_allowlist_rejects_profile_flag(self) -> None:
+        with self.assertRaises(OkxCliError):
+            run_okx_live_read_command("account", "config", ["--profile=live"])
+
+    def test_arg_allowlist_allows_negative_number_value(self) -> None:
+        from finharness.okx_cli import validate_command_args
+
+        # -1 is a price value, not a flag; it must not be rejected.
+        validate_command_args("swap", "place", ["--px", "-1", "--sz", "0.01"])
+
+    def test_arg_allowlist_allows_known_place_flags(self) -> None:
+        from finharness.okx_cli import validate_command_args
+
+        validate_command_args(
+            "swap",
+            "place",
+            ["--instId", "BTC-USDT-SWAP", "--side", "buy", "--ordType", "limit", "--sz", "1"],
+        )
+
+    # --- F9: redaction ---------------------------------------------------
+
+    def test_redacts_sensitive_response_fields(self) -> None:
+        from finharness.okx_cli import redact_okx_output
+
+        out = redact_okx_output(
+            {"apiKey": "abc", "data": [{"secretKey": "x", "ccy": "USDT"}]}
+        )
+        self.assertEqual(out["apiKey"], "***REDACTED***")
+        self.assertEqual(out["data"][0]["secretKey"], "***REDACTED***")
+        self.assertEqual(out["data"][0]["ccy"], "USDT")
+
+    def test_redacts_secrets_in_stderr_text(self) -> None:
+        from finharness.okx_cli import redact_text
+
+        masked = redact_text('error apiKey="LIVEKEY123" passphrase=hunter2')
+        self.assertNotIn("LIVEKEY123", masked)
+        self.assertNotIn("hunter2", masked)
+
 
 if __name__ == "__main__":
     unittest.main()

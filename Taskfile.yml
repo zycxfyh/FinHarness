@@ -33,7 +33,6 @@ tasks:
   check:
     desc: Run the standard local verification suite
     cmds:
-      - task: rust:check
       - task: lint
       - task: test
       - task: test:properties
@@ -49,6 +48,11 @@ tasks:
     desc: Build local repo intelligence graph, Mermaid doc, and receipt
     cmds:
       - uv run python scripts/run_repo_intelligence_graph.py
+
+  receipt:usage-audit:
+    desc: Audit which receipts are consumed by reviews, lessons, and docs
+    cmds:
+      - uv run python scripts/run_receipt_usage_audit.py --write
 
   quality:governance:
     desc: Run quality governance graph with authoritative local checks
@@ -109,12 +113,6 @@ tasks:
     desc: Run deterministic governance-boundary fuzz baseline
     cmds:
       - uv run python scripts/run_fuzz_baseline.py
-
-  rust:check:
-    desc: Run Rust format and tests
-    cmds:
-      - cargo fmt --check
-      - cargo test
 
   lint:
     desc: Run Python lint checks
@@ -276,6 +274,16 @@ tasks:
     cmds:
       - uv run python scripts/run_lesson_draft.py {{.CLI_ARGS}}
 
+  lessons:promote:
+    desc: "B4: promote a lesson draft into a rule change with lineage (human action)"
+    cmds:
+      - uv run python scripts/promote_lesson.py {{.CLI_ARGS}}
+
+  rules:audit:
+    desc: "B4: list recorded rule changes; fail if any lacks lesson->receipt lineage"
+    cmds:
+      - uv run python scripts/audit_rule_lineage.py
+
   trading-state:show:
     desc: Show the persisted behavioral trading state (Loop 3 feedback edge)
     cmds:
@@ -299,22 +307,22 @@ tasks:
   okx:live-read:
     desc: Run an allowlisted live read-only OKX command, e.g. task okx:live-read -- account balance
     cmds:
-      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+      - uv run python scripts/run_okx_read.py {{.CLI_ARGS}}
 
   okx:demo:
     desc: Run an allowlisted OKX demo command
     cmds:
-      - cargo run -q -p finharness-cli -- okx --demo {{.CLI_ARGS}}
+      - uv run python scripts/run_okx_read.py --demo {{.CLI_ARGS}}
 
   okx:live-write:
-    desc: Run an allowlisted live mutating OKX command after env and flag gates
+    desc: Place a live OKX order through the fail-closed gate (guard + notional cap + receipt + attestation)
     cmds:
-      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+      - uv run python scripts/okx_live_order.py {{.CLI_ARGS}}
 
   trading:reset-check:
-    desc: Run behavioral trading guard example for large drawdown
+    desc: Evaluate the behavioral trading guard against persisted trading-state
     cmds:
-      - cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
+      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
 
   trading:validation-report:
     desc: Generate RC0.2 trading validation report v1
@@ -322,14 +330,9 @@ tasks:
       - uv run python scripts/generate_trading_validation_report.py
 
   guard:interactive:
-    desc: Interactive pre-trade guard — entry, stop, equity, thesis
+    desc: Evaluate the behavioral guard for a what-if drawdown/loss, e.g. -- --drawdown-pct -3 --consecutive-losses 3
     cmds:
-      - cargo run -q -p finharness-cli -- guard --interactive
-
-  receipt:rust:
-    desc: Write a minimal Rust receipt
-    cmds:
-      - cargo run -q -p finharness-cli -- receipt --kind manual --symbol NA --status ok
+      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
 
   workflow:cognitive:
     desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."

@@ -1,32 +1,11 @@
 {
-  "component_count": 757,
+  "component_count": 755,
   "component_counts_by_ecosystem": {
-    "cargo": 1,
-    "local": 3,
+    "local": 2,
     "npm": 508,
     "pypi": 245
   },
   "components": [
-    {
-      "bom_ref": "cargo:finharness-cli@0.1.0",
-      "checksum": null,
-      "ecosystem": "cargo",
-      "name": "finharness-cli",
-      "scope": "locked",
-      "source_file": "Cargo.lock",
-      "type": "library",
-      "version": "0.1.0"
-    },
-    {
-      "bom_ref": "local:finharness-cli@0.1.0",
-      "ecosystem": "local",
-      "license": null,
-      "name": "finharness-cli",
-      "scope": "root",
-      "source_file": "crates/finharness-cli/Cargo.toml",
-      "type": "application",
-      "version": "0.1.0"
-    },
     {
       "bom_ref": "local:finharness@0.1.0",
       "ecosystem": "local",
@@ -8367,16 +8346,14 @@
   ],
   "execution_allowed": false,
   "formal_standard": "local_baseline_not_cyclonedx_or_spdx",
-  "generated_at": "2026-06-04T08:39:43Z",
-  "git_head": "d32d860f52396e530cd353ec39df2410638229ba",
+  "generated_at": "2026-06-13T13:52:10Z",
+  "git_head": "914c759cb33165c035a265e6530a426bf6caa8cd",
   "schema": "finharness.local_sbom.v1",
   "source_files": [
     "pyproject.toml",
     "uv.lock",
     "package.json",
-    "pnpm-lock.yaml",
-    "Cargo.lock",
-    "crates/finharness-cli/Cargo.toml"
+    "pnpm-lock.yaml"
   ],
   "tool": "scripts/generate_security_sbom.py"
 }
