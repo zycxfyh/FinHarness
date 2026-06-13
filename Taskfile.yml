@@ -187,7 +187,7 @@ tasks:
   data:entry:
     desc: Run OpenBB quote + yfinance history + Backtrader workflow
     cmds:
-      - uv run python scripts/run_data_entry_workflow.py
+      - uv run python scripts/run_data_entry_workflow.py {{.CLI_ARGS}}
 
   market-data:graph:
     desc: Run first-layer market data LangGraph workflow

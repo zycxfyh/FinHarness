@@ -1,27 +1,35 @@
 # Repo Intelligence
 
-Generated at: `2026-06-13T16:36:34Z`
+Generated at: `2026-06-13T17:04:23Z`
 
 ## Summary
 
-- Files: `376`
-- Total lines: `75543`
+- Files: `381`
+- Total lines: `76119`
 - Execution allowed: `false`
 
 ## Changed Surface
 
 - `.gitignore`
+- `Taskfile.yml`
+- `data/receipts/rule-changes/`
+- `data/state/`
 - `docs/architecture/generated/repo-intelligence.md`
 - `docs/architecture/receipt-usage-audit.md`
-- `docs/reviews/2026-06-13-finharness-a-to-b-redteam-audit.md`
-- `scripts/run_receipt_usage_audit.py`
+- `docs/lessons/2026-06-14-loss-cooldown-tightening.md`
+- `docs/lessons/drafts/2026-06-13-lesson_draft_31f5846e7aa9.md`
+- `docs/reviews/2026-06-14-finharness-c1-c4-b4-loop-execution.md`
+- `scripts/run_trading_guard.py`
 - `src/finharness/receipt_usage_audit.py`
 - `tests/test_receipt_usage_audit.py`
+- `tests/test_run_trading_guard.py`
 
 ## Required Checks
 
 - `task check`
+- `task eval:redteam-boundary`
 - `task hardening:gate`
+- `uv run python -m unittest tests/test_execution.py`
 
 ## Mermaid
 

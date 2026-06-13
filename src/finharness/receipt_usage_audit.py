@@ -105,6 +105,20 @@ def _usage_status(references: list[dict[str, str]]) -> str:
     return "unreferenced"
 
 
+def _evidence_layer(usage_status: str) -> str:
+    """Coarse evidence-surface layer for cleanup planning.
+
+    This is a planning label, not a deletion decision. It separates durable
+    project evidence from draft/reference-only material and generated runtime
+    noise.
+    """
+    if usage_status == "consumed":
+        return "durable_consumed"
+    if usage_status in {"draft_consumed", "referenced"}:
+        return "candidate_or_draft"
+    return "generated_runtime_or_unlinked"
+
+
 def iter_receipts(root: Path = ROOT) -> list[dict[str, Any]]:
     receipts: list[dict[str, Any]] = []
     base = root / RECEIPT_ROOT
@@ -171,11 +185,13 @@ def build_receipt_usage_audit(root: Path | str = ROOT) -> dict[str, Any]:
     by_consumer_kind: Counter[str] = Counter()
     for receipt in receipts:
         refs = references.get(receipt["path"], [])
+        usage_status = _usage_status(refs)
         by_consumer_kind.update(item["consumer_kind"] for item in refs)
         audited.append(
             {
                 **receipt,
-                "usage_status": _usage_status(refs),
+                "usage_status": usage_status,
+                "evidence_layer": _evidence_layer(usage_status),
                 "reference_count": len(refs),
                 "consumer_kinds": sorted({item["consumer_kind"] for item in refs}),
                 "references": refs,
@@ -197,6 +213,9 @@ def build_receipt_usage_audit(root: Path | str = ROOT) -> dict[str, Any]:
     )
 
     status_counts = Counter(item["usage_status"] for item in audited)
+    layer_counts = Counter(item["evidence_layer"] for item in audited)
+    if missing_references:
+        layer_counts["missing_reference"] = len(missing_references)
     kind_counts = Counter(item["kind"] for item in audited)
 
     return {
@@ -220,6 +239,7 @@ def build_receipt_usage_audit(root: Path | str = ROOT) -> dict[str, Any]:
             "unreferenced_count": status_counts.get("unreferenced", 0),
             "missing_reference_count": len(missing_references),
             "usage_status_counts": dict(sorted(status_counts.items())),
+            "evidence_surface_counts": dict(sorted(layer_counts.items())),
             "receipt_kind_counts": dict(sorted(kind_counts.items())),
             "consumer_kind_counts": dict(sorted(by_consumer_kind.items())),
             "missing_reference_consumer_kind_counts": dict(
@@ -235,6 +255,21 @@ def build_receipt_usage_audit(root: Path | str = ROOT) -> dict[str, Any]:
         ],
         "consumed_receipts": [
             item["path"] for item in audited if item["usage_status"] == "consumed"
+        ],
+        "durable_consumed_receipts": [
+            item["path"]
+            for item in audited
+            if item["evidence_layer"] == "durable_consumed"
+        ],
+        "candidate_or_draft_receipts": [
+            item["path"]
+            for item in audited
+            if item["evidence_layer"] == "candidate_or_draft"
+        ],
+        "generated_runtime_or_unlinked_receipts": [
+            item["path"]
+            for item in audited
+            if item["evidence_layer"] == "generated_runtime_or_unlinked"
         ],
         "missing_references": missing_references,
         "limitations": [

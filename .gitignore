@@ -22,7 +22,9 @@ data/receipts/risk-gates/
 data/receipts/receipt-usage-audit/
 data/receipts/validations/
 data/redteam/exports/
-data/state/
+data/state/*
+!data/state/rule-changes/
+!data/state/rule-changes/*.json
 data/*.csv
 data/*.parquet
 .env

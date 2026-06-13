@@ -70,14 +70,35 @@ class ReceiptUsageAuditTests(unittest.TestCase):
             by_path["data/receipts/risk-gates/r1.json"]["usage_status"], "consumed"
         )
         self.assertEqual(
+            by_path["data/receipts/risk-gates/r1.json"]["evidence_layer"],
+            "durable_consumed",
+        )
+        self.assertEqual(
             by_path["data/receipts/executions/e1.json"]["usage_status"],
             "draft_consumed",
+        )
+        self.assertEqual(
+            by_path["data/receipts/executions/e1.json"]["evidence_layer"],
+            "candidate_or_draft",
         )
         self.assertEqual(
             by_path["data/receipts/validations/v1.json"]["usage_status"],
             "unreferenced",
         )
+        self.assertEqual(
+            by_path["data/receipts/validations/v1.json"]["evidence_layer"],
+            "generated_runtime_or_unlinked",
+        )
         self.assertEqual(audit["summary"]["missing_reference_count"], 1)
+        self.assertEqual(
+            audit["summary"]["evidence_surface_counts"],
+            {
+                "candidate_or_draft": 1,
+                "durable_consumed": 1,
+                "generated_runtime_or_unlinked": 1,
+                "missing_reference": 1,
+            },
+        )
 
     def test_write_audit_outputs_receipt_json(self) -> None:
         audit = build_receipt_usage_audit(self.root)

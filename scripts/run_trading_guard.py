@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 
-from finharness.trading_guard import GuardThresholds, TradingState, evaluate_trading_state
+from finharness.effective_rules import resolve_guard_thresholds
+from finharness.trading_guard import TradingState, evaluate_trading_state
 from finharness.trading_state_store import load_trading_state
 
 
@@ -35,13 +37,17 @@ def main(argv: list[str]) -> int:
         minutes_since_last_trade=ns.minutes_since_last_trade,
         planned_trade_has_written_thesis=ns.thesis,
     )
-    decision = evaluate_trading_state(state, GuardThresholds())
+    thresholds, provenance, ignored = resolve_guard_thresholds()
+    decision = evaluate_trading_state(state, thresholds)
     print(
         json.dumps(
             {
                 "drawdown_pct": state.drawdown_pct,
                 "consecutive_losses": state.consecutive_losses,
                 "behavior_reset_required": record.behavior_reset_required,
+                "effective_thresholds": asdict(thresholds),
+                "threshold_provenance": provenance,
+                "ignored_rule_changes": ignored,
                 "level": decision.level,
                 "trade_allowed": decision.trade_allowed,
                 "reasons": decision.reasons,
