@@ -62,6 +62,24 @@ task rust:check
 cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
 ```
 
+## Loops
+
+The ten layers are organized as four real loops plus deterministic steps.
+Target state B and the topology rationale live in
+[docs/think/2026-06-12-target-state-b-and-loop-topology.md](docs/think/2026-06-12-target-state-b-and-loop-topology.md).
+
+```bash
+task workflow:daily-evidence   # Loop 1: observation (also on hermes cron, weekday mornings)
+task hypotheses:graph -- --llm-enabled   # Loop 2 generator seat: hermes drafts, gates check
+task trading-state:show        # Loop 3 feedback edge: persisted behavioral state
+task lessons:draft             # Loop 4 v0: draft lesson candidates; a human promotes
+```
+
+Human attestation is fail-closed everywhere: risk-gate and execution runs
+stay at needs_human_review until a human attests with a written reason
+(`scripts/run_risk_gate_graph.py --interactive` pauses at a real LangGraph
+interrupt).
+
 ## First Milestone
 
 Build a small AI financial research assistant that can:

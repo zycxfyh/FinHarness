@@ -5,8 +5,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.test_execution import build_sample_risk_gate_bundle
-
 from finharness import execution, post_trade
 from finharness.execution import (
     FakePaperExecutionAdapter,
@@ -14,6 +12,7 @@ from finharness.execution import (
 )
 from finharness.post_trade import build_post_trade_bundle_from_execution_snapshot
 from finharness.post_trade_graph import post_trade_graph, run_post_trade_graph
+from tests.test_execution import build_sample_risk_gate_bundle
 
 
 class PostTradeLayerTest(unittest.TestCase):
@@ -24,6 +23,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "requested_quantity": 2,
                 "reference_price": 100.0,
             },
@@ -56,6 +56,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "requested_quantity": 4,
             },
             adapter=FakePaperExecutionAdapter(fill_mode="partial"),
@@ -79,6 +80,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "cancel_after_submit": True,
             },
             adapter=FakePaperExecutionAdapter(fill_mode="accepted"),
@@ -97,7 +99,11 @@ class PostTradeLayerTest(unittest.TestCase):
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
             adapter=FakePaperExecutionAdapter(fill_mode="reject"),
         )
         bundle = build_post_trade_bundle_from_execution_snapshot(execution_bundle.snapshot)
@@ -113,7 +119,11 @@ class PostTradeLayerTest(unittest.TestCase):
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "dry_run", "operator_execute": False},
+            context={
+                "requested_mode": "dry_run",
+                "operator_execute": False,
+                "human_review_attested": True,
+            },
         )
         bundle = build_post_trade_bundle_from_execution_snapshot(execution_bundle.snapshot)
 
@@ -129,7 +139,11 @@ class PostTradeLayerTest(unittest.TestCase):
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
             adapter=FakePaperExecutionAdapter(fill_mode="filled"),
         )
         bad_snapshot = execution_bundle.snapshot.model_copy(update={"receipt_ref": ""})
@@ -158,7 +172,11 @@ class PostTradeLayerTest(unittest.TestCase):
                 risk_bundle = build_sample_risk_gate_bundle()
                 execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
                     risk_bundle.snapshot,
-                    context={"requested_mode": "paper", "operator_execute": True},
+                    context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
                     adapter=FakePaperExecutionAdapter(fill_mode="filled"),
                 )
                 result = run_post_trade_graph(

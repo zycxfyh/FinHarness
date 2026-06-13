@@ -271,6 +271,16 @@ tasks:
     cmds:
       - uv run python scripts/run_daily_evidence_graph.py {{.CLI_ARGS}}
 
+  lessons:draft:
+    desc: Draft lesson candidates from recent receipts (Loop 4 v0; human promotes)
+    cmds:
+      - uv run python scripts/run_lesson_draft.py {{.CLI_ARGS}}
+
+  trading-state:show:
+    desc: Show the persisted behavioral trading state (Loop 3 feedback edge)
+    cmds:
+      - uv run python -c "from finharness.trading_state_store import load_trading_state; import json; print(json.dumps(load_trading_state().model_dump(mode='json'), indent=2))"
+
   eval:risk:
     desc: Evaluate generated finance risk note
     cmds:

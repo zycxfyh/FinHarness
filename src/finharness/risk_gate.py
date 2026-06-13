@@ -33,11 +33,11 @@ RiskGateDecisionValue = Literal[
 RiskGateCheckStatus = Literal["passed", "failed", "warning", "not_applicable"]
 
 BLOCKED_RISK_GATE_LANGUAGE = [
-    r"\bbuy\b",
-    r"\bsell\b",
+    r"\bbuy\b(?!-side)",
+    r"\bsell\b(?!-side)",
     r"\bhold\b",
-    r"\bshort\b",
-    r"\blong\b",
+    r"\bshort\b(?!-term|-run|-dated|-horizon)",
+    r"\blong\b(?!-term|-run|-dated|-horizon)",
     r"\btarget price\b",
     r"\bprice target\b",
     r"\bplace order\b",
@@ -106,7 +106,8 @@ class RiskGateContext(BaseModel):
     )
     requested_execution_mode: Literal["none", "paper", "live"] = "paper"
     live_execution_allowed: bool = False
-    human_review_attested: bool = True
+    # Fail-closed: attestation is an action a human takes, never a default.
+    human_review_attested: bool = False
     max_paper_notional: float = 1000.0
     requested_notional: float = 100.0
     max_symbol_concentration_pct: float = 0.10

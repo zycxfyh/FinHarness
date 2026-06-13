@@ -5,8 +5,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.test_proposal import build_sample_validation_bundle
-
 from finharness import events, hypotheses, interpretation, proposal, risk_gate, validation
 from finharness.proposal import (
     ProposalCandidate,
@@ -18,6 +16,7 @@ from finharness.risk_gate import (
     build_risk_gate_quality,
 )
 from finharness.risk_gate_graph import risk_gate_graph, run_risk_gate_graph
+from tests.test_proposal import build_sample_validation_bundle
 
 
 class RiskGateLayerTest(unittest.TestCase):
@@ -45,6 +44,7 @@ class RiskGateLayerTest(unittest.TestCase):
                 )
                 bundle = build_risk_gate_bundle_from_proposal_snapshot(
                     proposal_bundle.snapshot,
+                    context={"human_review_attested": True},
                     llm_enabled=True,
                     hermes_root="/root/projects/hermes-agent",
                 )
@@ -149,6 +149,7 @@ class RiskGateLayerTest(unittest.TestCase):
                 )
                 result = run_risk_gate_graph(
                     proposal_snapshot=proposal_bundle.snapshot.model_dump(mode="json"),
+                    risk_context={"human_review_attested": True},
                     llm_enabled=True,
                     hermes_root="/root/projects/hermes-agent",
                 )

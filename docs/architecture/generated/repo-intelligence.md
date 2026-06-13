@@ -1,24 +1,56 @@
 # Repo Intelligence
 
-Generated at: `2026-06-10T09:25:59Z`
+Generated at: `2026-06-13T09:53:48Z`
 
 ## Summary
 
-- Files: `354`
-- Total lines: `70285`
+- Files: `356`
+- Total lines: `71999`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `data/receipts/governance-dashboard/latest.json`
+- `.gitignore`
+- `README.md`
+- `Taskfile.yml`
+- `data/watchlists/equity-core.json`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/operations/governance-dashboard-latest.md`
-- `src/finharness.egg-info/`
+- `docs/lessons/drafts/2026-06-12-lesson_draft_469739c26735.md`
+- `docs/reviews/2026-06-12-daily-evidence-devs_20260612T121834Z_b4f81e60.md`
+- `docs/think/2026-06-12-target-state-b-and-loop-topology.md`
+- `scripts/run_daily_evidence_graph.py`
+- `scripts/run_execution_graph.py`
+- `scripts/run_lesson_draft.py`
+- `scripts/run_risk_gate_graph.py`
+- `src/finharness/execution.py`
+- `src/finharness/hermes_bridge.py`
+- `src/finharness/hypotheses.py`
+- `src/finharness/interpretation.py`
+- `src/finharness/lesson_loop.py`
+- `src/finharness/post_trade.py`
+- `src/finharness/post_trade_graph.py`
+- `src/finharness/proposal.py`
+- `src/finharness/risk_gate.py`
+- `src/finharness/risk_gate_graph.py`
+- `src/finharness/trading_state_store.py`
+- `src/finharness/validation.py`
+- `tests/__init__.py`
+- `tests/test_execution.py`
+- `tests/test_hermes_hypothesis_provider.py`
+- `tests/test_hypotheses.py`
+- `tests/test_lesson_loop.py`
+- `tests/test_post_trade.py`
+- `tests/test_risk_gate.py`
+- `tests/test_risk_gate_interrupt.py`
+- `tests/test_trading_state_store.py`
 
 ## Required Checks
 
 - `task check`
+- `task eval:redteam-boundary`
 - `task hardening:gate`
+- `uv run python -m unittest tests/test_execution.py`
+- `uv run python -m unittest tests/test_risk_gate.py`
 
 ## Mermaid
 
@@ -40,6 +72,7 @@ flowchart LR
   n_src_finharness_governance_dashboard_py["governance_dashboard.py"]
   n_src_finharness_governance_dashboard_graph_py["governance_dashboard_graph.py"]
   n_src_finharness_hardening_py["hardening.py"]
+  n_src_finharness_hermes_bridge_py["hermes_bridge.py"]
   n_src_finharness_hypotheses_py["hypotheses.py"]
   n_src_finharness_hypotheses_graph_py["hypotheses_graph.py"]
   n_src_finharness_indicator_graph_py["indicator_graph.py"]
@@ -51,12 +84,14 @@ flowchart LR
   n_src_finharness_indicators_squeeze_py["indicators/squeeze.py"]
   n_src_finharness_interpretation_py["interpretation.py"]
   n_src_finharness_interpretation_graph_py["interpretation_graph.py"]
+  n_src_finharness_lesson_loop_py["lesson_loop.py"]
   n_src_finharness_market_data_py["market_data.py"]
   n_src_finharness_market_data_graph_py["market_data_graph.py"]
   n_src_finharness_metrics_py["metrics.py"]
   n_src_finharness_okx_cli_py["okx_cli.py"]
   n_src_finharness_post_trade_py["post_trade.py"]
   n_src_finharness_post_trade_graph_py["post_trade_graph.py"]
+  n_src_finharness_project_governance_adapter_py["project_governance_adapter.py"]
   n_src_finharness_proposal_py["proposal.py"]
   n_src_finharness_proposal_graph_py["proposal_graph.py"]
   n_src_finharness_providers___init___py["providers/__init__.py"]
@@ -70,6 +105,7 @@ flowchart LR
   n_src_finharness_risk_gate_graph_py["risk_gate_graph.py"]
   n_src_finharness_ten_layer_graph_py["ten_layer_graph.py"]
   n_src_finharness_trading_guard_py["trading_guard.py"]
+  n_src_finharness_trading_state_store_py["trading_state_store.py"]
   n_src_finharness_validation_py["validation.py"]
   n_src_finharness_validation_graph_py["validation_graph.py"]
   n_src_finharness_workflow_py["workflow.py"]
@@ -95,6 +131,7 @@ flowchart LR
   n_src_finharness_governance_dashboard_py --> n_src_finharness_repo_intelligence_graph_py
   n_src_finharness_governance_dashboard_graph_py --> n_src_finharness_governance_dashboard_py
   n_src_finharness_governance_dashboard_graph_py --> n_src_finharness_repo_intelligence_py
+  n_src_finharness_hypotheses_py --> n_src_finharness_hermes_bridge_py
   n_src_finharness_hypotheses_py --> n_src_finharness_interpretation_py
   n_src_finharness_hypotheses_py --> n_src_finharness_market_data_py
   n_src_finharness_hypotheses_graph_py --> n_src_finharness_hypotheses_py
@@ -118,6 +155,8 @@ flowchart LR
   n_src_finharness_interpretation_graph_py --> n_src_finharness_events_py
   n_src_finharness_interpretation_graph_py --> n_src_finharness_events_graph_py
   n_src_finharness_interpretation_graph_py --> n_src_finharness_interpretation_py
+  n_src_finharness_lesson_loop_py --> n_src_finharness_hermes_bridge_py
+  n_src_finharness_lesson_loop_py --> n_src_finharness_market_data_py
   n_src_finharness_market_data_graph_py --> n_src_finharness_data_entry_py
   n_src_finharness_market_data_graph_py --> n_src_finharness_market_data_py
   n_src_finharness_post_trade_py --> n_src_finharness_execution_py
@@ -126,6 +165,8 @@ flowchart LR
   n_src_finharness_post_trade_graph_py --> n_src_finharness_execution_graph_py
   n_src_finharness_post_trade_graph_py --> n_src_finharness_post_trade_py
   n_src_finharness_post_trade_graph_py --> n_src_finharness_research_assets_py
+  n_src_finharness_post_trade_graph_py --> n_src_finharness_trading_state_store_py
+  n_src_finharness_project_governance_adapter_py --> n_src_finharness_repo_intelligence_py
   n_src_finharness_proposal_py --> n_src_finharness_market_data_py
   n_src_finharness_proposal_py --> n_src_finharness_validation_py
   n_src_finharness_proposal_graph_py --> n_src_finharness_proposal_py
@@ -145,12 +186,7 @@ flowchart LR
   n_src_finharness_risk_gate_graph_py --> n_src_finharness_proposal_graph_py
   n_src_finharness_risk_gate_graph_py --> n_src_finharness_research_assets_py
   n_src_finharness_risk_gate_graph_py --> n_src_finharness_risk_gate_py
+  n_src_finharness_risk_gate_graph_py --> n_src_finharness_trading_state_store_py
   n_src_finharness_ten_layer_graph_py --> n_src_finharness_events_graph_py
   n_src_finharness_ten_layer_graph_py --> n_src_finharness_execution_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_hypotheses_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_indicator_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_interpretation_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_market_data_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_post_trade_graph_py
-  n_src_finharness_ten_layer_graph_py --> n_src_finharness_proposal_graph_py
 ```

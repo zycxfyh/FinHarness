@@ -5,8 +5,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.test_proposal import build_sample_validation_bundle
-
 from finharness import (
     events,
     execution,
@@ -26,6 +24,7 @@ from finharness.execution import (
 from finharness.execution_graph import execution_graph, run_execution_graph
 from finharness.proposal import build_proposal_bundle_from_validation_snapshot
 from finharness.risk_gate import build_risk_gate_bundle_from_proposal_snapshot
+from tests.test_proposal import build_sample_validation_bundle
 
 
 def build_sample_risk_gate_bundle(
@@ -36,9 +35,12 @@ def build_sample_risk_gate_bundle(
     proposal_bundle = build_proposal_bundle_from_validation_snapshot(
         validation_bundle.snapshot,
     )
+    # Attestation is fail-closed; fixtures must declare it like a human would.
+    context: dict[str, object] = {"human_review_attested": True}
+    context.update(risk_context or {})
     return build_risk_gate_bundle_from_proposal_snapshot(
         proposal_bundle.snapshot,
-        context=risk_context,
+        context=context,
     )
 
 
@@ -47,7 +49,11 @@ class ExecutionLayerTest(unittest.TestCase):
         bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             bundle.snapshot,
-            context={"requested_mode": "dry_run", "operator_execute": False},
+            context={
+                "requested_mode": "dry_run",
+                "operator_execute": False,
+                "human_review_attested": True,
+            },
         )
 
         self.assertTrue(execution_bundle.snapshot.quality.ok)
@@ -66,7 +72,11 @@ class ExecutionLayerTest(unittest.TestCase):
         bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
             adapter=FakePaperExecutionAdapter(fill_mode="filled"),
         )
 
@@ -82,7 +92,11 @@ class ExecutionLayerTest(unittest.TestCase):
         bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             bundle.snapshot,
-            context={"requested_mode": "live", "operator_execute": True},
+            context={
+                "requested_mode": "live",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
         )
 
         self.assertFalse(execution_bundle.snapshot.quality.ok)
@@ -95,7 +109,11 @@ class ExecutionLayerTest(unittest.TestCase):
         bundle = build_sample_risk_gate_bundle(risk_context={"requested_execution_mode": "live"})
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
         )
 
         self.assertTrue(execution_bundle.snapshot.quality.ok)
@@ -105,7 +123,9 @@ class ExecutionLayerTest(unittest.TestCase):
 
     def test_idempotency_key_is_deterministic_and_adapter_rejects_duplicate(self) -> None:
         bundle = build_sample_risk_gate_bundle()
-        context = ExecutionContext(requested_mode="paper", operator_execute=True)
+        context = ExecutionContext(
+            requested_mode="paper", operator_execute=True, human_review_attested=True
+        )
         intents = build_execution_intents(
             risk_gate_snapshot=bundle.snapshot,
             context=context,
@@ -140,6 +160,7 @@ class ExecutionLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "requested_quantity": 4,
                 "cancel_after_submit": True,
             },
@@ -187,7 +208,11 @@ class ExecutionLayerTest(unittest.TestCase):
                 risk_bundle = build_sample_risk_gate_bundle()
                 result = run_execution_graph(
                     risk_gate_snapshot=risk_bundle.snapshot.model_dump(mode="json"),
-                    execution_context={"requested_mode": "paper", "operator_execute": True},
+                    execution_context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
                     fake_fill_mode="filled",
                 )
 

@@ -28,10 +28,10 @@ Stance = Literal["positive", "negative", "mixed", "neutral", "unknown"]
 Materiality = Literal["low", "medium", "high", "unknown"]
 
 NO_EXECUTION_PATTERNS = [
-    r"\bbuy\b",
-    r"\bsell\b",
+    r"\bbuy\b(?!-side)",
+    r"\bsell\b(?!-side)",
     r"\bhold\b",
-    r"\bshort\b",
+    r"\bshort\b(?!-term|-run|-dated|-horizon)",
     r"\bincrease position\b",
     r"\breduce position\b",
     r"\bposition sizing\b",

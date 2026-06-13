@@ -25,11 +25,11 @@ HypothesisStatus = Literal["draft", "ready_for_validation", "failed_quality"]
 ConfidencePrior = Literal["low", "medium", "high", "unknown"]
 
 RECOMMENDATION_PATTERNS = [
-    r"\bbuy\b",
-    r"\bsell\b",
+    r"\bbuy\b(?!-side)",
+    r"\bsell\b(?!-side)",
     r"\bhold\b",
-    r"\bshort\b",
-    r"\blong\b",
+    r"\bshort\b(?!-term|-run|-dated|-horizon)",
+    r"\blong\b(?!-term|-run|-dated|-horizon)",
     r"\boverweight\b",
     r"\bunderweight\b",
     r"\btarget price\b",
@@ -87,26 +87,161 @@ class NullHypothesisDraftProvider:
         return {}
 
 
-class HermesHypothesisDraftProvider:
-    """Reserved adapter boundary for /root/projects/hermes-agent.
+HERMES_DRAFT_ROOT = ROOT / "data" / "cache" / "hermes-drafts"
+HERMES_DRAFT_PROMPT_VERSION = "finharness.hypotheses.hermes_prompt.v1"
+ALLOWED_DRAFT_CHECK_TYPES = frozenset(
+    {
+        "market_reaction",
+        "indicator_context",
+        "event_follow_up",
+        "basket_comparison",
+        "human_review",
+    }
+)
 
-    The MVP keeps this disabled by default. Future work can implement the
-    subprocess/API call here without changing the hypothesis graph contract.
+
+def build_hermes_hypothesis_prompt(interpretation: InterpretationRecord) -> str:
+    facts = "\n".join(f"- {item}" for item in interpretation.source_facts[:6])
+    counter = "\n".join(f"- {item}" for item in interpretation.counterevidence[:4])
+    return (
+        "You are a research assistant drafting ONE falsifiable market-research "
+        "hypothesis for an evidence-governed harness. This is research drafting "
+        "only: no trade recommendations, no buy/sell/hold language, no price "
+        "targets, no position sizing, no execution instructions. The draft is "
+        "checked by deterministic quality gates and never authorizes any action.\n\n"
+        f"Symbol: {interpretation.symbol}\n"
+        f"Claim under interpretation: {interpretation.claim}\n"
+        f"Inference: {interpretation.inference}\n"
+        f"Impact paths: {', '.join(interpretation.impact_paths[:4])}\n"
+        f"Horizon: {interpretation.horizon}\n"
+        f"Source facts:\n{facts or '- none provided'}\n"
+        f"Known counterevidence:\n{counter or '- none provided'}\n\n"
+        "Respond with ONLY one JSON object, no prose, with exactly these keys:\n"
+        "{\n"
+        '  "hypothesis": "one falsifiable if-then statement tied to the claim",\n'
+        '  "mechanism": "one sentence on the causal transmission path",\n'
+        '  "expected_observations": ["2-4 observations that would support it"],\n'
+        '  "disconfirming_observations": ["2-4 observations that would falsify it"],\n'
+        '  "assumptions": ["2-3 assumptions; at least one must state how event '
+        'timing is separated from market reaction"]\n'
+        "}"
+    )
+
+
+def sanitize_hermes_draft(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep only contract keys with the right shapes; drop everything else.
+
+    The downstream quality gates re-check content (blocked language,
+    falsifiability fields), so this only enforces structure, not safety.
+    """
+    draft: dict[str, Any] = {}
+    if isinstance(payload.get("hypothesis"), str) and payload["hypothesis"].strip():
+        draft["hypothesis"] = payload["hypothesis"].strip()
+    if isinstance(payload.get("mechanism"), str) and payload["mechanism"].strip():
+        draft["mechanism"] = payload["mechanism"].strip()
+    for key in ("expected_observations", "disconfirming_observations", "assumptions"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            items = [str(item).strip() for item in value if str(item).strip()]
+            if items:
+                draft[key] = items[:6]
+    plan = payload.get("validation_plan")
+    if isinstance(plan, list):
+        valid = [
+            item
+            for item in plan
+            if isinstance(item, dict)
+            and item.get("check_type") in ALLOWED_DRAFT_CHECK_TYPES
+        ]
+        if valid and len(valid) == len(plan):
+            draft["validation_plan"] = valid
+    return draft
+
+
+class HermesHypothesisDraftProvider:
+    """Generator-seat LLM drafting via the local hermes-agent CLI.
+
+    Fail-closed contract: any bridge, parsing, or sanitization failure returns
+    a draft without content keys, so formulate_hypothesis_record falls back to
+    the deterministic template field by field. The raw exchange is persisted
+    under data/cache/hermes-drafts/ and referenced via draft_ref.
     """
 
     provider_name = "hermes-agent"
 
-    def __init__(self, *, hermes_root: str | Path = "/root/projects/hermes-agent") -> None:
+    def __init__(
+        self,
+        *,
+        hermes_root: str | Path = "/root/projects/hermes-agent",
+        timeout_seconds: int = 180,
+    ) -> None:
         self.hermes_root = Path(hermes_root)
+        self.timeout_seconds = timeout_seconds
 
     def draft(self, interpretation: InterpretationRecord) -> dict[str, Any]:
-        return {
+        from finharness.hermes_bridge import (
+            HermesBridgeError,
+            extract_json_object,
+            run_hermes_single_query,
+        )
+
+        prompt = build_hermes_hypothesis_prompt(interpretation)
+        base: dict[str, Any] = {
             "provider": self.provider_name,
-            "enabled": False,
-            "hermes_root": str(self.hermes_root),
-            "note": "LLM drafting interface reserved; deterministic template used in MVP.",
+            "prompt_template_version": HERMES_DRAFT_PROMPT_VERSION,
             "source_interpretation_id": interpretation.interpretation_id,
         }
+        raw_output: str | None = None
+        try:
+            raw_output = run_hermes_single_query(
+                prompt, timeout_seconds=self.timeout_seconds
+            )
+            parsed = extract_json_object(raw_output)
+            draft = sanitize_hermes_draft(parsed)
+            base.update(draft)
+            base["enabled"] = True
+        except HermesBridgeError as exc:
+            base["enabled"] = False
+            base["error"] = str(exc)
+        base["draft_ref"] = self._persist_draft(
+            interpretation=interpretation, prompt=prompt, raw_output=raw_output, draft=base
+        )
+        return base
+
+    def _persist_draft(
+        self,
+        *,
+        interpretation: InterpretationRecord,
+        prompt: str,
+        raw_output: str | None,
+        draft: dict[str, Any],
+    ) -> str | None:
+        try:
+            HERMES_DRAFT_ROOT.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            path = (
+                HERMES_DRAFT_ROOT
+                / f"{stamp}-{interpretation.interpretation_id}-{uuid4().hex[:8]}.json"
+            )
+            path.write_text(
+                json.dumps(
+                    {
+                        "prompt_template_version": HERMES_DRAFT_PROMPT_VERSION,
+                        "interpretation_id": interpretation.interpretation_id,
+                        "prompt": prompt,
+                        "raw_output": raw_output,
+                        "draft": {k: v for k, v in draft.items() if k != "draft_ref"},
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return display_path(path)
+        except OSError:
+            return None
 
 
 class HypothesisSourceSpec(BaseModel):

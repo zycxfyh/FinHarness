@@ -18,7 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--paper", action="store_true")
     parser.add_argument("--live", action="store_true")
-    parser.add_argument("--human-review-missing", action="store_true")
+    parser.add_argument(
+        "--attest-human-review",
+        action="store_true",
+        help="Fail-closed: without this flag the run cannot create order requests.",
+    )
     parser.add_argument("--quantity", type=int, default=1)
     parser.add_argument("--max-quantity", type=int, default=10)
     parser.add_argument("--reference-price", type=float, default=100.0)
@@ -41,7 +45,7 @@ def main() -> int:
     execution_context = {
         "requested_mode": mode,
         "operator_execute": args.execute,
-        "human_review_attested": not args.human_review_missing,
+        "human_review_attested": args.attest_human_review,
         "requested_quantity": args.quantity,
         "max_order_quantity": args.max_quantity,
         "reference_price": args.reference_price,

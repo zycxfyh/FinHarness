@@ -52,7 +52,8 @@ class PostTradeContext(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     mandate_id: str = "paper_post_trade_review_v1"
-    human_review_attested: bool = True
+    # Fail-closed: attestation is an action a human takes, never a default.
+    human_review_attested: bool = False
     estimated_fee_per_share: float = 0.0
     estimated_flat_fee: float = 0.0
     settlement_cycle: str = "paper_no_settlement"

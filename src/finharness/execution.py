@@ -71,7 +71,8 @@ class ExecutionContext(BaseModel):
     requested_mode: ExecutionAdapterMode = "dry_run"
     operator_execute: bool = False
     live_execution_allowed: bool = False
-    human_review_attested: bool = True
+    # Fail-closed: attestation is an action a human takes, never a default.
+    human_review_attested: bool = False
     order_type: Literal["market", "limit"] = "market"
     time_in_force: Literal["day", "gtc"] = "day"
     requested_quantity: int = 1

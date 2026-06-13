@@ -19,6 +19,10 @@ from finharness.post_trade import (
     final_post_trade_status,
 )
 from finharness.research_assets import compact_research_asset_context
+from finharness.trading_state_store import (
+    trading_state_path,
+    update_from_post_trade_snapshot,
+)
 
 
 class PostTradeGraphState(TypedDict, total=False):
@@ -47,6 +51,8 @@ class PostTradeGraphState(TypedDict, total=False):
     review_hook: dict[str, Any]
     final: dict[str, Any]
     fake_fill_mode: str
+    trading_state_path: str
+    trading_state: dict[str, Any]
 
 
 def source_config_node(state: PostTradeGraphState) -> PostTradeGraphState:
@@ -221,6 +227,23 @@ def receipt_node(state: PostTradeGraphState) -> PostTradeGraphState:
     return {"receipt": state["receipt"]}
 
 
+def persist_trading_state_node(state: PostTradeGraphState) -> PostTradeGraphState:
+    """Loop 3 feedback edge: fold this run's outcome into durable state.
+
+    Only provable facts are written (trade lifecycle completed, process
+    failure occurred); win/loss stays operator-reported via
+    trading_state_store.record_operator_outcome.
+    """
+    path = state.get("trading_state_path")
+    record = update_from_post_trade_snapshot(state["snapshot"], path=path)
+    return {
+        "trading_state": {
+            "record": record.model_dump(mode="json"),
+            "path": str(trading_state_path(path)),
+        }
+    }
+
+
 def review_hook_node(state: PostTradeGraphState) -> PostTradeGraphState:
     snapshot = state["snapshot"]
     return {
@@ -253,6 +276,7 @@ def final_node(state: PostTradeGraphState) -> PostTradeGraphState:
             "performance_handoff": snapshot["performance_handoff"],
             "review_questions": snapshot["review_questions"],
             "review_hook": state["review_hook"],
+            "trading_state": state.get("trading_state", {}),
         }
     }
 
@@ -272,6 +296,7 @@ def build_post_trade_graph():
     graph.add_node("lineage", lineage_node)
     graph.add_node("snapshot", snapshot_node)
     graph.add_node("receipt", receipt_node)
+    graph.add_node("persist_trading_state", persist_trading_state_node)
     graph.add_node("review_hook", review_hook_node)
     graph.add_node("final", final_node)
     graph.add_edge(START, "source_config")
@@ -287,7 +312,8 @@ def build_post_trade_graph():
     graph.add_edge("quality", "lineage")
     graph.add_edge("lineage", "snapshot")
     graph.add_edge("snapshot", "receipt")
-    graph.add_edge("receipt", "review_hook")
+    graph.add_edge("receipt", "persist_trading_state")
+    graph.add_edge("persist_trading_state", "review_hook")
     graph.add_edge("review_hook", "final")
     graph.add_edge("final", END)
     return graph.compile()
@@ -309,6 +335,7 @@ def run_post_trade_graph(
     post_trade_context: dict[str, Any] | None = None,
     fake_fill_mode: str = "accepted",
     research_asset_context: dict[str, Any] | None = None,
+    trading_state_path: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "universe": universe,
@@ -324,5 +351,7 @@ def run_post_trade_graph(
     }
     if execution_snapshot is not None:
         payload["execution_snapshot"] = execution_snapshot
+    if trading_state_path is not None:
+        payload["trading_state_path"] = trading_state_path
     result = post_trade_graph.invoke(payload)
     return dict(result)

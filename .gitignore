@@ -21,6 +21,7 @@ data/receipts/repo-intelligence/
 data/receipts/risk-gates/
 data/receipts/validations/
 data/redteam/exports/
+data/state/
 data/*.csv
 data/*.parquet
 .env
@@ -35,3 +36,7 @@ node_modules/
 dist/
 build/
 target/
+src/finharness.egg-info/
+data/receipts/lessons/
+.hermes/
+research/

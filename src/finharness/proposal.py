@@ -35,11 +35,11 @@ ProposalStatus = Literal[
 ]
 
 BLOCKED_PROPOSAL_LANGUAGE = [
-    r"\bbuy\b",
-    r"\bsell\b",
+    r"\bbuy\b(?!-side)",
+    r"\bsell\b(?!-side)",
     r"\bhold\b",
-    r"\bshort\b",
-    r"\blong\b",
+    r"\bshort\b(?!-term|-run|-dated|-horizon)",
+    r"\blong\b(?!-term|-run|-dated|-horizon)",
     r"\btarget price\b",
     r"\bprice target\b",
     r"\bplace order\b",

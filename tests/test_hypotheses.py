@@ -175,8 +175,14 @@ class HypothesesLayerTest(unittest.TestCase):
                     event_bundle.snapshot,
                     max_records=3,
                 )
+                # Offline by default (tests/__init__.py guard): the provider
+                # falls back to the deterministic template, exactly like the
+                # pre-LLM stub. Real LLM consumption is covered in
+                # test_hermes_hypothesis_provider.py.
                 result = run_hypotheses_graph(
-                    interpretation_snapshot=interpretation_bundle.snapshot.model_dump(mode="json"),
+                    interpretation_snapshot=interpretation_bundle.snapshot.model_dump(
+                        mode="json"
+                    ),
                     max_hypotheses=3,
                     llm_enabled=True,
                     hermes_root="/root/projects/hermes-agent",
