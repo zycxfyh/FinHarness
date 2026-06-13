@@ -48,12 +48,25 @@ Forward horizons (sequenced by reachability, not interest):
 ```text
 H0 DONE  B3 live firebreak (okx_live_gate, 2026-06-13).
 H1 DONE(observe)  191 real receipts exist in a 60-day window; B4 raw material
-         is present, so H1 is verify/exercise, not new build. Remaining: run a
-         real paper cycle end-to-end when convenient (not blocking H2).
-H2 DONE(v1)  B4 lesson -> rule-change lineage closed loop. THE north star.
-         rule_change_ledger.py + tests; verified end-to-end on the 191 receipts.
-         Next increment: thresholds read value+provenance from the ledger.
-H3       Validation depth (B2 research correctness; feeds B4 comparator quality).
+         is present, so H1 is verify/exercise, not new build.
+H2 DONE  B4 loop closed AND enforced. THE north star.
+         - lineage: rule_change_ledger.py (promote/trace/is_traceable/audit).
+         - enforcement: effective_rules.py resolves guard thresholds from the
+           ledger with provenance; okx_live_gate consumes them.
+         - H4 seeds the promote step: lesson_loop.build_proposed_rule_changes
+           emits conservative, human-reviewable rule-change candidates from
+           outcome patterns (never auto-applied, only ever tightening).
+         Turned once for real on 2026-06-13: a promoted lesson now binds
+         guard.min_minutes_between_trades_after_loss 30 -> 45, provenance ->
+         rulechg_20260613T165140Z -> lesson_draft_31f5846e -> 100 receipts.
+         Verified: ruff clean; 232 passed; rules:audit lineage_ok.
+H3 DONE(DEGRADED)  Validation depth. validation_metrics.py computes a real
+         realized-move disconfirming check (can WEAKEN a hypothesis, never
+         "supported"); event_reaction uses it when cached history exists.
+         Honest caveat: data/cache/*_history.csv is absent in this checkout, so
+         the math is unit-tested but dormant in the live chain until
+         task workflow:daily-evidence caches history. Not a full B2 close.
+H4 DONE  Attribution -> lesson seeds (folded into H2 above).
 ```
 
 ## Considered Options
