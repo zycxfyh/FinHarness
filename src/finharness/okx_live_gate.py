@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from finharness.effective_rules import resolve_guard_thresholds
 from finharness.market_data import ROOT, display_path, sha256_text
 from finharness.okx_cli import OkxCliError, run_okx_live_mutation_command
 from finharness.trading_guard import (
@@ -121,9 +122,17 @@ def assess_live_order(
     *,
     state_path: str | Path | None = None,
     thresholds: GuardThresholds | None = None,
+    ledger_root: Path | None = None,
 ) -> LiveGateDecision:
-    """Decide whether a live order may proceed. No mutation, no execution."""
+    """Decide whether a live order may proceed. No mutation, no execution.
+
+    When thresholds are not supplied, the EFFECTIVE thresholds are resolved from
+    the rule-change ledger (B4 enforcement): a promoted lesson that tightened a
+    guard threshold actually binds here, with provenance back to the rule change.
+    """
     record = load_trading_state(state_path)
+    if thresholds is None:
+        thresholds, _provenance, _ignored = resolve_guard_thresholds(ledger_root=ledger_root)
     guard = evaluate_trading_state(
         TradingState(
             drawdown_pct=record.drawdown_pct,

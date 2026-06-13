@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.hypotheses import HypothesisRecord, HypothesisSnapshot
 from finharness.market_data import ROOT, display_path, sha256_text
+from finharness.validation_metrics import assess_realized_move, load_cached_close_series
 
 VALIDATION_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "validations"
 VALIDATION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "validations"
@@ -377,6 +378,39 @@ def event_reaction_result(
     market_refs = snapshot.lineage.market_snapshot_refs
     indicator_refs = snapshot.lineage.indicator_snapshot_refs
     has_inputs = bool(market_refs or indicator_refs)
+
+    # H3: when a cached price series exists for the symbol, compute a real
+    # realized-move metric that can WEAKEN the hypothesis (the predicted
+    # reaction did not show up). Degrades to the input-availability check when
+    # no cache is present yet. It never returns "supported": a move does not
+    # prove the mechanism.
+    closes = load_cached_close_series(hypothesis.symbol)
+    if closes is not None:
+        assessment = assess_realized_move(closes)
+        return ValidationCheckResult(
+            check_id=f"valchk_{uuid4().hex[:12]}",
+            validation_job_id=job.validation_job_id,
+            hypothesis_id=hypothesis.hypothesis_id,
+            check_type="event_reaction",
+            input_refs=[*market_refs, *indicator_refs],
+            method="realized_move_over_window",
+            window=hypothesis.horizon,
+            metrics={
+                **assessment["metrics"],
+                "expected_observation_count": len(hypothesis.expected_observations),
+            },
+            result=assessment["verdict"],
+            supports_hypothesis=False,
+            disconfirms_hypothesis=bool(assessment.get("weakens")),
+            confidence="medium" if assessment["testable"] else "low",
+            limitations=[
+                "Realized move is direction-agnostic evidence; a move is not "
+                "attributed to the hypothesis mechanism, so the strongest verdict "
+                "here is inconclusive, never supported.",
+            ],
+            created_at_utc=now_utc(),
+        )
+
     return ValidationCheckResult(
         check_id=f"valchk_{uuid4().hex[:12]}",
         validation_job_id=job.validation_job_id,
@@ -395,7 +429,9 @@ def event_reaction_result(
         disconfirms_hypothesis=False,
         confidence="low",
         limitations=[
-            "MVP records whether event-reaction inputs exist; it does not compute returns yet.",
+            "No cached price series for the symbol yet; recording input "
+            "availability only. Computes realized move once task "
+            "workflow:daily-evidence has cached history.",
         ],
         created_at_utc=now_utc(),
     )

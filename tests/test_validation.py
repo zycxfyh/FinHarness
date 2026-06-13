@@ -129,6 +129,40 @@ class ValidationLayerTest(unittest.TestCase):
         self.assertFalse(quality.no_proposal_or_execution_language)
         self.assertIn(bad.check_id, quality.blocked_language_hits)
 
+    def test_event_reaction_uses_cached_prices_to_weaken_hypothesis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(events, "EVENT_RAW_ROOT", root / "events_raw"),
+                patch.object(events, "EVENT_NORMALIZED_ROOT", root / "events_normalized"),
+                patch.object(events, "EVENT_RECEIPT_ROOT", root / "events_receipts"),
+                patch.object(interpretation, "INTERPRETATION_NORMALIZED_ROOT", root / "ints"),
+                patch.object(interpretation, "INTERPRETATION_RECEIPT_ROOT", root / "int_receipts"),
+                patch.object(hypotheses, "HYPOTHESIS_NORMALIZED_ROOT", root / "hyps"),
+                patch.object(hypotheses, "HYPOTHESIS_RECEIPT_ROOT", root / "hyp_receipts"),
+                patch.object(validation, "VALIDATION_NORMALIZED_ROOT", root / "vals"),
+                patch.object(validation, "VALIDATION_RECEIPT_ROOT", root / "val_receipts"),
+                patch.object(
+                    validation,
+                    "load_cached_close_series",
+                    return_value=[100.0, 100.1, 100.0],
+                ),
+            ):
+                hypothesis_bundle = build_sample_hypothesis_bundle(root)
+                bundle = build_validation_bundle_from_hypothesis_snapshot(
+                    hypothesis_bundle.snapshot
+                )
+
+        event_results = [
+            result for result in bundle.results if result.check_type == "event_reaction"
+        ]
+        self.assertTrue(event_results)
+        self.assertTrue(
+            all(result.method == "realized_move_over_window" for result in event_results)
+        )
+        self.assertTrue(all(result.result == "weakened" for result in event_results))
+        self.assertTrue(all(result.disconfirms_hypothesis for result in event_results))
+
     def test_quality_fails_without_limitations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -11,8 +11,21 @@ Governing roadmap: docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.m
 > lessons:promote, rules:audit. End-to-end on 191 real receipts: lesson draft
 > (100 refs) -> human-promoted rule change -> trace returns rule_change ->
 > lesson -> 100 receipts -> audit clean. Full suite 214 passed, ruff clean.
-> Not yet done (next increments): thresholds reading their value from the
-> ledger; post-trade attribution feeding the draft.
+>
+> NEXT DONE 2026-06-13:
+> - H2.next enforcement: `src/finharness/effective_rules.py` resolves effective
+>   guard thresholds from traceable active rule changes; `okx_live_gate.py`
+>   consumes those thresholds when no explicit test threshold is supplied.
+> - H3 validation depth: `src/finharness/validation_metrics.py` computes a real
+>   realized-move disconfirming check when cached price history exists. Current
+>   repo state has no `data/cache/*_history.csv`, so this is verified by tests
+>   and degrades to input availability in the live checkout.
+> - H4 attribution seed: `lesson_loop.py` now fills `proposed_rule_changes` from
+>   quality failures, post-trade final-status patterns, repeated live-boundary
+>   blocks, and repeated attestation blocks. These are draft seeds only; human
+>   promotion is still required.
+> Verification: `task check` passed: ruff clean, 228 unittest tests OK,
+> 4 property tests OK, backtrader smoke ran, and promptfoo smoke passed 1/1.
 
 ## Charter
 
@@ -40,8 +53,9 @@ In scope:
 Non-goals (this increment):
 
 ```text
-- no auto-application: guard thresholds / checklists are not yet read FROM the
-  ledger (a later increment). This increment proves lineage, not enforcement.
+- no autonomous application: only human-promoted, traceable rule changes can
+  affect the behavioral guard. Risk-gate thresholds and checklists are not yet
+  read from the ledger.
 - no LLM evaluator: the comparator is the human (B-doc section 3). AI only
   drafts (existing lesson_loop); promotion is a human authorization.
 - no autonomous rule changes; promotion always carries an attester.
@@ -77,6 +91,9 @@ End-to-end: promote a draft built from the 191 real receipts; trace it.
 
 ```text
 - guard/risk thresholds read their current value + provenance from the ledger
-- post-trade attribution feeds the lesson draft (B4 comparator: attribution)
+  (implemented for behavioral guard thresholds; risk-gate thresholds remain
+  future work)
+- post-trade attribution feeds the lesson draft (implemented as deterministic
+  draft seeds; human promotion remains mandatory)
 - a periodic "untraceable rule change" audit fails closed
 ```

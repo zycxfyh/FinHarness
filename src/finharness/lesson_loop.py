@@ -165,6 +165,91 @@ def build_observations(digests: list[ReceiptDigest]) -> list[str]:
     return observations
 
 
+def build_proposed_rule_changes(digests: list[ReceiptDigest]) -> list[str]:
+    """Seed human-reviewable rule-change candidates from repeated evidence.
+
+    These are deliberately strings, not applied rules. Loop 4's comparator is a
+    human; this function only points at patterns that may deserve promotion via
+    rule_change_ledger.py.
+    """
+    proposals: list[str] = []
+    if not digests:
+        return proposals
+
+    failures = [item for item in digests if item.quality_ok is False]
+    statuses = Counter(item.final_status for item in digests if item.final_status)
+    blocking = Counter(reason for item in digests for reason in item.blocking_reasons)
+
+    lineage_or_quality_failures = len(failures) + statuses.get("lineage_failed", 0)
+    if lineage_or_quality_failures:
+        proposals.append(
+            "checklist: lineage.required — "
+            f"{lineage_or_quality_failures} lineage/quality failure pattern(s) "
+            "found; require human repair before promoting the affected lesson."
+        )
+
+    partial_fill_count = sum(
+        count for status, count in statuses.items() if "partial_fill" in status
+    )
+    if partial_fill_count:
+        proposals.append(
+            "checklist: post_trade.partial_fill_review — "
+            f"{partial_fill_count} partial-fill outcome(s) found; require manual "
+            "post-trade review before changing sizing or execution rules."
+        )
+
+    rejection_count = sum(
+        count for status, count in statuses.items() if "rejected" in status
+    )
+    if rejection_count:
+        proposals.append(
+            "checklist: post_trade.rejection_review — "
+            f"{rejection_count} rejected outcome(s) found; inspect broker or "
+            "paper-adapter rejection reasons before retrying the same path."
+        )
+
+    human_attestation_blocks = sum(
+        count
+        for reason, count in blocking.items()
+        if "human review attestation" in reason.lower()
+    )
+    if human_attestation_blocks >= 2:
+        proposals.append(
+            "checklist: risk_gate.human_attestation — "
+            f"human-review attestation blocked {human_attestation_blocks}x; "
+            "keep the gate visible and review whether the handoff needs clearer "
+            "wording."
+        )
+
+    live_boundary_blocks = sum(
+        count
+        for reason, count in blocking.items()
+        if "live mode" in reason.lower() or "live execution" in reason.lower()
+    )
+    if live_boundary_blocks >= 2:
+        proposals.append(
+            "allowlist: live_execution.boundary — "
+            f"live-boundary blocks appeared {live_boundary_blocks}x; keep "
+            "live-write expansion behind an explicit proposal and human review."
+        )
+
+    for reason, count in blocking.most_common(5):
+        lowered = reason.lower()
+        if (
+            count < 2
+            or "human review attestation" in lowered
+            or "live mode" in lowered
+            or "live execution" in lowered
+        ):
+            continue
+        proposals.append(
+            "checklist: repeated_blocking_reason.review — "
+            f"blocking reason seen {count}x: {reason}"
+        )
+
+    return proposals
+
+
 def build_lesson_prompt(draft: LessonDraft) -> str:
     stats = json.dumps(
         {
@@ -173,6 +258,7 @@ def build_lesson_prompt(draft: LessonDraft) -> str:
             "quality_failure_count": draft.quality_failure_count,
             "top_blocking_reasons": draft.top_blocking_reasons,
             "observations": draft.observations,
+            "proposed_rule_changes": draft.proposed_rule_changes,
         },
         ensure_ascii=False,
         indent=1,
@@ -212,7 +298,7 @@ def draft_lessons(
         quality_failure_count=len(failures),
         top_blocking_reasons=[(reason, count) for reason, count in blocked],
         observations=build_observations(digests),
-        proposed_rule_changes=[],
+        proposed_rule_changes=build_proposed_rule_changes(digests),
         receipt_refs=[item.receipt_ref for item in digests][:100],
     )
     if use_llm and digests:
@@ -248,6 +334,15 @@ def render_markdown(draft: LessonDraft) -> str:
         "",
     ]
     lines.extend(f"- {item}" for item in draft.observations)
+    if draft.proposed_rule_changes:
+        lines.extend(
+            [
+                "",
+                "## Proposed Rule Changes (draft seeds, not applied)",
+                "",
+            ]
+        )
+        lines.extend(f"- {item}" for item in draft.proposed_rule_changes)
     if draft.llm_narrative:
         lines.extend(
             [
