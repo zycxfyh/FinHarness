@@ -1,0 +1,307 @@
+{
+  "broken_paths": [
+    {
+      "issue": "hypothesis_zero_records",
+      "symbol": "SPY"
+    },
+    {
+      "issue": "validation_zero_results",
+      "symbol": "SPY"
+    },
+    {
+      "issue": "hypothesis_zero_records",
+      "symbol": "QQQ"
+    },
+    {
+      "issue": "validation_zero_results",
+      "symbol": "QQQ"
+    },
+    {
+      "issue": "hypothesis_zero_records",
+      "symbol": "NVDA"
+    },
+    {
+      "issue": "validation_zero_results",
+      "symbol": "NVDA"
+    },
+    {
+      "issue": "receipt_missing_references:41",
+      "symbol": "repo"
+    }
+  ],
+  "config": {
+    "end": "2026-06-13",
+    "ma_fast": 20,
+    "ma_slow": 50,
+    "start": "2025-01-01",
+    "symbols": [
+      "SPY",
+      "QQQ",
+      "NVDA"
+    ]
+  },
+  "degraded_paths": [
+    {
+      "path": "market_data:nautilus_catalog_overlap_skipped",
+      "symbol": "SPY"
+    },
+    {
+      "path": "market_data:nautilus_catalog_overlap_skipped",
+      "symbol": "NVDA"
+    }
+  ],
+  "execution_allowed": false,
+  "generated_at": "2026-06-13T17:32:25Z",
+  "receipt_surface": {
+    "status": "ok",
+    "summary": {
+      "consumed_count": 35,
+      "consumer_kind_counts": {
+        "governance_doc": 6,
+        "lesson": 1,
+        "lesson_draft": 30,
+        "report": 4,
+        "review": 44
+      },
+      "draft_consumed_count": 30,
+      "evidence_surface_counts": {
+        "candidate_or_draft": 30,
+        "durable_consumed": 35,
+        "generated_runtime_or_unlinked": 1771,
+        "missing_reference": 41
+      },
+      "missing_reference_consumer_kind_counts": {
+        "governance_doc": 1,
+        "lesson_draft": 30,
+        "project_doc": 2,
+        "proposal_doc": 2,
+        "review": 6
+      },
+      "missing_reference_count": 41,
+      "receipt_count": 1836,
+      "receipt_kind_counts": {
+        "alpaca-paper": 1,
+        "daily_evidence_bundle": 1,
+        "engineering_delivery": 2,
+        "event_ingestion": 241,
+        "execution_processing": 110,
+        "finharness_governance_dashboard_v1": 1,
+        "finharness_market_cockpit_v1": 1,
+        "finharness_project_governance_adapter_v1": 1,
+        "hypothesis_processing": 243,
+        "indicator_processing": 44,
+        "interpretation_processing": 240,
+        "langgraph_engineering_delivery_v1": 22,
+        "langgraph_institutional_paper_trade_v1": 2,
+        "langgraph_quality_governance_v1": 1,
+        "langgraph_release_preflight_v1": 1,
+        "langgraph_repo_intelligence_v1": 1,
+        "lessons": 1,
+        "manual": 1,
+        "market_data_ingestion": 73,
+        "post_trade_processing": 60,
+        "proposal_processing": 256,
+        "repository_governance_audit_v1": 1,
+        "risk_gate_processing": 258,
+        "rule_change_promotion": 1,
+        "validation_processing": 273
+      },
+      "referenced_count": 0,
+      "unreferenced_count": 1771,
+      "usage_status_counts": {
+        "consumed": 35,
+        "draft_consumed": 30,
+        "unreferenced": 1771
+      }
+    }
+  },
+  "review_queue": [
+    {
+      "path": "docs/reviews/2026-06-13-daily-evidence-devs_20260613T171204Z_1e9458ba.md",
+      "status": "warning"
+    },
+    {
+      "path": "docs/reviews/2026-06-14-finharness-c1-c4-b4-loop-execution.md",
+      "status": "DEGRADED evidence-bound execution receipt"
+    },
+    {
+      "path": "docs/reviews/2026-06-12-daily-evidence-devs_20260612T121834Z_b4f81e60.md",
+      "status": "warning"
+    },
+    {
+      "path": "docs/reviews/2026-06-02-daily-evidence-devs_20260602T051535Z_caf1defb.md",
+      "status": "warning"
+    }
+  ],
+  "source": {
+    "authority_boundary": "This cockpit aggregates market evidence and review work. It does not produce orders, position changes, execution permission, or investment advice.",
+    "execution_allowed": false,
+    "workflow": "finharness_market_cockpit_v1"
+  },
+  "symbols": [
+    {
+      "degraded_paths": [
+        "market_data:nautilus_catalog_overlap_skipped"
+      ],
+      "hypothesis": {
+        "payload_ref": "data/normalized/hypotheses/hyps_20260613T171210Z_b81260a1.json",
+        "record_count": 0,
+        "snapshot_id": "hyps_20260613T171210Z_b81260a1",
+        "status": "zero_records"
+      },
+      "indicators": {
+        "latest_date": "2026-06-12 00:00:00",
+        "ma_trend": "bullish",
+        "macd_bias": "bearish",
+        "macd_hist": -3.6209500323343224,
+        "ok": true,
+        "payload_ref": "data/normalized/indicators/inds_20260613T173223Z_6df34354.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260613T173223Z_6df34354.json",
+        "rolling_volatility_20d_annualized": 0.150646108025899,
+        "rsi": 52.943206805613855,
+        "rsi_state": "neutral"
+      },
+      "issues": [
+        "hypothesis_zero_records",
+        "validation_zero_results"
+      ],
+      "market_data": {
+        "freshness": {
+          "age_days": 1,
+          "status": "fresh"
+        },
+        "latest_date": "2026-06-12 00:00:00",
+        "ok": true,
+        "payload_ref": "data/normalized/market-data/mds_20260613T173223Z_870eb3f7.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260613T173223Z_870eb3f7.json",
+        "row_count": 362
+      },
+      "next_action": "review_only_build_hypothesis",
+      "risk_return": {
+        "annualized_return": 0.18074978281278975,
+        "annualized_volatility": 0.17973081791227502,
+        "max_drawdown": -0.189989041295049,
+        "ok": true,
+        "sharpe_ratio": 1.005669394444152,
+        "total_return": 0.26872944275981125
+      },
+      "symbol": "SPY",
+      "validation": {
+        "job_count": 0,
+        "payload_ref": "data/normalized/validations/vals_20260613T171148Z_d77add15.json",
+        "result_count": 0,
+        "snapshot_id": "vals_20260613T171148Z_d77add15",
+        "status": "zero_results"
+      }
+    },
+    {
+      "degraded_paths": [],
+      "hypothesis": {
+        "payload_ref": "data/normalized/hypotheses/hyps_20260613T171210Z_b81260a1.json",
+        "record_count": 0,
+        "snapshot_id": "hyps_20260613T171210Z_b81260a1",
+        "status": "zero_records"
+      },
+      "indicators": {
+        "latest_date": "2026-06-12 00:00:00",
+        "ma_trend": "bullish",
+        "macd_bias": "bearish",
+        "macd_hist": -5.2886209629226215,
+        "ok": true,
+        "payload_ref": "data/normalized/indicators/inds_20260613T173224Z_cc3f9a5d.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260613T173224Z_cc3f9a5d.json",
+        "rolling_volatility_20d_annualized": 0.2656917452817344,
+        "rsi": 55.210154723312165,
+        "rsi_state": "neutral"
+      },
+      "issues": [
+        "hypothesis_zero_records",
+        "validation_zero_results"
+      ],
+      "market_data": {
+        "freshness": {
+          "age_days": 1,
+          "status": "fresh"
+        },
+        "latest_date": "2026-06-12 00:00:00",
+        "ok": true,
+        "payload_ref": "data/normalized/market-data/mds_20260613T173224Z_c47e3014.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260613T173224Z_c47e3014.json",
+        "row_count": 362
+      },
+      "next_action": "review_only_build_hypothesis",
+      "risk_return": {
+        "annualized_return": 0.27341581278590144,
+        "annualized_volatility": 0.22518176325499506,
+        "max_drawdown": -0.2288330692157109,
+        "ok": true,
+        "sharpe_ratio": 1.2142005144363592,
+        "total_return": 0.413754603460198
+      },
+      "symbol": "QQQ",
+      "validation": {
+        "job_count": 0,
+        "payload_ref": "data/normalized/validations/vals_20260613T171148Z_d77add15.json",
+        "result_count": 0,
+        "snapshot_id": "vals_20260613T171148Z_d77add15",
+        "status": "zero_results"
+      }
+    },
+    {
+      "degraded_paths": [
+        "market_data:nautilus_catalog_overlap_skipped"
+      ],
+      "hypothesis": {
+        "payload_ref": "data/normalized/hypotheses/hyps_20260613T171210Z_b81260a1.json",
+        "record_count": 0,
+        "snapshot_id": "hyps_20260613T171210Z_b81260a1",
+        "status": "zero_records"
+      },
+      "indicators": {
+        "latest_date": "2026-06-12 00:00:00",
+        "ma_trend": "bullish",
+        "macd_bias": "bearish",
+        "macd_hist": -2.357990943718575,
+        "ok": true,
+        "payload_ref": "data/normalized/indicators/inds_20260613T173225Z_c590601f.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260613T173225Z_c590601f.json",
+        "rolling_volatility_20d_annualized": 0.434099528301066,
+        "rsi": 45.24094311221704,
+        "rsi_state": "neutral"
+      },
+      "issues": [
+        "hypothesis_zero_records",
+        "validation_zero_results"
+      ],
+      "market_data": {
+        "freshness": {
+          "age_days": 1,
+          "status": "fresh"
+        },
+        "latest_date": "2026-06-12 00:00:00",
+        "ok": true,
+        "payload_ref": "data/normalized/market-data/mds_20260613T173225Z_313ed72d.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260613T173225Z_313ed72d.json",
+        "row_count": 362
+      },
+      "next_action": "review_only_build_hypothesis",
+      "risk_return": {
+        "annualized_return": 0.3169814878350259,
+        "annualized_volatility": 0.4636330666725533,
+        "max_drawdown": -0.36886835186281197,
+        "ok": true,
+        "sharpe_ratio": 0.6836904237870033,
+        "total_return": 0.4835514862508721
+      },
+      "symbol": "NVDA",
+      "validation": {
+        "job_count": 0,
+        "payload_ref": "data/normalized/validations/vals_20260613T171148Z_d77add15.json",
+        "result_count": 0,
+        "snapshot_id": "vals_20260613T171148Z_d77add15",
+        "status": "zero_results"
+      }
+    }
+  ],
+  "workflow": "finharness_market_cockpit_v1"
+}

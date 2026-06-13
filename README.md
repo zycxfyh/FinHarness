@@ -60,13 +60,10 @@ task wheels:check       # local import/version check
 task wheels:data-check  # includes OpenBB/yfinance provider call
 ```
 
-Legacy Rust control-plane crate (`crates/finharness-cli`) — kept building until
-its capabilities are reproduced in Python, then archived (see the 2026-06-13
-ADR and live-path proposal):
-
-```bash
-task rust:check   # legacy; not the policy direction
-```
+Legacy Rust control-plane code is archived under
+`docs/archive/legacy-rust-crate/` as reference history only (see the
+2026-06-13 ADR and live-path proposal). The active local control plane is
+Python.
 
 ## Loops
 
@@ -75,11 +72,17 @@ Target state B and the topology rationale live in
 [docs/think/2026-06-12-target-state-b-and-loop-topology.md](docs/think/2026-06-12-target-state-b-and-loop-topology.md).
 
 ```bash
+task cockpit:market          # one-screen watchlist: data, indicators, broken paths, reviews
 task workflow:daily-evidence   # Loop 1: observation (also on hermes cron, weekday mornings)
 task hypotheses:graph -- --llm-enabled   # Loop 2 generator seat: hermes drafts, gates check
 task trading-state:show        # Loop 3 feedback edge: persisted behavioral state
 task lessons:draft             # Loop 4 v0: draft lesson candidates; a human promotes
 ```
+
+The cockpit writes `docs/operations/market-cockpit-latest.md` and
+`data/receipts/market-cockpit/latest.json`. It is review evidence only:
+`execution_allowed` stays false and it does not produce orders, position
+changes, or investment advice.
 
 Human attestation is fail-closed everywhere: risk-gate and execution runs
 stay at needs_human_review until a human attests with a written reason

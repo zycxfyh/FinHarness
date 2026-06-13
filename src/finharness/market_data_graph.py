@@ -171,6 +171,7 @@ def final_node(state: MarketDataGraphState) -> MarketDataGraphState:
             "end": state["end"],
             "row_count": snapshot["quality"]["row_count"],
             "quality_ok": snapshot["quality"]["ok"],
+            "quality_notes": snapshot["quality"].get("notes", []),
             "payload_ref": snapshot["payload_ref"],
             "receipt_ref": snapshot["receipt_ref"],
             "execution_allowed": False,

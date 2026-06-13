@@ -1,28 +1,16 @@
 # Repo Intelligence
 
-Generated at: `2026-06-13T17:04:23Z`
+Generated at: `2026-06-13T19:21:12Z`
 
 ## Summary
 
-- Files: `381`
-- Total lines: `76119`
+- Files: `386`
+- Total lines: `76940`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `.gitignore`
-- `Taskfile.yml`
-- `data/receipts/rule-changes/`
-- `data/state/`
-- `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/receipt-usage-audit.md`
-- `docs/lessons/2026-06-14-loss-cooldown-tightening.md`
-- `docs/lessons/drafts/2026-06-13-lesson_draft_31f5846e7aa9.md`
-- `docs/reviews/2026-06-14-finharness-c1-c4-b4-loop-execution.md`
-- `scripts/run_trading_guard.py`
-- `src/finharness/receipt_usage_audit.py`
-- `tests/test_receipt_usage_audit.py`
-- `tests/test_run_trading_guard.py`
+- `src/finharness/execution.py`
 
 ## Required Checks
 
@@ -65,6 +53,7 @@ flowchart LR
   n_src_finharness_interpretation_py["interpretation.py"]
   n_src_finharness_interpretation_graph_py["interpretation_graph.py"]
   n_src_finharness_lesson_loop_py["lesson_loop.py"]
+  n_src_finharness_market_cockpit_py["market_cockpit.py"]
   n_src_finharness_market_data_py["market_data.py"]
   n_src_finharness_market_data_graph_py["market_data_graph.py"]
   n_src_finharness_metrics_py["metrics.py"]
@@ -143,6 +132,11 @@ flowchart LR
   n_src_finharness_interpretation_graph_py --> n_src_finharness_interpretation_py
   n_src_finharness_lesson_loop_py --> n_src_finharness_hermes_bridge_py
   n_src_finharness_lesson_loop_py --> n_src_finharness_market_data_py
+  n_src_finharness_market_cockpit_py --> n_src_finharness_indicator_graph_py
+  n_src_finharness_market_cockpit_py --> n_src_finharness_market_data_py
+  n_src_finharness_market_cockpit_py --> n_src_finharness_market_data_graph_py
+  n_src_finharness_market_cockpit_py --> n_src_finharness_metrics_py
+  n_src_finharness_market_cockpit_py --> n_src_finharness_receipt_usage_audit_py
   n_src_finharness_market_data_graph_py --> n_src_finharness_data_entry_py
   n_src_finharness_market_data_graph_py --> n_src_finharness_market_data_py
   n_src_finharness_okx_live_gate_py --> n_src_finharness_effective_rules_py
@@ -168,9 +162,4 @@ flowchart LR
   n_src_finharness_quality_governance_graph_py --> n_src_finharness_repo_intelligence_py
   n_src_finharness_quality_governance_graph_py --> n_src_finharness_repo_intelligence_graph_py
   n_src_finharness_release_preflight_graph_py --> n_src_finharness_quality_governance_graph_py
-  n_src_finharness_release_preflight_graph_py --> n_src_finharness_repo_intelligence_py
-  n_src_finharness_repo_intelligence_graph_py --> n_src_finharness_repo_intelligence_py
-  n_src_finharness_research_assets_py --> n_src_finharness_market_data_py
-  n_src_finharness_risk_gate_py --> n_src_finharness_market_data_py
-  n_src_finharness_risk_gate_py --> n_src_finharness_proposal_py
 ```

@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
@@ -91,6 +92,38 @@ class MarketDataGovernanceTest(unittest.TestCase):
         receipt_path = ROOT / receipt.snapshot.receipt_ref
         saved = json.loads(receipt_path.read_text())
         self.assertEqual(saved["snapshot"]["snapshot_id"], receipt.snapshot.snapshot_id)
+
+    def test_snapshot_survives_nautilus_catalog_overlap(self) -> None:
+        with patch(
+            "finharness.market_data.write_nautilus_catalog",
+            side_effect=ValueError("would create non-disjoint intervals"),
+        ):
+            receipt = build_ohlcv_snapshot_from_history(
+                sample_ohlcv(),
+                symbol="SPY",
+                source=SourceSpec(
+                    provider="yfinance",
+                    upstream_source="Yahoo Finance",
+                    asset_class="equity",
+                    dataset="ohlcv_history",
+                    access_method="api_pull",
+                    wheel="yfinance",
+                    wheel_version="test",
+                ),
+                fetch_config={"symbol": "SPY"},
+                raw_payload={"rows": 2},
+                adjusted=False,
+                write_catalog=True,
+            )
+
+        self.assertTrue(receipt.snapshot.quality.ok)
+        self.assertIsNone(receipt.snapshot.lineage.catalog_ref)
+        self.assertTrue(
+            any(
+                "nautilus catalog write skipped" in note
+                for note in receipt.snapshot.quality.notes
+            )
+        )
 
 
 if __name__ == "__main__":

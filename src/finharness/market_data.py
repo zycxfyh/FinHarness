@@ -343,7 +343,19 @@ def build_ohlcv_snapshot_from_history(
         max_staleness_days=None,
     )
     bars = ohlcv_to_nautilus_bars(history, symbol=symbol) if write_catalog else []
-    catalog_ref = write_nautilus_catalog(bars) if bars else None
+    catalog_ref = None
+    catalog_notes: list[str] = []
+    if bars:
+        try:
+            catalog_ref = write_nautilus_catalog(bars)
+        except ValueError as exc:
+            # Nautilus ParquetDataCatalog rejects overlapping intervals. That
+            # should not make the research evidence unavailable: keep the
+            # market-data receipt, but expose the catalog degradation so the
+            # cockpit can show it instead of silently hiding the problem.
+            catalog_notes.append(f"nautilus catalog write skipped: {exc}")
+    if catalog_notes:
+        quality = quality.model_copy(update={"notes": [*quality.notes, *catalog_notes]})
     as_of = pd.to_datetime(history["date"], utc=True).max().isoformat()
     normalized_payload = {
         "records": history.to_dict(orient="records"),

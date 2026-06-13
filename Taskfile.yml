@@ -189,6 +189,11 @@ tasks:
     cmds:
       - uv run python scripts/run_data_entry_workflow.py {{.CLI_ARGS}}
 
+  cockpit:market:
+    desc: Build the read-only market cockpit for a watchlist
+    cmds:
+      - uv run python scripts/run_market_cockpit.py {{.CLI_ARGS}}
+
   market-data:graph:
     desc: Run first-layer market data LangGraph workflow
     cmds:
