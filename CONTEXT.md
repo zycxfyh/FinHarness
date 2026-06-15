@@ -1,6 +1,7 @@
 # FinHarness Context
 
-FinHarness is a trading research and execution harness.
+FinHarness is a financial decision, trading research, and execution-governance
+harness.
 
 ## Domain Terms
 
@@ -22,6 +23,12 @@ Risk Gate:
   A pre-trade control that decides whether a proposed action can continue. It
   may reject trades based on drawdown, leverage, order size, missing thesis, or
   missing human confirmation.
+
+Governed Advice:
+  A conditional financial suggestion produced under evidence, assumptions,
+  rejected alternatives, risk notes, authority limits, receipts, and review
+  criteria. FinHarness may produce governed advice. Governed advice is not a
+  guarantee of returns, not proof of edge, and not execution authority.
 
 Receipt:
   A durable record of inputs, tool versions, commands, decisions, outputs, and
@@ -52,12 +59,18 @@ Mature Wheel Boundary:
 
 ## Architecture Rule
 
-FinHarness local code may contain adapters, guards, receipts, workflows, and
-tests. It must not grow homemade strategy engines, order routers, portfolio
-accounting, fill models, optimizers, or live execution semantics.
+FinHarness local code may contain adapters, guards, governed-advice checks,
+receipts, workflows, and tests. It must not grow homemade strategy engines,
+order routers, portfolio accounting, fill models, optimizers, or live execution
+semantics.
 
 New local implementation is pragmatism-first: Python by default for the control
 plane, kept thin and behind Taskfile entries. The rule that carries the safety
 value is the boundary above (adapters/guards/receipts/workflows/tests, no
 homemade engines), not the language. A second language must be justified by a
 measured need and must share the same persisted state and gates.
+
+Any module that produces a recommendation must make the recommendation's
+claim, evidence, assumptions, rejected alternatives, risks, authority boundary,
+receipt, and review condition explicit. A recommendation may become a proposal
+or policy draft; it does not authorize broker execution by itself.

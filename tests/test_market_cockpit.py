@@ -132,6 +132,7 @@ class MarketCockpitTests(unittest.TestCase):
         self.assertEqual([row["symbol"] for row in cockpit["symbols"]], ["SPY", "QQQ"])
         first = cockpit["symbols"][0]
         self.assertEqual(first["market_data"]["row_count"], 2)
+        self.assertEqual(first["risk_return"]["backend"], "quantstats")
         self.assertEqual(first["indicators"]["ma_trend"], "bullish")
         self.assertEqual(first["hypothesis"]["status"], "zero_records")
         self.assertEqual(first["validation"]["status"], "zero_results")

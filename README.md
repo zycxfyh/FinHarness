@@ -1,8 +1,16 @@
 # FinHarness Lab
 
-AI finance research and harness engineering lab.
+AI finance decision and research harness for evidence-bound financial judgment.
 
-The goal is to learn by assembling top open-source wheels instead of rebuilding mature tools:
+> **New here? Start with the [User Guide](docs/GUIDE.md).** It walks you through what
+> FinHarness is (and is not) and has you run the golden path yourself in ~30 minutes —
+> no brokerage account or API key required.
+
+The goal is to learn by assembling top open-source wheels instead of rebuilding mature tools,
+then use them to produce governed financial suggestions: claims with evidence,
+assumptions, rejected alternatives, risk notes, receipts, and human authority
+boundaries. FinHarness is allowed to advise; it is not allowed to pretend its
+advice is a guaranteed edge or an execution authorization.
 
 - finance data and research
 - backtesting and risk metrics
@@ -82,7 +90,9 @@ task lessons:draft             # Loop 4 v0: draft lesson candidates; a human pro
 The cockpit writes `docs/operations/market-cockpit-latest.md` and
 `data/receipts/market-cockpit/latest.json`. It is review evidence only:
 `execution_allowed` stays false and it does not produce orders, position
-changes, or investment advice.
+changes, or execution authority. It may surface evidence-bound suggestions,
+warnings, and review prompts; those must remain conditional, auditable, and
+separate from any broker action.
 
 Human attestation is fail-closed everywhere: risk-gate and execution runs
 stay at needs_human_review until a human attests with a written reason
@@ -150,15 +160,28 @@ docs/archive/legacy-rust-crate (2026-06-13 ADR).
 Every live mutation passes through the fail-closed gate
 ([scripts/okx_live_order.py](scripts/okx_live_order.py)): the behavioral guard
 evaluated against persisted trading-state, a notional cap (uncomputable notional
-fails closed), attestation, and a receipt for every attempt. The env gate still
-applies, and authorization is an interactive confirmation that echoes the order:
+fails closed), attestation, and a receipt for every attempt.
+
+A live write now requires **two** independent, deliberate opt-ins:
+
+- `FINHARNESS_OKX_LIVE_WRITE_ARMED=1` — the hard kill-switch. It defaults to
+  disarmed (fail-closed) and is the compensating control for deployments without
+  an OKX IP allowlist (e.g. a rotating-IP VPN): a leaked key cannot place orders
+  through the harness while it stays disarmed. Reads are never affected.
+- `FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1` — the original env gate.
+
+Authorization is then an interactive confirmation that echoes the order:
 
 ```bash
+export FINHARNESS_OKX_LIVE_WRITE_ARMED=1
 export FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1
 task okx:live-write -- swap place --instId BTC-USDT-SWAP --side buy --ordType limit \
   --sz 0.01 --tdMode isolated --px 1 \
   --attester "you" --reason "written plan ref" --thesis
 ```
+
+Leave `FINHARNESS_OKX_LIVE_WRITE_ARMED` unset to keep OKX effectively read-only
+(the intended posture when execution runs on Alpaca paper instead).
 
 Add `--dry-run` to see the gate decision without touching the broker. The gate
 refuses before reaching the okx binary on hard-stop drawdown/loss state, an

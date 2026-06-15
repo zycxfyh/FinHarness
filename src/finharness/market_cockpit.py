@@ -20,7 +20,7 @@ from typing import Any
 from finharness.indicator_graph import run_indicator_graph
 from finharness.market_data import ROOT, display_path
 from finharness.market_data_graph import run_market_data_graph
-from finharness.metrics import summarize
+from finharness.metrics import METRICS_BACKEND, summarize
 from finharness.receipt_usage_audit import build_receipt_usage_audit
 
 WORKFLOW_VERSION = "finharness_market_cockpit_v1"
@@ -44,6 +44,7 @@ def _history_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary = summarize(closes)
     return {
         "ok": True,
+        "backend": METRICS_BACKEND,
         "total_return": summary.total_return,
         "annualized_return": summary.annualized_return,
         "annualized_volatility": summary.annualized_volatility,
