@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
+import finharness.indicators.macd as macd_module
+import finharness.indicators.squeeze as squeeze_module
 from finharness.indicators.macd import compute_macd
 from finharness.indicators.shared import latest_snapshot
 from finharness.indicators.smc import compute_smc
@@ -29,14 +32,35 @@ def sample_history() -> pd.DataFrame:
 
 class IndicatorTests(unittest.TestCase):
     def test_macd_outputs_expected_columns(self) -> None:
-        result = compute_macd(sample_history())
+        with patch(
+            "finharness.indicators.macd.talib.MACD",
+            wraps=macd_module.talib.MACD,
+        ) as macd:
+            result = compute_macd(sample_history())
+
+        self.assertEqual(macd_module.MACD_BACKEND, "TA-Lib.MACD")
+        self.assertTrue(macd.called)
         self.assertIn("macd", result.columns)
         self.assertIn("macd_signal", result.columns)
         self.assertIn("macd_hist", result.columns)
         self.assertIn(result.iloc[-1]["macd_bias"], {"bullish", "bearish"})
 
     def test_squeeze_outputs_expected_state(self) -> None:
-        result = compute_squeeze_momentum(sample_history())
+        with patch(
+            "finharness.indicators.squeeze.talib.BBANDS",
+            wraps=squeeze_module.talib.BBANDS,
+        ) as bbands, patch(
+            "finharness.indicators.squeeze.talib.LINEARREG",
+            wraps=squeeze_module.talib.LINEARREG,
+        ) as linearreg:
+            result = compute_squeeze_momentum(sample_history())
+
+        self.assertEqual(
+            squeeze_module.SQUEEZE_BACKEND,
+            "TA-Lib.BBANDS/TRANGE/SMA/LINEARREG",
+        )
+        self.assertTrue(bbands.called)
+        self.assertTrue(linearreg.called)
         self.assertIn("squeeze_state", result.columns)
         self.assertIn(
             result.iloc[-1]["squeeze_momentum_state"],

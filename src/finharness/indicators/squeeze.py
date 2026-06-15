@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pandas as pd
+import talib
 
-from finharness.indicators.shared import true_range, validate_ohlcv
+from finharness.indicators.shared import validate_ohlcv
+
+SQUEEZE_BACKEND = "TA-Lib.BBANDS/TRANGE/SMA/LINEARREG"
 
 
 def compute_squeeze_momentum(
@@ -18,23 +19,36 @@ def compute_squeeze_momentum(
 ) -> pd.DataFrame:
     """Compute a LazyBear-style squeeze momentum feature set."""
     data = validate_ohlcv(frame)
-    close = data["close"]
+    close = data["close"].astype(float)
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
 
-    basis = close.rolling(bb_length, min_periods=bb_length).mean()
-    deviation = bb_mult * close.rolling(bb_length, min_periods=bb_length).std()
-    upper_bb = basis + deviation
-    lower_bb = basis - deviation
+    upper_bb_raw, _, lower_bb_raw = talib.BBANDS(
+        close,
+        timeperiod=bb_length,
+        nbdevup=bb_mult,
+        nbdevdn=bb_mult,
+        matype=0,
+    )
+    upper_bb = pd.Series(upper_bb_raw, index=data.index)
+    lower_bb = pd.Series(lower_bb_raw, index=data.index)
 
-    ma = close.rolling(kc_length, min_periods=kc_length).mean()
-    price_range = true_range(data) if use_true_range else data["high"] - data["low"]
-    range_ma = price_range.rolling(kc_length, min_periods=kc_length).mean()
+    ma = pd.Series(talib.SMA(close, timeperiod=kc_length), index=data.index)
+    if use_true_range:
+        price_range = pd.Series(talib.TRANGE(high, low, close), index=data.index)
+    else:
+        price_range = high - low
+    range_ma = pd.Series(talib.SMA(price_range, timeperiod=kc_length), index=data.index)
     upper_kc = ma + range_ma * kc_mult
     lower_kc = ma - range_ma * kc_mult
 
-    highest_high = data["high"].rolling(kc_length, min_periods=kc_length).max()
-    lowest_low = data["low"].rolling(kc_length, min_periods=kc_length).min()
+    highest_high = pd.Series(talib.MAX(high, timeperiod=kc_length), index=data.index)
+    lowest_low = pd.Series(talib.MIN(low, timeperiod=kc_length), index=data.index)
     middle = ((highest_high + lowest_low) / 2 + ma) / 2
-    momentum = _rolling_linreg_current(close - middle, kc_length)
+    momentum = pd.Series(
+        talib.LINEARREG(close - middle, timeperiod=kc_length),
+        index=data.index,
+    )
 
     squeeze_on = (lower_bb > lower_kc) & (upper_bb < upper_kc)
     squeeze_off = (lower_bb < lower_kc) & (upper_bb > upper_kc)
@@ -61,14 +75,3 @@ def compute_squeeze_momentum(
             ),
         }
     )
-
-
-def _rolling_linreg_current(values: pd.Series, length: int) -> pd.Series:
-    def fit_last(window: np.ndarray) -> float:
-        if np.isnan(window).any():
-            return math.nan
-        x = np.arange(len(window), dtype=float)
-        slope, intercept = np.polyfit(x, window, 1)
-        return float(slope * (len(window) - 1) + intercept)
-
-    return values.rolling(length, min_periods=length).apply(fit_last, raw=True)
