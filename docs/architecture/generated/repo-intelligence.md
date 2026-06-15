@@ -1,28 +1,32 @@
 # Repo Intelligence
 
-Generated at: `2026-06-15T11:17:54Z`
+Generated at: `2026-06-15T11:36:58Z`
 
 ## Summary
 
-- Files: `420`
-- Total lines: `83386`
+- Files: `431`
+- Total lines: `84147`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `README.md`
-- `data/receipts/market-cockpit/latest.json`
-- `docs/GUIDE.md`
+- `CONTRIBUTING.md`
 - `docs/README.md`
 - `docs/architecture/documentation-and-onboarding-plan.md`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/explanation/`
-- `docs/how-to/`
-- `docs/lessons/drafts/2026-06-15-lesson_draft_8fde2e202168.md`
-- `docs/lessons/drafts/2026-06-15-lesson_draft_9ed7951ee833.md`
-- `docs/operations/market-cockpit-latest.md`
-- `docs/reference/`
-- `docs/tutorials/`
+- `docs/explanation/README.md`
+- `docs/how-to/README.md`
+- `docs/how-to/add-mature-wheel-adapter.md`
+- `docs/how-to/promote-lesson-to-rule.md`
+- `docs/how-to/run-feature-snapshot.md`
+- `docs/how-to/run-ten-layer-flow.md`
+- `docs/how-to/safe-paper-trade-review.md`
+- `docs/modules/README.md`
+- `docs/reference/README.md`
+- `docs/reference/commands.md`
+- `docs/reference/config-env.md`
+- `docs/reference/interfaces.md`
+- `docs/reference/receipts.md`
 
 ## Required Checks
 
