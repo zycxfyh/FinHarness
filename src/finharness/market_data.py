@@ -22,6 +22,12 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from pydantic import BaseModel, ConfigDict, Field
 
+from finharness.data_quality import (
+    DATA_QUALITY_BACKEND,
+    data_quality_backend_version,
+    price_outlier_flags,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 RAW_ROOT = ROOT / "data" / "raw" / "market-data"
 NORMALIZED_ROOT = ROOT / "data" / "normalized" / "market-data"
@@ -69,6 +75,8 @@ class MarketDataLineage(BaseModel):
     raw_hash: str
     normalized_hash: str
     transform_version: str = "finharness.market_data.v1"
+    quality_backend: str | None = None
+    quality_backend_version: str | None = None
     raw_ref: str
     normalized_ref: str
     catalog_ref: str | None = None
@@ -183,14 +191,12 @@ def build_quality_report(
             if stale:
                 notes.append(f"latest bar is {age_days} days old")
 
-    for column in ["open", "high", "low", "close"]:
-        if column in frame.columns and (frame[column].astype(float) <= 0).any():
-            outlier_flags.append(f"{column}_non_positive")
-
-    if {"high", "low"}.issubset(frame.columns):
-        invalid = frame["high"].astype(float) < frame["low"].astype(float)
-        if invalid.any():
-            outlier_flags.append("high_below_low")
+    present_ohlc = [
+        column for column in ("open", "high", "low", "close") if column in frame.columns
+    ]
+    if present_ohlc:
+        numeric_ohlc = frame[present_ohlc].astype(float)
+        outlier_flags = price_outlier_flags(numeric_ohlc)
 
     null_counts = {
         column: int(frame[column].isna().sum())
@@ -288,6 +294,8 @@ def persist_market_data_snapshot(
         fetch_config=fetch_config,
         raw_hash=sha256_text(raw_text),
         normalized_hash=sha256_text(normalized_text),
+        quality_backend=DATA_QUALITY_BACKEND,
+        quality_backend_version=data_quality_backend_version(),
         raw_ref=display_path(raw_ref),
         normalized_ref=display_path(normalized_ref),
         catalog_ref=catalog_ref,
