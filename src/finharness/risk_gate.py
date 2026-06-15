@@ -17,6 +17,10 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.market_data import ROOT, display_path, sha256_text
+from finharness.portfolio_risk import (
+    RiskfolioAllocationSummary,
+    concentration_request_from_allocation,
+)
 from finharness.proposal import ProposalCandidate, ProposalSnapshot
 
 RISK_GATE_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "risk-gates"
@@ -309,11 +313,79 @@ def check(
     )
 
 
+def normalize_allocation_summary(
+    allocation_summary: RiskfolioAllocationSummary | dict[str, Any] | None,
+) -> RiskfolioAllocationSummary | None:
+    if allocation_summary is None:
+        return None
+    if isinstance(allocation_summary, RiskfolioAllocationSummary):
+        return allocation_summary
+    return RiskfolioAllocationSummary(**allocation_summary)
+
+
+def risk_context_for_candidate(
+    *,
+    context: RiskGateContext,
+    candidate: ProposalCandidate,
+    allocation_summary: RiskfolioAllocationSummary | None = None,
+) -> RiskGateContext:
+    """Apply portfolio-risk evidence to the requested side of the gate only."""
+
+    if allocation_summary is None:
+        return context
+    requested = concentration_request_from_allocation(allocation_summary, candidate.symbol)
+    return context.model_copy(
+        update={"requested_symbol_concentration_pct": requested}
+    )
+
+
+def representative_risk_context(
+    *,
+    context: RiskGateContext,
+    proposal_snapshot: ProposalSnapshot,
+    allocation_summary: RiskfolioAllocationSummary | None = None,
+) -> RiskGateContext:
+    """Expose the Riskfolio request in snapshot context for single-symbol runs."""
+
+    if allocation_summary is None:
+        return context
+    symbols = {candidate.symbol for candidate in proposal_snapshot.candidates}
+    if len(symbols) != 1:
+        return context
+    symbol = next(iter(symbols))
+    requested = concentration_request_from_allocation(allocation_summary, symbol)
+    return context.model_copy(
+        update={"requested_symbol_concentration_pct": requested}
+    )
+
+
+def riskfolio_concentration_evidence_refs(
+    *,
+    allocation_summary: RiskfolioAllocationSummary | None,
+    symbol: str,
+    requested_concentration_pct: float,
+    max_symbol_concentration_pct: float,
+) -> list[str]:
+    if allocation_summary is None:
+        return []
+    return [
+        f"portfolio_risk_backend:{allocation_summary.backend}",
+        f"riskfolio_symbol:{symbol.upper()}",
+        f"riskfolio_requested_symbol_concentration_pct:{requested_concentration_pct:.6f}",
+        f"mandate_max_symbol_concentration_pct:{max_symbol_concentration_pct:.6f}",
+        (
+            "riskfolio_limitation:research suggestion only; mandate cap unchanged; "
+            "historical optimizer assumptions"
+        ),
+    ]
+
+
 def candidate_checks(
     *,
     proposal_snapshot: ProposalSnapshot,
     candidate: ProposalCandidate,
     context: RiskGateContext,
+    allocation_summary: RiskfolioAllocationSummary | None = None,
 ) -> list[RiskGateCheck]:
     refs = [proposal_snapshot.payload_ref, proposal_snapshot.receipt_ref]
     candidate_language_hits = find_blocked_language(candidate.rationale)
@@ -377,7 +449,17 @@ def candidate_checks(
                 <= context.max_symbol_concentration_pct
             ),
             reason="Requested symbol concentration must stay within configured cap.",
-            evidence_refs=[context.mandate_id],
+            evidence_refs=[
+                context.mandate_id,
+                *riskfolio_concentration_evidence_refs(
+                    allocation_summary=allocation_summary,
+                    symbol=candidate.symbol,
+                    requested_concentration_pct=(
+                        context.requested_symbol_concentration_pct
+                    ),
+                    max_symbol_concentration_pct=context.max_symbol_concentration_pct,
+                ),
+            ],
         ),
         check(
             proposal_id=candidate.proposal_id,
@@ -466,11 +548,18 @@ def build_risk_gate_decision(
     proposal_snapshot: ProposalSnapshot,
     candidate: ProposalCandidate,
     context: RiskGateContext,
+    allocation_summary: RiskfolioAllocationSummary | None = None,
 ) -> RiskGateDecision:
+    effective_context = risk_context_for_candidate(
+        context=context,
+        candidate=candidate,
+        allocation_summary=allocation_summary,
+    )
     checks = candidate_checks(
         proposal_snapshot=proposal_snapshot,
         candidate=candidate,
-        context=context,
+        context=effective_context,
+        allocation_summary=allocation_summary,
     )
     decision = classify_decision(candidate=candidate, checks=checks)
     failed_checks = [item for item in checks if item.status == "failed"]
@@ -499,12 +588,14 @@ def build_risk_gate_decisions(
     *,
     proposal_snapshot: ProposalSnapshot,
     context: RiskGateContext,
+    allocation_summary: RiskfolioAllocationSummary | None = None,
 ) -> list[RiskGateDecision]:
     return [
         build_risk_gate_decision(
             proposal_snapshot=proposal_snapshot,
             candidate=candidate,
             context=context,
+            allocation_summary=allocation_summary,
         )
         for candidate in proposal_snapshot.candidates
     ]
@@ -726,6 +817,7 @@ def build_risk_gate_bundle_from_proposal_snapshot(
     proposal_snapshot: ProposalSnapshot | dict[str, Any],
     *,
     context: RiskGateContext | dict[str, Any] | None = None,
+    allocation_summary: RiskfolioAllocationSummary | dict[str, Any] | None = None,
     llm_enabled: bool = False,
     hermes_root: str | Path = "/root/projects/hermes-agent",
 ) -> RiskGateBundle:
@@ -739,6 +831,12 @@ def build_risk_gate_bundle_from_proposal_snapshot(
         if isinstance(context, RiskGateContext)
         else RiskGateContext.model_validate(context or {})
     )
+    allocation = normalize_allocation_summary(allocation_summary)
+    representative_context = representative_risk_context(
+        context=risk_context,
+        proposal_snapshot=snapshot,
+        allocation_summary=allocation,
+    )
     source = RiskGateSourceSpec(
         llm_provider="hermes-agent" if llm_enabled else None,
         llm_interface="HermesRiskGateDraftProvider" if llm_enabled else None,
@@ -747,16 +845,18 @@ def build_risk_gate_bundle_from_proposal_snapshot(
         config={
             "input_proposal_snapshot_id": snapshot.proposal_snapshot_id,
             "candidate_count": snapshot.candidate_count,
-            "mandate_id": risk_context.mandate_id,
+            "mandate_id": representative_context.mandate_id,
+            "portfolio_risk_backend": allocation.backend if allocation else None,
         },
     )
     decisions = build_risk_gate_decisions(
         proposal_snapshot=snapshot,
-        context=risk_context,
+        context=representative_context,
+        allocation_summary=allocation,
     )
     return persist_risk_gate_bundle(
         source=source,
         input_proposal_snapshot=snapshot,
-        context=risk_context,
+        context=representative_context,
         decisions=decisions,
     )
