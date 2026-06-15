@@ -132,6 +132,10 @@ def iter_receipts(root: Path = ROOT) -> list[dict[str, Any]]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             payload = {}
+        if not isinstance(payload, dict):
+            # Some receipts (e.g. the gitleaks redacted report) are top-level
+            # JSON arrays; treat them as metadata-less so the audit stays robust.
+            payload = {}
         receipts.append(
             {
                 "path": rel,

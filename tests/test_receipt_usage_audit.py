@@ -62,6 +62,17 @@ class ReceiptUsageAuditTests(unittest.TestCase):
             "review",
         )
 
+    def test_list_shaped_receipt_does_not_crash_audit(self) -> None:
+        # gitleaks redacted reports are top-level JSON arrays; the audit must
+        # stay robust and classify them by their parent directory, not crash.
+        path = self.root / "data/receipts/hardening/latest-gitleaks-redacted.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps([{"RuleID": "x", "File": "y"}]), encoding="utf-8")
+
+        audit = build_receipt_usage_audit(self.root)
+
+        self.assertIn("hardening", audit["summary"]["receipt_kind_counts"])
+
     def test_audit_classifies_consumed_draft_and_unreferenced(self) -> None:
         audit = build_receipt_usage_audit(self.root)
         by_path = {item["path"]: item for item in audit["receipts"]}
