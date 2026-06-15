@@ -123,13 +123,39 @@ demonstrates**. Target audience: a first-time user. This tutorial doubles as a
    encodes the whole migration discipline as a repeatable recipe).
 6. Add a "docs definition-of-done" note to the contributing guide.
 
+## 8a. Implementation status (2026-06-15)
+
+This plan has been implemented as a docs-as-code baseline:
+
+| Plan item | Status | Artifact |
+| --- | --- | --- |
+| Diátaxis directories and task map | done | `docs/README.md`, `docs/tutorials/`, `docs/how-to/`, `docs/reference/`, `docs/explanation/` |
+| Golden path tutorial | done | `docs/tutorials/golden-path.md` |
+| Explanation reclassification | indexed, not moved | `docs/explanation/README.md` points to `architecture/`, `adr/`, `think/`, `notes/`, and related explanation folders |
+| Command reference | done | `docs/reference/commands.md` |
+| Mature-wheel interface reference | done | `docs/reference/interfaces.md` |
+| Receipt reference | done | `docs/reference/receipts.md` |
+| Config/env reference | done | `docs/reference/config-env.md` |
+| Feature snapshot how-to | done | `docs/how-to/run-feature-snapshot.md` |
+| Ten-layer flow how-to | done | `docs/how-to/run-ten-layer-flow.md` |
+| Safe paper-trade review how-to | done | `docs/how-to/safe-paper-trade-review.md` |
+| Mature-wheel adapter how-to | done | `docs/how-to/add-mature-wheel-adapter.md` |
+| Lesson-to-rule promotion how-to | done | `docs/how-to/promote-lesson-to-rule.md` |
+| Docs definition of done | done | `CONTRIBUTING.md` |
+
+The explanation files were indexed rather than physically moved. That keeps git
+history and existing links stable while still giving newcomers a single
+Diátaxis-style doorway.
+
 ## 9. Out of scope / acceptance
 
 - This document is the plan. Each doc above is follow-up work.
 - No external docs site/generator/tool is adopted here; doing so is a separate
   user-approved decision.
 - Done when: the four directories exist, the golden-path tutorial is written and
-  green, and `docs/README.md` routes by task.
+  green, `docs/README.md` routes by task, reference pages cover commands /
+  interfaces / receipts / config, high-value how-tos exist, and docs definition
+  of done is recorded.
 
 ## Sources
 
