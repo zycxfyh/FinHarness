@@ -1,0 +1,77 @@
+{
+  "timestamp_utc": "2026-06-13T21:55:12.053717+00:00",
+  "dry_run": false,
+  "broker": "alpaca",
+  "environment": "paper",
+  "market_open": false,
+  "plan": {
+    "schedule_id": "basic_investor_dca_v1",
+    "symbol": "SPY",
+    "side": "buy",
+    "qty": null,
+    "notional": "250.0",
+    "order_type": "market",
+    "latest_price": "741.67",
+    "thesis": "Basic-investor dollar-cost-averaging into broad-market ETFs on a fixed schedule. No market timing; hold long term; short-term indicators are treated as noise.",
+    "invalidation": "Re-evaluate only if the long-term plan itself changes (income, goal, time horizon) — not on price moves or short-term signals.",
+    "method": "fixed_dollar",
+    "not_investment_advice": true
+  },
+  "pre_trade": {
+    "account_status": "ACTIVE",
+    "trading_blocked": false,
+    "buying_power": "398540.55"
+  },
+  "risk_gate": {
+    "level": "clear",
+    "trade_allowed": true,
+    "reasons": [
+      "within configured behavioral risk limits"
+    ],
+    "required_actions": [
+      "Continue to use predefined size and invalidation rules."
+    ]
+  },
+  "execution": {
+    "attempted": true,
+    "order": {
+      "id": "8cdb3c92-6c90-424d-971b-d1abade6dbad",
+      "client_order_id": "finharness-dca-1781387710-773fdeae",
+      "created_at": "2026-06-13T21:55:12.191342714Z",
+      "updated_at": "2026-06-13T21:55:12.192967384Z",
+      "submitted_at": "2026-06-13T21:55:12.191342714Z",
+      "filled_at": null,
+      "expired_at": null,
+      "canceled_at": null,
+      "failed_at": null,
+      "replaced_at": null,
+      "replaced_by": null,
+      "replaces": null,
+      "asset_id": "b28f4066-5c6d-479b-a2af-85dc1a8f16fb",
+      "symbol": "SPY",
+      "asset_class": "us_equity",
+      "notional": "250",
+      "qty": null,
+      "filled_qty": "0",
+      "filled_avg_price": null,
+      "order_class": "",
+      "order_type": "market",
+      "type": "market",
+      "side": "buy",
+      "position_intent": "buy_to_open",
+      "time_in_force": "day",
+      "limit_price": null,
+      "stop_price": null,
+      "status": "accepted",
+      "extended_hours": false,
+      "legs": null,
+      "trail_percent": null,
+      "trail_price": null,
+      "hwm": null,
+      "subtag": null,
+      "source": null,
+      "expires_at": "2026-06-15T20:00:00Z"
+    },
+    "error": null
+  }
+}
