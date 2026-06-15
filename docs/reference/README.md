@@ -18,8 +18,8 @@ Current reference surfaces:
 Planned reference docs:
 
 - Keep command reference synchronized with `Taskfile.yml`.
-- Add detailed schema tables when a layer's receipt shape stabilizes enough to
-  need field-by-field API-style reference.
+- Keep receipt schema tables synchronized when receipt fields or direct JSON
+  families change.
 
 Reference pages should stay factual: commands, fields, schemas, config names,
 file paths, and supported boundaries. Put motivation and trade-offs in
