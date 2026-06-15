@@ -1,32 +1,25 @@
 # Repo Intelligence
 
-Generated at: `2026-06-15T11:36:58Z`
+Generated at: `2026-06-15T12:58:25Z`
 
 ## Summary
 
-- Files: `431`
-- Total lines: `84147`
+- Files: `446`
+- Total lines: `86303`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `CONTRIBUTING.md`
-- `docs/README.md`
-- `docs/architecture/documentation-and-onboarding-plan.md`
+- `docs/architecture/gap-analysis.md`
+- `docs/architecture/gap-solutions.md`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/explanation/README.md`
-- `docs/how-to/README.md`
-- `docs/how-to/add-mature-wheel-adapter.md`
-- `docs/how-to/promote-lesson-to-rule.md`
-- `docs/how-to/run-feature-snapshot.md`
-- `docs/how-to/run-ten-layer-flow.md`
-- `docs/how-to/safe-paper-trade-review.md`
-- `docs/modules/README.md`
+- `docs/architecture/industry-benchmark/`
+- `docs/architecture/industry-reference-and-roadmap.md`
+- `docs/architecture/product-roadmap.md`
+- `docs/architecture/state-of-finharness.md`
 - `docs/reference/README.md`
-- `docs/reference/commands.md`
-- `docs/reference/config-env.md`
-- `docs/reference/interfaces.md`
 - `docs/reference/receipts.md`
+- `docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md`
 
 ## Required Checks
 
