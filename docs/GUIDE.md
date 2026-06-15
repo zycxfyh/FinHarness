@@ -1,6 +1,13 @@
 # FinHarness User Guide
 
-**New here? This is the front door. Read it top to bottom once — about 30 minutes — and you will understand what FinHarness is for and have run it yourself.**
+> For the maintained executable first-run path, start with
+> [docs/README.md](README.md) and
+> [tutorials/golden-path.md](tutorials/golden-path.md). This guide remains useful
+> as an operator-oriented explanation of the system and its behavior guardrails.
+
+**Use this after the golden path.** Read it top to bottom once and you will
+understand what FinHarness is for, how the behavior guardrails work, and why the
+project refuses to turn research evidence into automatic trading authority.
 
 This guide is for the **operator** — the person using FinHarness to govern their own
 trading research and discipline. If instead you want to *extend* the lab (add

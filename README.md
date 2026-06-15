@@ -2,9 +2,10 @@
 
 AI finance decision and research harness for evidence-bound financial judgment.
 
-> **New here? Start with the [User Guide](docs/GUIDE.md).** It walks you through what
-> FinHarness is (and is not) and has you run the golden path yourself in ~30 minutes —
-> no brokerage account or API key required.
+> **New here? Start with the [docs task map](docs/README.md), then run the
+> [Golden Path Tutorial](docs/tutorials/golden-path.md).** It walks you through a
+> safe end-to-end flow and shows the brakes: human review, receipts, and
+> `execution_allowed=false`.
 
 The goal is to learn by assembling top open-source wheels instead of rebuilding mature tools,
 then use them to produce governed financial suggestions: claims with evidence,
