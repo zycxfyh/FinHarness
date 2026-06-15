@@ -7,11 +7,13 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from finharness.execution import (
+    NAUTILUS_PAPER_ADAPTER_NAME,
     ExecutionContext,
     ExecutionIntent,
     ExecutionOrderRequest,
     ExecutionSourceSpec,
     FakePaperExecutionAdapter,
+    blocked_event,
     build_execution_intents,
     build_order_requests,
     collect_execution_events,
@@ -47,14 +49,34 @@ class ExecutionGraphState(TypedDict, total=False):
     receipt: dict[str, Any]
     review_hook: dict[str, Any]
     final: dict[str, Any]
+    execution_adapter: str
     fake_fill_mode: str
+
+
+def graph_adapter_name(state: ExecutionGraphState, context: ExecutionContext) -> str:
+    if context.requested_mode == "dry_run":
+        return "dry_run"
+    if state.get("execution_adapter") == "fake":
+        return "fake_paper_adapter"
+    return NAUTILUS_PAPER_ADAPTER_NAME
+
+
+def graph_execution_adapter(state: ExecutionGraphState):
+    if state.get("execution_adapter") == "fake":
+        return FakePaperExecutionAdapter(
+            fill_mode=state.get("fake_fill_mode", "accepted")  # type: ignore[arg-type]
+        )
+    return None
 
 
 def source_config_node(state: ExecutionGraphState) -> ExecutionGraphState:
     context = ExecutionContext.model_validate(state.get("execution_context") or {})
+    adapter_name = graph_adapter_name(state, context)
     source = ExecutionSourceSpec(
+        adapter_name=adapter_name,
         adapter_mode=context.requested_mode,
         config={
+            "execution_adapter": state.get("execution_adapter", "nautilus"),
             "operator_execute": context.operator_execute,
             "live_execution_allowed": context.live_execution_allowed,
             "routing_policy": context.routing_policy,
@@ -172,14 +194,14 @@ def submit_or_dry_run_node(state: ExecutionGraphState) -> ExecutionGraphState:
     requests = [
         ExecutionOrderRequest.model_validate(item) for item in state.get("order_requests", [])
     ]
-    adapter = FakePaperExecutionAdapter(
-        fill_mode=state.get("fake_fill_mode", "accepted")  # type: ignore[arg-type]
-    )
-    events = collect_execution_events(
-        context=context,
-        order_requests=requests,
-        adapter=adapter,
-    )
+    if context.requested_mode == "live":
+        events = [blocked_event("live execution is blocked in Layer 9 MVP")]
+    else:
+        events = collect_execution_events(
+            context=context,
+            order_requests=requests,
+            adapter=graph_execution_adapter(state),
+        )
     return {"events": [item.model_dump(mode="json") for item in events]}
 
 
@@ -226,21 +248,17 @@ def snapshot_node(state: ExecutionGraphState) -> ExecutionGraphState:
     order_requests = [
         ExecutionOrderRequest.model_validate(item) for item in state.get("order_requests", [])
     ]
-    adapter = FakePaperExecutionAdapter(
-        fill_mode=state.get("fake_fill_mode", "accepted")  # type: ignore[arg-type]
-    )
-    events = collect_execution_events(
-        context=context,
-        order_requests=order_requests,
-        adapter=adapter,
-    )
-    if not intents and not events:
-        from finharness.execution import blocked_event
-
+    if context.requested_mode == "live":
+        events = [blocked_event("live execution is blocked in Layer 9 MVP")]
+    else:
+        events = collect_execution_events(
+            context=context,
+            order_requests=order_requests,
+            adapter=graph_execution_adapter(state),
+        )
+    if context.requested_mode != "live" and not intents and not events:
         events = [blocked_event("no approved Risk Gate decisions available")]
-    elif intents and not order_requests and not events:
-        from finharness.execution import blocked_event
-
+    elif context.requested_mode != "live" and intents and not order_requests and not events:
         events = [blocked_event("pre-submit checks blocked order request")]
     bundle = persist_execution_bundle(
         source=source,
@@ -349,6 +367,7 @@ def run_execution_graph(
     risk_gate_snapshot: dict[str, Any] | None = None,
     risk_context: dict[str, Any] | None = None,
     execution_context: dict[str, Any] | None = None,
+    execution_adapter: str = "nautilus",
     fake_fill_mode: str = "accepted",
     research_asset_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -360,6 +379,7 @@ def run_execution_graph(
         "symbols": symbols or [],
         "risk_context": risk_context or {},
         "execution_context": execution_context or {},
+        "execution_adapter": execution_adapter,
         "fake_fill_mode": fake_fill_mode,
         "research_asset_context": research_asset_context or {},
     }

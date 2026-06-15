@@ -12,6 +12,16 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.enums import OrderSide, TimeInForce
+from nautilus_trader.model.identifiers import (
+    ClientOrderId,
+    InstrumentId,
+    StrategyId,
+    TraderId,
+)
+from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.orders import LimitOrder, MarketOrder
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.market_data import ROOT, sha256_text
@@ -19,6 +29,8 @@ from finharness.risk_gate import RiskGateDecision, RiskGateSnapshot
 
 EXECUTION_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "executions"
 EXECUTION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "executions"
+NAUTILUS_ORDER_BACKEND = "NautilusTrader.model.orders"
+NAUTILUS_PAPER_ADAPTER_NAME = "nautilus_paper_order_adapter"
 
 ExecutionAdapterMode = Literal["dry_run", "paper", "live"]
 ExecutionStatus = Literal[
@@ -57,7 +69,7 @@ class ExecutionSourceSpec(BaseModel):
     method: str = "paper_execution_lifecycle_mvp"
     input_layer: str = "risk_gate"
     template_version: str = "finharness.execution.template.v1"
-    adapter_name: str = "fake_paper_adapter"
+    adapter_name: str = NAUTILUS_PAPER_ADAPTER_NAME
     adapter_mode: ExecutionAdapterMode = "dry_run"
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -78,7 +90,7 @@ class ExecutionContext(BaseModel):
     requested_quantity: int = 1
     max_order_quantity: int = 10
     reference_price: float = 100.0
-    routing_policy: str = "fake paper adapter; no smart routing"
+    routing_policy: str = "paper adapter; no smart routing"
     allow_fractional: bool = False
     cancel_after_submit: bool = False
 
@@ -347,6 +359,114 @@ class FakePaperExecutionAdapter:
         ]
 
 
+class NautilusPaperExecutionAdapter:
+    """Paper adapter that delegates order-shape semantics to NautilusTrader.
+
+    It does not route to a broker, simulate fills, or authorize live execution.
+    The adapter only converts a FinHarness order request into a Nautilus typed
+    order and records the resulting order evidence.
+    """
+
+    adapter_name = NAUTILUS_PAPER_ADAPTER_NAME
+    adapter_mode: ExecutionAdapterMode = "paper"
+
+    def __init__(
+        self,
+        *,
+        trader_id: str = "FINHARNESS-001",
+        strategy_id: str = "L9-PAPER",
+        venue: str = "FINHARNESS",
+    ) -> None:
+        self.trader_id = TraderId(trader_id)
+        self.strategy_id = StrategyId(strategy_id)
+        self.venue = venue
+
+    def submit(self, request: ExecutionOrderRequest) -> list[ExecutionEvent]:
+        order = self._build_order(request)
+        raw_order = order.to_dict()
+        return [
+            event(
+                event_type="submitted",
+                status="submitted_paper",
+                order_request_id=request.order_request_id,
+                quantity=request.quantity,
+                raw_status="nautilus_order_initialized",
+                raw_event={
+                    "backend": NAUTILUS_ORDER_BACKEND,
+                    "adapter_name": self.adapter_name,
+                    "order": raw_order,
+                },
+            ),
+            event(
+                event_type="accepted",
+                status="accepted",
+                order_request_id=request.order_request_id,
+                quantity=request.quantity,
+                raw_status="nautilus_paper_accepted",
+                raw_event={
+                    "backend": NAUTILUS_ORDER_BACKEND,
+                    "adapter_name": self.adapter_name,
+                    "order_type": raw_order.get("type"),
+                    "order_status": raw_order.get("status"),
+                    "client_order_id": raw_order.get("client_order_id"),
+                    "execution_allowed": False,
+                },
+            ),
+        ]
+
+    def cancel(self, request: ExecutionOrderRequest) -> list[ExecutionEvent]:
+        return [
+            event(
+                event_type="cancel_requested",
+                status="cancel_requested",
+                order_request_id=request.order_request_id,
+                quantity=request.quantity,
+                raw_status="nautilus_paper_cancel_requested",
+                raw_event={
+                    "backend": NAUTILUS_ORDER_BACKEND,
+                    "adapter_name": self.adapter_name,
+                    "client_order_id": request.client_order_id,
+                },
+            ),
+            event(
+                event_type="canceled",
+                status="canceled",
+                order_request_id=request.order_request_id,
+                quantity=request.quantity,
+                raw_status="nautilus_paper_canceled",
+                raw_event={
+                    "backend": NAUTILUS_ORDER_BACKEND,
+                    "adapter_name": self.adapter_name,
+                    "client_order_id": request.client_order_id,
+                },
+            ),
+        ]
+
+    def _build_order(self, request: ExecutionOrderRequest) -> MarketOrder | LimitOrder:
+        instrument_id = InstrumentId.from_str(f"{request.symbol}.{self.venue}")
+        client_order_id = ClientOrderId(request.client_order_id)
+        order_side = OrderSide.BUY if request.side == "buy" else OrderSide.SELL
+        time_in_force = TimeInForce.DAY if request.time_in_force == "day" else TimeInForce.GTC
+        quantity = Quantity.from_int(request.quantity)
+        common = {
+            "trader_id": self.trader_id,
+            "strategy_id": self.strategy_id,
+            "instrument_id": instrument_id,
+            "client_order_id": client_order_id,
+            "order_side": order_side,
+            "quantity": quantity,
+            "init_id": UUID4(),
+            "ts_init": int(datetime.now(UTC).timestamp() * 1_000_000_000),
+            "time_in_force": time_in_force,
+        }
+        if request.order_type == "limit":
+            return LimitOrder(
+                **common,
+                price=Price.from_str(f"{request.reference_price:.8f}"),
+            )
+        return MarketOrder(**common)
+
+
 def now_utc() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -519,7 +639,7 @@ def collect_execution_events(
     if context.requested_mode == "live":
         events.append(blocked_event("live execution is blocked in Layer 9 MVP"))
         return events
-    paper_adapter = adapter or FakePaperExecutionAdapter(fill_mode="accepted")
+    paper_adapter = adapter or NautilusPaperExecutionAdapter()
     for request in order_requests:
         events.extend(paper_adapter.submit(request))
         if context.cancel_after_submit:
@@ -763,6 +883,13 @@ def build_execution_bundle_from_risk_gate_snapshot(
         else ExecutionSourceSpec.model_validate(
             source
             or {
+                "provider": "NautilusTrader typed paper adapter",
+                "method": "paper_order_shape_via_nautilus_model_orders",
+                "adapter_name": (
+                    NAUTILUS_PAPER_ADAPTER_NAME
+                    if execution_context.requested_mode == "paper"
+                    else "dry_run"
+                ),
                 "adapter_mode": execution_context.requested_mode,
                 "config": {
                     "operator_execute": execution_context.operator_execute,
