@@ -305,7 +305,10 @@ def group_results_by_hypothesis(
 
 
 def classify_action_type(results: list[ValidationCheckResult]) -> ActionType:
-    values = [result.result for result in results]
+    authority_results = [
+        result for result in results if result.check_type != "backtest"
+    ]
+    values = [result.result for result in authority_results]
     supported = values.count("supported")
     not_testable = values.count("not_testable")
     disconfirmed = values.count("disconfirmed") + values.count("weakened")

@@ -14,11 +14,13 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.hypotheses import HypothesisRecord, HypothesisSnapshot
 from finharness.market_data import ROOT, display_path, sha256_text
 from finharness.validation_metrics import assess_realized_move, load_cached_close_series
+from finharness.vectorbt_runner import VECTORBT_BACKEND, run_vectorbt_moving_average_research
 
 VALIDATION_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "validations"
 VALIDATION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "validations"
@@ -38,6 +40,12 @@ ValidationCheckType = Literal[
     "benchmark_context",
     "disconfirmation",
     "limitations",
+    "backtest",
+]
+
+BACKTEST_LIMITATIONS = [
+    "Single MA-crossover screen; in-sample; costs/slippage only as parameterized; "
+    "historical, not predictive; evidence only, not an execution signal.",
 ]
 
 BLOCKED_VALIDATION_LANGUAGE = [
@@ -152,6 +160,179 @@ class ValidationCheckResult(BaseModel):
     confidence: Literal["low", "medium", "high", "unknown"]
     limitations: list[str]
     created_at_utc: str
+
+
+class BacktestEvidence(BaseModel):
+    """Provider-shaped backtest evidence before it becomes a validation result."""
+
+    model_config = ConfigDict(frozen=True)
+
+    method: str
+    window: str
+    metrics: dict[str, Any]
+    result: ValidationResult
+    supports_hypothesis: bool
+    disconfirms_hypothesis: bool
+    limitations: list[str]
+
+
+class BacktestEvidenceProvider(Protocol):
+    """Optional provider interface for research backtest evidence."""
+
+    provider_name: str
+
+    def assess(
+        self,
+        *,
+        job: ValidationJob,
+        hypothesis: HypothesisRecord,
+        snapshot: HypothesisSnapshot,
+    ) -> BacktestEvidence:
+        """Return one conservative backtest evidence object for a job."""
+
+
+class NullBacktestEvidenceProvider:
+    """Default provider: no backtest is run in deterministic offline validation."""
+
+    provider_name = "none"
+
+    def assess(
+        self,
+        *,
+        job: ValidationJob,
+        hypothesis: HypothesisRecord,
+        snapshot: HypothesisSnapshot,
+    ) -> BacktestEvidence:
+        return BacktestEvidence(
+            method=VECTORBT_BACKEND,
+            window="not_available",
+            metrics=backtest_metrics(
+                fast=None,
+                slow=None,
+                initial_cash=None,
+                fees=None,
+                slippage=None,
+                start_value=None,
+                end_value=None,
+                total_return=None,
+                trade_count=0,
+                provider=self.provider_name,
+                reason="no backtest provider configured",
+            ),
+            result="not_testable",
+            supports_hypothesis=False,
+            disconfirms_hypothesis=False,
+            limitations=[
+                *BACKTEST_LIMITATIONS,
+                "No backtest provider was configured for this validation run.",
+            ],
+        )
+
+
+class VectorbtBacktestEvidenceProvider:
+    """vectorbt-backed validation evidence adapter.
+
+    The provider owns only research evidence shaping. It does not create
+    proposals, orders, position sizing, or execution permission.
+    """
+
+    provider_name = "vectorbt"
+
+    def __init__(
+        self,
+        *,
+        history_by_symbol: dict[str, Any],
+        fast: int = 20,
+        slow: int = 50,
+        initial_cash: float = 10_000.0,
+        fees: float = 0.0,
+        slippage: float = 0.0,
+    ) -> None:
+        self.history_by_symbol = {
+            symbol.upper(): history for symbol, history in history_by_symbol.items()
+        }
+        self.fast = fast
+        self.slow = slow
+        self.initial_cash = initial_cash
+        self.fees = fees
+        self.slippage = slippage
+
+    def assess(
+        self,
+        *,
+        job: ValidationJob,
+        hypothesis: HypothesisRecord,
+        snapshot: HypothesisSnapshot,
+    ) -> BacktestEvidence:
+        history = self.history_by_symbol.get(hypothesis.symbol.upper())
+        if history is None:
+            return self._not_testable(
+                window="not_available",
+                reason=f"no history configured for {hypothesis.symbol.upper()}",
+            )
+
+        window = backtest_window(history)
+        try:
+            summary = run_vectorbt_moving_average_research(
+                history,
+                fast=self.fast,
+                slow=self.slow,
+                initial_cash=self.initial_cash,
+                fees=self.fees,
+                slippage=self.slippage,
+            )
+        except Exception as exc:  # vectorbt screens degrade to evidence, not workflow failure.
+            return self._not_testable(window=window, reason=str(exc))
+
+        metrics = backtest_metrics(
+            fast=self.fast,
+            slow=self.slow,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+            start_value=summary.start_value,
+            end_value=summary.end_value,
+            total_return=summary.total_return,
+            trade_count=summary.trade_count,
+            provider=self.provider_name,
+            strategy=summary.strategy,
+        )
+        result = map_backtest_result(
+            trade_count=summary.trade_count,
+            total_return=summary.total_return,
+        )
+        return BacktestEvidence(
+            method=summary.backend,
+            window=window,
+            metrics=metrics,
+            result=result,
+            supports_hypothesis=result == "supported",
+            disconfirms_hypothesis=result == "weakened",
+            limitations=BACKTEST_LIMITATIONS,
+        )
+
+    def _not_testable(self, *, window: str, reason: str) -> BacktestEvidence:
+        return BacktestEvidence(
+            method=VECTORBT_BACKEND,
+            window=window,
+            metrics=backtest_metrics(
+                fast=self.fast,
+                slow=self.slow,
+                initial_cash=self.initial_cash,
+                fees=self.fees,
+                slippage=self.slippage,
+                start_value=None,
+                end_value=None,
+                total_return=None,
+                trade_count=0,
+                provider=self.provider_name,
+                reason=reason,
+            ),
+            result="not_testable",
+            supports_hypothesis=False,
+            disconfirms_hypothesis=False,
+            limitations=[*BACKTEST_LIMITATIONS, reason],
+        )
 
 
 class ValidationQuality(BaseModel):
@@ -304,6 +485,118 @@ def create_validation_jobs(snapshot: HypothesisSnapshot) -> list[ValidationJob]:
             )
         )
     return jobs
+
+
+def backtest_input_refs(snapshot: HypothesisSnapshot) -> list[str]:
+    return [
+        *snapshot.lineage.market_snapshot_refs,
+        *snapshot.lineage.indicator_snapshot_refs,
+    ]
+
+
+def backtest_metrics(
+    *,
+    fast: int | None,
+    slow: int | None,
+    initial_cash: float | None,
+    fees: float | None,
+    slippage: float | None,
+    start_value: float | None,
+    end_value: float | None,
+    total_return: float | None,
+    trade_count: int,
+    provider: str,
+    reason: str | None = None,
+    strategy: str | None = None,
+) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
+        "fast": fast,
+        "slow": slow,
+        "initial_cash": initial_cash,
+        "fees": fees,
+        "slippage": slippage,
+        "start_value": start_value,
+        "end_value": end_value,
+        "total_return": total_return,
+        "trade_count": trade_count,
+        "provider": provider,
+    }
+    if reason:
+        metrics["reason"] = reason
+    if strategy:
+        metrics["strategy"] = strategy
+    return metrics
+
+
+def backtest_window(history: Any) -> str:
+    if isinstance(history, pd.DataFrame) and not history.empty and "date" in history.columns:
+        dates = pd.to_datetime(history["date"], errors="coerce", utc=True).dropna()
+        if not dates.empty:
+            return f"{dates.min().date().isoformat()} to {dates.max().date().isoformat()}"
+    try:
+        return f"{len(history)} rows"
+    except TypeError:
+        return "unknown_window"
+
+
+def map_backtest_result(*, trade_count: int, total_return: float) -> ValidationResult:
+    if trade_count == 0:
+        return "not_testable"
+    if total_return >= 0.02:
+        return "supported"
+    if total_return <= -0.02:
+        return "weakened"
+    return "inconclusive"
+
+
+def backtest_evidence_result(
+    *,
+    job: ValidationJob,
+    hypothesis: HypothesisRecord,
+    snapshot: HypothesisSnapshot,
+    provider: BacktestEvidenceProvider,
+) -> ValidationCheckResult:
+    try:
+        evidence = provider.assess(job=job, hypothesis=hypothesis, snapshot=snapshot)
+    except Exception as exc:  # provider failures become not-testable evidence.
+        evidence = BacktestEvidence(
+            method=VECTORBT_BACKEND,
+            window="not_available",
+            metrics=backtest_metrics(
+                fast=None,
+                slow=None,
+                initial_cash=None,
+                fees=None,
+                slippage=None,
+                start_value=None,
+                end_value=None,
+                total_return=None,
+                trade_count=0,
+                provider=getattr(provider, "provider_name", "unknown"),
+                reason=str(exc),
+            ),
+            result="not_testable",
+            supports_hypothesis=False,
+            disconfirms_hypothesis=False,
+            limitations=[*BACKTEST_LIMITATIONS, str(exc)],
+        )
+
+    return ValidationCheckResult(
+        check_id=f"valchk_{uuid4().hex[:12]}",
+        validation_job_id=job.validation_job_id,
+        hypothesis_id=hypothesis.hypothesis_id,
+        check_type="backtest",
+        input_refs=backtest_input_refs(snapshot),
+        method=evidence.method,
+        window=evidence.window,
+        metrics=evidence.metrics,
+        result=evidence.result,
+        supports_hypothesis=evidence.supports_hypothesis,
+        disconfirms_hypothesis=evidence.disconfirms_hypothesis,
+        confidence="low",
+        limitations=evidence.limitations,
+        created_at_utc=now_utc(),
+    )
 
 
 def source_validity_result(
@@ -546,8 +839,10 @@ def build_validation_results(
     snapshot: HypothesisSnapshot,
     jobs: list[ValidationJob],
     draft_provider: ValidationDraftProvider | None = None,
+    backtest_provider: BacktestEvidenceProvider | None = None,
 ) -> list[ValidationCheckResult]:
     provider = draft_provider or NullValidationDraftProvider()
+    backtest = backtest_provider or NullBacktestEvidenceProvider()
     by_id = {record.hypothesis_id: record for record in snapshot.records}
     results: list[ValidationCheckResult] = []
     for job in jobs:
@@ -559,6 +854,12 @@ def build_validation_results(
                 event_reaction_result(job=job, hypothesis=hypothesis, snapshot=snapshot),
                 benchmark_context_result(job=job, hypothesis=hypothesis, snapshot=snapshot),
                 *disconfirmation_results(job=job, hypothesis=hypothesis),
+                backtest_evidence_result(
+                    job=job,
+                    hypothesis=hypothesis,
+                    snapshot=snapshot,
+                    provider=backtest,
+                ),
                 limitations_result(
                     job=job,
                     hypothesis=hypothesis,
@@ -582,6 +883,7 @@ def build_validation_quality(
         missing: list[str] = []
         if not result.input_refs and result.check_type not in {
             "benchmark_context",
+            "backtest",
             "event_reaction",
         }:
             missing.append("input_refs")
@@ -782,6 +1084,7 @@ def persist_validation_bundle(
             "event_reaction": "event-reaction input availability checked",
             "benchmark_context": "SPY/QQQ benchmark context checked",
             "disconfirmation": "hypothesis disconfirmation items mapped",
+            "backtest": "vectorbt research backtest evidence recorded without authority",
             "limitations": "known validation limitations recorded",
             "quality": "no overclaim, no execution/proposal language, lineage gates",
             "snapshot": "ValidationSnapshot",
@@ -810,6 +1113,7 @@ def build_validation_bundle_from_hypothesis_snapshot(
     *,
     llm_enabled: bool = False,
     hermes_root: str | Path = "/root/projects/hermes-agent",
+    backtest_provider: BacktestEvidenceProvider | None = None,
 ) -> ValidationBundle:
     snapshot = (
         hypothesis_snapshot
@@ -836,6 +1140,7 @@ def build_validation_bundle_from_hypothesis_snapshot(
         snapshot=snapshot,
         jobs=jobs,
         draft_provider=provider,
+        backtest_provider=backtest_provider,
     )
     return persist_validation_bundle(
         source=source,
