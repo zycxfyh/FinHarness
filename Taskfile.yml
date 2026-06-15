@@ -104,6 +104,11 @@ tasks:
     cmds:
       - uv run python scripts/run_hardening_gate.py --checks dependency gitleaks trivy
 
+  security:audit:
+    desc: Audit installed dependencies for known advisories (pip-audit; needs network, fail-closed)
+    cmds:
+      - uv run python scripts/run_hardening_gate.py --checks pip-audit
+
   security:sbom:
     desc: Generate local SBOM and provenance baseline artifacts
     cmds:
@@ -134,6 +139,8 @@ tasks:
     desc: Run mature-wheel local backtest experiments
     cmds:
       - uv run python experiments/backtrader_ma.py
+      - uv run python experiments/vectorbt_ma.py
+      - uv run python experiments/riskfolio_allocation.py
 
   wheels:size:
     desc: Show local wheel sizes
@@ -393,3 +400,8 @@ tasks:
     desc: Run a paper order with written thesis, risk gate, cancel, and receipt
     cmds:
       - uv run python scripts/alpaca_paper_strategy_order.py --execute
+
+  alpaca:paper-dca:
+    desc: "Paper DCA accumulation buy (dry-run; add -- --execute to fill). e.g. task alpaca:paper-dca -- --symbols SPY,QQQ --execute"
+    cmds:
+      - uv run python scripts/alpaca_paper_dca_buy.py {{.CLI_ARGS}}
