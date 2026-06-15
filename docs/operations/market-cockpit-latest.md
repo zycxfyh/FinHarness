@@ -1,23 +1,24 @@
 # Market Cockpit
 
-Generated at: `2026-06-13T21:33:34Z`
+Generated at: `2026-06-15T01:49:47Z`
 Execution allowed: `false`
 
 ## Watchlist
 
 | Symbol | Latest | Fresh | Return | Max DD | Trend | RSI | MACD | Validation | Next |
 |---|---:|---:|---:|---:|---|---:|---|---|---|
-| SPY | 2026-06-12 00:00:00 | fresh | 175.98% | -34.10% | bullish | 52.94 neutral | bearish | results_available | review_only |
-| QQQ | 2026-06-12 00:00:00 | fresh | 355.13% | -35.62% | bullish | 55.21 neutral | bearish | results_available | review_only |
+| SPY | 2026-06-12 00:00:00 | fresh | 26.87% | -19.00% | bullish | 52.94 neutral | bearish | results_available | review_only |
+| QQQ | 2026-06-12 00:00:00 | fresh | 41.38% | -22.88% | bullish | 55.21 neutral | bearish | results_available | review_only |
+| NVDA | 2026-06-12 00:00:00 | fresh | 48.36% | -36.89% | bullish | 45.24 neutral | bearish | results_available | review_only |
 
 ## Broken Paths
 
-- `repo`: receipt_missing_references:41
+- `repo`: receipt_missing_references:39
 
 ## Degraded Paths
 
 - `SPY`: market_data:nautilus_catalog_overlap_skipped
-- `QQQ`: market_data:nautilus_catalog_overlap_skipped
+- `NVDA`: market_data:nautilus_catalog_overlap_skipped
 
 ## Human Review Queue
 
@@ -27,11 +28,11 @@ Execution allowed: `false`
 
 ## Receipt Surface
 
-- Receipt count: `2362`
-- Durable consumed: `34`
-- Candidate/draft: `31`
-- Runtime/unlinked: `2297`
-- Missing references: `41`
+- Receipt count: `8340`
+- Durable consumed: `36`
+- Candidate/draft: `32`
+- Runtime/unlinked: `8272`
+- Missing references: `39`
 
 ## Boundary
 

@@ -1,7 +1,7 @@
 {
   "broken_paths": [
     {
-      "issue": "receipt_missing_references:41",
+      "issue": "receipt_missing_references:39",
       "symbol": "repo"
     }
   ],
@@ -9,10 +9,11 @@
     "end": "2026-06-13",
     "ma_fast": 20,
     "ma_slow": 50,
-    "start": "2018-01-01",
+    "start": "2025-01-01",
     "symbols": [
       "SPY",
-      "QQQ"
+      "QQQ",
+      "NVDA"
     ]
   },
   "degraded_paths": [
@@ -22,51 +23,53 @@
     },
     {
       "path": "market_data:nautilus_catalog_overlap_skipped",
-      "symbol": "QQQ"
+      "symbol": "NVDA"
     }
   ],
   "execution_allowed": false,
-  "generated_at": "2026-06-13T21:33:34Z",
+  "generated_at": "2026-06-15T01:49:47Z",
   "receipt_surface": {
     "status": "ok",
     "summary": {
-      "consumed_count": 34,
+      "consumed_count": 36,
       "consumer_kind_counts": {
-        "governance_doc": 6,
+        "governance_doc": 8,
         "lesson": 1,
         "lesson_draft": 30,
-        "project_doc": 1,
+        "project_doc": 3,
         "report": 4,
         "review": 43
       },
       "draft_consumed_count": 30,
       "evidence_surface_counts": {
-        "candidate_or_draft": 31,
-        "durable_consumed": 34,
-        "generated_runtime_or_unlinked": 2297,
-        "missing_reference": 41
+        "candidate_or_draft": 32,
+        "durable_consumed": 36,
+        "generated_runtime_or_unlinked": 8272,
+        "missing_reference": 39
       },
       "missing_reference_consumer_kind_counts": {
         "governance_doc": 1,
         "lesson_draft": 30,
-        "project_doc": 2,
         "proposal_doc": 2,
         "review": 6
       },
-      "missing_reference_count": 41,
-      "receipt_count": 2362,
+      "missing_reference_count": 39,
+      "receipt_count": 8340,
       "receipt_kind_counts": {
         "alpaca-paper": 2,
+        "alpaca-paper-dca": 8,
         "daily_evidence_bundle": 1,
         "engineering_delivery": 2,
-        "event_ingestion": 311,
-        "execution_processing": 143,
+        "event_ingestion": 1135,
+        "execution_processing": 556,
         "finharness_governance_dashboard_v1": 1,
+        "finharness_hardening_gate_v1": 1,
         "finharness_market_cockpit_v1": 1,
         "finharness_project_governance_adapter_v1": 1,
-        "hypothesis_processing": 313,
-        "indicator_processing": 55,
-        "interpretation_processing": 310,
+        "hardening": 3,
+        "hypothesis_processing": 1137,
+        "indicator_processing": 140,
+        "interpretation_processing": 1134,
         "langgraph_engineering_delivery_v1": 22,
         "langgraph_institutional_paper_trade_v1": 2,
         "langgraph_quality_governance_v1": 1,
@@ -74,21 +77,21 @@
         "langgraph_repo_intelligence_v1": 1,
         "lessons": 1,
         "manual": 1,
-        "market_data_ingestion": 99,
-        "post_trade_processing": 78,
-        "proposal_processing": 332,
+        "market_data_ingestion": 270,
+        "post_trade_processing": 258,
+        "proposal_processing": 1212,
         "repository_governance_audit_v1": 1,
-        "risk_gate_processing": 333,
+        "risk_gate_processing": 1216,
         "rule_change_promotion": 1,
-        "validation_processing": 349
+        "validation_processing": 1231
       },
-      "referenced_count": 1,
-      "unreferenced_count": 2297,
+      "referenced_count": 2,
+      "unreferenced_count": 8272,
       "usage_status_counts": {
-        "consumed": 34,
+        "consumed": 36,
         "draft_consumed": 30,
-        "referenced": 1,
-        "unreferenced": 2297
+        "referenced": 2,
+        "unreferenced": 8272
       }
     }
   },
@@ -117,50 +120,102 @@
         "market_data:nautilus_catalog_overlap_skipped"
       ],
       "hypothesis": {
-        "payload_ref": "data/normalized/hypotheses/hyps_20260613T211858Z_8ad3821f.json",
+        "payload_ref": "data/normalized/hypotheses/hyps_20260615T012905Z_eb3d241b.json",
         "record_count": 2,
-        "snapshot_id": "hyps_20260613T211858Z_8ad3821f",
+        "snapshot_id": "hyps_20260615T012905Z_eb3d241b",
         "status": "records_available"
       },
       "indicators": {
         "latest_date": "2026-06-12 00:00:00",
         "ma_trend": "bullish",
         "macd_bias": "bearish",
-        "macd_hist": -3.6209500323275474,
+        "macd_hist": -3.6209500323343224,
         "ok": true,
-        "payload_ref": "data/normalized/indicators/inds_20260613T213331Z_3ea8c65a.json",
-        "receipt_ref": "data/receipts/indicators/receipt_inds_20260613T213331Z_3ea8c65a.json",
-        "rolling_volatility_20d_annualized": 0.15064610802589992,
-        "rsi": 52.9432068055688,
+        "payload_ref": "data/normalized/indicators/inds_20260615T014944Z_2e0bdd88.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260615T014944Z_2e0bdd88.json",
+        "rolling_volatility_20d_annualized": 0.150646108025899,
+        "rsi": 52.943206805613855,
         "rsi_state": "neutral"
       },
       "issues": [],
       "market_data": {
         "freshness": {
-          "age_days": 1,
+          "age_days": 3,
           "status": "fresh"
         },
         "latest_date": "2026-06-12 00:00:00",
         "ok": true,
-        "payload_ref": "data/normalized/market-data/mds_20260613T213331Z_eb8d97fc.json",
-        "receipt_ref": "data/receipts/market-data/receipt_mds_20260613T213331Z_eb8d97fc.json",
-        "row_count": 2123
+        "payload_ref": "data/normalized/market-data/mds_20260615T014944Z_93be86ea.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260615T014944Z_93be86ea.json",
+        "row_count": 362
       },
       "next_action": "review_only",
       "risk_return": {
-        "annualized_return": 0.1281236785176818,
-        "annualized_volatility": 0.19268653921456078,
-        "max_drawdown": -0.3410474689324394,
+        "annualized_return": 0.18074978281278975,
+        "annualized_volatility": 0.17973081791227502,
+        "backend": "quantstats",
+        "max_drawdown": -0.189989041295049,
         "ok": true,
-        "sharpe_ratio": 0.664933207269934,
-        "total_return": 1.759794732745509
+        "sharpe_ratio": 1.013548962117388,
+        "total_return": 0.26872944275981125
       },
       "symbol": "SPY",
       "validation": {
         "job_count": 2,
-        "payload_ref": "data/normalized/validations/vals_20260613T211859Z_5a2aae89.json",
-        "result_count": 18,
-        "snapshot_id": "vals_20260613T211859Z_5a2aae89",
+        "payload_ref": "data/normalized/validations/vals_20260615T012905Z_ace0e774.json",
+        "result_count": 20,
+        "snapshot_id": "vals_20260615T012905Z_ace0e774",
+        "status": "results_available"
+      }
+    },
+    {
+      "degraded_paths": [],
+      "hypothesis": {
+        "payload_ref": "data/normalized/hypotheses/hyps_20260615T012905Z_eb3d241b.json",
+        "record_count": 2,
+        "snapshot_id": "hyps_20260615T012905Z_eb3d241b",
+        "status": "records_available"
+      },
+      "indicators": {
+        "latest_date": "2026-06-12 00:00:00",
+        "ma_trend": "bullish",
+        "macd_bias": "bearish",
+        "macd_hist": -5.2886209629226215,
+        "ok": true,
+        "payload_ref": "data/normalized/indicators/inds_20260615T014945Z_57f3062a.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260615T014945Z_57f3062a.json",
+        "rolling_volatility_20d_annualized": 0.2656917452817344,
+        "rsi": 55.210154723312165,
+        "rsi_state": "neutral"
+      },
+      "issues": [],
+      "market_data": {
+        "freshness": {
+          "age_days": 3,
+          "status": "fresh"
+        },
+        "latest_date": "2026-06-12 00:00:00",
+        "ok": true,
+        "payload_ref": "data/normalized/market-data/mds_20260615T014945Z_0297bdfe.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260615T014945Z_0297bdfe.json",
+        "row_count": 362
+      },
+      "next_action": "review_only",
+      "risk_return": {
+        "annualized_return": 0.2734158127859039,
+        "annualized_volatility": 0.22518176325499506,
+        "backend": "quantstats",
+        "max_drawdown": -0.22883306921571067,
+        "ok": true,
+        "sharpe_ratio": 1.1852234894966693,
+        "total_return": 0.41375460346020176
+      },
+      "symbol": "QQQ",
+      "validation": {
+        "job_count": 2,
+        "payload_ref": "data/normalized/validations/vals_20260615T012905Z_ace0e774.json",
+        "result_count": 20,
+        "snapshot_id": "vals_20260615T012905Z_ace0e774",
         "status": "results_available"
       }
     },
@@ -169,50 +224,51 @@
         "market_data:nautilus_catalog_overlap_skipped"
       ],
       "hypothesis": {
-        "payload_ref": "data/normalized/hypotheses/hyps_20260613T211858Z_8ad3821f.json",
+        "payload_ref": "data/normalized/hypotheses/hyps_20260615T012905Z_eb3d241b.json",
         "record_count": 2,
-        "snapshot_id": "hyps_20260613T211858Z_8ad3821f",
+        "snapshot_id": "hyps_20260615T012905Z_eb3d241b",
         "status": "records_available"
       },
       "indicators": {
         "latest_date": "2026-06-12 00:00:00",
         "ma_trend": "bullish",
         "macd_bias": "bearish",
-        "macd_hist": -5.288620962917591,
+        "macd_hist": -2.357990943718575,
         "ok": true,
-        "payload_ref": "data/normalized/indicators/inds_20260613T213333Z_9a08b6b7.json",
-        "receipt_ref": "data/receipts/indicators/receipt_inds_20260613T213333Z_9a08b6b7.json",
-        "rolling_volatility_20d_annualized": 0.2656917452817354,
-        "rsi": 55.21015472329059,
+        "payload_ref": "data/normalized/indicators/inds_20260615T014946Z_1542092e.json",
+        "receipt_ref": "data/receipts/indicators/receipt_inds_20260615T014946Z_1542092e.json",
+        "rolling_volatility_20d_annualized": 0.434099528301066,
+        "rsi": 45.24094311221704,
         "rsi_state": "neutral"
       },
       "issues": [],
       "market_data": {
         "freshness": {
-          "age_days": 1,
+          "age_days": 3,
           "status": "fresh"
         },
         "latest_date": "2026-06-12 00:00:00",
         "ok": true,
-        "payload_ref": "data/normalized/market-data/mds_20260613T213333Z_d3d15aa9.json",
-        "receipt_ref": "data/receipts/market-data/receipt_mds_20260613T213333Z_d3d15aa9.json",
-        "row_count": 2123
+        "payload_ref": "data/normalized/market-data/mds_20260615T014946Z_087aafe8.json",
+        "receipt_ref": "data/receipts/market-data/receipt_mds_20260615T014946Z_087aafe8.json",
+        "row_count": 362
       },
       "next_action": "review_only",
       "risk_return": {
-        "annualized_return": 0.1971753948011905,
-        "annualized_volatility": 0.2385084260802367,
-        "max_drawdown": -0.3561721518084682,
+        "annualized_return": 0.3169814878350259,
+        "annualized_volatility": 0.4636330666725533,
+        "backend": "quantstats",
+        "max_drawdown": -0.3688683518628121,
         "ok": true,
-        "sharpe_ratio": 0.8267020081498448,
-        "total_return": 3.5513281712049745
+        "sharpe_ratio": 0.826124330954426,
+        "total_return": 0.4835514862508721
       },
-      "symbol": "QQQ",
+      "symbol": "NVDA",
       "validation": {
         "job_count": 2,
-        "payload_ref": "data/normalized/validations/vals_20260613T211859Z_5a2aae89.json",
-        "result_count": 18,
-        "snapshot_id": "vals_20260613T211859Z_5a2aae89",
+        "payload_ref": "data/normalized/validations/vals_20260615T012905Z_ace0e774.json",
+        "result_count": 20,
+        "snapshot_id": "vals_20260615T012905Z_ace0e774",
         "status": "results_available"
       }
     }

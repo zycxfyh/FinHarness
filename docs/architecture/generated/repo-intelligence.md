@@ -1,85 +1,33 @@
 # Repo Intelligence
 
-Generated at: `2026-06-15T01:09:04Z`
+Generated at: `2026-06-15T11:17:54Z`
 
 ## Summary
 
-- Files: `412`
-- Total lines: `82714`
+- Files: `420`
+- Total lines: `83386`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `AGENTS.md`
-- `CONTEXT.md`
 - `README.md`
-- `Taskfile.yml`
-- `data/receipts/alpaca-paper-dca/`
-- `data/receipts/alpaca-paper/20260613T205057Z-broker_pipeline_validation_v1-AAPL.json`
 - `data/receipts/market-cockpit/latest.json`
 - `docs/GUIDE.md`
-- `docs/architecture/data-quality-interface-pandera-spec.md`
-- `docs/architecture/data-quality-interface-plan.md`
-- `docs/architecture/discipline-layer-baseline.md`
-- `docs/architecture/evidence-inventory.md`
-- `docs/architecture/execution-interface-nautilus-spec.md`
+- `docs/README.md`
+- `docs/architecture/documentation-and-onboarding-plan.md`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/mature-wheel-control-plane.md`
-- `docs/architecture/policy-contract.md`
-- `docs/architecture/policy-evidence-interface-plan.md`
-- `docs/architecture/portfolio-risk-interface-riskfolio-spec.md`
-- `docs/architecture/research-interface-vectorbt-spec.md`
-- `docs/investing-first-principles.md`
+- `docs/explanation/`
+- `docs/how-to/`
+- `docs/lessons/drafts/2026-06-15-lesson_draft_8fde2e202168.md`
+- `docs/lessons/drafts/2026-06-15-lesson_draft_9ed7951ee833.md`
 - `docs/operations/market-cockpit-latest.md`
-- `experiments/riskfolio_allocation.py`
-- `experiments/vectorbt_ma.py`
-- `pyproject.toml`
-- `scripts/alpaca_paper_dca_buy.py`
-- `scripts/run_hardening_gate.py`
-- `src/finharness/agent_tools.py`
-- `src/finharness/data_quality.py`
-- `src/finharness/execution.py`
-- `src/finharness/execution_graph.py`
-- `src/finharness/hardening.py`
-- `src/finharness/indicators/macd.py`
-- `src/finharness/indicators/shared.py`
-- `src/finharness/indicators/squeeze.py`
-- `src/finharness/market_cockpit.py`
-- `src/finharness/market_data.py`
-- `src/finharness/metrics.py`
-- `src/finharness/okx_cli.py`
-- `src/finharness/okx_policy.py`
-- `src/finharness/okx_redaction.py`
-- `src/finharness/okx_symbols.py`
-- `src/finharness/portfolio_risk.py`
-- `src/finharness/proposal.py`
-- `src/finharness/risk_gate.py`
-- `src/finharness/validation.py`
-- `src/finharness/vectorbt_runner.py`
-- `tests/test_agent_tools.py`
-- `tests/test_data_quality.py`
-- `tests/test_execution.py`
-- `tests/test_hardening_gate.py`
-- `tests/test_indicators.py`
-- `tests/test_indicators_shared.py`
-- `tests/test_market_cockpit.py`
-- `tests/test_market_data.py`
-- `tests/test_metrics.py`
-- `tests/test_okx_cli.py`
-- `tests/test_portfolio_risk.py`
-- `tests/test_proposal.py`
-- `tests/test_risk_gate.py`
-- `tests/test_validation.py`
-- `tests/test_vectorbt_runner.py`
-- `uv.lock`
+- `docs/reference/`
+- `docs/tutorials/`
 
 ## Required Checks
 
 - `task check`
-- `task eval:redteam-boundary`
 - `task hardening:gate`
-- `uv run python -m unittest tests/test_execution.py`
-- `uv run python -m unittest tests/test_risk_gate.py`
 
 ## Mermaid
 
