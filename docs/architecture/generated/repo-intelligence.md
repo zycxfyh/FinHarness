@@ -1,25 +1,23 @@
 # Repo Intelligence
 
-Generated at: `2026-06-15T12:58:25Z`
+Generated at: `2026-06-16T13:43:22Z`
 
 ## Summary
 
-- Files: `446`
-- Total lines: `86303`
+- Files: `445`
+- Total lines: `87127`
 - Execution allowed: `false`
 
 ## Changed Surface
 
-- `docs/architecture/gap-analysis.md`
-- `docs/architecture/gap-solutions.md`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/industry-benchmark/`
-- `docs/architecture/industry-reference-and-roadmap.md`
-- `docs/architecture/product-roadmap.md`
-- `docs/architecture/state-of-finharness.md`
-- `docs/reference/README.md`
-- `docs/reference/receipts.md`
-- `docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md`
+- `docs/architecture/research-rigor-ladder-spec.md`
+- `src/finharness/research_rigor.py`
+- `src/finharness/validation.py`
+- `src/finharness/vectorbt_runner.py`
+- `tests/test_research_rigor.py`
+- `tests/test_validation.py`
+- `tests/test_vectorbt_runner.py`
 
 ## Required Checks
 
@@ -84,6 +82,7 @@ flowchart LR
   n_src_finharness_repo_intelligence_py["repo_intelligence.py"]
   n_src_finharness_repo_intelligence_graph_py["repo_intelligence_graph.py"]
   n_src_finharness_research_assets_py["research_assets.py"]
+  n_src_finharness_research_rigor_py["research_rigor.py"]
   n_src_finharness_risk_gate_py["risk_gate.py"]
   n_src_finharness_risk_gate_graph_py["risk_gate_graph.py"]
   n_src_finharness_rule_change_ledger_py["rule_change_ledger.py"]
