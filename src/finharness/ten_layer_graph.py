@@ -193,7 +193,7 @@ def market_data_node(state: TenLayerGraphState) -> TenLayerGraphState:
         symbol=state.get("symbol", "SPY"),
         start=state.get("start", "2025-01-01"),
         end=state.get("end", "2025-06-30"),
-        adjusted=state.get("adjusted", False),
+        adjusted=state.get("adjusted", True),
         write_catalog=state.get("write_catalog", True),
     )
     snapshot = result["snapshot"]

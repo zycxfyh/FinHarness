@@ -201,6 +201,12 @@ class ValidationLayerTest(unittest.TestCase):
             self.assertEqual(result.metrics["slow"], 10)
             self.assertEqual(result.confidence, "low")
             self.assertTrue(result.limitations)
+            self.assertTrue(
+                any("Data bias uncontrolled" in limitation for limitation in result.limitations)
+            )
+            self.assertTrue(
+                any("prices auto_adjust" in limitation for limitation in result.limitations)
+            )
 
     def test_backtest_evidence_keeps_validation_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

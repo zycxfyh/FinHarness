@@ -18,7 +18,7 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.hypotheses import HypothesisRecord, HypothesisSnapshot
-from finharness.market_data import ROOT, display_path, sha256_text
+from finharness.market_data import ROOT, data_bias_limitation, display_path, sha256_text
 from finharness.research_rigor import ResearchRung, time_train_test_split
 from finharness.validation_metrics import assess_realized_move, load_cached_close_series
 from finharness.vectorbt_runner import (
@@ -54,6 +54,7 @@ ValidationCheckType = Literal[
 BACKTEST_LIMITATIONS = [
     "MA-crossover historical screen; rung-limited evidence only, not predictive; "
     "costs/slippage only as parameterized; not an execution signal.",
+    data_bias_limitation(),
 ]
 
 BLOCKED_VALIDATION_LANGUAGE = [

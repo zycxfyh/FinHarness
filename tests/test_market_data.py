@@ -11,12 +11,14 @@ import pandas as pd
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from finharness.market_data import (
+    DEFAULT_DATA_BIAS_CONTROLS,
     ROOT,
     MarketDataQuality,
     SourceSpec,
     build_ohlcv_snapshot_from_history,
     build_quality_report,
     ohlcv_to_nautilus_bars,
+    reconcile_close,
     write_nautilus_catalog,
 )
 
@@ -92,6 +94,24 @@ class MarketDataGovernanceTest(unittest.TestCase):
         self.assertTrue(report.ok)
         self.assertEqual(report.null_counts["volume"], 1)
 
+    def test_quality_report_records_reconciliation_without_blocking(self) -> None:
+        reconciliation = {
+            "status": "single_source_unreconciled",
+            "reason": "unit test",
+        }
+
+        report = build_quality_report(
+            sample_ohlcv(),
+            required_columns=["date", "open", "high", "low", "close", "volume"],
+            reconciliation=reconciliation,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.reconciliation, reconciliation)
+        self.assertTrue(
+            any("single_source_unreconciled" in note for note in report.notes)
+        )
+
     def test_quality_report_records_ohlc_nulls_without_outlier_flag(self) -> None:
         frame = sample_ohlcv()
         frame.loc[0, "close"] = None
@@ -156,10 +176,16 @@ class MarketDataGovernanceTest(unittest.TestCase):
                 access_method="api_pull",
                 wheel="yfinance",
                 wheel_version="test",
+                adjustment="auto_adjust",
             ),
-            fetch_config={"symbol": "SPY"},
+            fetch_config={
+                "symbol": "SPY",
+                "adjustment": "auto_adjust",
+                "auto_adjust": True,
+            },
             raw_payload={"rows": 2},
-            adjusted=False,
+            adjusted=True,
+            adjustment="auto_adjust",
             write_catalog=False,
         )
 
@@ -177,6 +203,16 @@ class MarketDataGovernanceTest(unittest.TestCase):
         self.assertTrue(receipt.snapshot.quality.ok)
         self.assertEqual(receipt.snapshot.lineage.quality_backend, "pandera")
         self.assertIsNotNone(receipt.snapshot.lineage.quality_backend_version)
+        self.assertTrue(receipt.snapshot.adjusted)
+        self.assertEqual(receipt.snapshot.lineage.source.adjustment, "auto_adjust")
+        self.assertEqual(
+            receipt.snapshot.lineage.fetch_config["adjustment"],
+            "auto_adjust",
+        )
+        self.assertEqual(
+            receipt.snapshot.lineage.data_bias_controls,
+            DEFAULT_DATA_BIAS_CONTROLS,
+        )
 
         receipt_path = ROOT / receipt.snapshot.receipt_ref
         saved = json.loads(receipt_path.read_text())
@@ -215,6 +251,45 @@ class MarketDataGovernanceTest(unittest.TestCase):
                 for note in receipt.snapshot.quality.notes
             )
         )
+
+    def test_reconcile_close_records_second_source_divergence(self) -> None:
+        def second_provider(symbol: str, start: str, end: str, *, adjustment: str):
+            self.assertEqual(symbol, "SPY")
+            self.assertEqual(start, "2026-01-01")
+            self.assertEqual(end, "2026-01-05")
+            self.assertEqual(adjustment, "auto_adjust")
+            secondary = sample_ohlcv()
+            secondary.loc[1, "close"] = 103.525
+            return secondary
+
+        reconciliation = reconcile_close(
+            "SPY",
+            "2026-01-01",
+            "2026-01-05",
+            primary_history=sample_ohlcv(),
+            second_provider=second_provider,
+            adjustment="auto_adjust",
+        )
+
+        self.assertEqual(reconciliation["status"], "reconciled")
+        self.assertEqual(reconciliation["overlap_rows"], 2)
+        self.assertAlmostEqual(reconciliation["max_close_divergence_pct"], 1.0)
+
+    def test_reconcile_close_fails_open_to_single_source_disclosure(self) -> None:
+        def failing_provider(symbol: str, start: str, end: str, *, adjustment: str):
+            raise RuntimeError("offline")
+
+        reconciliation = reconcile_close(
+            "SPY",
+            "2026-01-01",
+            "2026-01-05",
+            primary_history=sample_ohlcv(),
+            second_provider=failing_provider,
+            adjustment="auto_adjust",
+        )
+
+        self.assertEqual(reconciliation["status"], "single_source_unreconciled")
+        self.assertIn("second provider unavailable", reconciliation["reason"])
 
 
 if __name__ == "__main__":

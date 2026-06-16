@@ -33,6 +33,11 @@ RAW_ROOT = ROOT / "data" / "raw" / "market-data"
 NORMALIZED_ROOT = ROOT / "data" / "normalized" / "market-data"
 RECEIPT_ROOT = ROOT / "data" / "receipts" / "market-data"
 NAUTILUS_CATALOG_ROOT = ROOT / "data" / "catalog" / "nautilus"
+AdjustmentMode = Literal["raw", "auto_adjust"]
+DEFAULT_DATA_BIAS_CONTROLS = [
+    "survivorship_uncontrolled",
+    "point_in_time_uncontrolled",
+]
 
 
 class SourceSpec(BaseModel):
@@ -47,6 +52,7 @@ class SourceSpec(BaseModel):
     access_method: Literal["api_pull", "websocket", "batch", "broker_export"]
     wheel: str
     wheel_version: str | None = None
+    adjustment: AdjustmentMode = "auto_adjust"
 
 
 class MarketDataQuality(BaseModel):
@@ -62,6 +68,7 @@ class MarketDataQuality(BaseModel):
     stale: bool = False
     outlier_flags: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    reconciliation: dict[str, Any] | None = None
 
 
 class MarketDataLineage(BaseModel):
@@ -80,6 +87,7 @@ class MarketDataLineage(BaseModel):
     raw_ref: str
     normalized_ref: str
     catalog_ref: str | None = None
+    data_bias_controls: list[str] = Field(default_factory=lambda: list(DEFAULT_DATA_BIAS_CONTROLS))
 
 
 class MarketDataSnapshot(BaseModel):
@@ -170,11 +178,139 @@ def normalize_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:
     return output
 
 
+def adjustment_from_adjusted(adjusted: bool) -> AdjustmentMode:
+    return "auto_adjust" if adjusted else "raw"
+
+
+def adjusted_from_adjustment(adjustment: AdjustmentMode) -> bool:
+    return adjustment == "auto_adjust"
+
+
+def default_reconciliation(reason: str = "no second provider configured") -> dict[str, Any]:
+    return {
+        "status": "single_source_unreconciled",
+        "reason": reason,
+    }
+
+
+def reconcile_close(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    primary_history: pd.DataFrame | None = None,
+    second_provider: Any | None = None,
+    adjustment: AdjustmentMode = "auto_adjust",
+) -> dict[str, Any]:
+    """Best-effort close-price reconciliation against a second source.
+
+    Reconciliation is evidence-quality disclosure only. Missing providers,
+    credentials, empty overlap, or provider errors fail open to a
+    ``single_source_unreconciled`` status.
+    """
+    if second_provider is None:
+        return default_reconciliation()
+    if primary_history is None or primary_history.empty:
+        return default_reconciliation("primary history unavailable")
+
+    try:
+        if callable(second_provider):
+            secondary = second_provider(
+                symbol,
+                start,
+                end,
+                adjustment=adjustment,
+            )
+            second_provider_name = getattr(second_provider, "__name__", "callable")
+        else:
+            secondary = _fetch_openbb_history(
+                symbol,
+                start,
+                end,
+                provider=str(second_provider),
+            )
+            second_provider_name = f"openbb:{second_provider}"
+    except Exception as exc:
+        return default_reconciliation(f"second provider unavailable: {exc}")
+
+    try:
+        primary_close = _close_by_date(primary_history)
+        secondary_close = _close_by_date(secondary)
+        joined = pd.concat(
+            [primary_close.rename("primary"), secondary_close.rename("secondary")],
+            axis=1,
+            join="inner",
+        ).dropna()
+    except Exception as exc:
+        return default_reconciliation(f"reconciliation normalization failed: {exc}")
+
+    if joined.empty:
+        return default_reconciliation("no overlapping close prices")
+
+    denominator = joined["primary"].abs().replace(0.0, pd.NA)
+    divergence = ((joined["primary"] - joined["secondary"]).abs() / denominator) * 100.0
+    divergence = divergence.dropna()
+    if divergence.empty:
+        return default_reconciliation("no positive primary close prices in overlap")
+    return {
+        "status": "reconciled",
+        "provider": "yfinance",
+        "second_provider": second_provider_name,
+        "max_close_divergence_pct": float(divergence.max()),
+        "overlap_rows": int(len(joined)),
+        "adjustment": adjustment,
+    }
+
+
+def data_bias_limitation(
+    *,
+    adjustment: str = "auto_adjust",
+    reconciliation: dict[str, Any] | None = None,
+    data_bias_controls: list[str] | None = None,
+) -> str:
+    controls = data_bias_controls or DEFAULT_DATA_BIAS_CONTROLS
+    reconciliation_status = (reconciliation or default_reconciliation()).get(
+        "status",
+        "single_source_unreconciled",
+    )
+    controls_text = ", ".join(controls)
+    return (
+        "Data bias uncontrolled: survivorship and point-in-time are not assured; "
+        f"prices {adjustment}; reconciliation {reconciliation_status}; "
+        f"controls {controls_text}. Evidence only."
+    )
+
+
+def _close_by_date(frame: pd.DataFrame) -> pd.Series:
+    if "date" not in frame.columns or "close" not in frame.columns:
+        normalized = normalize_ohlcv(frame)
+    else:
+        normalized = frame[["date", "close"]].copy()
+    dates = pd.to_datetime(normalized["date"], utc=True).dt.normalize()
+    close = normalized["close"].astype(float)
+    return pd.Series(close.to_numpy(), index=dates).sort_index()
+
+
+def _fetch_openbb_history(symbol: str, start: str, end: str, *, provider: str) -> pd.DataFrame:
+    from openbb import obb
+
+    frame = obb.equity.price.historical(
+        symbol,
+        start_date=start,
+        end_date=end,
+        provider=provider,
+    ).to_df()
+    if frame.empty:
+        raise ValueError(f"no OpenBB history returned for {symbol} via {provider}")
+    return normalize_ohlcv(frame)
+
+
 def build_quality_report(
     frame: pd.DataFrame,
     *,
     required_columns: list[str],
     max_staleness_days: int | None = None,
+    reconciliation: dict[str, Any] | None = None,
 ) -> MarketDataQuality:
     missing = [column for column in required_columns if column not in frame.columns]
     duplicate_timestamps = 0
@@ -204,6 +340,12 @@ def build_quality_report(
         if int(frame[column].isna().sum()) > 0
     }
     ok = not missing and duplicate_timestamps == 0 and not outlier_flags
+    quality_notes = notes
+    if reconciliation and reconciliation.get("status") == "single_source_unreconciled":
+        quality_notes = [
+            *quality_notes,
+            f"close reconciliation: {reconciliation['status']}",
+        ]
     return MarketDataQuality(
         ok=ok,
         row_count=len(frame),
@@ -212,7 +354,8 @@ def build_quality_report(
         null_counts=null_counts,
         stale=stale,
         outlier_flags=outlier_flags,
-        notes=notes,
+        notes=quality_notes,
+        reconciliation=reconciliation,
     )
 
 
@@ -273,6 +416,7 @@ def persist_market_data_snapshot(
     adjusted: bool,
     as_of_utc: str,
     catalog_ref: str | None = None,
+    data_bias_controls: list[str] | None = None,
 ) -> DataReceipt:
     snapshot_id = f"mds_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
     receipt_id = f"receipt_{snapshot_id}"
@@ -288,10 +432,16 @@ def persist_market_data_snapshot(
     normalized_ref = NORMALIZED_ROOT / f"{snapshot_id}.json"
     receipt_ref = RECEIPT_ROOT / f"{receipt_id}.json"
 
+    adjustment = source.adjustment or adjustment_from_adjusted(adjusted)
+    lineage_fetch_config = {
+        **fetch_config,
+        "adjustment": fetch_config.get("adjustment", adjustment),
+        "auto_adjust": fetch_config.get("auto_adjust", adjusted),
+    }
     lineage = MarketDataLineage(
         source=source,
         fetched_at_utc=now_utc(),
-        fetch_config=fetch_config,
+        fetch_config=lineage_fetch_config,
         raw_hash=sha256_text(raw_text),
         normalized_hash=sha256_text(normalized_text),
         quality_backend=DATA_QUALITY_BACKEND,
@@ -299,6 +449,7 @@ def persist_market_data_snapshot(
         raw_ref=display_path(raw_ref),
         normalized_ref=display_path(normalized_ref),
         catalog_ref=catalog_ref,
+        data_bias_controls=data_bias_controls or list(DEFAULT_DATA_BIAS_CONTROLS),
     )
     snapshot = MarketDataSnapshot(
         snapshot_id=snapshot_id,
@@ -343,13 +494,22 @@ def build_ohlcv_snapshot_from_history(
     raw_payload: dict[str, Any],
     adjusted: bool,
     write_catalog: bool = True,
+    adjustment: AdjustmentMode | None = None,
+    quality: MarketDataQuality | None = None,
+    reconciliation: dict[str, Any] | None = None,
+    data_bias_controls: list[str] | None = None,
 ) -> DataReceipt:
     required = ["date", "open", "high", "low", "close", "volume"]
-    quality = build_quality_report(
-        history,
-        required_columns=required,
-        max_staleness_days=None,
-    )
+    adjustment_mode = adjustment or adjustment_from_adjusted(adjusted)
+    if source.adjustment != adjustment_mode:
+        source = source.model_copy(update={"adjustment": adjustment_mode})
+    if quality is None:
+        quality = build_quality_report(
+            history,
+            required_columns=required,
+            max_staleness_days=None,
+            reconciliation=reconciliation,
+        )
     bars = ohlcv_to_nautilus_bars(history, symbol=symbol) if write_catalog else []
     catalog_ref = None
     catalog_notes: list[str] = []
@@ -372,7 +532,11 @@ def build_ohlcv_snapshot_from_history(
     }
     return persist_market_data_snapshot(
         source=source,
-        fetch_config=fetch_config,
+        fetch_config={
+            **fetch_config,
+            "adjustment": fetch_config.get("adjustment", adjustment_mode),
+            "auto_adjust": fetch_config.get("auto_adjust", adjusted),
+        },
         raw_payload=raw_payload,
         normalized_payload=normalized_payload,
         quality=quality,
@@ -382,6 +546,7 @@ def build_ohlcv_snapshot_from_history(
         adjusted=adjusted,
         as_of_utc=as_of,
         catalog_ref=catalog_ref,
+        data_bias_controls=data_bias_controls,
     )
 
 
@@ -389,9 +554,10 @@ def fetch_yfinance_close_snapshot(
     universe: list[str],
     *,
     period: str = "6mo",
-    adjusted: bool = False,
+    adjusted: bool = True,
 ) -> MarketDataBundle:
     """Fetch a close matrix through yfinance and wrap it in a receipt."""
+    adjustment = adjustment_from_adjusted(adjusted)
     raw = yf.download(
         universe,
         period=period,
@@ -416,6 +582,7 @@ def fetch_yfinance_close_snapshot(
         frame,
         required_columns=["date", *list(close.columns)],
         max_staleness_days=None,
+        reconciliation=default_reconciliation(),
     )
     source = SourceSpec(
         provider="yfinance",
@@ -425,10 +592,16 @@ def fetch_yfinance_close_snapshot(
         access_method="api_pull",
         wheel="yfinance",
         wheel_version=package_version("yfinance"),
+        adjustment=adjustment,
     )
     receipt = persist_market_data_snapshot(
         source=source,
-        fetch_config={"universe": universe, "period": period, "auto_adjust": adjusted},
+        fetch_config={
+            "universe": universe,
+            "period": period,
+            "auto_adjust": adjusted,
+            "adjustment": adjustment,
+        },
         raw_payload={"columns": [str(column) for column in raw.columns], "rows": len(raw)},
         normalized_payload={"records": frame.to_dict(orient="records")},
         quality=quality,

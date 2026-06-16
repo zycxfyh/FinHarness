@@ -9,10 +9,14 @@ from langgraph.graph import END, START, StateGraph
 
 from finharness.data_entry import fetch_yfinance_history
 from finharness.market_data import (
+    MarketDataQuality,
     SourceSpec,
+    adjusted_from_adjustment,
+    adjustment_from_adjusted,
     build_ohlcv_snapshot_from_history,
     build_quality_report,
     package_version,
+    reconcile_close,
 )
 
 
@@ -21,6 +25,8 @@ class MarketDataGraphState(TypedDict, total=False):
     start: str
     end: str
     adjusted: bool
+    adjustment: str
+    second_provider: Any
     write_catalog: bool
     source: dict[str, Any]
     raw_payload: dict[str, Any]
@@ -47,6 +53,10 @@ def _history_to_records(history: pd.DataFrame) -> list[dict[str, Any]]:
 
 def source_config_node(state: MarketDataGraphState) -> MarketDataGraphState:
     symbol = state.get("symbol", "SPY").upper()
+    adjustment = state.get("adjustment")
+    if adjustment is None:
+        adjustment = adjustment_from_adjusted(state.get("adjusted", True))
+    adjusted = adjusted_from_adjustment(adjustment)  # keep legacy bool in lockstep.
     source = SourceSpec(
         provider="yfinance",
         upstream_source="Yahoo Finance",
@@ -55,19 +65,27 @@ def source_config_node(state: MarketDataGraphState) -> MarketDataGraphState:
         access_method="api_pull",
         wheel="yfinance",
         wheel_version=package_version("yfinance"),
+        adjustment=adjustment,
     )
     return {
         "symbol": symbol,
         "start": state.get("start", "2025-01-01"),
         "end": state.get("end", "2025-06-30"),
-        "adjusted": state.get("adjusted", False),
+        "adjusted": adjusted,
+        "adjustment": adjustment,
+        "second_provider": state.get("second_provider"),
         "write_catalog": state.get("write_catalog", True),
         "source": source.model_dump(mode="json"),
     }
 
 
 def fetch_market_data_node(state: MarketDataGraphState) -> MarketDataGraphState:
-    history = fetch_yfinance_history(state["symbol"], state["start"], state["end"])
+    history = fetch_yfinance_history(
+        state["symbol"],
+        state["start"],
+        state["end"],
+        adjustment=state["adjustment"],  # type: ignore[arg-type]
+    )
     return {
         "history_records": _history_to_records(history),
         "raw_payload": {
@@ -76,6 +94,8 @@ def fetch_market_data_node(state: MarketDataGraphState) -> MarketDataGraphState:
             "end": state["end"],
             "source": "yfinance.download",
             "rows": len(history),
+            "auto_adjust": state["adjusted"],
+            "adjustment": state["adjustment"],
         },
     }
 
@@ -88,9 +108,18 @@ def normalize_ohlcv_node(state: MarketDataGraphState) -> MarketDataGraphState:
 
 def quality_node(state: MarketDataGraphState) -> MarketDataGraphState:
     history = _history_from_records(state["normalized_records"])
+    reconciliation = reconcile_close(
+        state["symbol"],
+        state["start"],
+        state["end"],
+        primary_history=history,
+        second_provider=state.get("second_provider"),
+        adjustment=state["adjustment"],  # type: ignore[arg-type]
+    )
     quality = build_quality_report(
         history,
         required_columns=["date", "open", "high", "low", "close", "volume"],
+        reconciliation=reconciliation,
     )
     return {"quality": quality.model_dump(mode="json")}
 
@@ -107,6 +136,7 @@ def lineage_node(state: MarketDataGraphState) -> MarketDataGraphState:
 def snapshot_node(state: MarketDataGraphState) -> MarketDataGraphState:
     history = _history_from_records(state["normalized_records"])
     source = SourceSpec(**state["source"])
+    quality = MarketDataQuality.model_validate(state["quality"])
     receipt = build_ohlcv_snapshot_from_history(
         history,
         symbol=state["symbol"],
@@ -116,9 +146,12 @@ def snapshot_node(state: MarketDataGraphState) -> MarketDataGraphState:
             "start": state["start"],
             "end": state["end"],
             "auto_adjust": state["adjusted"],
+            "adjustment": state["adjustment"],
         },
         raw_payload=state["raw_payload"],
         adjusted=state["adjusted"],
+        adjustment=state["adjustment"],  # type: ignore[arg-type]
+        quality=quality,
         write_catalog=state.get("write_catalog", True),
     )
     return {
@@ -172,6 +205,9 @@ def final_node(state: MarketDataGraphState) -> MarketDataGraphState:
             "row_count": snapshot["quality"]["row_count"],
             "quality_ok": snapshot["quality"]["ok"],
             "quality_notes": snapshot["quality"].get("notes", []),
+            "adjustment": snapshot["lineage"]["fetch_config"].get("adjustment"),
+            "reconciliation": snapshot["quality"].get("reconciliation"),
+            "data_bias_controls": snapshot["lineage"].get("data_bias_controls", []),
             "payload_ref": snapshot["payload_ref"],
             "receipt_ref": snapshot["receipt_ref"],
             "execution_allowed": False,
@@ -215,7 +251,9 @@ def run_market_data_graph(
     symbol: str = "SPY",
     start: str = "2025-01-01",
     end: str = "2025-06-30",
-    adjusted: bool = False,
+    adjusted: bool = True,
+    adjustment: str | None = None,
+    second_provider: Any | None = None,
     write_catalog: bool = True,
 ) -> dict[str, Any]:
     result = market_data_graph.invoke(
@@ -224,6 +262,8 @@ def run_market_data_graph(
             "start": start,
             "end": end,
             "adjusted": adjusted,
+            "adjustment": adjustment,
+            "second_provider": second_provider,
             "write_catalog": write_catalog,
         }
     )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from time import sleep
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import yfinance as yf
@@ -73,13 +73,22 @@ def first_positive(*values: Any) -> float | None:
     return None
 
 
-def fetch_yfinance_history(symbol: str, start: str, end: str) -> pd.DataFrame:
+AdjustmentMode = Literal["raw", "auto_adjust"]
+
+
+def fetch_yfinance_history(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    adjustment: AdjustmentMode = "auto_adjust",
+) -> pd.DataFrame:
     """Fetch OHLCV history with yfinance and normalize it for local tools."""
     raw = yf.download(
         symbol,
         start=start,
         end=end,
-        auto_adjust=False,
+        auto_adjust=adjustment == "auto_adjust",
         progress=False,
         threads=False,
     )

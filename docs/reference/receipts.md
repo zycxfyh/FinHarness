@@ -84,7 +84,7 @@ Most snapshots use the following evidence fields:
 
 | Quality model | Fields |
 | --- | --- |
-| `MarketDataQuality` | `ok: bool`; `row_count: int`; `missing_required_columns: list[str]`; `duplicate_timestamps: int = 0`; `null_counts: dict[str, int]`; `stale: bool = false`; `outlier_flags: list[str]`; `notes: list[str]` |
+| `MarketDataQuality` | `ok: bool`; `row_count: int`; `missing_required_columns: list[str]`; `duplicate_timestamps: int = 0`; `null_counts: dict[str, int]`; `stale: bool = false`; `outlier_flags: list[str]`; `notes: list[str]`; `reconciliation: dict[str, Any] \| None` |
 | `IndicatorQuality` | `ok: bool`; `row_count: int`; `feature_count: int`; `warmup_null_counts: dict[str, int]`; `latest_null_features: list[str]`; `notes: list[str]` |
 | `EventQuality` | `ok: bool`; `record_count: int`; `missing_fields: dict[str, list[str]]`; `parse_errors: list[str]`; `duplicate_count: int = 0`; `stale_count: int = 0`; `mapping_confidence_min: float | None`; `license_boundary: str = official_public_sec_data`; `execution_allowed: bool = false`; `notes: list[str]` |
 | `InterpretationQuality` | `ok: bool`; `record_count: int`; `source_backed_claims: bool`; `counterevidence_present: bool`; `no_execution_language: bool`; `horizon_present: bool`; `confidence_bounded: bool`; `claim_evidence_separation: bool`; `missing_required_fields: dict[str, list[str]]`; `execution_language_hits: dict[str, list[str]]`; `notes: list[str]` |
@@ -100,7 +100,7 @@ Most snapshots use the following evidence fields:
 
 | Lineage model | Fields |
 | --- | --- |
-| `MarketDataLineage` | `source: SourceSpec`; `fetched_at_utc: str`; `fetch_config: dict[str, Any]`; `raw_hash: str`; `normalized_hash: str`; `transform_version: str = finharness.market_data.v1`; `quality_backend: str | None`; `quality_backend_version: str | None`; `raw_ref: str`; `normalized_ref: str`; `catalog_ref: str | None` |
+| `MarketDataLineage` | `source: SourceSpec`; `fetched_at_utc: str`; `fetch_config: dict[str, Any]`; `raw_hash: str`; `normalized_hash: str`; `transform_version: str = finharness.market_data.v1`; `quality_backend: str \| None`; `quality_backend_version: str \| None`; `raw_ref: str`; `normalized_ref: str`; `catalog_ref: str \| None`; `data_bias_controls: list[str]` |
 | `IndicatorLineage` | `input_snapshot_id: str | None`; `input_payload_ref: str | None`; `indicator_specs: list[IndicatorSpec]`; `computed_at_utc: str`; `transform_version: str = finharness.indicator_layer.v1`; `output_hash: str`; `output_ref: str` |
 | `EventLineage` | `source: EventSourceSpec`; `fetched_at_utc: str`; `fetch_config: dict[str, Any]`; `raw_hash: str`; `parsed_hash: str`; `transform_version: str = finharness.events.sec_edgar.v1`; `raw_refs: list[str]`; `parsed_ref: str`; `linked_market_snapshot_refs: list[str]`; `linked_indicator_snapshot_refs: list[str]` |
 | `InterpretationLineage` | `source: InterpretationSourceSpec`; `input_event_snapshot_id: str`; `input_event_receipt_ref: str`; `event_record_ids: list[str]`; `market_snapshot_refs: list[str]`; `indicator_snapshot_refs: list[str]`; `computed_at_utc: str`; `transform_version: str = finharness.interpretation.v1`; `output_hash: str`; `output_ref: str` |

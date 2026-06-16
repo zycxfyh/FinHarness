@@ -86,7 +86,8 @@ def run_data_entry_workflow(
     CACHE.mkdir(parents=True, exist_ok=True)
 
     quote = fetch_openbb_quote(symbol)
-    history = fetch_yfinance_history(symbol, start, end)
+    adjustment = "auto_adjust"
+    history = fetch_yfinance_history(symbol, start, end, adjustment=adjustment)
     data_receipt = build_ohlcv_snapshot_from_history(
         history,
         symbol=symbol,
@@ -98,8 +99,15 @@ def run_data_entry_workflow(
             access_method="api_pull",
             wheel="yfinance",
             wheel_version=package_version("yfinance"),
+            adjustment=adjustment,
         ),
-        fetch_config={"symbol": symbol, "start": start, "end": end, "auto_adjust": False},
+        fetch_config={
+            "symbol": symbol,
+            "start": start,
+            "end": end,
+            "auto_adjust": True,
+            "adjustment": adjustment,
+        },
         raw_payload={
             "symbol": symbol,
             "start": start,
@@ -107,7 +115,8 @@ def run_data_entry_workflow(
             "source": "yfinance.download",
             "rows": len(history),
         },
-        adjusted=False,
+        adjusted=True,
+        adjustment=adjustment,
     )
     indicator_receipt = build_indicator_snapshot(
         symbol=symbol,
