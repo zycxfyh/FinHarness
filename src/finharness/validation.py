@@ -19,8 +19,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.hypotheses import HypothesisRecord, HypothesisSnapshot
 from finharness.market_data import ROOT, display_path, sha256_text
+from finharness.research_rigor import ResearchRung, time_train_test_split
 from finharness.validation_metrics import assess_realized_move, load_cached_close_series
-from finharness.vectorbt_runner import VECTORBT_BACKEND, run_vectorbt_moving_average_research
+from finharness.vectorbt_runner import (
+    VECTORBT_BACKEND,
+    VectorbtOosResearchSummary,
+    VectorbtWalkForwardResearchSummary,
+    run_vectorbt_ma_oos,
+    run_vectorbt_ma_walk_forward,
+    run_vectorbt_moving_average_research,
+)
 
 VALIDATION_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "validations"
 VALIDATION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "validations"
@@ -44,8 +52,8 @@ ValidationCheckType = Literal[
 ]
 
 BACKTEST_LIMITATIONS = [
-    "Single MA-crossover screen; in-sample; costs/slippage only as parameterized; "
-    "historical, not predictive; evidence only, not an execution signal.",
+    "MA-crossover historical screen; rung-limited evidence only, not predictive; "
+    "costs/slippage only as parameterized; not an execution signal.",
 ]
 
 BLOCKED_VALIDATION_LANGUAGE = [
@@ -218,6 +226,8 @@ class NullBacktestEvidenceProvider:
                 trade_count=0,
                 provider=self.provider_name,
                 reason="no backtest provider configured",
+                rung="not_run",
+                trial_count=0,
             ),
             result="not_testable",
             supports_hypothesis=False,
@@ -247,6 +257,10 @@ class VectorbtBacktestEvidenceProvider:
         initial_cash: float = 10_000.0,
         fees: float = 0.0,
         slippage: float = 0.0,
+        rung: ResearchRung = "out_of_sample",
+        train_frac: float = 0.7,
+        n_folds: int = 4,
+        configs: list[dict[str, Any]] | None = None,
     ) -> None:
         self.history_by_symbol = {
             symbol.upper(): history for symbol, history in history_by_symbol.items()
@@ -256,6 +270,10 @@ class VectorbtBacktestEvidenceProvider:
         self.initial_cash = initial_cash
         self.fees = fees
         self.slippage = slippage
+        self.rung = rung
+        self.train_frac = train_frac
+        self.n_folds = n_folds
+        self.configs = configs or []
 
     def assess(
         self,
@@ -272,18 +290,29 @@ class VectorbtBacktestEvidenceProvider:
             )
 
         window = backtest_window(history)
+        effective_rung: ResearchRung = (
+            "trial_discounted" if len(self.configs) > 1 else self.rung
+        )
         try:
-            summary = run_vectorbt_moving_average_research(
-                history,
-                fast=self.fast,
-                slow=self.slow,
-                initial_cash=self.initial_cash,
-                fees=self.fees,
-                slippage=self.slippage,
-            )
+            if effective_rung == "in_sample":
+                return self._assess_in_sample(history=history, window=window)
+            if effective_rung == "walk_forward":
+                return self._assess_walk_forward(history=history, window=window)
+            if effective_rung == "trial_discounted":
+                return self._assess_trial_recorded_psr(history=history, window=window)
+            return self._assess_oos(history=history, window=window)
         except Exception as exc:  # vectorbt screens degrade to evidence, not workflow failure.
             return self._not_testable(window=window, reason=str(exc))
 
+    def _assess_in_sample(self, *, history: Any, window: str) -> BacktestEvidence:
+        summary = run_vectorbt_moving_average_research(
+            history,
+            fast=self.fast,
+            slow=self.slow,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+        )
         metrics = backtest_metrics(
             fast=self.fast,
             slow=self.slow,
@@ -296,19 +325,224 @@ class VectorbtBacktestEvidenceProvider:
             trade_count=summary.trade_count,
             provider=self.provider_name,
             strategy=summary.strategy,
+            rung="in_sample",
+            trial_count=1,
+            return_sample_count=summary.return_sample_count,
+            observed_sharpe=summary.observed_sharpe,
+            return_skew=summary.return_skew,
+            return_kurtosis=summary.return_kurtosis,
+            psr_gt_zero=summary.psr_gt_zero,
         )
         result = map_backtest_result(
+            rung="in_sample",
             trade_count=summary.trade_count,
             total_return=summary.total_return,
         )
+        return self._evidence(
+            window=window,
+            metrics=metrics,
+            result=result,
+            limitations=[
+                *BACKTEST_LIMITATIONS,
+                "Research rung: in_sample. Single in-sample evidence is capped at "
+                "inconclusive and cannot support a hypothesis.",
+            ],
+        )
+
+    def _assess_oos(self, *, history: Any, window: str) -> BacktestEvidence:
+        summary = run_vectorbt_ma_oos(
+            history,
+            fast=self.fast,
+            slow=self.slow,
+            train_frac=self.train_frac,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+        )
+        metrics = backtest_metrics(
+            fast=self.fast,
+            slow=self.slow,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+            start_value=None,
+            end_value=None,
+            total_return=summary.test_return,
+            trade_count=summary.test_trade_count,
+            provider=self.provider_name,
+            strategy=summary.strategy,
+            rung="out_of_sample",
+            trial_count=1,
+            oos=oos_metrics(summary),
+        )
+        result = map_backtest_result(
+            rung="out_of_sample",
+            trade_count=summary.test_trade_count,
+            oos_test_return=summary.test_return,
+            oos_test_consistent=summary.test_consistent,
+            oos_test_trade_count=summary.test_trade_count,
+        )
+        return self._evidence(
+            window=window,
+            metrics=metrics,
+            result=result,
+            limitations=[
+                *BACKTEST_LIMITATIONS,
+                "Research rung: out_of_sample. Support requires the held-out test "
+                "segment to clear the bar; no multiple-testing correction.",
+            ],
+        )
+
+    def _assess_walk_forward(self, *, history: Any, window: str) -> BacktestEvidence:
+        summary = run_vectorbt_ma_walk_forward(
+            history,
+            fast=self.fast,
+            slow=self.slow,
+            n_folds=self.n_folds,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+        )
+        trade_count = sum(fold.test_trade_count for fold in summary.folds)
+        metrics = backtest_metrics(
+            fast=self.fast,
+            slow=self.slow,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+            start_value=None,
+            end_value=None,
+            total_return=summary.mean_test_return,
+            trade_count=trade_count,
+            provider=self.provider_name,
+            strategy=summary.strategy,
+            rung="walk_forward",
+            trial_count=1,
+            walk_forward=walk_forward_metrics(summary),
+        )
+        result = map_backtest_result(
+            rung="walk_forward",
+            trade_count=trade_count,
+            walk_forward_frac_folds_positive=summary.frac_folds_positive,
+            walk_forward_mean_test_return=summary.mean_test_return,
+        )
+        return self._evidence(
+            window=window,
+            metrics=metrics,
+            result=result,
+            limitations=[
+                *BACKTEST_LIMITATIONS,
+                "Research rung: walk_forward. Support requires forward test-fold "
+                "consistency; no multiple-testing correction.",
+            ],
+        )
+
+    def _assess_trial_recorded_psr(self, *, history: Any, window: str) -> BacktestEvidence:
+        selected = self._select_config_on_train(history)
+        fast = selected["fast"]
+        slow = selected["slow"]
+        summary = run_vectorbt_ma_oos(
+            history,
+            fast=fast,
+            slow=slow,
+            train_frac=self.train_frac,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+        )
+        trial_count = max(1, len(self.configs))
+        metrics = backtest_metrics(
+            fast=fast,
+            slow=slow,
+            initial_cash=self.initial_cash,
+            fees=self.fees,
+            slippage=self.slippage,
+            start_value=None,
+            end_value=None,
+            total_return=summary.test_return,
+            trade_count=summary.test_trade_count,
+            provider=self.provider_name,
+            strategy=summary.strategy,
+            rung="trial_discounted",
+            trial_count=trial_count,
+            oos=oos_metrics(summary),
+            discount={
+                "method": "psr_only",
+                "psr_gt_zero": summary.test_psr_gt_zero,
+                "selection_bias_adjusted": False,
+                "note": "PSR is recorded for NOW-1; full Deflated Sharpe is deferred.",
+            },
+            selected_config=selected,
+        )
+        result = map_backtest_result(
+            rung="trial_discounted",
+            trade_count=summary.test_trade_count,
+            oos_test_return=summary.test_return,
+            trial_psr_gt_zero=summary.test_psr_gt_zero,
+            trial_discount_method="psr_only",
+        )
+        return self._evidence(
+            window=window,
+            metrics=metrics,
+            result=result,
+            limitations=[
+                *BACKTEST_LIMITATIONS,
+                "Research rung: trial_discounted. NOW-1 records trial count and "
+                "PSR only; full Deflated Sharpe is deferred, so selected multi-config "
+                "evidence cannot by itself support a hypothesis.",
+            ],
+        )
+
+    def _select_config_on_train(self, history: Any) -> dict[str, Any]:
+        configs = self.configs or [{"fast": self.fast, "slow": self.slow}]
+        max_slow = max(int(config.get("slow", self.slow)) for config in configs)
+        train_slice, _ = time_train_test_split(
+            len(history),
+            train_frac=self.train_frac,
+            min_train=max_slow + 1,
+            min_test=max_slow + 1,
+        )
+        train_history = history.iloc[train_slice].copy()
+        scored: list[dict[str, Any]] = []
+        for config in configs:
+            fast = int(config.get("fast", self.fast))
+            slow = int(config.get("slow", self.slow))
+            summary = run_vectorbt_moving_average_research(
+                train_history,
+                fast=fast,
+                slow=slow,
+                initial_cash=self.initial_cash,
+                fees=self.fees,
+                slippage=self.slippage,
+            )
+            scored.append(
+                {
+                    "fast": fast,
+                    "slow": slow,
+                    "train_return": summary.total_return,
+                    "train_trade_count": summary.trade_count,
+                }
+            )
+        if not scored:
+            raise ValueError("no valid trial configs")
+        return max(scored, key=lambda item: item["train_return"])
+
+    def _evidence(
+        self,
+        *,
+        window: str,
+        metrics: dict[str, Any],
+        result: ValidationResult,
+        limitations: list[str],
+    ) -> BacktestEvidence:
         return BacktestEvidence(
-            method=summary.backend,
+            method=VECTORBT_BACKEND,
             window=window,
             metrics=metrics,
             result=result,
             supports_hypothesis=result == "supported",
             disconfirms_hypothesis=result == "weakened",
-            limitations=BACKTEST_LIMITATIONS,
+            limitations=limitations,
         )
 
     def _not_testable(self, *, window: str, reason: str) -> BacktestEvidence:
@@ -327,6 +561,8 @@ class VectorbtBacktestEvidenceProvider:
                 trade_count=0,
                 provider=self.provider_name,
                 reason=reason,
+                rung=self.rung,
+                trial_count=max(1, len(self.configs)),
             ),
             result="not_testable",
             supports_hypothesis=False,
@@ -508,6 +744,17 @@ def backtest_metrics(
     provider: str,
     reason: str | None = None,
     strategy: str | None = None,
+    rung: str | None = None,
+    trial_count: int | None = None,
+    return_sample_count: int | None = None,
+    observed_sharpe: float | None = None,
+    return_skew: float | None = None,
+    return_kurtosis: float | None = None,
+    psr_gt_zero: float | None = None,
+    oos: dict[str, Any] | None = None,
+    walk_forward: dict[str, Any] | None = None,
+    discount: dict[str, Any] | None = None,
+    selected_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metrics: dict[str, Any] = {
         "fast": fast,
@@ -525,7 +772,66 @@ def backtest_metrics(
         metrics["reason"] = reason
     if strategy:
         metrics["strategy"] = strategy
+    if rung:
+        metrics["rung"] = rung
+    if trial_count is not None:
+        metrics["trial_count"] = trial_count
+    if return_sample_count is not None:
+        metrics["return_sample_count"] = return_sample_count
+    if observed_sharpe is not None:
+        metrics["observed_sharpe"] = observed_sharpe
+    if return_skew is not None:
+        metrics["return_skew"] = return_skew
+    if return_kurtosis is not None:
+        metrics["return_kurtosis"] = return_kurtosis
+    if psr_gt_zero is not None:
+        metrics["psr_gt_zero"] = psr_gt_zero
+    if oos:
+        metrics["oos"] = oos
+    if walk_forward:
+        metrics["walk_forward"] = walk_forward
+    if discount:
+        metrics["discount"] = discount
+    if selected_config:
+        metrics["selected_config"] = selected_config
     return metrics
+
+
+def oos_metrics(summary: VectorbtOosResearchSummary) -> dict[str, Any]:
+    return {
+        "train_return": summary.train_return,
+        "test_return": summary.test_return,
+        "test_trade_count": summary.test_trade_count,
+        "test_consistent": summary.test_consistent,
+        "test_return_sample_count": summary.test_return_sample_count,
+        "test_observed_sharpe": summary.test_observed_sharpe,
+        "test_return_skew": summary.test_return_skew,
+        "test_return_kurtosis": summary.test_return_kurtosis,
+        "test_psr_gt_zero": summary.test_psr_gt_zero,
+        "train_rows": summary.train_rows,
+        "test_rows": summary.test_rows,
+    }
+
+
+def walk_forward_metrics(summary: VectorbtWalkForwardResearchSummary) -> dict[str, Any]:
+    return {
+        "fold_count": summary.fold_count,
+        "frac_folds_positive": summary.frac_folds_positive,
+        "mean_test_return": summary.mean_test_return,
+        "mean_test_sharpe": summary.mean_test_sharpe,
+        "folds": [
+            {
+                "fold_index": fold.fold_index,
+                "train_rows": fold.train_rows,
+                "test_rows": fold.test_rows,
+                "test_return": fold.test_return,
+                "test_trade_count": fold.test_trade_count,
+                "test_observed_sharpe": fold.test_observed_sharpe,
+                "test_psr_gt_zero": fold.test_psr_gt_zero,
+            }
+            for fold in summary.folds
+        ],
+    }
 
 
 def backtest_window(history: Any) -> str:
@@ -539,14 +845,94 @@ def backtest_window(history: Any) -> str:
         return "unknown_window"
 
 
-def map_backtest_result(*, trade_count: int, total_return: float) -> ValidationResult:
+def map_backtest_result(
+    *,
+    rung: str,
+    trade_count: int,
+    total_return: float | None = None,
+    oos_test_return: float | None = None,
+    oos_test_consistent: bool = False,
+    oos_test_trade_count: int | None = None,
+    walk_forward_frac_folds_positive: float | None = None,
+    walk_forward_mean_test_return: float | None = None,
+    trial_psr_gt_zero: float | None = None,
+    trial_discount_method: str | None = None,
+) -> ValidationResult:
     if trade_count == 0:
         return "not_testable"
-    if total_return >= 0.02:
-        return "supported"
-    if total_return <= -0.02:
-        return "weakened"
+    if rung == "in_sample":
+        if total_return is not None and total_return <= -0.02:
+            return "weakened"
+        return "inconclusive"
+    if rung == "out_of_sample":
+        if oos_test_trade_count is not None and oos_test_trade_count <= 0:
+            return "not_testable"
+        if oos_test_return is not None and oos_test_return <= -0.02:
+            return "weakened"
+        if (
+            oos_test_return is not None
+            and oos_test_return >= 0.02
+            and oos_test_consistent
+        ):
+            return "supported"
+        return "inconclusive"
+    if rung == "walk_forward":
+        if (
+            walk_forward_frac_folds_positive is not None
+            and walk_forward_mean_test_return is not None
+            and walk_forward_frac_folds_positive >= 0.6
+            and walk_forward_mean_test_return >= 0.0
+        ):
+            return "supported"
+        if (
+            walk_forward_frac_folds_positive is not None
+            and walk_forward_frac_folds_positive <= 0.4
+        ):
+            return "weakened"
+        return "inconclusive"
+    if rung == "trial_discounted":
+        if oos_test_return is not None and oos_test_return <= -0.02:
+            return "weakened"
+        if (
+            trial_discount_method == "deflated_sharpe"
+            and trial_psr_gt_zero is not None
+            and trial_psr_gt_zero >= 0.95
+        ):
+            return "supported"
+        return "inconclusive"
     return "inconclusive"
+
+
+def backtest_result_respects_rung(result: ValidationCheckResult) -> bool:
+    if result.check_type != "backtest" or result.result != "supported":
+        return True
+
+    metrics = result.metrics
+    rung = metrics.get("rung")
+    if rung == "in_sample":
+        return False
+    if rung == "out_of_sample":
+        oos = metrics.get("oos") or {}
+        return (
+            (oos.get("test_trade_count") or 0) > 0
+            and (oos.get("test_return") or 0.0) >= 0.02
+            and bool(oos.get("test_consistent"))
+        )
+    if rung == "walk_forward":
+        walk_forward = metrics.get("walk_forward") or {}
+        return (
+            (metrics.get("trade_count") or 0) > 0
+            and (walk_forward.get("frac_folds_positive") or 0.0) >= 0.6
+            and (walk_forward.get("mean_test_return") or 0.0) >= 0.0
+        )
+    if rung == "trial_discounted":
+        discount = metrics.get("discount") or {}
+        return (
+            discount.get("method") == "deflated_sharpe"
+            and bool(discount.get("selection_bias_adjusted"))
+            and (discount.get("psr_gt_zero") or 0.0) >= 0.95
+        )
+    return False
 
 
 def backtest_evidence_result(
@@ -574,6 +960,8 @@ def backtest_evidence_result(
                 trade_count=0,
                 provider=getattr(provider, "provider_name", "unknown"),
                 reason=str(exc),
+                rung="provider_error",
+                trial_count=0,
             ),
             result="not_testable",
             supports_hypothesis=False,
@@ -940,6 +1328,7 @@ def build_validation_quality(
     result_not_overclaimed = all(
         result.result
         in {"supported", "weakened", "disconfirmed", "inconclusive", "not_testable"}
+        and backtest_result_respects_rung(result)
         for result in results
     )
     lineage_complete = bool(

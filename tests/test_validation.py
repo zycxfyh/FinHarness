@@ -192,6 +192,9 @@ class ValidationLayerTest(unittest.TestCase):
         self.assertEqual(len(backtests), len(jobs))
         for result in backtests:
             self.assertEqual(result.method, VECTORBT_BACKEND)
+            self.assertEqual(result.metrics["rung"], "out_of_sample")
+            self.assertEqual(result.metrics["trial_count"], 1)
+            self.assertIn("oos", result.metrics)
             self.assertIn("total_return", result.metrics)
             self.assertIn("trade_count", result.metrics)
             self.assertEqual(result.metrics["fast"], 5)
@@ -265,6 +268,142 @@ class ValidationLayerTest(unittest.TestCase):
         self.assertTrue(backtests)
         self.assertTrue(all(result.result == "not_testable" for result in backtests))
         self.assertTrue(all(result.limitations for result in backtests))
+
+    def test_backtest_result_mapping_caps_in_sample_support(self) -> None:
+        # G01 migration: in-sample is no longer "supported"; see research rigor ladder.
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="in_sample",
+                trade_count=3,
+                total_return=0.50,
+            ),
+            "inconclusive",
+        )
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="in_sample",
+                trade_count=3,
+                total_return=-0.03,
+            ),
+            "weakened",
+        )
+
+    def test_backtest_result_mapping_catches_oos_overfit(self) -> None:
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="out_of_sample",
+                trade_count=2,
+                oos_test_return=0.05,
+                oos_test_consistent=False,
+                oos_test_trade_count=2,
+            ),
+            "inconclusive",
+        )
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="out_of_sample",
+                trade_count=2,
+                oos_test_return=-0.03,
+                oos_test_consistent=False,
+                oos_test_trade_count=2,
+            ),
+            "weakened",
+        )
+
+    def test_walk_forward_and_trial_discount_mapping_respect_rungs(self) -> None:
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="walk_forward",
+                trade_count=3,
+                walk_forward_frac_folds_positive=0.75,
+                walk_forward_mean_test_return=0.01,
+            ),
+            "supported",
+        )
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="trial_discounted",
+                trade_count=3,
+                oos_test_return=0.20,
+                trial_psr_gt_zero=0.99,
+                trial_discount_method="psr_only",
+            ),
+            "inconclusive",
+        )
+
+    def test_vectorbt_provider_can_emit_walk_forward_rung(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(events, "EVENT_RAW_ROOT", root / "events_raw"),
+                patch.object(events, "EVENT_NORMALIZED_ROOT", root / "events_normalized"),
+                patch.object(events, "EVENT_RECEIPT_ROOT", root / "events_receipts"),
+                patch.object(interpretation, "INTERPRETATION_NORMALIZED_ROOT", root / "ints"),
+                patch.object(interpretation, "INTERPRETATION_RECEIPT_ROOT", root / "int_receipts"),
+                patch.object(hypotheses, "HYPOTHESIS_NORMALIZED_ROOT", root / "hyps"),
+                patch.object(hypotheses, "HYPOTHESIS_RECEIPT_ROOT", root / "hyp_receipts"),
+            ):
+                hypothesis_bundle = build_sample_hypothesis_bundle(root)
+                snapshot = hypothesis_bundle.snapshot
+                jobs = create_validation_jobs(snapshot)
+                provider = VectorbtBacktestEvidenceProvider(
+                    history_by_symbol={"NVDA": sample_history(rows=90)},
+                    fast=5,
+                    slow=10,
+                    rung="walk_forward",
+                    n_folds=3,
+                )
+                results = build_validation_results(
+                    snapshot=snapshot,
+                    jobs=jobs,
+                    backtest_provider=provider,
+                )
+
+        backtests = [result for result in results if result.check_type == "backtest"]
+        self.assertTrue(backtests)
+        for result in backtests:
+            self.assertEqual(result.metrics["rung"], "walk_forward")
+            self.assertEqual(result.metrics["trial_count"], 1)
+            self.assertIn("walk_forward", result.metrics)
+            self.assertEqual(result.metrics["walk_forward"]["fold_count"], 3)
+
+    def test_quality_blocks_backtest_supported_above_rung(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(events, "EVENT_RAW_ROOT", root / "events_raw"),
+                patch.object(events, "EVENT_NORMALIZED_ROOT", root / "events_normalized"),
+                patch.object(events, "EVENT_RECEIPT_ROOT", root / "events_receipts"),
+                patch.object(interpretation, "INTERPRETATION_NORMALIZED_ROOT", root / "ints"),
+                patch.object(interpretation, "INTERPRETATION_RECEIPT_ROOT", root / "int_receipts"),
+                patch.object(hypotheses, "HYPOTHESIS_NORMALIZED_ROOT", root / "hyps"),
+                patch.object(hypotheses, "HYPOTHESIS_RECEIPT_ROOT", root / "hyp_receipts"),
+            ):
+                hypothesis_bundle = build_sample_hypothesis_bundle(root)
+                snapshot = hypothesis_bundle.snapshot
+                jobs = create_validation_jobs(snapshot)
+                results = build_validation_results(snapshot=snapshot, jobs=jobs)
+
+        backtest_index = next(
+            index for index, result in enumerate(results) if result.check_type == "backtest"
+        )
+        overclaimed = results[backtest_index].model_copy(
+            update={
+                "result": "supported",
+                "supports_hypothesis": True,
+                "metrics": {
+                    **results[backtest_index].metrics,
+                    "rung": "in_sample",
+                    "trial_count": 1,
+                },
+            }
+        )
+        mutated = [*results]
+        mutated[backtest_index] = overclaimed
+        quality = build_validation_quality(snapshot=snapshot, jobs=jobs, results=mutated)
+
+        self.assertFalse(quality.ok)
+        self.assertFalse(quality.result_not_overclaimed)
 
     def test_quality_accepts_backtest_evidence_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
