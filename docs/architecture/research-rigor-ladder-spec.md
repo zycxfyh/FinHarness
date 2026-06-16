@@ -38,7 +38,7 @@ ResearchRung = Literal["in_sample", "out_of_sample", "walk_forward", "trial_disc
 | `in_sample` | single fixed-param run over all history (today) | **`inconclusive`** (never `supported`) |
 | `out_of_sample` | train/test time split; result judged on the held-out **test** segment | `supported` if the OOS test bar clears |
 | `walk_forward` | rolling train→test folds; judged on fold-test consistency | `supported` if a majority of folds clear |
-| `trial_discounted` | multiple configs tried; performance discounted for selection bias | `supported` only if the discounted metric clears |
+| `trial_discounted` | multiple configs tried; NOW-1 records trial count + PSR; full DSR is deferred | **`inconclusive`** under PSR-only; future `supported` requires a real selection-bias-adjusted method |
 
 (`cpcv` is a future rung; out of scope here.)
 
@@ -66,8 +66,12 @@ def map_backtest_result(*, rung, in_sample_return, oos, walk_forward, discount, 
             return "weakened"
         return "inconclusive"
     if rung == "trial_discounted":
-        # multiple trials => support requires the selection-bias-adjusted probability
-        if discount.psr_gt_zero >= 0.95:
+        # PSR-only is recorded in NOW-1 but is not full multiple-testing deflation.
+        if (
+            discount.method == "deflated_sharpe"
+            and discount.selection_bias_adjusted
+            and discount.psr_gt_zero >= 0.95
+        ):
             return "supported"
         return "inconclusive"
 ```
@@ -118,7 +122,8 @@ def probabilistic_sharpe_ratio(*, observed_sharpe, n_samples, skew, kurtosis,
   compute it and `skew`/`kurtosis` from the strategy's per-period returns
   (`portfolio.returns()` → pandas `.skew()`, `.kurt()` is *excess*; add 3 for
   non-excess).
-- PSR uses **stdlib only** (`math.erf`). This is the NOW-1 discount.
+- PSR uses **stdlib only** (`math.erf`). This is the NOW-1 trial diagnostic,
+  not a full multiple-testing discount.
 - Unit-test PSR against hand-computed values (e.g., symmetric normal returns,
   `sr=0` → PSR ≈ 0.5; positive `sr`, large `n` → PSR → 1).
 
@@ -142,8 +147,9 @@ and that also return a Sharpe + return-series moments:
   `trial_count`, and the OOS / walk-forward / discount sub-metrics (nullable).
 - `VectorbtBacktestEvidenceProvider` gains a `rung` setting (default
   `out_of_sample`) and an optional `configs` list; when `configs` has > 1 entry it
-  runs each, records `trial_count = len(configs)`, picks the best, and applies the
-  PSR discount → rung `trial_discounted`.
+  selects only on the train segment, records `trial_count = len(configs)`, reports
+  PSR on the selected held-out test segment, and caps the result at
+  `inconclusive` until full DSR/equivalent selection-bias adjustment exists.
 - The `backtest` `ValidationCheckResult.metrics` records rung + trial_count + the
   cleared/uncleared sub-metrics; `limitations` **names the rung explicitly**
   (e.g., "out-of-sample test segment; no multiple-testing correction") and stays
@@ -173,8 +179,9 @@ and that also return a Sharpe + return-series moments:
    `inconclusive`; majority-negative → `weakened`.
 4. **PSR pure tests:** `sr=0` → ≈0.5; strong positive `sr`, large `n` → →1;
    `n<2` → NaN.
-5. **Trial discount:** with `configs` of length > 1, `trial_count` is recorded and
-   `supported` requires `psr_gt_zero ≥ 0.95`; otherwise `inconclusive`.
+5. **Trial accounting + PSR:** with `configs` of length > 1, `trial_count` is
+   recorded, parameter selection uses train data only, PSR is recorded, and
+   PSR-only evidence remains capped at `inconclusive`.
 6. **Adapter-path:** vectorbt is exercised on the sub-windows (patch
    `vbt.Portfolio.from_signals`).
 7. **Boundary:** the `backtest` result passes `no_proposal_or_execution_language`;
