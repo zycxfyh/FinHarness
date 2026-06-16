@@ -1,28 +1,22 @@
 # Repo Intelligence
 
-Generated at: `2026-06-16T14:37:49Z`
+Generated at: `2026-06-16T15:23:42Z`
 
 ## Summary
 
-- Files: `447`
-- Total lines: `87648`
+- Files: `451`
+- Total lines: `88264`
 - Execution allowed: `false`
 
 ## Changed Surface
 
+- `Taskfile.yml`
 - `docs/architecture/generated/repo-intelligence.md`
-- `docs/architecture/research-rigor-ladder-spec.md`
+- `docs/reference/commands.md`
 - `docs/reference/receipts.md`
-- `src/finharness/data_entry.py`
-- `src/finharness/market_data.py`
-- `src/finharness/market_data_graph.py`
-- `src/finharness/ten_layer_graph.py`
-- `src/finharness/validation.py`
-- `src/finharness/workflow.py`
-- `tests/test_data_entry.py`
-- `tests/test_market_data.py`
-- `tests/test_market_data_graph.py`
-- `tests/test_validation.py`
+- `scripts/run_control_certification.py`
+- `src/finharness/control_owner.py`
+- `tests/test_control_owner.py`
 
 ## Required Checks
 
@@ -38,6 +32,7 @@ flowchart LR
   n_src_finharness_alpaca_client_py["alpaca_client.py"]
   n_src_finharness_backtrader_runner_py["backtrader_runner.py"]
   n_src_finharness_cognitive_graph_py["cognitive_graph.py"]
+  n_src_finharness_control_owner_py["control_owner.py"]
   n_src_finharness_daily_evidence_py["daily_evidence.py"]
   n_src_finharness_daily_evidence_graph_py["daily_evidence_graph.py"]
   n_src_finharness_data_entry_py["data_entry.py"]
@@ -101,6 +96,7 @@ flowchart LR
   n_src_finharness_workflow_py["workflow.py"]
   n_src_finharness_agent_tools_py --> n_src_finharness_data_entry_py
   n_src_finharness_agent_tools_py --> n_src_finharness_metrics_py
+  n_src_finharness_control_owner_py --> n_src_finharness_market_data_py
   n_src_finharness_daily_evidence_py --> n_src_finharness_market_data_py
   n_src_finharness_daily_evidence_graph_py --> n_src_finharness_daily_evidence_py
   n_src_finharness_daily_evidence_graph_py --> n_src_finharness_events_py
@@ -178,5 +174,4 @@ flowchart LR
   n_src_finharness_proposal_py --> n_src_finharness_validation_py
   n_src_finharness_proposal_graph_py --> n_src_finharness_proposal_py
   n_src_finharness_proposal_graph_py --> n_src_finharness_research_assets_py
-  n_src_finharness_proposal_graph_py --> n_src_finharness_validation_py
 ```
