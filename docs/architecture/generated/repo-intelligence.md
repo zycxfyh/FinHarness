@@ -1,23 +1,28 @@
 # Repo Intelligence
 
-Generated at: `2026-06-16T13:43:22Z`
+Generated at: `2026-06-16T14:37:49Z`
 
 ## Summary
 
-- Files: `445`
-- Total lines: `87127`
+- Files: `447`
+- Total lines: `87648`
 - Execution allowed: `false`
 
 ## Changed Surface
 
 - `docs/architecture/generated/repo-intelligence.md`
 - `docs/architecture/research-rigor-ladder-spec.md`
-- `src/finharness/research_rigor.py`
+- `docs/reference/receipts.md`
+- `src/finharness/data_entry.py`
+- `src/finharness/market_data.py`
+- `src/finharness/market_data_graph.py`
+- `src/finharness/ten_layer_graph.py`
 - `src/finharness/validation.py`
-- `src/finharness/vectorbt_runner.py`
-- `tests/test_research_rigor.py`
+- `src/finharness/workflow.py`
+- `tests/test_data_entry.py`
+- `tests/test_market_data.py`
+- `tests/test_market_data_graph.py`
 - `tests/test_validation.py`
-- `tests/test_vectorbt_runner.py`
 
 ## Required Checks
 
