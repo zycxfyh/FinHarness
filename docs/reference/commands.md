@@ -57,6 +57,7 @@ need for human attestation.
 | Command | Purpose |
 | --- | --- |
 | `task governance:dashboard` | Build governance dashboard receipt/report. |
+| `task governance:certify-controls -- --owner "<name>" --cadence-days 30` | Run control-owner baseline tests and write a human attestation receipt. |
 | `task quality:governance` | Run quality governance graph. |
 | `task receipt:usage-audit` | Audit receipt references and consumption. |
 | `task rules:audit` | Verify promoted rule changes have lesson-to-receipt lineage. |

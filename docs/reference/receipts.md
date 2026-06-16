@@ -63,6 +63,7 @@ Most snapshots use the following evidence fields:
 | Execution | `ExecutionReceipt` | `execution_processing` | `stage_flow` | `ExecutionSnapshot` | `ok | warning | failed` |
 | Post trade | `PostTradeReceipt` | `post_trade_processing` | `stage_flow` | `PostTradeSnapshot` | `ok | warning | failed` |
 | Daily evidence | `DailyEvidenceReceipt` | `daily_evidence_bundle` | `stage_flow` | `DailyEvidenceSnapshot` | `ok | warning | failed` |
+| Control owner | n/a | `control_owner_certification` | `lineage` | `ControlCertification` | `certified | not_certified` |
 
 ## Snapshot Schemas
 
@@ -216,6 +217,29 @@ Location: `data/receipts/rule-changes/`
 | `lineage.lesson_draft_id` | `str | None` | Source lesson draft id. |
 | `lineage.lesson_doc_ref` | `str | None` | Source lesson doc ref. |
 | `lineage.receipt_count` | `int` | Count of source receipts. |
+
+### Control Owner Certification Receipt
+
+Location: `data/receipts/control-certifications/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<certification_id>`. |
+| `kind` | `str` | `control_owner_certification`. |
+| `created_at_utc` | `str` | Certification attempt timestamp. |
+| `certification.certification_id` | `str` | Control certification id. |
+| `certification.control_owner` | `str` | Named human control owner; never empty. |
+| `certification.review_cadence_days` | `int` | Review cadence in days. |
+| `certification.next_review_due_utc` | `str` | Next due date for owner review. |
+| `certification.controls_in_force` | `list[str]` | Baseline invariant ids/titles. |
+| `certification.baseline_passed` | `bool` | Whether the baseline guard tests passed. |
+| `certification.baseline_evidence` | `dict[str, Any]` | Test modules, counts, return code, and output tails. |
+| `certification.status` | `Literal["certified", "not_certified"]` | Honest certification status. |
+| `certification.non_certification_statement` | `str` | Disclaimer: not legal/compliance/release/live authorization. |
+| `lineage.baseline_test_modules` | `list[str]` | Test modules used as evidence. |
+| `lineage.baseline_returncode` | `int` | Baseline subprocess return code. |
+| `lineage.control_count` | `int` | Number of baseline invariants listed. |
+| `not_claimed` | `list[str]` | Explicit non-claims. |
 
 ### Governance And Hardening Receipts
 

@@ -74,6 +74,11 @@ tasks:
     cmds:
       - uv run python scripts/run_governance_dashboard.py
 
+  governance:certify-controls:
+    desc: "NOW-3: certify control-owner baseline with a named human owner"
+    cmds:
+      - uv run python scripts/run_control_certification.py {{.CLI_ARGS}}
+
   project:governance-adapter:
     desc: Adapt workstation Project Governance Loop receipt into FinHarness compatibility receipt
     cmds:
