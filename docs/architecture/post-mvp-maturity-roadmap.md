@@ -2,14 +2,12 @@
 
 > DEMOTED 2026-06-13 to keep-warm backlog by
 > docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.md.
-> The governing roadmap is docs/think/2026-06-12-target-state-b-and-loop-
-> topology.md (north star: B4). This document's RC0.3 priorities optimize
-> governance maturity — which the 2026-06-12 audit named as a category error
-> ("governance compounds; judgment does not"). Of the RC0.3 list, only two
-> items survive the B-doc razor: validation depth (#5) and "defer live-write
-> expansion" (#7). The rest are frozen, not deleted. Keep security/CI running;
-> do not add new governance graphs. Useful below as an external-bar reference
-> (SSDF/SLSA/DORA), not as the active plan.
+> Supersession 2026-06-18: product direction now comes from
+> docs/product-north-star.md. The 2026-06-12 B-doc remains a historical
+> correction against governance overgrowth, but B4 is no longer the product
+> north star. This document is useful below as an external-bar reference
+> (SSDF/SLSA/DORA), not as the active plan. Keep security/CI running; do not add
+> new governance graphs unless they directly serve B0 cockpit value.
 
 Date: 2026-06-04
 Status: keep-warm backlog (demoted from planning baseline 2026-06-13)

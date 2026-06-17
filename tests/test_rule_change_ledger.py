@@ -1,4 +1,4 @@
-"""Tests for B4: lesson -> rule-change lineage (the reason-to-exist predicate)."""
+"""Tests for B4: lesson -> rule-change lineage."""
 
 from __future__ import annotations
 

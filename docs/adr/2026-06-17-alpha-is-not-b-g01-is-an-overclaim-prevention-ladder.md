@@ -3,17 +3,25 @@
 Date: 2026-06-17
 Status: accepted
 Clarifies: docs/architecture/industry-benchmark/07-final-merged-plan.md (§1, §5)
-Anchored on: docs/think/2026-06-12-target-state-b-and-loop-topology.md (governing roadmap)
+Anchored on: docs/product-north-star.md (product source of truth)
 Deciders: FinHarness project operator and Claude
+
+> 2026-06-18 clarification: this ADR still stands on alpha/edge non-claims, but
+> the product B is now B0 personal financial situational awareness and decision
+> support. The older B1-B5 frame is a set of safety/quality predicates, not the
+> product existence reason.
+
+Project-term anchor: [glossary](../reference/glossary.md).
 
 ## Context
 
-The governing roadmap (target-state-B, 2026-06-12) is unambiguous that alpha is
-not the goal:
+The older target-state-B frame (see [glossary](../reference/glossary.md),
+2026-06-12) was unambiguous that alpha is not the goal:
 
 ```text
 B-doc line 36:  "Alpha is explicitly not part of B."
-B-doc line 71:  "Alpha discovery is downstream of B1-B4, never a substitute."
+B-doc line 71:  "Alpha discovery is downstream of B1-B4
+                 (see docs/reference/glossary.md), never a substitute."
 Rationale (B-doc §2): returns are too noisy a comparator on this horizon; a
 noisy comparator teaches loops to optimize luck. Process quality is
 controllable; P&L is observed, not gated on.
@@ -22,7 +30,7 @@ controllable; P&L is observed, not gated on.
 The industry-benchmark effort (Codex series 00-06, merged 2026-06-15) compared
 FinHarness to top institutions. That frame imported an institutional premise —
 *an institution exists to find tradeable edge* — and the merged plan re-attached
-**value** to **edge evidence**, contradicting the governing roadmap:
+**value** to **edge evidence**, contradicting the product boundary:
 
 ```text
 merged-plan §1:   "a product whose value is not yet proven"
@@ -74,8 +82,9 @@ The banned equation (no document, receipt, UI, or agent may collapse it):
 Concrete rules:
 
 ```text
-1. Alpha/edge is never a B predicate. B stays B1-B5 (decision quality), and B5
-   keeps alpha permanently downstream.
+1. Alpha/edge is never a product B predicate. Product B is B0 situational
+   awareness and decision support; B1-B5 are safety/quality predicates, and B5
+   keeps alpha permanently downstream of human judgment.
 2. An edge claim is a C-level object: Loop 2 tests hypotheses to terminal status
    (validated / falsified / archived). Rendering "supported" is allowed and
    necessary — a ladder that can never say "supported" is not a discriminating
@@ -97,7 +106,7 @@ Concrete rules:
 ### Option 1: Keep merged-plan §1/§5 as written
 ```text
 - success metric silently becomes "find alpha"
-- directly contradicts the governing B-doc; re-litigates B every planning pass
+- directly contradicts the product boundary; re-litigates B every planning pass
 ```
 
 ### Option 2: Purge the word "edge" everywhere
@@ -132,7 +141,7 @@ toward verdict quality and decision discipline, not toward finding alpha.
 ## Links
 
 ```text
-docs/think/2026-06-12-target-state-b-and-loop-topology.md            (governing)
+docs/think/2026-06-12-target-state-b-and-loop-topology.md            (historical; see docs/reference/glossary.md)
 docs/architecture/industry-benchmark/07-final-merged-plan.md         (edited §1/§5/§62)
 docs/architecture/industry-benchmark/03-gap-register-codex.md        (G01 row clarified)
 docs/architecture/research-rigor-ladder-spec.md                      (G01 spec)

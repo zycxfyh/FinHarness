@@ -1,9 +1,17 @@
 # Proposal: B4 — Lesson-to-Rule-Change Lineage (Minimal Closed Loop)
 
+Project-term anchor: [glossary](../reference/glossary.md).
+
 Date: 2026-06-13
 Status: implemented & verified 2026-06-13
 Author: FinHarness project operator and Claude
-Governing roadmap: docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.md
+Historical roadmap: docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.md
+
+> Historical proposal note (2026-06-18): B4 (see
+> [glossary](../reference/glossary.md)) remains a valid long-term learning and
+> quality predicate, but it is no longer the product existence reason. The
+> current product B is [B0 in docs/product-north-star.md](../product-north-star.md):
+> personal financial situational awareness and decision support.
 
 > DONE: src/finharness/rule_change_ledger.py (promote / trace / is_traceable /
 > audit_untraceable) + tests/test_rule_change_ledger.py (9 tests). Entry points:
@@ -29,11 +37,12 @@ Governing roadmap: docs/adr/2026-06-13-target-state-b-is-the-governing-roadmap.m
 
 ## Charter
 
-Close the one predicate that is the project's reason to exist. B4: every
-rule/threshold/checklist change carries lineage to a lesson, which carries
-lineage to receipts. Today `lesson_loop.py` drafts lessons but stops at "a human
-promotes it" — `proposed_rule_changes` is always empty, and no rule change can
-be traced back to the evidence that justified it. This builds the missing half.
+Close the long-term learning predicate. B4 (see
+[glossary](../reference/glossary.md)): every rule/threshold/checklist change
+carries lineage to a lesson, which carries lineage to receipts. Today
+`lesson_loop.py` drafts lessons but stops at "a human promotes it" —
+`proposed_rule_changes` is always empty, and no rule change can be traced back
+to the evidence that justified it. This builds the missing half.
 
 ## Boundary
 
@@ -46,8 +55,9 @@ In scope:
   turns a lesson draft into a recorded rule change with lineage
 - an append-only rule-change ledger + a receipt per change
 - trace_rule_change: returns the full chain (rule_change -> lesson -> receipts)
-- is_traceable: deterministic B4 check — a rule change without a lesson and
-  receipt refs is NOT traceable and must be flagged
+- is_traceable: deterministic B4 (see docs/reference/glossary.md) check — a
+  rule change without a lesson and receipt refs is NOT traceable and must be
+  flagged
 ```
 
 Non-goals (this increment):
@@ -61,7 +71,7 @@ Non-goals (this increment):
 - no autonomous rule changes; promotion always carries an attester.
 ```
 
-## Design (Ordivon-shaped)
+## Design (Ordivon-shaped; see [glossary](../reference/glossary.md))
 
 ```text
 GroundingClaim   lesson draft scanned from real receipts (lesson_loop, exists)

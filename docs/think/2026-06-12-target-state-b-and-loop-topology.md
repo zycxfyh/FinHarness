@@ -5,6 +5,15 @@ Scope: project direction — what B actually is, and which loops follow from it
 Source: audit of the LangGraph layer (2026-06-12) + loop-architecture-selection
 discussion (ABC framing; see abc-thinking-system and Ordivon)
 
+> Historical note (superseded for product direction): this document diagnosed a
+> real category error — governance was compounding faster than user value — but
+> its B-root is trading-decision-centric. The current product source of truth is
+> [docs/product-north-star.md](../product-north-star.md): FinHarness is an AI
+> personal-finance situational-awareness and decision-support cockpit. The B1-B5
+> items below are now safety/quality predicates that support product B0, not the
+> product B itself; B4 is a long-term learning mechanism, not the project's
+> existence reason.
+
 ## 1. The category error to fix first
 
 The candidate phrasing of the goal was:
@@ -64,15 +73,17 @@ B4 compounding judgment (learning):
   each rule/threshold/checklist change carries lineage to a lesson, which
   carries lineage to receipts.
   Comparator: post-trade attribution + lesson→rule-change lineage.
-  Completely missing today. This predicate IS the project's reason to exist.
+  Historical 2026-06-12 framing: this was treated as the hardest missing
+  trading-slice predicate. Current product B0 demotes it to a supporting
+  learning mechanism.
 
 B5 boundary (non-goals, permanent):
   The system never trades autonomously. READY/PASS never authorizes live
   action. Alpha discovery is downstream of B1–B4, never a substitute.
 ```
 
-B4 is the discriminating predicate. B1–B3 can be satisfied by a pipeline;
-only B4 requires loops.
+B4 is the discriminating learning predicate within the trading-decision slice.
+B1-B5 are not the product B; see the supersession note above.
 
 ## 3. Comparator inventory (what the loops may trust)
 
