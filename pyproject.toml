@@ -17,6 +17,7 @@ dependencies = [
     "plotly>=5.20.0",
     "quantstats>=0.0.81",
     "riskfolio-lib>=7.2.1",
+    "scipy>=1.17.1",
     "ta-lib>=0.6.8",
     "vectorbt>=1.0.0",
     "yfinance>=0.2.60",

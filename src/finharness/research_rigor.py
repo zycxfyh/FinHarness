@@ -8,11 +8,17 @@ execution permission.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+import statistics
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from scipy.stats import norm
+
 ResearchRung = Literal["in_sample", "out_of_sample", "walk_forward", "trial_discounted"]
+
+# Euler-Mascheroni constant, used by the expected-maximum-Sharpe deflation term.
+GAMMA_EULER = 0.5772156649015329
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,59 @@ def probabilistic_sharpe_ratio(
     denom = math.sqrt(max(1e-12, variance_term))
     z_score = (sr - benchmark_sharpe) * math.sqrt(n_samples - 1.0) / denom
     return standard_normal_cdf(z_score)
+
+
+def expected_max_sharpe(*, sharpe_variance: float, n_trials: int) -> float:
+    """Expected maximum Sharpe across ``n_trials`` independent trials under the null.
+
+    This is the deflation benchmark of the Deflated Sharpe Ratio (Bailey & Lopez
+    de Prado, 2014): the Sharpe the best of N tried strategies would show by
+    chance alone. With one trial there is no selection, so the benchmark is 0.
+    """
+    if n_trials <= 1 or not math.isfinite(sharpe_variance) or sharpe_variance <= 0.0:
+        return 0.0
+    std = math.sqrt(sharpe_variance)
+    z1 = norm.ppf(1.0 - 1.0 / n_trials)
+    z2 = norm.ppf(1.0 - 1.0 / (n_trials * math.e))
+    return float(std * ((1.0 - GAMMA_EULER) * z1 + GAMMA_EULER * z2))
+
+
+def sharpe_variance(sharpes: Sequence[float]) -> float:
+    """Sample variance of the trial Sharpe ratios (finite values only)."""
+    clean = [float(value) for value in sharpes if math.isfinite(float(value))]
+    if len(clean) < 2:
+        return 0.0
+    return float(statistics.variance(clean))
+
+
+def deflated_sharpe_ratio(
+    *,
+    observed_sharpe: float,
+    n_samples: int,
+    skew: float,
+    kurtosis: float,
+    trial_sharpe_variance: float,
+    n_trials: int,
+) -> float:
+    """Probability the selected strategy's true Sharpe beats the multiple-testing
+    benchmark — the PSR taken against the expected maximum Sharpe of ``n_trials``.
+
+    This is the selection-bias-adjusted statistic the trial_discounted rung needs
+    to grant support; PSR-against-zero cannot, because it ignores how many
+    configs were tried. Bailey & Lopez de Prado (2014).
+    """
+    benchmark = expected_max_sharpe(
+        sharpe_variance=trial_sharpe_variance, n_trials=n_trials
+    )
+    if not math.isfinite(benchmark):
+        return float("nan")
+    return probabilistic_sharpe_ratio(
+        observed_sharpe=observed_sharpe,
+        n_samples=n_samples,
+        skew=skew,
+        kurtosis=kurtosis,
+        benchmark_sharpe=benchmark,
+    )
 
 
 def return_moments(returns: Iterable[float]) -> ReturnMoments:

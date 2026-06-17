@@ -328,13 +328,36 @@ class ValidationLayerTest(unittest.TestCase):
             ),
             "supported",
         )
+        # PSR-against-zero alone (no multiple-testing deflation) cannot support.
         self.assertEqual(
             validation.map_backtest_result(
                 rung="trial_discounted",
-                trade_count=3,
+                trade_count=8,
                 oos_test_return=0.20,
                 trial_psr_gt_zero=0.99,
                 trial_discount_method="psr_only",
+            ),
+            "inconclusive",
+        )
+        # Full Deflated Sharpe clearing the bar with enough trades can support.
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="trial_discounted",
+                trade_count=8,
+                oos_test_return=0.20,
+                trial_psr_gt_zero=0.97,
+                trial_discount_method="deflated_sharpe",
+            ),
+            "supported",
+        )
+        # The same Deflated Sharpe below the bar stays inconclusive.
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="trial_discounted",
+                trade_count=8,
+                oos_test_return=0.20,
+                trial_psr_gt_zero=0.90,
+                trial_discount_method="deflated_sharpe",
             ),
             "inconclusive",
         )

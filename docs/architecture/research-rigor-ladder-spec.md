@@ -13,9 +13,10 @@ and gap **G01/G03**.
 > Alpha/edge is not a B predicate; the edge claim is a reviewable C-object. See
 > [ADR: Alpha is not B](../adr/2026-06-17-alpha-is-not-b-g01-is-an-overclaim-prevention-ladder.md).
 
-**No new production dependency** for the core (OOS, walk-forward, PSR, gating).
-The full Deflated Sharpe refinement needs the already-installed `scipy` declared
-direct — a small, separate decision flagged in §9. CPCV/`mlfinlab` is deferred.
+The core (OOS, walk-forward, PSR, gating) needs no new production dependency.
+The full Deflated Sharpe rung is now **implemented** (2026-06-17): `scipy` (already
+installed transitively) is declared a direct dependency for its inverse-normal
+(`ppf`). CPCV/`mlfinlab` is still deferred. See §9.
 
 ## 0. Current state (verified)
 
@@ -44,7 +45,7 @@ ResearchRung = Literal["in_sample", "out_of_sample", "walk_forward", "trial_disc
 | `in_sample` | single fixed-param run over all history (today) | **`inconclusive`** (never `supported`) |
 | `out_of_sample` | train/test time split; result judged on the held-out **test** segment | `supported` if the OOS test bar clears |
 | `walk_forward` | rolling train→test folds; judged on fold-test consistency | `supported` if a majority of folds clear |
-| `trial_discounted` | multiple configs tried; NOW-1 records trial count + PSR; full DSR is deferred | **`inconclusive`** under PSR-only; future `supported` requires a real selection-bias-adjusted method |
+| `trial_discounted` | multiple configs tried; selected OOS Sharpe deflated by the expected max Sharpe of the trials (Deflated Sharpe Ratio) | `supported` only if `DSR >= 0.95` with enough trades; PSR-against-zero alone never supports |
 
 (`cpcv` is a future rung; out of scope here.)
 
@@ -219,14 +220,16 @@ and that also return a Sharpe + return-series moments:
       no security surface, no dependency change.)
 - [ ] Report with test evidence (counts + pass/fail), not a bare "done".
 
-## 9. Decisions for the user (before/within build)
+## 9. Decisions for the user (resolved 2026-06-17)
 
-- **Deflated Sharpe (full multiple-testing deflation)** needs an inverse-normal
-  (`ppf`). `scipy` is already installed (transitive via quantstats/vectorbt). Two
-  options: (a) ship **PSR only** now (stdlib, zero dependency change) and treat
-  full **DSR** as a later refinement; (b) declare `scipy` a **direct** dependency
-  (it is already in `uv.lock`; this is hygiene, not a new install) and implement
-  DSR now. **Recommend (a)** for NOW-1.
+- **Deflated Sharpe (full multiple-testing deflation): DONE.** Option (b) was
+  chosen — `scipy` is declared a direct dependency for its inverse-normal (`ppf`)
+  and full DSR is implemented in `research_rigor.py`
+  (`expected_max_sharpe`, `deflated_sharpe_ratio`) and wired into the
+  `trial_discounted` provider path. The selected OOS Sharpe is deflated by the
+  expected maximum Sharpe of the trials; `supported` requires `DSR >= 0.95`.
+  Verified on the first broad climb (SPY DSR 0.9488 vs PSR-against-zero 0.9705 —
+  deflation correctly pulled a marginal result below the bar).
 - CPCV / `mlfinlab` stays deferred (new dependency, requires approval).
 
 ## 10. Out of scope

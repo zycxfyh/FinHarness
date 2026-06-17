@@ -19,7 +19,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.hypotheses import HypothesisRecord, HypothesisSnapshot
 from finharness.market_data import ROOT, data_bias_limitation, display_path, sha256_text
-from finharness.research_rigor import ResearchRung, time_train_test_split
+from finharness.research_rigor import (
+    ResearchRung,
+    deflated_sharpe_ratio,
+    sharpe_variance,
+    time_train_test_split,
+)
 from finharness.validation_metrics import assess_realized_move, load_cached_close_series
 from finharness.vectorbt_runner import (
     VECTORBT_BACKEND,
@@ -439,7 +444,7 @@ class VectorbtBacktestEvidenceProvider:
         )
 
     def _assess_trial_recorded_psr(self, *, history: Any, window: str) -> BacktestEvidence:
-        selected = self._select_config_on_train(history)
+        selected, train_sharpes = self._select_config_on_train(history)
         fast = selected["fast"]
         slow = selected["slow"]
         summary = run_vectorbt_ma_oos(
@@ -452,6 +457,18 @@ class VectorbtBacktestEvidenceProvider:
             slippage=self.slippage,
         )
         trial_count = max(1, len(self.configs))
+        # Deflate the selected strategy's out-of-sample Sharpe by the expected
+        # maximum Sharpe of the trials. PSR-against-zero ignores how many configs
+        # were tried; DSR is the selection-bias-adjusted statistic.
+        trial_sharpe_var = sharpe_variance(train_sharpes)
+        dsr = deflated_sharpe_ratio(
+            observed_sharpe=_nan_if_none(summary.test_observed_sharpe),
+            n_samples=summary.test_return_sample_count,
+            skew=_nan_if_none(summary.test_return_skew),
+            kurtosis=_nan_if_none(summary.test_return_kurtosis),
+            trial_sharpe_variance=trial_sharpe_var,
+            n_trials=trial_count,
+        )
         metrics = backtest_metrics(
             fast=fast,
             slow=slow,
@@ -468,10 +485,13 @@ class VectorbtBacktestEvidenceProvider:
             trial_count=trial_count,
             oos=oos_metrics(summary),
             discount={
-                "method": "psr_only",
+                "method": "deflated_sharpe",
+                "deflated_sharpe": dsr,
                 "psr_gt_zero": summary.test_psr_gt_zero,
-                "selection_bias_adjusted": False,
-                "note": "PSR is recorded for NOW-1; full Deflated Sharpe is deferred.",
+                "trial_sharpe_variance": trial_sharpe_var,
+                "selection_bias_adjusted": True,
+                "note": "Selected OOS Sharpe deflated by the expected max Sharpe of "
+                f"{trial_count} trials (Bailey & Lopez de Prado, 2014).",
             },
             selected_config=selected,
         )
@@ -479,8 +499,8 @@ class VectorbtBacktestEvidenceProvider:
             rung="trial_discounted",
             trade_count=summary.test_trade_count,
             oos_test_return=summary.test_return,
-            trial_psr_gt_zero=summary.test_psr_gt_zero,
-            trial_discount_method="psr_only",
+            trial_psr_gt_zero=dsr,
+            trial_discount_method="deflated_sharpe",
         )
         return self._evidence(
             window=window,
@@ -488,13 +508,17 @@ class VectorbtBacktestEvidenceProvider:
             result=result,
             limitations=[
                 *BACKTEST_LIMITATIONS,
-                "Research rung: trial_discounted. NOW-1 records trial count and "
-                "PSR only; full Deflated Sharpe is deferred, so selected multi-config "
-                "evidence cannot by itself support a hypothesis.",
+                "Research rung: trial_discounted. The selected multi-config OOS "
+                "Sharpe is deflated by the expected maximum Sharpe of the trials "
+                "(Deflated Sharpe Ratio); support requires the DSR to clear the bar.",
             ],
         )
 
-    def _select_config_on_train(self, history: Any) -> dict[str, Any]:
+    def _select_config_on_train(
+        self, history: Any
+    ) -> tuple[dict[str, Any], list[float]]:
+        """Select the best config on the train segment only and return it with the
+        train Sharpe of every config tried (the raw material for DSR deflation)."""
         configs = self.configs or [{"fast": self.fast, "slow": self.slow}]
         max_slow = max(int(config.get("slow", self.slow)) for config in configs)
         train_slice, _ = time_train_test_split(
@@ -505,6 +529,7 @@ class VectorbtBacktestEvidenceProvider:
         )
         train_history = history.iloc[train_slice].copy()
         scored: list[dict[str, Any]] = []
+        train_sharpes: list[float] = []
         for config in configs:
             fast = int(config.get("fast", self.fast))
             slow = int(config.get("slow", self.slow))
@@ -516,6 +541,8 @@ class VectorbtBacktestEvidenceProvider:
                 fees=self.fees,
                 slippage=self.slippage,
             )
+            if summary.observed_sharpe is not None:
+                train_sharpes.append(summary.observed_sharpe)
             scored.append(
                 {
                     "fast": fast,
@@ -526,7 +553,7 @@ class VectorbtBacktestEvidenceProvider:
             )
         if not scored:
             raise ValueError("no valid trial configs")
-        return max(scored, key=lambda item: item["train_return"])
+        return max(scored, key=lambda item: item["train_return"]), train_sharpes
 
     def _evidence(
         self,
@@ -844,6 +871,10 @@ def backtest_window(history: Any) -> str:
         return f"{len(history)} rows"
     except TypeError:
         return "unknown_window"
+
+
+def _nan_if_none(value: float | None) -> float:
+    return float("nan") if value is None else float(value)
 
 
 # A "supported" verdict needs enough trades to be more than luck. Below this the
