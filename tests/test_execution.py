@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -26,9 +27,11 @@ from finharness.execution import (
     build_order_requests,
 )
 from finharness.execution_graph import execution_graph, run_execution_graph
+from finharness.lesson_loop import LessonDraft
 from finharness.market_access_ledger import MarketAccessLedgerError
 from finharness.proposal import build_proposal_bundle_from_validation_snapshot
 from finharness.risk_gate import build_risk_gate_bundle_from_proposal_snapshot
+from finharness.rule_change_ledger import promote_lesson_to_rule_change
 from tests.test_proposal import build_sample_validation_bundle
 
 
@@ -52,17 +55,44 @@ def build_sample_risk_gate_bundle(
 class ExecutionLayerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name)
         self.env_patch = patch.dict(
             os.environ,
             {
-                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
-                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(self.root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(self.root / "receipts"),
             },
         )
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
         self.addCleanup(self.tmp.cleanup)
+
+    def promote_market_access_ceiling(self, *, value: float):
+        draft = LessonDraft(
+            draft_id="lesson_draft_execution_ceiling",
+            created_at_utc="2026-06-18T00:00:00+00:00",
+            window_days=14,
+            receipts_scanned=2,
+            sources=["data/receipts/executions"],
+            status_counts={"ok": 2},
+            quality_failure_count=0,
+            top_blocking_reasons=[],
+            observations=["operator reviewed execution market-access ceiling"],
+            proposed_rule_changes=[],
+            receipt_refs=["receipt_exec_a", "receipt_exec_b"],
+        )
+        return promote_lesson_to_rule_change(
+            lesson_draft=draft,
+            rule_target="ceiling.paper_market_access_window_notional",
+            change_kind="threshold",
+            old_value=1000.0,
+            new_value=value,
+            rationale="human reviewed ceiling change with receipt lineage",
+            attester="operator",
+            lesson_doc_ref="docs/lessons/2026-06-18-execution-ceiling.md",
+            state_root=self.root / "rule-changes",
+            receipt_root=self.root / "rule-receipts",
+        )
 
     def test_dry_run_stages_order_without_submission(self) -> None:
         bundle = build_sample_risk_gate_bundle()
@@ -161,6 +191,66 @@ class ExecutionLayerTest(unittest.TestCase):
                 "market-access ledger blocked order request" in event.raw_event.get("reason", "")
                 for event in execution_bundle.snapshot.events
             )
+        )
+        self.assertFalse(execution_bundle.snapshot.execution_allowed)
+
+    def test_market_access_request_limit_cannot_raise_governed_ceiling(self) -> None:
+        bundle = build_sample_risk_gate_bundle()
+        execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+            bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "requested_quantity": 20,
+                "max_order_quantity": 100,
+                "reference_price": 100.0,
+                "market_access_limit": {
+                    "max_window_notional": 10_000.0,
+                    "max_window_order_count": 20,
+                },
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+
+        self.assertEqual(execution_bundle.snapshot.final_status, "blocked_before_submit")
+        self.assertTrue(
+            any(
+                "market-access ledger blocked order request" in event.raw_event.get("reason", "")
+                for event in execution_bundle.snapshot.events
+            )
+        )
+        self.assertFalse(execution_bundle.snapshot.execution_allowed)
+
+    def test_traceable_rule_change_can_raise_market_access_ceiling(self) -> None:
+        change = self.promote_market_access_ceiling(value=5_000.0)
+        bundle = build_sample_risk_gate_bundle()
+        execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+            bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "requested_quantity": 20,
+                "max_order_quantity": 100,
+                "reference_price": 100.0,
+                "market_access_limit": {
+                    "max_window_notional": 10_000.0,
+                    "max_window_order_count": 20,
+                },
+                "market_access_ceiling_rule_root": str(self.root / "rule-changes"),
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+
+        self.assertEqual(execution_bundle.snapshot.final_status, "filled")
+        receipt = next((self.root / "receipts").glob("*.json"))
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(payload["limit_evidence"]["enforced_cap"], 5000.0)
+        self.assertTrue(payload["limit_evidence"]["cap_invariant_holds"])
+        self.assertEqual(
+            payload["limit_evidence"]["provenance"]["source_id"],
+            change.rule_change_id,
         )
         self.assertFalse(execution_bundle.snapshot.execution_allowed)
 

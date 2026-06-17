@@ -46,7 +46,8 @@ OKX live writes require all of the following:
 - command routed through `task okx:live-write`
 - written thesis via `--thesis`
 - `--attester` and `--reason`
-- bounded notional under `--max-notional`
+- bounded notional under the governed ceiling; `--max-notional` is only a
+  per-request tightening limit
 - behavior guard allowing the request
 - interactive confirmation unless `--yes` is used
 

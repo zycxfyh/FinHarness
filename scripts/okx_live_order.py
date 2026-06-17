@@ -13,6 +13,8 @@ Usage:
         --attester "<name>" --reason "<written-plan ref>" --thesis \
         [--max-notional N] [--dry-run] [--yes]
 
+--max-notional is a per-request tightening limit. It cannot raise the governed
+ceiling resolved by finharness.okx_live_gate.
 --dry-run assesses and prints the decision without touching the broker.
 --yes skips the interactive prompt (discouraged; for non-interactive contexts).
 """
@@ -45,7 +47,12 @@ def _parse(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="assert a written thesis (entry/invalidation/size/max-loss) exists",
     )
-    parser.add_argument("--max-notional", type=float, default=DEFAULT_MAX_LIVE_NOTIONAL)
+    parser.add_argument(
+        "--max-notional",
+        type=float,
+        default=DEFAULT_MAX_LIVE_NOTIONAL,
+        help="per-request notional limit; can only tighten the governed ceiling",
+    )
     parser.add_argument("--minutes-since-last-trade", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--yes", action="store_true")
@@ -60,7 +67,7 @@ def _build_request(ns: argparse.Namespace, order_args: list[str]) -> LiveOrderRe
         attester=ns.attester,
         reason=ns.reason,
         has_written_thesis=ns.thesis,
-        max_notional=ns.max_notional,
+        request_limit=ns.max_notional,
         minutes_since_last_trade=ns.minutes_since_last_trade,
     )
 
@@ -75,7 +82,13 @@ def _print_decision(request: LiveOrderRequest, decision) -> None:
                 "attester": request.attester,
                 "reason": request.reason,
                 "notional": decision.notional,
-                "max_notional": decision.max_notional,
+                "request_limit": decision.request_limit,
+                "configured_ceiling": decision.configured_ceiling,
+                "effective_ceiling": decision.effective_ceiling,
+                "enforced_cap": decision.enforced_cap,
+                "request_limit_clamped_to_ceiling": (
+                    decision.request_limit_clamped_to_ceiling
+                ),
                 "guard_level": decision.guard_level,
                 "allowed": decision.allowed,
                 "blocking_reasons": decision.blocking_reasons,
@@ -89,9 +102,11 @@ def _print_decision(request: LiveOrderRequest, decision) -> None:
 def _confirm_interactively(request: LiveOrderRequest) -> bool:
     phrase = f"CONFIRM {request.action} {request.module}"
     command = f"okx --live {request.module} {request.action} {' '.join(request.args)}"
+    decision = assess_live_order(request)
     print("\n=== LIVE ORDER CONFIRMATION ===", file=sys.stderr)
     print(f"  {command}", file=sys.stderr)
-    print(f"  notional cap: {request.max_notional}", file=sys.stderr)
+    print(f"  request limit: {request.request_limit}", file=sys.stderr)
+    print(f"  enforced cap: {decision.enforced_cap}", file=sys.stderr)
     print(f"  attester: {request.attester} | reason: {request.reason}", file=sys.stderr)
     print(f'Type exactly "{phrase}" to place this live order: ', end="", file=sys.stderr)
     try:

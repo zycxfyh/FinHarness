@@ -62,6 +62,7 @@ class ControlCertification(BaseModel):
     review_cadence_days: int
     next_review_due_utc: str
     controls_in_force: list[str] = Field(default_factory=list)
+    authorized_ceilings: dict[str, float] = Field(default_factory=dict)
     baseline_passed: bool
     baseline_evidence: dict[str, Any]
     status: Literal["certified", "not_certified"]
@@ -94,6 +95,7 @@ def certify_controls(
     baseline_passed: bool,
     baseline_evidence: dict[str, Any],
     controls_in_force: list[str] | None = None,
+    authorized_ceilings: dict[str, float] | None = None,
     state_root: Path | None = None,
     receipt_root: Path | None = None,
     created_at_utc: str | None = None,
@@ -121,6 +123,7 @@ def certify_controls(
         review_cadence_days=review_cadence_days,
         next_review_due_utc=next_due.isoformat(),
         controls_in_force=controls_in_force or list(CONTROL_BASELINE_INVARIANTS),
+        authorized_ceilings=authorized_ceilings or {},
         baseline_passed=baseline_passed,
         baseline_evidence=baseline_evidence,
         status="certified" if baseline_passed else "not_certified",

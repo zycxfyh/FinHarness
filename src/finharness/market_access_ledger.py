@@ -83,6 +83,14 @@ class MarketAccessDecision(BaseModel):
     used_order_count: int
     remaining_orders_after: int
     blocking_reasons: list[str] = Field(default_factory=list)
+    configured_ceiling: float | None = None
+    effective_ceiling: float | None = None
+    ceiling_provenance: dict[str, Any] | None = None
+    ignored_ceiling_changes: list[str] = Field(default_factory=list)
+    request_limit: float | None = None
+    enforced_cap: float | None = None
+    request_limit_clamped_to_ceiling: bool = False
+    cap_invariant_holds: bool = True
     execution_allowed: Literal[False] = False
 
 
@@ -191,6 +199,7 @@ def evaluate_market_access(
     limit: MarketAccessLimit | None,
     ledger: list[LedgerEntry],
     now: datetime | str | None = None,
+    limit_evidence: dict[str, Any] | None = None,
 ) -> MarketAccessDecision:
     """Read-only aggregate market-access check."""
     current_window = window_id(now)
@@ -229,6 +238,30 @@ def evaluate_market_access(
         used_order_count=used_count,
         remaining_orders_after=max(0, remaining_orders_after),
         blocking_reasons=blocking,
+        configured_ceiling=(
+            limit_evidence.get("configured_ceiling") if limit_evidence else None
+        ),
+        effective_ceiling=(
+            limit_evidence.get("effective_ceiling") if limit_evidence else None
+        ),
+        ceiling_provenance=(
+            limit_evidence.get("provenance") if limit_evidence else None
+        ),
+        ignored_ceiling_changes=(
+            list(limit_evidence.get("ignored", [])) if limit_evidence else []
+        ),
+        request_limit=limit_evidence.get("request_limit") if limit_evidence else None,
+        enforced_cap=limit_evidence.get("enforced_cap") if limit_evidence else None,
+        request_limit_clamped_to_ceiling=bool(
+            limit_evidence.get("request_limit_clamped_to_ceiling", False)
+        )
+        if limit_evidence
+        else False,
+        cap_invariant_holds=bool(
+            limit_evidence.get("cap_invariant_holds", True)
+        )
+        if limit_evidence
+        else True,
     )
 
 
@@ -239,6 +272,7 @@ def record_consumption(
     ledger: list[LedgerEntry] | None = None,
     now: datetime | str | None = None,
     limit: MarketAccessLimit | None = None,
+    limit_evidence: dict[str, Any] | None = None,
     source_ref: str | None = None,
     state_root: str | Path | None = None,
     receipt_root: str | Path | None = None,
@@ -281,6 +315,7 @@ def record_consumption(
             "remaining_orders": remaining_orders,
         },
         "limit": limit.model_dump(mode="json") if limit is not None else None,
+        "limit_evidence": limit_evidence,
         "not_claimed": [
             "Not execution authorization.",
             "Not legal or regulatory compliance certification.",

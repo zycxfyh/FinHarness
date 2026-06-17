@@ -9,7 +9,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from finharness.market_access_ledger import MarketAccessLedgerError, record_consumption
+from finharness.lesson_loop import LessonDraft
+from finharness.market_access_ledger import (
+    MarketAccessLedgerError,
+    MarketAccessLimit,
+    record_consumption,
+)
 from finharness.okx_cli import OkxCliError, OkxCliResult
 from finharness.okx_live_gate import (
     DEFAULT_LIVE_MARKET_ACCESS_LIMIT,
@@ -20,6 +25,7 @@ from finharness.okx_live_gate import (
     market_access_key_for_live_order,
     order_notional,
 )
+from finharness.rule_change_ledger import promote_lesson_to_rule_change
 from finharness.trading_state_store import (
     TradingStateRecord,
     load_trading_state,
@@ -35,22 +41,53 @@ def _request(**overrides):
         "attester": "operator",
         "reason": "written plan ref docs/plan.md",
         "has_written_thesis": True,
-        "max_notional": 50.0,
+        "request_limit": 50.0,
     }
     base.update(overrides)
     return LiveOrderRequest(**base)
+
+
+def _draft() -> LessonDraft:
+    return LessonDraft(
+        draft_id="lesson_draft_okx_ceiling",
+        created_at_utc="2026-06-18T00:00:00+00:00",
+        window_days=14,
+        receipts_scanned=2,
+        sources=["data/receipts/okx-live"],
+        status_counts={"ok": 2},
+        quality_failure_count=0,
+        top_blocking_reasons=[],
+        observations=["operator reviewed OKX ceiling"],
+        proposed_rule_changes=[],
+        receipt_refs=["receipt_okx_a", "receipt_okx_b"],
+    )
+
+
+def _promote_ceiling(rule_state: Path, receipt_root: Path, *, target: str, value: float):
+    return promote_lesson_to_rule_change(
+        lesson_draft=_draft(),
+        rule_target=target,
+        change_kind="threshold",
+        old_value=50.0,
+        new_value=value,
+        rationale="human reviewed ceiling change with receipt lineage",
+        attester="operator",
+        lesson_doc_ref="docs/lessons/2026-06-18-okx-ceiling.md",
+        state_root=rule_state,
+        receipt_root=receipt_root,
+    )
 
 
 class OkxLiveGateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "trading-state.json"
-        root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name)
         self.env_patch = mock.patch.dict(
             os.environ,
             {
-                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
-                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(self.root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(self.root / "receipts"),
             },
         )
         self.env_patch.start()
@@ -98,7 +135,74 @@ class OkxLiveGateTests(unittest.TestCase):
         req = _request(args=["--sz", "1000", "--px", "100"])  # 100000 > 50
         decision = assess_live_order(req, state_path=self.path)
         self.assertFalse(decision.allowed)
-        self.assertTrue(any("exceeds cap" in r for r in decision.blocking_reasons))
+        self.assertTrue(any("exceeds enforced cap" in r for r in decision.blocking_reasons))
+
+    def test_request_limit_cannot_raise_live_ceiling_without_lineage(self) -> None:
+        req = _request(
+            args=["--instId", "BTC-USDT-SWAP", "--sz", "0.6", "--px", "100"],
+            request_limit=10_000.0,
+        )
+
+        decision = assess_live_order(
+            req,
+            state_path=self.path,
+            market_access_limit=MarketAccessLimit(
+                max_window_notional=10_000.0,
+                max_window_order_count=10,
+            ),
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.enforced_cap, 50.0)
+        self.assertEqual(decision.effective_ceiling, 50.0)
+        self.assertTrue(decision.request_limit_clamped_to_ceiling)
+        self.assertTrue(decision.cap_invariant_holds)
+        self.assertIsNone(decision.ceiling_provenance)
+        self.assertTrue(any("exceeds enforced cap" in r for r in decision.blocking_reasons))
+
+    def test_traceable_rule_change_can_raise_live_and_market_access_ceiling(
+        self,
+    ) -> None:
+        rule_state = self.root / "rule-changes"
+        rule_receipts = self.root / "rule-receipts"
+        single_cap = _promote_ceiling(
+            rule_state,
+            rule_receipts,
+            target="ceiling.max_live_notional",
+            value=100.0,
+        )
+        aggregate_cap = _promote_ceiling(
+            rule_state,
+            rule_receipts,
+            target="ceiling.live_market_access_window_notional",
+            value=100.0,
+        )
+        req = _request(
+            args=["--instId", "BTC-USDT-SWAP", "--sz", "0.6", "--px", "100"],
+            request_limit=10_000.0,
+        )
+
+        decision = assess_live_order(
+            req,
+            state_path=self.path,
+            ceiling_rule_root=rule_state,
+            market_access_limit=MarketAccessLimit(
+                max_window_notional=10_000.0,
+                max_window_order_count=10,
+            ),
+        )
+
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.enforced_cap, 100.0)
+        self.assertTrue(decision.request_limit_clamped_to_ceiling)
+        self.assertIsNotNone(decision.ceiling_provenance)
+        self.assertEqual(decision.ceiling_provenance["source_id"], single_cap.rule_change_id)
+        self.assertIsNotNone(decision.market_access)
+        self.assertEqual(decision.market_access.enforced_cap, 100.0)
+        self.assertEqual(
+            decision.market_access.ceiling_provenance["source_id"],
+            aggregate_cap.rule_change_id,
+        )
 
     def test_over_aggregate_notional_blocks_even_when_order_cap_passes(self) -> None:
         req = _request(args=["--instId", "BTC-USDT-SWAP", "--sz", "0.01", "--px", "100"])
@@ -147,6 +251,9 @@ class OkxLiveGateTests(unittest.TestCase):
         self.assertEqual(len(receipts), 1)
         payload = json.loads(receipts[0].read_text(encoding="utf-8"))
         self.assertEqual(payload["outcome"], "blocked")
+        self.assertEqual(payload["request"]["request_limit"], 50.0)
+        self.assertEqual(payload["decision"]["enforced_cap"], 50.0)
+        self.assertTrue(payload["decision"]["cap_invariant_holds"])
         # a blocked attempt must not record a trade
         self.assertEqual(load_trading_state(self.path).trades_recorded, 0)
 

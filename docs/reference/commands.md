@@ -84,7 +84,7 @@ need for human attestation.
 | `task okx:live-status` | Read live OKX account/status data. | Read-only. |
 | `task okx:live-read -- account balance` | Run allowlisted live read command. | Read-only allowlist. |
 | `task okx:demo -- swap orders` | Run allowlisted OKX demo command. | Demo mode. |
-| `task okx:live-write -- ...` | Route live write through fail-closed gate. | Requires double env opt-in, attestation, thesis, per-order cap, aggregate market-access ledger, and receipt. |
+| `task okx:live-write -- ...` | Route live write through fail-closed gate. | Requires double env opt-in, attestation, thesis, governed notional ceiling, aggregate market-access ledger, and receipt; CLI request limits can only tighten. |
 
 ## Mature-Wheel Experiments
 

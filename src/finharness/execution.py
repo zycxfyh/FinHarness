@@ -25,6 +25,11 @@ from nautilus_trader.model.orders import LimitOrder, MarketOrder
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.authorization import AuthorizationDecision, authorize
+from finharness.effective_ceilings import (
+    CeilingResolutionError,
+    EnforcedCap,
+    enforce_request_limit,
+)
 from finharness.market_access_ledger import (
     MarketAccessKey,
     MarketAccessLedgerError,
@@ -44,6 +49,7 @@ DEFAULT_PAPER_MARKET_ACCESS_LIMIT = MarketAccessLimit(
     max_window_notional=1000.0,
     max_window_order_count=20,
 )
+PAPER_MARKET_ACCESS_CEILING_FIELD = "paper_market_access_window_notional"
 
 ExecutionAdapterMode = Literal["dry_run", "paper", "live"]
 ExecutionStatus = Literal[
@@ -116,6 +122,8 @@ class ExecutionContext(BaseModel):
     market_access_limit: MarketAccessLimit | None = Field(
         default_factory=lambda: DEFAULT_PAPER_MARKET_ACCESS_LIMIT
     )
+    market_access_ceiling_rule_root: str | None = None
+    market_access_ceiling_certification_root: str | None = None
 
 
 class ExecutionIntent(BaseModel):
@@ -681,6 +689,42 @@ def authorization_for_execution_context(context: ExecutionContext) -> Authorizat
     )
 
 
+def market_access_limit_for_execution_context(
+    context: ExecutionContext,
+) -> tuple[MarketAccessLimit, EnforcedCap]:
+    requested_notional = (
+        context.market_access_limit.max_window_notional
+        if context.market_access_limit is not None
+        else None
+    )
+    cap = enforce_request_limit(
+        field=PAPER_MARKET_ACCESS_CEILING_FIELD,
+        default_ceiling=DEFAULT_PAPER_MARKET_ACCESS_LIMIT.max_window_notional,
+        request_limit=requested_notional,
+        rule_change_root=Path(context.market_access_ceiling_rule_root)
+        if context.market_access_ceiling_rule_root
+        else None,
+        certification_root=Path(context.market_access_ceiling_certification_root)
+        if context.market_access_ceiling_certification_root
+        else None,
+    )
+    requested_count = (
+        context.market_access_limit.max_window_order_count
+        if context.market_access_limit is not None
+        else DEFAULT_PAPER_MARKET_ACCESS_LIMIT.max_window_order_count
+    )
+    return (
+        MarketAccessLimit(
+            max_window_notional=cap.enforced_cap,
+            max_window_order_count=min(
+                requested_count,
+                DEFAULT_PAPER_MARKET_ACCESS_LIMIT.max_window_order_count,
+            ),
+        ),
+        cap,
+    )
+
+
 def collect_execution_events(
     *,
     context: ExecutionContext,
@@ -699,14 +743,27 @@ def collect_execution_events(
     for request in order_requests:
         notional = request.quantity * request.reference_price
         try:
+            effective_market_access_limit, market_access_cap = (
+                market_access_limit_for_execution_context(context)
+            )
+        except CeilingResolutionError as exc:
+            events.append(
+                blocked_event(
+                    "market-access notional ceiling could not be resolved; "
+                    f"refusing fail-closed: {exc}"
+                )
+            )
+            continue
+        try:
             market_access = evaluate_market_access(
                 key=market_access_key_for_order_request(
                     context=context,
                     request=request,
                 ),
                 notional=notional,
-                limit=context.market_access_limit,
+                limit=effective_market_access_limit,
                 ledger=load_market_access_ledger(),
+                limit_evidence=market_access_cap.as_receipt_dict(),
             )
         except MarketAccessLedgerError as exc:
             events.append(
@@ -731,7 +788,8 @@ def collect_execution_events(
                     request=request,
                 ),
                 notional=notional,
-                limit=context.market_access_limit,
+                limit=effective_market_access_limit,
+                limit_evidence=market_access_cap.as_receipt_dict(),
                 source_ref=request.order_request_id,
             )
         except MarketAccessLedgerError as exc:

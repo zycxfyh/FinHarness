@@ -146,10 +146,19 @@ Location: `data/receipts/okx-live/`
 | `request.attester` | `str` | Human attester. |
 | `request.reason` | `str` | Written reason or plan ref. |
 | `request.has_written_thesis` | `bool` | Whether operator asserted a written thesis exists. |
-| `request.max_notional` | `float` | Per-request notional cap. |
+| `request.request_limit` | `float` | Per-request notional limit; can only tighten the governed ceiling. |
 | `decision.allowed` | `bool` | Whether the live gate allowed the request. |
 | `decision.guard_level` | `str` | Behavioral guard state. |
 | `decision.notional` | `float | None` | Computed order notional. |
+| `decision.configured_ceiling` | `float | None` | Human-owned default ceiling for live notional. |
+| `decision.effective_ceiling` | `float | None` | Ceiling after traceable `ceiling.*` rule changes or owner certifications. |
+| `decision.ceiling_provenance` | `dict[str, Any] | None` | Rule-change or owner-certification source that set the effective ceiling. |
+| `decision.ignored_ceiling_changes` | `list[str]` | Ceiling changes ignored because they were not valid governed sources. |
+| `decision.request_limit` | `float` | Per-request tightening limit. |
+| `decision.enforced_cap` | `float | None` | Actual cap used for the live notional check: `min(request_limit, effective_ceiling)`. |
+| `decision.request_limit_clamped_to_ceiling` | `bool` | Whether the request tried to exceed the effective ceiling and was clamped. |
+| `decision.cap_invariant_holds` | `bool` | Always expected true: `enforced_cap <= effective_ceiling`. |
+| `decision.market_access_cap` | `dict[str, Any] | None` | Governed aggregate market-access ceiling evidence. |
 | `decision.market_access` | `MarketAccessDecision | None` | Aggregate daily limit decision; never execution authority. |
 | `decision.blocking_reasons` | `list[str]` | Gate blockers. |
 | `decision.guard_reasons` | `list[str]` | Behavioral guard reasons. |
@@ -209,6 +218,12 @@ Location: `data/receipts/market-access-ledger/`
 | `window_usage_after.remaining_notional` | `float | None` | Remaining configured notional after this entry. |
 | `window_usage_after.remaining_orders` | `int | None` | Remaining configured order count after this entry. |
 | `limit` | `MarketAccessLimit | None` | Limit used when recording the receipt. |
+| `limit_evidence.configured_ceiling` | `float | None` | Human-owned default aggregate notional ceiling. |
+| `limit_evidence.effective_ceiling` | `float | None` | Aggregate ceiling after traceable `ceiling.*` rule changes or owner certifications. |
+| `limit_evidence.provenance` | `dict[str, Any] | None` | Rule-change or owner-certification source for the effective aggregate ceiling. |
+| `limit_evidence.request_limit` | `float | None` | Per-request aggregate limit; can only tighten. |
+| `limit_evidence.enforced_cap` | `float | None` | Actual aggregate notional cap used by the ledger. |
+| `limit_evidence.cap_invariant_holds` | `bool | None` | Expected true when present: `enforced_cap <= effective_ceiling`. |
 | `not_claimed` | `list[str]` | Explicit non-claims: no execution authorization, no compliance certification, no investment advice. |
 | `execution_allowed` | `bool` | Always `false`; the ledger never grants order authority. |
 | `content_hash` | `str` | Hash of the receipt payload. |
@@ -275,6 +290,7 @@ Location: `data/receipts/control-certifications/`
 | `certification.review_cadence_days` | `int` | Review cadence in days. |
 | `certification.next_review_due_utc` | `str` | Next due date for owner review. |
 | `certification.controls_in_force` | `list[str]` | Baseline invariant ids/titles. |
+| `certification.authorized_ceilings` | `dict[str, float]` | Optional explicit `ceiling.*` values authorized by this named-owner receipt. |
 | `certification.baseline_passed` | `bool` | Whether the baseline guard tests passed. |
 | `certification.baseline_evidence` | `dict[str, Any]` | Test modules, counts, return code, and output tails. |
 | `certification.status` | `Literal["certified", "not_certified"]` | Honest certification status. |
