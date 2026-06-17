@@ -7,6 +7,12 @@ bottom rung (a single in-sample MA-crossover screen that can currently be labele
 value claim. See [07 Final Merged Plan](industry-benchmark/07-final-merged-plan.md)
 and gap **G01/G03**.
 
+> **G01 is not an edge-discovery engine; it is an edge-*claim* validation and
+> overclaim-prevention ladder.** "supported" means empirical support on this
+> data, at this rung — never "edge proven", never B, never execution authority.
+> Alpha/edge is not a B predicate; the edge claim is a reviewable C-object. See
+> [ADR: Alpha is not B](../adr/2026-06-17-alpha-is-not-b-g01-is-an-overclaim-prevention-ladder.md).
+
 **No new production dependency** for the core (OOS, walk-forward, PSR, gating).
 The full Deflated Sharpe refinement needs the already-installed `scipy` declared
 direct — a small, separate decision flagged in §9. CPCV/`mlfinlab` is deferred.
@@ -80,6 +86,12 @@ Invariant tests must prove: **`in_sample` can never yield `supported`**, and a
 higher-rung `supported` always has the corresponding cleared metric in the
 receipt. `supports_hypothesis = result == "supported"`,
 `disconfirms_hypothesis = result == "weakened"` (mutually exclusive) stays.
+
+**Minimum-trade gate (calibration).** A `supported` verdict additionally requires
+`trade_count >= MIN_SUPPORTED_TRADES` (currently 5). A result with fewer trades is
+too thin to be more than luck and is capped at `inconclusive` (insufficient
+evidence, not negative evidence). This was added after the first real ladder climb
+(2026-06-17) labeled a **1-trade** OOS/walk-forward result `supported`.
 
 ## 3. New module `src/finharness/research_rigor.py` (pure, no new dep)
 

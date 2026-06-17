@@ -846,6 +846,12 @@ def backtest_window(history: Any) -> str:
         return "unknown_window"
 
 
+# A "supported" verdict needs enough trades to be more than luck. Below this the
+# result is too thin to support a hypothesis — it is capped at "inconclusive"
+# (insufficient evidence), never "supported". A 1-trade backtest is not support.
+MIN_SUPPORTED_TRADES = 5
+
+
 def map_backtest_result(
     *,
     rung: str,
@@ -874,6 +880,7 @@ def map_backtest_result(
             oos_test_return is not None
             and oos_test_return >= 0.02
             and oos_test_consistent
+            and trade_count >= MIN_SUPPORTED_TRADES
         ):
             return "supported"
         return "inconclusive"
@@ -883,6 +890,7 @@ def map_backtest_result(
             and walk_forward_mean_test_return is not None
             and walk_forward_frac_folds_positive >= 0.6
             and walk_forward_mean_test_return >= 0.0
+            and trade_count >= MIN_SUPPORTED_TRADES
         ):
             return "supported"
         if (
@@ -898,6 +906,7 @@ def map_backtest_result(
             trial_discount_method == "deflated_sharpe"
             and trial_psr_gt_zero is not None
             and trial_psr_gt_zero >= 0.95
+            and trade_count >= MIN_SUPPORTED_TRADES
         ):
             return "supported"
         return "inconclusive"

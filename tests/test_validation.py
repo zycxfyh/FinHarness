@@ -317,10 +317,12 @@ class ValidationLayerTest(unittest.TestCase):
         )
 
     def test_walk_forward_and_trial_discount_mapping_respect_rungs(self) -> None:
+        # G01 calibration: "supported" needs >= MIN_SUPPORTED_TRADES trades; this
+        # case clears the fold bar with enough trades to count as support.
         self.assertEqual(
             validation.map_backtest_result(
                 rung="walk_forward",
-                trade_count=3,
+                trade_count=8,
                 walk_forward_frac_folds_positive=0.75,
                 walk_forward_mean_test_return=0.01,
             ),
@@ -335,6 +337,44 @@ class ValidationLayerTest(unittest.TestCase):
                 trial_discount_method="psr_only",
             ),
             "inconclusive",
+        )
+
+    def test_low_trade_count_cannot_be_supported(self) -> None:
+        # G01 calibration: a thin result (few trades) is not support — it is
+        # capped at "inconclusive", even when every other support bar clears.
+        # Caught by the first real ladder climb (2026-06-17): a 1-trade SPY OOS
+        # and walk-forward result was wrongly labeled "supported". See the
+        # alpha-is-not-B ADR.
+        for trades in range(validation.MIN_SUPPORTED_TRADES):
+            self.assertEqual(
+                validation.map_backtest_result(
+                    rung="out_of_sample",
+                    trade_count=trades,
+                    oos_test_return=0.10,
+                    oos_test_consistent=True,
+                    oos_test_trade_count=trades,
+                ),
+                "not_testable" if trades == 0 else "inconclusive",
+            )
+            self.assertEqual(
+                validation.map_backtest_result(
+                    rung="walk_forward",
+                    trade_count=trades,
+                    walk_forward_frac_folds_positive=0.9,
+                    walk_forward_mean_test_return=0.05,
+                ),
+                "not_testable" if trades == 0 else "inconclusive",
+            )
+        # At the threshold, support is allowed again.
+        self.assertEqual(
+            validation.map_backtest_result(
+                rung="out_of_sample",
+                trade_count=validation.MIN_SUPPORTED_TRADES,
+                oos_test_return=0.10,
+                oos_test_consistent=True,
+                oos_test_trade_count=validation.MIN_SUPPORTED_TRADES,
+            ),
+            "supported",
         )
 
     def test_vectorbt_provider_can_emit_walk_forward_rung(self) -> None:
