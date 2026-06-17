@@ -13,6 +13,7 @@ from finharness.execution import (
     ExecutionOrderRequest,
     ExecutionSourceSpec,
     FakePaperExecutionAdapter,
+    authorization_for_execution_context,
     blocked_event,
     build_execution_intents,
     build_order_requests,
@@ -79,6 +80,9 @@ def source_config_node(state: ExecutionGraphState) -> ExecutionGraphState:
             "execution_adapter": state.get("execution_adapter", "nautilus"),
             "operator_execute": context.operator_execute,
             "live_execution_allowed": context.live_execution_allowed,
+            "operator_id": context.operator_id,
+            "account_id": context.account_id,
+            "authorization_scope": context.authorization_scope,
             "routing_policy": context.routing_policy,
             "research_asset_context": compact_research_asset_context(
                 state.get("research_asset_context"), "L9"
@@ -144,6 +148,7 @@ def pre_submit_check_node(state: ExecutionGraphState) -> ExecutionGraphState:
         bool(state.get("intents"))
         and context.human_review_attested
         and 0 < context.requested_quantity <= context.max_order_quantity
+        and authorization_for_execution_context(context).allowed
     )
     return {
         "pre_submit_check": {
@@ -152,6 +157,7 @@ def pre_submit_check_node(state: ExecutionGraphState) -> ExecutionGraphState:
             "requested_quantity": context.requested_quantity,
             "max_order_quantity": context.max_order_quantity,
             "intent_count": len(state.get("intents", [])),
+            "authorization_allowed": authorization_for_execution_context(context).allowed,
         }
     }
 
@@ -258,6 +264,15 @@ def snapshot_node(state: ExecutionGraphState) -> ExecutionGraphState:
         )
     if context.requested_mode != "live" and not intents and not events:
         events = [blocked_event("no approved Risk Gate decisions available")]
+    elif context.requested_mode != "live" and intents and not order_requests and not events:
+        authorization = authorization_for_execution_context(context)
+        reason = (
+            "authorization blocked order request: "
+            + "; ".join(authorization.blocking_reasons)
+            if not authorization.allowed
+            else "pre-submit checks blocked order request"
+        )
+        events = [blocked_event(reason)]
     elif context.requested_mode != "live" and intents and not order_requests and not events:
         events = [blocked_event("pre-submit checks blocked order request")]
     bundle = persist_execution_bundle(

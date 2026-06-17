@@ -16,12 +16,20 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from finharness.authorization import AuthorizationDecision, authorize
 from finharness.market_data import ROOT, display_path, sha256_text
 from finharness.portfolio_risk import (
     RiskfolioAllocationSummary,
     concentration_request_from_allocation,
 )
 from finharness.proposal import ProposalCandidate, ProposalSnapshot
+from finharness.restricted_symbols import (
+    RestrictedSymbolDecision,
+    TradabilityDecision,
+    TradabilityProvider,
+    is_restricted,
+    tradability_for_symbol,
+)
 
 RISK_GATE_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "risk-gates"
 RISK_GATE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "risk-gates"
@@ -123,6 +131,15 @@ class RiskGateContext(BaseModel):
     hard_stop_consecutive_losses: int = 3
     behavior_reset_required: bool = False
     scenario_review_present: bool = True
+    operator_id: str = "paper_operator"
+    account_id: str = "paper_account"
+    authorization_environment: Literal["paper", "live"] = "paper"
+    authorization_scope: str = "risk_review"
+    authorization_registry_ref: str | None = None
+    restricted_symbols_ref: str | None = None
+    tradability_provider: TradabilityProvider = "not_applicable"
+    tradability_receipt_ref: str | None = None
+    manual_tradability: dict[str, bool] = Field(default_factory=dict)
 
 
 class RiskGateCheck(BaseModel):
@@ -154,6 +171,9 @@ class RiskGateDecision(BaseModel):
     checks: list[RiskGateCheck]
     blocking_reasons: list[str]
     required_remediations: list[str]
+    authorization: AuthorizationDecision
+    restricted_symbol: RestrictedSymbolDecision
+    tradability: TradabilityDecision
     paper_review_allowed: bool
     live_execution_allowed: bool = False
     execution_intent: str = "no execution; execution layer is separate"
@@ -380,15 +400,80 @@ def riskfolio_concentration_evidence_refs(
     ]
 
 
+def authorization_for_risk_context(context: RiskGateContext) -> AuthorizationDecision:
+    return authorize(
+        operator_id=context.operator_id.strip(),
+        account_id=context.account_id.strip(),
+        environment=context.authorization_environment,
+        scope=context.authorization_scope.strip(),
+        registry_path=context.authorization_registry_ref,
+    )
+
+
+def restricted_symbol_for_candidate(
+    *,
+    context: RiskGateContext,
+    candidate: ProposalCandidate,
+) -> RestrictedSymbolDecision:
+    return is_restricted(
+        candidate.symbol,
+        restricted_list_path=context.restricted_symbols_ref,
+    )
+
+
+def tradability_for_candidate(
+    *,
+    context: RiskGateContext,
+    candidate: ProposalCandidate,
+) -> TradabilityDecision:
+    return tradability_for_symbol(
+        candidate.symbol,
+        provider=context.tradability_provider,
+        receipt_ref=context.tradability_receipt_ref,
+        manual_tradability=context.manual_tradability,
+    )
+
+
 def candidate_checks(
     *,
     proposal_snapshot: ProposalSnapshot,
     candidate: ProposalCandidate,
     context: RiskGateContext,
     allocation_summary: RiskfolioAllocationSummary | None = None,
+    authorization_decision: AuthorizationDecision | None = None,
+    restricted_symbol_decision: RestrictedSymbolDecision | None = None,
+    tradability_decision: TradabilityDecision | None = None,
 ) -> list[RiskGateCheck]:
     refs = [proposal_snapshot.payload_ref, proposal_snapshot.receipt_ref]
     candidate_language_hits = find_blocked_language(candidate.rationale)
+    authorization = authorization_decision or authorization_for_risk_context(context)
+    restricted_symbol = restricted_symbol_decision or restricted_symbol_for_candidate(
+        context=context,
+        candidate=candidate,
+    )
+    tradability = tradability_decision or tradability_for_candidate(
+        context=context,
+        candidate=candidate,
+    )
+    restricted_check_passed = (
+        not restricted_symbol.restricted and tradability.allowed
+    )
+    restricted_reason = (
+        "symbol is not restricted and provider tradability evidence allows review"
+        if restricted_check_passed
+        else "; ".join(
+            reason
+            for reason in [
+                f"restricted symbol: {restricted_symbol.reason}"
+                if restricted_symbol.restricted
+                else "",
+                f"provider tradability: {tradability.reason}"
+                if not tradability.allowed
+                else "",
+            ]
+            if reason
+        )
+    )
     return [
         check(
             proposal_id=candidate.proposal_id,
@@ -423,6 +508,16 @@ def candidate_checks(
             ),
             reason="Symbol and action type must be allowed by the risk context.",
             evidence_refs=[context.mandate_id],
+        ),
+        check(
+            proposal_id=candidate.proposal_id,
+            check_type="restricted_symbol_check",
+            passed=restricted_check_passed,
+            reason=restricted_reason,
+            evidence_refs=[
+                *restricted_symbol.evidence_refs,
+                *tradability.evidence_refs,
+            ],
         ),
         check(
             proposal_id=candidate.proposal_id,
@@ -494,6 +589,24 @@ def candidate_checks(
         ),
         check(
             proposal_id=candidate.proposal_id,
+            check_type="authorization_check",
+            passed=authorization.allowed,
+            reason=authorization.reason,
+            evidence_refs=[
+                ref
+                for ref in [
+                    authorization.registry_ref,
+                    authorization.registry_version,
+                    f"operator:{authorization.operator_id}",
+                    f"account:{authorization.account_id}",
+                    f"environment:{authorization.environment}",
+                    f"scope:{authorization.scope}",
+                ]
+                if ref
+            ],
+        ),
+        check(
+            proposal_id=candidate.proposal_id,
             check_type="order_language_check",
             passed=not candidate_language_hits,
             reason="Candidate rationale must not contain restricted routing language.",
@@ -527,10 +640,12 @@ def classify_decision(
     if {
         "mandate_check",
         "instrument_permission_check",
+        "restricted_symbol_check",
         "max_notional_check",
         "concentration_check",
         "drawdown_state_check",
         "behavior_reset_check",
+        "authorization_check",
         "order_language_check",
     } & failed_types:
         return "blocked"
@@ -555,11 +670,23 @@ def build_risk_gate_decision(
         candidate=candidate,
         allocation_summary=allocation_summary,
     )
+    authorization_decision = authorization_for_risk_context(effective_context)
+    restricted_symbol_decision = restricted_symbol_for_candidate(
+        context=effective_context,
+        candidate=candidate,
+    )
+    tradability_decision = tradability_for_candidate(
+        context=effective_context,
+        candidate=candidate,
+    )
     checks = candidate_checks(
         proposal_snapshot=proposal_snapshot,
         candidate=candidate,
         context=effective_context,
         allocation_summary=allocation_summary,
+        authorization_decision=authorization_decision,
+        restricted_symbol_decision=restricted_symbol_decision,
+        tradability_decision=tradability_decision,
     )
     decision = classify_decision(candidate=candidate, checks=checks)
     failed_checks = [item for item in checks if item.status == "failed"]
@@ -577,6 +704,9 @@ def build_risk_gate_decision(
         checks=checks,
         blocking_reasons=blocking_reasons,
         required_remediations=required_remediations,
+        authorization=authorization_decision,
+        restricted_symbol=restricted_symbol_decision,
+        tradability=tradability_decision,
         paper_review_allowed=paper_review_allowed,
         live_execution_allowed=False,
         human_review_required=True,

@@ -1,0 +1,36 @@
+{
+  "accounts": [
+    {
+      "account_id": "paper_account",
+      "environment": "paper",
+      "operator_id": "paper_operator",
+      "scopes": [
+        "risk_review",
+        "paper_execution"
+      ],
+      "venue": "paper_review"
+    }
+  ],
+  "non_claims": [
+    "Registry records review-surface authority only.",
+    "Registry stores no credential material.",
+    "Registry is not legal authorization.",
+    "Registry is not execution authorization."
+  ],
+  "operators": [
+    {
+      "display_name": "Paper Review Operator",
+      "environments": [
+        "paper"
+      ],
+      "operator_id": "paper_operator",
+      "scopes": [
+        "risk_review",
+        "paper_execution"
+      ]
+    }
+  ],
+  "registry_version": "local-paper-v1",
+  "schema_version": "finharness.authorization_registry.v1",
+  "updated_at_utc": "2026-06-18T00:00:00+00:00"
+}

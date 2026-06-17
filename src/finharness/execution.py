@@ -24,6 +24,7 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.orders import LimitOrder, MarketOrder
 from pydantic import BaseModel, ConfigDict, Field
 
+from finharness.authorization import AuthorizationDecision, authorize
 from finharness.market_access_ledger import (
     MarketAccessKey,
     MarketAccessLedgerError,
@@ -105,6 +106,11 @@ class ExecutionContext(BaseModel):
     routing_policy: str = "paper adapter; no smart routing"
     allow_fractional: bool = False
     cancel_after_submit: bool = False
+    operator_id: str = "paper_operator"
+    account_id: str = "paper_account"
+    authorization_environment: Literal["paper", "live"] = "paper"
+    authorization_scope: str = "paper_execution"
+    authorization_registry_ref: str | None = None
     market_access_operator: str = "paper_operator"
     market_access_account: str = "paper_account"
     market_access_limit: MarketAccessLimit | None = Field(
@@ -181,6 +187,7 @@ class ExecutionQuality(BaseModel):
     order_request_matches_approved_intent: bool
     raw_adapter_events_preserved: bool
     final_state_present: bool
+    authorization_registered: bool
     receipt_written: bool
     notes: list[str] = Field(default_factory=list)
 
@@ -221,6 +228,7 @@ class ExecutionSnapshot(BaseModel):
     intents: list[ExecutionIntent]
     order_requests: list[ExecutionOrderRequest]
     events: list[ExecutionEvent]
+    authorization: AuthorizationDecision
     quality: ExecutionQuality
     lineage: ExecutionLineage
     payload_ref: str
@@ -585,8 +593,12 @@ def build_order_requests(
     context: ExecutionContext,
     source: ExecutionSourceSpec,
     intents: list[ExecutionIntent],
+    authorization_decision: AuthorizationDecision | None = None,
 ) -> list[ExecutionOrderRequest]:
     requests: list[ExecutionOrderRequest] = []
+    authorization = authorization_decision or authorization_for_execution_context(context)
+    if not authorization.allowed:
+        return requests
     if context.requested_mode == "live":
         return requests
     if context.requested_quantity <= 0 or context.requested_quantity > context.max_order_quantity:
@@ -648,11 +660,24 @@ def market_access_key_for_order_request(
     request: ExecutionOrderRequest,
 ) -> MarketAccessKey:
     return MarketAccessKey(
-        environment="paper",
+        environment="live" if context.requested_mode == "live" else "paper",
         venue="paper_review",
-        operator=context.market_access_operator.strip(),
-        account=context.market_access_account.strip(),
+        operator=context.operator_id.strip() or context.market_access_operator.strip(),
+        account=context.account_id.strip() or context.market_access_account.strip(),
         symbol=request.symbol.upper(),
+    )
+
+
+def authorization_for_execution_context(context: ExecutionContext) -> AuthorizationDecision:
+    environment: Literal["paper", "live"] = (
+        "live" if context.requested_mode == "live" else context.authorization_environment
+    )
+    return authorize(
+        operator_id=context.operator_id.strip(),
+        account_id=context.account_id.strip(),
+        environment=environment,
+        scope=context.authorization_scope.strip(),
+        registry_path=context.authorization_registry_ref,
     )
 
 
@@ -750,10 +775,12 @@ def build_execution_quality(
     intents: list[ExecutionIntent],
     order_requests: list[ExecutionOrderRequest],
     events: list[ExecutionEvent],
+    authorization: AuthorizationDecision | None = None,
     lineage_complete: bool = True,
     receipt_written: bool = True,
 ) -> ExecutionQuality:
     notes: list[str] = []
+    authorization_decision = authorization or authorization_for_execution_context(context)
     risk_gate_lineage_present = bool(
         risk_gate_snapshot.risk_gate_snapshot_id and risk_gate_snapshot.receipt_ref
     )
@@ -793,11 +820,15 @@ def build_execution_quality(
         bool(item.raw_status) and isinstance(item.raw_event, dict) for item in events
     )
     final_state_present = final_status(events) != "not_submitted" or not intents
+    authorization_registered = authorization_decision.allowed
+    if not authorization_registered:
+        notes.extend(authorization_decision.blocking_reasons)
     ok = (
         risk_gate_lineage_present
         and approved_decision_required
         and paper_mode_required
         and live_mode_blocked
+        and authorization_registered
         and human_review_satisfied_when_required
         and idempotency_key_present
         and order_request_matches_approved_intent
@@ -817,6 +848,7 @@ def build_execution_quality(
         order_request_matches_approved_intent=order_request_matches_approved_intent,
         raw_adapter_events_preserved=raw_adapter_events_preserved,
         final_state_present=final_state_present,
+        authorization_registered=authorization_registered,
         receipt_written=receipt_written,
         notes=notes,
     )
@@ -839,13 +871,16 @@ def persist_execution_bundle(
     intents: list[ExecutionIntent],
     order_requests: list[ExecutionOrderRequest],
     events: list[ExecutionEvent],
+    authorization: AuthorizationDecision | None = None,
 ) -> ExecutionBundle:
+    authorization_decision = authorization or authorization_for_execution_context(context)
     quality = build_execution_quality(
         risk_gate_snapshot=input_risk_gate_snapshot,
         context=context,
         intents=intents,
         order_requests=order_requests,
         events=events,
+        authorization=authorization_decision,
         lineage_complete=False,
         receipt_written=False,
     )
@@ -879,6 +914,7 @@ def persist_execution_bundle(
         intents=intents,
         order_requests=order_requests,
         events=events,
+        authorization=authorization_decision,
         lineage_complete=True,
         receipt_written=True,
     )
@@ -895,6 +931,7 @@ def persist_execution_bundle(
         intents=intents,
         order_requests=order_requests,
         events=events,
+        authorization=authorization_decision,
         quality=quality,
         lineage=lineage,
         payload_ref=str(payload_path),
@@ -920,6 +957,7 @@ def persist_execution_bundle(
             "permission": "paper only",
             "adapter": source.adapter_name,
             "mode": context.requested_mode,
+            "authorization": "registered" if authorization_decision.allowed else "blocked",
             "live_execution": "blocked",
         },
         snapshot=snapshot,
@@ -953,6 +991,7 @@ def build_execution_bundle_from_risk_gate_snapshot(
         if isinstance(context, ExecutionContext)
         else ExecutionContext.model_validate(context or {})
     )
+    authorization_decision = authorization_for_execution_context(execution_context)
     execution_source = (
         source
         if isinstance(source, ExecutionSourceSpec)
@@ -970,6 +1009,12 @@ def build_execution_bundle_from_risk_gate_snapshot(
                 "config": {
                     "operator_execute": execution_context.operator_execute,
                     "live_execution_allowed": execution_context.live_execution_allowed,
+                    "operator_id": execution_context.operator_id,
+                    "account_id": execution_context.account_id,
+                    "authorization_scope": execution_context.authorization_scope,
+                    "authorization_registry_ref": (
+                        authorization_decision.registry_ref
+                    ),
                 },
             }
         )
@@ -988,6 +1033,7 @@ def build_execution_bundle_from_risk_gate_snapshot(
             context=execution_context,
             source=execution_source,
             intents=intents,
+            authorization_decision=authorization_decision,
         )
         events = collect_execution_events(
             context=execution_context,
@@ -997,7 +1043,13 @@ def build_execution_bundle_from_risk_gate_snapshot(
         if not intents:
             events = [blocked_event("no approved Risk Gate decisions available")]
         elif intents and not order_requests:
-            events = [blocked_event("pre-submit checks blocked order request")]
+            reason = (
+                "authorization blocked order request: "
+                + "; ".join(authorization_decision.blocking_reasons)
+                if not authorization_decision.allowed
+                else "pre-submit checks blocked order request"
+            )
+            events = [blocked_event(reason)]
     return persist_execution_bundle(
         source=execution_source,
         input_risk_gate_snapshot=risk_gate_snapshot,
@@ -1005,4 +1057,5 @@ def build_execution_bundle_from_risk_gate_snapshot(
         intents=intents,
         order_requests=order_requests,
         events=events,
+        authorization=authorization_decision,
     )

@@ -105,6 +105,36 @@ class ExecutionLayerTest(unittest.TestCase):
         self.assertIn("submitted_paper", statuses)
         self.assertIn("filled", statuses)
         self.assertTrue(execution_bundle.snapshot.post_trade_handoff)
+        self.assertTrue(execution_bundle.snapshot.authorization.allowed)
+        self.assertEqual(execution_bundle.snapshot.authorization.operator_id, "paper_operator")
+        self.assertEqual(execution_bundle.snapshot.authorization.account_id, "paper_account")
+        self.assertEqual(execution_bundle.snapshot.authorization.scope, "paper_execution")
+        self.assertTrue(execution_bundle.snapshot.quality.authorization_registered)
+        self.assertFalse(execution_bundle.snapshot.execution_allowed)
+
+    def test_unregistered_execution_operator_blocks_before_order_request(self) -> None:
+        bundle = build_sample_risk_gate_bundle()
+        execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+            bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "operator_id": "unknown_operator",
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+
+        self.assertEqual(execution_bundle.snapshot.final_status, "blocked_before_submit")
+        self.assertEqual(execution_bundle.snapshot.order_request_count, 0)
+        self.assertFalse(execution_bundle.snapshot.authorization.allowed)
+        self.assertFalse(execution_bundle.snapshot.quality.authorization_registered)
+        self.assertTrue(
+            any(
+                "authorization blocked order request" in event.raw_event.get("reason", "")
+                for event in execution_bundle.snapshot.events
+            )
+        )
         self.assertFalse(execution_bundle.snapshot.execution_allowed)
 
     def test_paper_execute_blocks_when_aggregate_limit_exceeded(self) -> None:
