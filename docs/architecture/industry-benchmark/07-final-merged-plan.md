@@ -16,11 +16,18 @@ strongest signal in this folder, and a partial answer to the meta-governance gap
 This is a planning artifact. It does not authorize code, dependencies, live
 trading, or compliance.
 
+> **Doctrine banner (2026-06-17 ADR).** "Value" in this document means
+> *verdict/decision quality*, not alpha. Alpha/edge is **not** a B predicate; the
+> edge *claim* is a C-level object the system reviews. "supported" never equals
+> "edge proven" or execution authority. See
+> [ADR: Alpha is not B; G01 is an overclaim-prevention ladder](../../adr/2026-06-17-alpha-is-not-b-g01-is-an-overclaim-prevention-ladder.md).
+
 ## 1. Strategic verdict (the "why")
 
-FinHarness has **A-grade engineering discipline applied to a product whose value
-is not yet proven.** The machinery (governance, receipts, ten layers, loops) is
-more sophisticated than the finance substance it governs.
+FinHarness has **A-grade engineering discipline applied to a product whose
+decision-quality value is not yet exercised.** The machinery (governance,
+receipts, ten layers, loops) is more sophisticated than the finance substance it
+governs.
 
 The reframe that matters: **the control plane is not over-engineering.** Its
 shape — `execution_allowed=false` by default, human-set caps, fail-closed gates,
@@ -59,7 +66,11 @@ Priority bands (merged):
 1. **Research rigor ladder (G01, CRITICAL).** OOS → walk-forward → trial-count +
    Deflated-Sharpe discount in `validation.py` / `BacktestEvidenceProvider`.
    Hard rule: **no `supported` above the rung actually climbed**; receipts record
-   rung + trial count. *This phase decides whether the project has value.*
+   rung + trial count. **G01 is not an edge-discovery engine; it is an
+   edge-*claim* validation and overclaim-prevention ladder.** *This phase
+   exercises whether the validator is trustworthy* (e.g. the first real climb on
+   2026-06-17 pulled a flattering single-rung SPY result back to `inconclusive`
+   at the multiple-testing rung).
 2. **Data validity labels (G02).** Corporate-action adjustment disclosure, a
    second-vendor reconciliation note, and a `data_bias_uncontrolled` stamp on
    research receipts until point-in-time/survivorship is solved.
@@ -113,12 +124,15 @@ From [06-backend-frontend-guidance](06-backend-frontend-guidance-codex.md):
   a product surface carries source refs, a limitation note, a non-claim, and the
   human-review condition.
 
-## 5. The value loop (how we will know it worked)
+## 5. The verdict-quality loop (how we will know it worked)
 
-Judge by externalized decision quality, not graph/receipt count:
+Judge by externalized decision quality and verdict trustworthiness, not
+graph/receipt count and not P&L:
 
-1. A research result survives a higher rung (OOS + Deflated-Sharpe discount)
-   without overclaim — the first *honest* evidence of any edge.
+1. The ladder renders an *honest rung verdict* — including `inconclusive` /
+   `weakened` — and correctly refuses to let in-sample, short-sample, low-trade,
+   or multiple-tested results pass as support. The first honest verdict (in
+   either direction) is the win, not the discovery of an edge.
 2. A named human can see what controls were in force, on a date, with evidence.
 3. Post-trade receipts show whether decisions/executions actually improved.
 4. After the review surface exists, **count the real decisions a human made
