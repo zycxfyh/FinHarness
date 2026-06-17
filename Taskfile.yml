@@ -140,6 +140,16 @@ tasks:
       - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
       - uv run python -m unittest discover -s tests
 
+  api:serve:
+    desc: Serve the read-only local state API
+    cmds:
+      - uv run uvicorn finharness.api.app:app --host 127.0.0.1 --port 8765
+
+  backup:
+    desc: Back up state-core SQLite and receipts without relying on git
+    cmds:
+      - uv run python scripts/backup.py {{.CLI_ARGS}}
+
   experiments:
     desc: Run mature-wheel local backtest experiments
     cmds:
