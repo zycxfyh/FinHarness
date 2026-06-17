@@ -156,6 +156,28 @@ class ValidationLayerTest(unittest.TestCase):
         self.assertTrue(all(result.result == "not_testable" for result in backtests))
         self.assertTrue(all(result.method == VECTORBT_BACKEND for result in backtests))
         self.assertTrue(bundle.snapshot.quality.ok)
+        structural_results = {
+            result.check_type: result
+            for result in non_backtests
+            if result.check_type in {"source_validity", "mechanism", "benchmark_context"}
+        }
+        self.assertEqual(structural_results["source_validity"].result, "linked")
+        self.assertEqual(structural_results["mechanism"].result, "present")
+        self.assertEqual(structural_results["benchmark_context"].result, "present")
+        self.assertFalse(structural_results["source_validity"].supports_hypothesis)
+        self.assertFalse(structural_results["mechanism"].supports_hypothesis)
+        self.assertFalse(structural_results["benchmark_context"].supports_hypothesis)
+        self.assertTrue(
+            all(
+                result.result != "supported"
+                for result in non_backtests
+                if result.check_type in {
+                    "source_validity",
+                    "mechanism",
+                    "benchmark_context",
+                }
+            )
+        )
 
     def test_vectorbt_provider_shapes_backtest_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

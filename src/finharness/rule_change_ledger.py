@@ -1,4 +1,6 @@
-"""B4: lesson -> rule-change lineage, the project's reason-to-exist predicate.
+"""B4 (see docs/reference/glossary.md): lesson -> rule-change lineage.
+
+Project terms B4 and Ordivon are anchored in docs/reference/glossary.md.
 
 lesson_loop.py drafts lessons from receipts but stops at "a human promotes it".
 This module is the missing half: a human promotes a lesson draft into a recorded
@@ -6,12 +8,12 @@ RuleChange that carries lineage back to the lesson and, transitively, to the
 receipts the lesson was derived from. A rule/threshold/checklist change is only
 B4-legitimate if it is traceable to a lesson to receipts.
 
-Shape (Ordivon): the lesson draft is the grounded claim; promotion is a human
-authorization grant (an attester is required, never a default); the RuleChange +
-receipt is the observation record; is_traceable is the closure check. The
-comparator is the human (B-doc section 3): AI drafts, a human promotes. Nothing
-here applies a change automatically — this increment proves lineage, not
-enforcement.
+Shape (Ordivon, see docs/reference/glossary.md): the lesson draft is the
+grounded claim; promotion is a human authorization grant (an attester is
+required, never a default); the RuleChange + receipt is the observation record;
+is_traceable is the closure check. The comparator is the human (B-doc section
+3): AI drafts, a human promotes. Nothing here applies a change automatically —
+this increment proves lineage, not enforcement.
 """
 
 from __future__ import annotations
@@ -70,9 +72,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def is_traceable(change: RuleChange) -> bool:
-    """B4 closure check: a change is legitimate only if it traces to a lesson
-    and, through it, to receipts. A change with no lesson or no receipts is a
-    hand-fed rule change with no evidence behind it."""
+    """B4 closure check (see docs/reference/glossary.md).
+
+    A change is legitimate only if it traces to a lesson and, through it, to
+    receipts. A change with no lesson or no receipts is a hand-fed rule change
+    with no evidence behind it.
+    """
     return bool(
         change.lesson_draft_id
         and change.lesson_doc_ref
@@ -100,7 +105,8 @@ def promote_lesson_to_rule_change(
     Authorization-before-action: an attester and a rationale are mandatory; the
     receipt refs are pulled from the lesson so the change inherits lineage to the
     receipts the lesson was derived from. A change that would not be traceable is
-    refused — B4 does not record evidence-free rule changes.
+    refused — B4 (see docs/reference/glossary.md) does not record evidence-free
+    rule changes.
     """
     if not attester.strip():
         raise RuleChangePromotionError("promotion requires a human attester")
@@ -170,7 +176,7 @@ def trace_rule_change(
     rule_change_id: str, *, state_root: Path | None = None
 ) -> dict[str, Any]:
     """Return the lineage chain: rule_change -> lesson -> receipts. The evidence
-    that B4 holds for one change."""
+    that B4 holds for one change (see docs/reference/glossary.md)."""
     for change in load_rule_changes(state_root):
         if change.rule_change_id == rule_change_id:
             return {
@@ -186,8 +192,11 @@ def trace_rule_change(
 
 
 def audit_untraceable(state_root: Path | None = None) -> list[str]:
-    """Ids of recorded rule changes that fail the B4 lineage check (should be
-    empty; a non-empty result is a governance failure to escalate to a human)."""
+    """Ids of recorded rule changes that fail the B4 lineage check.
+
+    See docs/reference/glossary.md. This should be empty; a non-empty result is a
+    governance failure to escalate to a human.
+    """
     return [
         change.rule_change_id
         for change in load_rule_changes(state_root)

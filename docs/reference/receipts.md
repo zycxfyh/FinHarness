@@ -102,6 +102,7 @@ Most snapshots use the following evidence fields:
 
 | Model | Fields |
 | --- | --- |
+| `ValidationCheckResult` | `check_id: str`; `validation_job_id: str`; `hypothesis_id: str`; `check_type: Literal["source_validity", "mechanism", "event_reaction", "benchmark_context", "disconfirmation", "limitations", "backtest"]`; `result: Literal["supported", "linked", "present", "well_formed", "weakened", "disconfirmed", "inconclusive", "not_testable"]`; `supports_hypothesis: bool`; `disconfirms_hypothesis: bool`; `confidence: Literal["low", "medium", "high", "unknown"]`; `limitations: list[str]` |
 | `AuthorizationDecision` | `allowed: bool`; `operator_id: str`; `account_id: str`; `environment: Literal["paper", "live"]`; `scope: str`; `registry_version: str \| None`; `registry_ref: str \| None`; `reason: str`; `blocking_reasons: list[str]`; `non_claims: list[str]`; `execution_allowed: bool = false` |
 | `RestrictedSymbolDecision` | `symbol: str`; `normalized_symbol: str`; `restricted: bool`; `restricted_list_version: str \| None`; `restricted_list_ref: str \| None`; `reason: str`; `evidence_refs: list[str]` |
 | `TradabilityDecision` | `symbol: str`; `normalized_symbol: str`; `provider: Literal["not_applicable", "alpaca", "okx", "manual"]`; `status: Literal["tradable", "not_tradable", "unknown", "not_applicable"]`; `allowed: bool`; `reason: str`; `source_ref: str \| None`; `evidence_refs: list[str]` |

@@ -40,6 +40,9 @@ VALIDATION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "validations"
 
 ValidationResult = Literal[
     "supported",
+    "linked",
+    "present",
+    "well_formed",
     "weakened",
     "disconfirmed",
     "inconclusive",
@@ -1051,8 +1054,8 @@ def source_validity_result(
             "source_event_count": len(hypothesis.source_event_ids),
             "source_ref_count": len(hypothesis.source_refs),
         },
-        result="supported" if linked else "not_testable",
-        supports_hypothesis=linked,
+        result="linked" if linked else "not_testable",
+        supports_hypothesis=False,
         disconfirms_hypothesis=False,
         confidence="medium" if linked else "low",
         limitations=[
@@ -1080,8 +1083,8 @@ def mechanism_result(
             "mechanism_present": mechanism_present,
             "assumption_count": len(hypothesis.assumptions),
         },
-        result="supported" if mechanism_present else "not_testable",
-        supports_hypothesis=mechanism_present,
+        result="present" if mechanism_present else "not_testable",
+        supports_hypothesis=False,
         disconfirms_hypothesis=False,
         confidence="low",
         limitations=[
@@ -1183,7 +1186,7 @@ def benchmark_context_result(
             "has_qqq_context": "QQQ" in universe,
             "universe": sorted(universe),
         },
-        result="supported" if has_benchmark_context else "not_testable",
+        result="present" if has_benchmark_context else "not_testable",
         supports_hypothesis=False,
         disconfirms_hypothesis=False,
         confidence="medium" if has_benchmark_context else "low",
@@ -1324,6 +1327,9 @@ def build_validation_quality(
             missing.append("limitations")
         if result.result not in {
             "supported",
+            "linked",
+            "present",
+            "well_formed",
             "weakened",
             "disconfirmed",
             "inconclusive",
@@ -1361,14 +1367,23 @@ def build_validation_quality(
         for job in jobs
     )
     benchmark_context_present = any(
-        result.check_type == "benchmark_context" and result.result == "supported"
+        result.check_type == "benchmark_context" and result.result == "present"
         for result in results
     )
     no_blocked_language = not blocked_language_hits
     limitations_present = all(result.limitations for result in results)
     result_not_overclaimed = all(
         result.result
-        in {"supported", "weakened", "disconfirmed", "inconclusive", "not_testable"}
+        in {
+            "supported",
+            "linked",
+            "present",
+            "well_formed",
+            "weakened",
+            "disconfirmed",
+            "inconclusive",
+            "not_testable",
+        }
         and backtest_result_respects_rung(result)
         for result in results
     )

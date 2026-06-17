@@ -172,6 +172,11 @@ tasks:
     cmds:
       - find docs -type f | sort
 
+  vocab:lint:
+    desc: Advisory controlled-vocabulary lint for formal docs and code strings
+    cmds:
+      - uv run python scripts/vocab_lint.py {{.CLI_ARGS}}
+
   smoke:
     desc: Run a minimal Python smoke test
     cmds:

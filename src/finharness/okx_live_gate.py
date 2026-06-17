@@ -184,6 +184,7 @@ def assess_live_order(
     When thresholds are not supplied, the EFFECTIVE thresholds are resolved from
     the rule-change ledger (B4 enforcement): a promoted lesson that tightened a
     guard threshold actually binds here, with provenance back to the rule change.
+    B4 is a project term anchored in docs/reference/glossary.md.
     """
     record = load_trading_state(state_path)
     if thresholds is None:

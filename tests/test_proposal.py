@@ -81,8 +81,8 @@ class ProposalLayerTest(unittest.TestCase):
             method="source_ref_presence_check",
             window="2026",
             metrics={},
-            result="supported",
-            supports_hypothesis=True,
+            result="linked",
+            supports_hypothesis=False,
             disconfirms_hypothesis=False,
             confidence="medium",
             limitations=["Source-link presence does not prove materiality."],
@@ -112,6 +112,67 @@ class ProposalLayerTest(unittest.TestCase):
         self.assertEqual(
             classify_action_type([base, missing_market, backtest]),
             "watch_only",
+        )
+
+    def test_non_backtest_supported_is_not_counted_as_structural_readiness(self) -> None:
+        legacy_source = ValidationCheckResult(
+            check_id="valchk_source",
+            validation_job_id="valjob_1",
+            hypothesis_id="hyp_1",
+            check_type="source_validity",
+            input_refs=["source-ref"],
+            method="source_ref_presence_check",
+            window="2026",
+            metrics={},
+            result="supported",
+            supports_hypothesis=True,
+            disconfirms_hypothesis=False,
+            confidence="medium",
+            limitations=["Legacy receipt value; not empirical support."],
+            created_at_utc="2026-06-15T00:00:00+00:00",
+        )
+        legacy_mechanism = legacy_source.model_copy(
+            update={
+                "check_id": "valchk_mechanism",
+                "check_type": "mechanism",
+                "method": "mechanism_and_assumption_presence_check",
+            }
+        )
+
+        self.assertEqual(
+            classify_action_type([legacy_source, legacy_mechanism]),
+            "watch_only",
+        )
+
+    def test_structural_readiness_uses_explicit_non_empirical_statuses(self) -> None:
+        linked = ValidationCheckResult(
+            check_id="valchk_source",
+            validation_job_id="valjob_1",
+            hypothesis_id="hyp_1",
+            check_type="source_validity",
+            input_refs=["source-ref"],
+            method="source_ref_presence_check",
+            window="2026",
+            metrics={},
+            result="linked",
+            supports_hypothesis=False,
+            disconfirms_hypothesis=False,
+            confidence="medium",
+            limitations=["Source-link presence does not prove materiality."],
+            created_at_utc="2026-06-15T00:00:00+00:00",
+        )
+        present = linked.model_copy(
+            update={
+                "check_id": "valchk_mechanism",
+                "check_type": "mechanism",
+                "method": "mechanism_and_assumption_presence_check",
+                "result": "present",
+            }
+        )
+
+        self.assertEqual(
+            classify_action_type([linked, present]),
+            "paper_trade_candidate",
         )
 
     def test_bundle_persists_proposal_snapshot_and_receipt(self) -> None:

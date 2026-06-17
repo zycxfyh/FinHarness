@@ -20,6 +20,7 @@ from finharness.validation import ValidationCheckResult, ValidationSnapshot
 
 PROPOSAL_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "proposals"
 PROPOSAL_RECEIPT_ROOT = ROOT / "data" / "receipts" / "proposals"
+STRUCTURAL_READY_RESULTS = {"linked", "present", "well_formed"}
 
 ActionType = Literal[
     "watch_only",
@@ -309,14 +310,14 @@ def classify_action_type(results: list[ValidationCheckResult]) -> ActionType:
         result for result in results if result.check_type != "backtest"
     ]
     values = [result.result for result in authority_results]
-    supported = values.count("supported")
+    structural_ready = sum(1 for value in values if value in STRUCTURAL_READY_RESULTS)
     not_testable = values.count("not_testable")
     disconfirmed = values.count("disconfirmed") + values.count("weakened")
     if disconfirmed:
         return "avoid_or_reject"
-    if not_testable > supported:
+    if not_testable > structural_ready:
         return "research_more"
-    if supported >= 2 and not_testable <= 1:
+    if structural_ready >= 2 and not_testable <= 1:
         return "paper_trade_candidate"
     return "watch_only"
 

@@ -85,18 +85,21 @@ ProposalBundle
 disconfirmed or weakened evidence:
   avoid_or_reject
 
-more not_testable than supported:
+more not_testable than structural readiness:
   research_more
 
-at least two supported checks and at most one not_testable check:
+at least two structural readiness checks and at most one not_testable check:
   paper_trade_candidate
 
 otherwise:
   watch_only
 ```
 
-Paper-trade candidate does not mean execution permission. It means the proposal
-is structured enough to request independent risk-gate review.
+Structural readiness means `linked`, `present`, or `well_formed`. Empirical
+`supported` backtest evidence is deliberately not counted as proposal readiness;
+it remains evidence attached to the review packet. Paper-trade candidate does
+not mean execution permission. It means the proposal is structured enough to
+request independent risk-gate review.
 
 ## Workflow
 

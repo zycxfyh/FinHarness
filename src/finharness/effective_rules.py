@@ -1,5 +1,7 @@
 """B4 enforcement: resolve effective guard thresholds from the rule-change ledger.
 
+B4 is a project term anchored in docs/reference/glossary.md.
+
 B4 v1 (rule_change_ledger.py) proved that rule changes carry lineage. This turns
 lineage into enforcement: the guard's effective thresholds are the defaults
 overlaid with any active threshold-kind rule change targeting `guard.<field>`,
