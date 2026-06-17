@@ -9,7 +9,7 @@ from pathlib import Path
 from finharness.backtrader_runner import BacktraderSummary, run_moving_average_backtest
 from finharness.data_entry import (
     QuoteSnapshot,
-    fetch_openbb_quote,
+    fetch_quote_snapshot,
     fetch_yfinance_history,
     write_history_csv,
 )
@@ -37,8 +37,8 @@ def build_risk_note(
         f"# {symbol} Data Entry Risk Note",
         "",
         (
-            "Data sources: OpenBB yfinance provider for quote; yfinance package/Yahoo Finance "
-            "for historical prices. This is not TradingView/TV data."
+            f"Data sources: {quote.provider} for quote; yfinance package/Yahoo Finance for "
+            "historical prices. This is not TradingView/TV data."
         ),
         "",
         "Not investment advice. This note is for engineering and financial education only.",
@@ -85,7 +85,7 @@ def run_data_entry_workflow(
 ) -> dict[str, object]:
     CACHE.mkdir(parents=True, exist_ok=True)
 
-    quote = fetch_openbb_quote(symbol)
+    quote = fetch_quote_snapshot(symbol)
     adjustment = "auto_adjust"
     history = fetch_yfinance_history(symbol, start, end, adjustment=adjustment)
     data_receipt = build_ohlcv_snapshot_from_history(
@@ -142,7 +142,7 @@ def run_data_entry_workflow(
         "history_path": str(history_path.relative_to(ROOT)),
         "risk_note_path": str(note_path.relative_to(ROOT)),
         "data_sources": [
-            "OpenBB yfinance provider for quote",
+            f"{quote.provider} for quote",
             "yfinance package/Yahoo Finance for historical prices",
         ],
         "not_data_source": "TradingView/TV",

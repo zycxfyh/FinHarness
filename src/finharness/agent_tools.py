@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agents import Agent, function_tool
 
-from finharness.data_entry import fetch_openbb_quote, fetch_yfinance_history
+from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,8 +27,8 @@ or live use.
 
 @function_tool
 def get_quote_snapshot(symbol: str) -> dict[str, object]:
-    """Get a quote snapshot through OpenBB's yfinance provider."""
-    quote = fetch_openbb_quote(symbol)
+    """Get a quote snapshot through the default available data provider."""
+    quote = fetch_quote_snapshot(symbol)
     return quote.__dict__
 
 
@@ -107,8 +107,8 @@ finance_research_agent = Agent(
     instructions=(
         "Use tools to fetch data, run backtests, and evaluate risk notes. "
         "Always state that outputs are for education, not investment advice. "
-        "Always disclose that the current history source is yfinance/Yahoo Finance, "
-        "not TradingView/TV."
+        "Always disclose that the current default data source is yfinance/Yahoo Finance, "
+        "not TradingView/TV, and that optional providers are evidence sources only."
     ),
     tools=[
         get_quote_snapshot,

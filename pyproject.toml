@@ -11,7 +11,6 @@ dependencies = [
     "langgraph>=1.2.1",
     "nautilus-trader>=1.227.0",
     "openai-agents>=0.6.1",
-    "openbb>=4.7.1",
     "pandas>=2.2.0",
     "pandas-ta>=0.4.71b0",
     "pandera>=0.20",
@@ -21,6 +20,11 @@ dependencies = [
     "ta-lib>=0.6.8",
     "vectorbt>=1.0.0",
     "yfinance>=0.2.60",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.14",
 ]
 
 [tool.uv]

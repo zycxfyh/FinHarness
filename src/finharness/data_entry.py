@@ -9,7 +9,6 @@ from typing import Any, Literal
 
 import pandas as pd
 import yfinance as yf
-from openbb import obb
 
 
 @dataclass(frozen=True)
@@ -23,8 +22,23 @@ class QuoteSnapshot:
     provider: str
 
 
+class OptionalProviderUnavailable(RuntimeError):
+    """Raised when an optional market-data provider is not installed."""
+
+
+def _openbb_app() -> Any:
+    try:
+        from openbb import obb
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise OptionalProviderUnavailable(
+            "OpenBB is optional and is not installed in the default hardened environment"
+        ) from exc
+    return obb
+
+
 def fetch_openbb_quote(symbol: str) -> QuoteSnapshot:
-    """Fetch a current quote through OpenBB's yfinance provider."""
+    """Fetch a current quote through OpenBB's yfinance provider when installed."""
+    obb = _openbb_app()
     last_error: Exception | None = None
     frame = pd.DataFrame()
 
@@ -62,6 +76,57 @@ def fetch_openbb_quote(symbol: str) -> QuoteSnapshot:
         currency=row.get("currency"),
         provider="openbb:yfinance",
     )
+
+
+def fetch_yfinance_quote(symbol: str) -> QuoteSnapshot:
+    """Fetch a current quote directly through yfinance."""
+    ticker = yf.Ticker(symbol)
+    info: dict[str, Any] = {}
+    fast_info: dict[str, Any] = {}
+
+    try:
+        raw_fast_info = ticker.fast_info
+        fast_info = dict(raw_fast_info.items()) if hasattr(raw_fast_info, "items") else {}
+    except Exception:
+        fast_info = {}
+
+    try:
+        raw_info = ticker.info
+        info = raw_info if isinstance(raw_info, dict) else {}
+    except Exception:
+        info = {}
+
+    last_price = first_positive(
+        fast_info.get("last_price"),
+        fast_info.get("lastPrice"),
+        info.get("currentPrice"),
+        info.get("regularMarketPrice"),
+        info.get("ask"),
+        info.get("bid"),
+        info.get("previousClose"),
+    )
+    previous_close = fast_info.get("previous_close") or info.get("previousClose")
+
+    if last_price is None and previous_close is None:
+        raise ValueError(f"no quote returned for {symbol}")
+
+    return QuoteSnapshot(
+        symbol=str(info.get("symbol") or symbol).upper(),
+        name=info.get("shortName") or info.get("longName"),
+        exchange=info.get("exchange") or fast_info.get("exchange"),
+        last_price=float(last_price) if pd.notna(last_price) else None,
+        previous_close=float(previous_close) if pd.notna(previous_close) else None,
+        currency=info.get("currency") or fast_info.get("currency"),
+        provider="yfinance",
+    )
+
+
+def fetch_quote_snapshot(symbol: str) -> QuoteSnapshot:
+    """Fetch a quote through OpenBB when available, otherwise yfinance."""
+    try:
+        return fetch_openbb_quote(symbol)
+    except OptionalProviderUnavailable:
+        return fetch_yfinance_quote(symbol)
 
 
 def first_positive(*values: Any) -> float | None:

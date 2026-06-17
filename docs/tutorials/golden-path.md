@@ -53,7 +53,7 @@ pandas=2.3.3
 yfinance=1.4.0
 agents=Agent/Runner/function_tool
 deepeval=LLMTestCase
-openbb=App
+openbb=optional-missing
 
 target_top_wheels
 vectorbt=installed
@@ -62,8 +62,10 @@ riskfolio=installed
 quantstats=installed
 ```
 
-Boundary proven: FinHarness is using mature wheels for heavy mechanics. This
-does not make any wheel an authority to trade.
+Boundary proven: FinHarness is using mature wheels for heavy mechanics. OpenBB
+is optional in the default hardened environment because its current dependency
+metadata pins an older `python-multipart`; the default provider path remains
+yfinance/Yahoo Finance. This does not make any wheel an authority to trade.
 
 ## Step 2 - Build Feature Snapshots
 

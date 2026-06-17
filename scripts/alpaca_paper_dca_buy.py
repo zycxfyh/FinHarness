@@ -24,10 +24,22 @@ from pathlib import Path
 from uuid import uuid4
 
 from finharness.alpaca_client import AlpacaPaperClient
+from finharness.market_access_ledger import (
+    MarketAccessKey,
+    MarketAccessLedgerError,
+    MarketAccessLimit,
+    evaluate_market_access,
+    load_market_access_ledger,
+    record_consumption,
+)
 from finharness.trading_guard import TradingState, evaluate_trading_state
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPTS = ROOT / "data" / "receipts" / "alpaca-paper-dca"
+ALPACA_DCA_MARKET_ACCESS_LIMIT = MarketAccessLimit(
+    max_window_notional=1000.0,
+    max_window_order_count=20,
+)
 
 DEFAULT_THESIS = (
     "Basic-investor dollar-cost-averaging into broad-market ETFs on a fixed "
@@ -78,6 +90,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Place the buys. Without this flag, only write dry-run receipts.",
     )
+    parser.add_argument(
+        "--operator",
+        default="",
+        help="Named operator required when --execute consumes market-access budget.",
+    )
     return parser.parse_args()
 
 
@@ -124,6 +141,24 @@ def write_receipt(receipt: dict) -> Path:
     path = RECEIPTS / f"{stamp}-dca-{receipt['plan']['symbol']}.json"
     path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def market_access_key(*, account: dict, operator: str, symbol: str) -> MarketAccessKey:
+    return MarketAccessKey(
+        environment="paper",
+        venue="alpaca",
+        operator=operator.strip(),
+        account=str(account.get("id") or "alpaca_paper_account"),
+        symbol=symbol.upper(),
+    )
+
+
+def bounded_plan_notional(plan: DcaBuyPlan) -> float | None:
+    if plan.notional is not None:
+        return float(plan.notional)
+    if plan.qty is None or plan.latest_price is None:
+        return None
+    return float(Decimal(plan.qty) * Decimal(plan.latest_price))
 
 
 def main() -> int:
@@ -182,16 +217,53 @@ def main() -> int:
         )
         order = None
         error = None
+        market_access = {
+            "evaluated": False,
+            "allowed_within_limit": False,
+            "blocking_reasons": [],
+            "entry_id": None,
+            "execution_allowed": False,
+        }
         if may_execute:
             try:
-                order = place_market_buy(
-                    client,
-                    symbol,
-                    qty=None if use_dollar else args.qty,
-                    notional=args.notional if use_dollar else None,
+                if not args.operator.strip():
+                    raise MarketAccessLedgerError(
+                        "named operator is required before paper execution"
+                    )
+                key = market_access_key(
+                    account=account,
+                    operator=args.operator,
+                    symbol=symbol,
                 )
+                decision = evaluate_market_access(
+                    key=key,
+                    notional=bounded_plan_notional(plan),
+                    limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
+                    ledger=load_market_access_ledger(),
+                )
+                market_access = decision.model_dump(mode="json") | {
+                    "evaluated": True,
+                    "entry_id": None,
+                }
+                if decision.allowed_within_limit:
+                    entry = record_consumption(
+                        key=key,
+                        notional=bounded_plan_notional(plan),
+                        limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
+                        source_ref=f"alpaca_dca_pre_submit:{symbol}",
+                    )
+                    market_access["entry_id"] = entry.entry_id
+                    order = place_market_buy(
+                        client,
+                        symbol,
+                        qty=None if use_dollar else args.qty,
+                        notional=args.notional if use_dollar else None,
+                    )
             except urllib.error.HTTPError as exc:
                 error = exc.read().decode("utf-8", errors="replace")
+            except MarketAccessLedgerError as exc:
+                error = str(exc)
+                market_access["blocking_reasons"] = [str(exc)]
             except Exception as exc:  # noqa: BLE001 - record, do not crash the batch
                 error = str(exc)
 
@@ -208,8 +280,11 @@ def main() -> int:
                 "buying_power": account.get("buying_power"),
             },
             "risk_gate": asdict(guard),
+            "market_access": market_access,
             "execution": {
-                "attempted": may_execute,
+                "attempted": bool(
+                    may_execute and market_access.get("allowed_within_limit")
+                ),
                 "order": order,
                 "error": error,
             },
@@ -223,6 +298,7 @@ def main() -> int:
                 "order_id": order.get("id") if isinstance(order, dict) else None,
                 "order_status": order.get("status") if isinstance(order, dict) else None,
                 "error": error,
+                "market_access": market_access,
             }
         )
 
@@ -233,7 +309,7 @@ def main() -> int:
                 "market_open": market_open,
                 "method": method,
                 "risk_gate": asdict(guard),
-                "executed": may_execute,
+                "executed": any(item["order_id"] for item in results),
                 "buys": results,
                 "not_investment_advice": True,
             },

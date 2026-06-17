@@ -7,8 +7,9 @@ state. This phase makes the disclosure honest; it does **not** fully solve
 survivorship / point-in-time bias (that stays explicitly open). See gap **G02**
 in [07 Final Merged Plan](industry-benchmark/07-final-merged-plan.md).
 
-**No new production dependency** (yfinance `auto_adjust` and OpenBB are already
-present). Reconciliation is best-effort and offline-safe.
+**No new default production dependency** (yfinance `auto_adjust` is already
+present; the OpenBB adapter is optional in the hardened default environment).
+Reconciliation is best-effort and offline-safe.
 
 ## 0. Current state (verified)
 
@@ -35,7 +36,7 @@ present). Reconciliation is best-effort and offline-safe.
 ## 2. Deliverable B — second-source reconciliation (best-effort, offline-safe)
 
 - Add `reconcile_close(symbol, start, end, *, second_provider)` that fetches the
-  same window from a second OpenBB provider and returns
+  same window from a callable second provider or an optional OpenBB provider and returns
   `{provider, second_provider, max_close_divergence_pct, overlap_rows}`.
 - Record it in `MarketDataQuality` via a **new optional field**
   `reconciliation: dict | None = None` (additive — does not change existing
@@ -44,8 +45,8 @@ present). Reconciliation is best-effort and offline-safe.
   second provider yields `reconciliation = {"status": "single_source_unreconciled"}`
   and a `notes` entry — it must **not** set `ok=false` and **not** raise.
   Reconciliation is an evidence-quality signal, not a safety gate.
-- Keep it keyless where possible (OpenBB's keyless providers); if the only second
-  source needs credentials, treat "no credentials" as `single_source_unreconciled`.
+- Keep it keyless where possible; if the optional second source is unavailable or
+  needs credentials, treat "no credentials" as `single_source_unreconciled`.
 
 ## 3. Deliverable C — the `data_bias_uncontrolled` stamp (the core)
 
@@ -65,7 +66,7 @@ data it stands on.
 
 ## 4. Red lines
 
-- **No new production dependency** (yfinance + OpenBB already present).
+- **No new default production dependency** (yfinance present; OpenBB optional).
 - **All disclosure is additive** — new optional fields with defaults on frozen
   pydantic models; do **not** change `MarketDataQuality.ok` semantics, the locked
   `notes` for staleness, or any existing field. Locked data-quality tests stay

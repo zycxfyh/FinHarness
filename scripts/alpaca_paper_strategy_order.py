@@ -14,10 +14,22 @@ from pathlib import Path
 from uuid import uuid4
 
 from finharness.alpaca_client import AlpacaPaperClient
+from finharness.market_access_ledger import (
+    MarketAccessKey,
+    MarketAccessLedgerError,
+    MarketAccessLimit,
+    evaluate_market_access,
+    load_market_access_ledger,
+    record_consumption,
+)
 from finharness.trading_guard import TradingState, evaluate_trading_state
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPTS = ROOT / "data" / "receipts" / "alpaca-paper"
+ALPACA_PAPER_MARKET_ACCESS_LIMIT = MarketAccessLimit(
+    max_window_notional=1000.0,
+    max_window_order_count=20,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         "--execute",
         action="store_true",
         help="Place and cancel the paper order. Without this flag, only write a dry-run receipt.",
+    )
+    parser.add_argument(
+        "--operator",
+        default="",
+        help="Named operator required when --execute consumes market-access budget.",
     )
     return parser.parse_args()
 
@@ -115,6 +132,16 @@ def write_receipt(receipt: dict) -> Path:
     return path
 
 
+def market_access_key(*, account: dict, operator: str, symbol: str) -> MarketAccessKey:
+    return MarketAccessKey(
+        environment="paper",
+        venue="alpaca",
+        operator=operator.strip(),
+        account=str(account.get("id") or "alpaca_paper_account"),
+        symbol=symbol.upper(),
+    )
+
+
 def main() -> int:
     args = parse_args()
     client = AlpacaPaperClient()
@@ -151,30 +178,67 @@ def main() -> int:
     fetched = None
     canceled = None
     open_orders_after = None
+    market_access = {
+        "evaluated": False,
+        "allowed_within_limit": False,
+        "blocking_reasons": [],
+        "entry_id": None,
+        "execution_allowed": False,
+    }
     if args.execute and guard.trade_allowed:
         try:
-            client_order_id = f"finharness-{int(time.time())}-{uuid4().hex[:8]}"
-            order = client.post(
-                "/v2/orders",
-                {
-                    "symbol": plan.symbol,
-                    "qty": plan.qty,
-                    "side": plan.side,
-                    "type": "limit",
-                    "time_in_force": "day",
-                    "limit_price": plan.limit_price,
-                    "client_order_id": client_order_id,
-                },
+            if not args.operator.strip():
+                raise MarketAccessLedgerError(
+                    "named operator is required before paper execution"
+                )
+            key = market_access_key(
+                account=account,
+                operator=args.operator,
+                symbol=plan.symbol,
             )
-            if not isinstance(order, dict) or not order.get("id"):
-                raise RuntimeError(f"Unexpected order response: {order}")
-            fetched = client.get(f"/v2/orders/{order['id']}")
-            canceled = client.delete(f"/v2/orders/{order['id']}")
-            open_orders_after = client.get("/v2/orders?status=open&limit=50")
+            notional = float(plan.risk_budget["max_limit_notional"])
+            decision = evaluate_market_access(
+                key=key,
+                notional=notional,
+                limit=ALPACA_PAPER_MARKET_ACCESS_LIMIT,
+                ledger=load_market_access_ledger(),
+            )
+            market_access = decision.model_dump(mode="json") | {
+                "evaluated": True,
+                "entry_id": None,
+            }
+            if decision.allowed_within_limit:
+                client_order_id = f"finharness-{int(time.time())}-{uuid4().hex[:8]}"
+                entry = record_consumption(
+                    key=key,
+                    notional=notional,
+                    limit=ALPACA_PAPER_MARKET_ACCESS_LIMIT,
+                    source_ref=client_order_id,
+                )
+                market_access["entry_id"] = entry.entry_id
+                order = client.post(
+                    "/v2/orders",
+                    {
+                        "symbol": plan.symbol,
+                        "qty": plan.qty,
+                        "side": plan.side,
+                        "type": "limit",
+                        "time_in_force": "day",
+                        "limit_price": plan.limit_price,
+                        "client_order_id": client_order_id,
+                    },
+                )
+                if not isinstance(order, dict) or not order.get("id"):
+                    raise RuntimeError(f"Unexpected order response: {order}")
+                fetched = client.get(f"/v2/orders/{order['id']}")
+                canceled = client.delete(f"/v2/orders/{order['id']}")
+                open_orders_after = client.get("/v2/orders?status=open&limit=50")
         except urllib.error.HTTPError as exc:
             print(f"alpaca_http_error={exc.code}", file=sys.stderr)
             print(exc.read().decode("utf-8", errors="replace"), file=sys.stderr)
             return 1
+        except MarketAccessLedgerError as exc:
+            market_access["blocking_reasons"] = [str(exc)]
         except Exception as exc:
             print(f"alpaca_error={exc}", file=sys.stderr)
             return 1
@@ -193,8 +257,13 @@ def main() -> int:
             "open_orders_before": len(open_orders_before),
         },
         "risk_gate": asdict(guard),
+        "market_access": market_access,
         "execution": {
-            "attempted": bool(args.execute and guard.trade_allowed),
+            "attempted": bool(
+                args.execute
+                and guard.trade_allowed
+                and market_access.get("allowed_within_limit")
+            ),
             "order": order,
             "fetched": fetched,
             "canceled": canceled,
@@ -206,6 +275,7 @@ def main() -> int:
             "workflow_passed": bool(
                 args.execute
                 and guard.trade_allowed
+                and market_access.get("allowed_within_limit")
                 and isinstance(open_orders_after, list)
                 and len(open_orders_after) == 0
             ),

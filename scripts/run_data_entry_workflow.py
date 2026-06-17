@@ -55,7 +55,10 @@ def main() -> None:
     print(f"risk_note_path={summary['risk_note_path']}")
     print(f"backtest_return={summary['backtest']['total_return']:.2%}")
     print(f"risk_eval_ok={risk_eval['ok']}")
-    print("data_source=OpenBB:yfinance quote + yfinance/Yahoo Finance history; not TradingView/TV")
+    print(
+        f"data_source={summary['quote']['provider']} quote + "
+        "yfinance/Yahoo Finance history; not TradingView/TV"
+    )
 
 
 if __name__ == "__main__":
