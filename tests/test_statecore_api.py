@@ -292,7 +292,7 @@ class StateCoreApiTest(unittest.TestCase):
 
     def test_proposal_db_failure_cleans_orphan_receipt_best_effort(self) -> None:
         with patch(
-            "finharness.api.routes_proposals.write_records",
+            "finharness.statecore.proposals.write_records",
             side_effect=StateCoreStoreError("forced db failure"),
         ):
             response = self.client.post(
@@ -319,7 +319,7 @@ class StateCoreApiTest(unittest.TestCase):
         proposal_id = created.json()["proposal"]["proposal_id"]
 
         with patch(
-            "finharness.api.routes_proposals.write_records",
+            "finharness.statecore.proposals.write_records",
             side_effect=StateCoreStoreError("forced db failure"),
         ):
             response = self.client.post(

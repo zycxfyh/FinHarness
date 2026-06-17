@@ -150,6 +150,11 @@ tasks:
     cmds:
       - uv run python scripts/backup.py {{.CLI_ARGS}}
 
+  cockpit:daily:
+    desc: Build a governed deterministic daily portfolio-change brief
+    cmds:
+      - uv run python scripts/run_daily_change_brief.py {{.CLI_ARGS}}
+
   experiments:
     desc: Run mature-wheel local backtest experiments
     cmds:
