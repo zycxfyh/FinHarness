@@ -26,7 +26,7 @@ need for human attestation.
 
 | Command | Purpose | Boundary to notice |
 | --- | --- | --- |
-| `task wheels:check` | Confirm mature wheels import locally. | Mature libraries are evidence/tooling, not authority. |
+| `task wheels:check` | Confirm default mature wheels import locally and report optional OpenBB status. | Mature libraries are evidence/tooling, not authority. |
 | `task feature:macd` | Build a real SPY MACD feature snapshot. | Output keeps `execution_allowed=false`. |
 | `task feature:squeeze` | Build a real SPY Squeeze feature snapshot. | Output keeps `execution_allowed=false`. |
 | `task validation:graph` | Run validation evidence graph. | Human review required before proposal. |
@@ -79,17 +79,17 @@ need for human attestation.
 | --- | --- | --- |
 | `task alpaca:paper-check` | Inspect Alpaca paper account state. | Paper-only path. |
 | `task alpaca:paper-order-cycle` | Place/cancel a tiny paper order. | Paper broker sandbox only. |
-| `task alpaca:paper-strategy-order` | Run a paper order with thesis, risk gate, cancel, and receipt. | Paper-only review flow. |
+| `task alpaca:paper-strategy-order` | Run a paper order with thesis, risk gate, cancel, and receipt. | Paper-only review flow; `--execute` requires an explicit `--operator` for market-access ledger consumption. |
 | `task okx:market` | Fetch public OKX market data. | Read-only. |
 | `task okx:live-status` | Read live OKX account/status data. | Read-only. |
 | `task okx:live-read -- account balance` | Run allowlisted live read command. | Read-only allowlist. |
 | `task okx:demo -- swap orders` | Run allowlisted OKX demo command. | Demo mode. |
-| `task okx:live-write -- ...` | Route live write through fail-closed gate. | Requires double env opt-in, attestation, thesis, notional cap, and receipt. |
+| `task okx:live-write -- ...` | Route live write through fail-closed gate. | Requires double env opt-in, attestation, thesis, per-order cap, aggregate market-access ledger, and receipt. |
 
 ## Mature-Wheel Experiments
 
 | Command | Purpose | Boundary |
 | --- | --- | --- |
 | `task experiments` | Run local Backtrader, vectorbt, and Riskfolio experiments. | Experiments disclose `execution_allowed=false`. |
-| `task wheels:data-check` | Check wheels plus provider-backed data calls. | Needs network/provider availability. |
+| `task wheels:data-check` | Check wheels plus provider-backed yfinance data calls; OpenBB is checked only if installed. | Needs network/provider availability. |
 | `task wheels:size` | Show local wheel sizes. | Inventory only. |

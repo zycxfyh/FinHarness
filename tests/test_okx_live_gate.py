@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from finharness.market_access_ledger import MarketAccessLedgerError, record_consumption
 from finharness.okx_cli import OkxCliError, OkxCliResult
 from finharness.okx_live_gate import (
+    DEFAULT_LIVE_MARKET_ACCESS_LIMIT,
     LiveOrderBlocked,
     LiveOrderRequest,
     assess_live_order,
     execute_live_order,
+    market_access_key_for_live_order,
     order_notional,
 )
 from finharness.trading_state_store import (
@@ -41,6 +45,16 @@ class OkxLiveGateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "trading-state.json"
+        root = Path(self.tmp.name)
+        self.env_patch = mock.patch.dict(
+            os.environ,
+            {
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+            },
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
         self.addCleanup(self.tmp.cleanup)
 
     # --- notional parsing -------------------------------------------------
@@ -85,6 +99,21 @@ class OkxLiveGateTests(unittest.TestCase):
         decision = assess_live_order(req, state_path=self.path)
         self.assertFalse(decision.allowed)
         self.assertTrue(any("exceeds cap" in r for r in decision.blocking_reasons))
+
+    def test_over_aggregate_notional_blocks_even_when_order_cap_passes(self) -> None:
+        req = _request(args=["--instId", "BTC-USDT-SWAP", "--sz", "0.01", "--px", "100"])
+        record_consumption(
+            key=market_access_key_for_live_order(req),
+            notional=50.0,
+            limit=DEFAULT_LIVE_MARKET_ACCESS_LIMIT,
+        )
+
+        decision = assess_live_order(req, state_path=self.path)
+
+        self.assertFalse(decision.allowed)
+        self.assertTrue(
+            any("market-access ledger" in reason for reason in decision.blocking_reasons)
+        )
 
     def test_unbounded_notional_blocks_fail_closed(self) -> None:
         req = _request(args=["--instId", "BTC-USDT-SWAP", "--sz", "0.01"])
@@ -136,6 +165,23 @@ class OkxLiveGateTests(unittest.TestCase):
         self.assertEqual(payload["outcome"], "executed")
         # F5: the placed order updated persisted state
         self.assertEqual(load_trading_state(self.path).trades_recorded, 1)
+
+    def test_market_access_record_failure_never_calls_okx(self) -> None:
+        receipt_root = Path(self.tmp.name) / "receipts"
+        with mock.patch("finharness.okx_live_gate.LIVE_ORDER_RECEIPT_ROOT", receipt_root), \
+             mock.patch(
+                 "finharness.okx_live_gate.record_consumption",
+                 side_effect=MarketAccessLedgerError("disk full"),
+             ), mock.patch(
+                 "finharness.okx_live_gate.run_okx_live_mutation_command",
+             ) as run, self.assertRaises(OkxCliError):
+            execute_live_order(_request(), state_path=self.path)
+
+        run.assert_not_called()
+        payload = json.loads(list(receipt_root.glob("*.json"))[0].read_text(encoding="utf-8"))
+        self.assertEqual(payload["outcome"], "error")
+        self.assertIn("before OKX submit", payload["error"])
+        self.assertEqual(load_trading_state(self.path).trades_recorded, 0)
 
     def test_okx_error_writes_error_receipt_and_no_state_update(self) -> None:
         receipt_root = Path(self.tmp.name) / "receipts"

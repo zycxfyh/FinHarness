@@ -27,6 +27,15 @@ from typing import Any
 from uuid import uuid4
 
 from finharness.effective_rules import resolve_guard_thresholds
+from finharness.market_access_ledger import (
+    MarketAccessDecision,
+    MarketAccessKey,
+    MarketAccessLedgerError,
+    MarketAccessLimit,
+    evaluate_market_access,
+    load_market_access_ledger,
+    record_consumption,
+)
 from finharness.market_data import ROOT, display_path, sha256_text
 from finharness.okx_cli import OkxCliError, run_okx_live_mutation_command
 from finharness.trading_guard import (
@@ -44,6 +53,10 @@ LIVE_ORDER_RECEIPT_ROOT = ROOT / "data" / "receipts" / "okx-live"
 # Conservative default cap for a single-operator lab. Override only upward, and
 # the override is recorded in the receipt.
 DEFAULT_MAX_LIVE_NOTIONAL = 50.0
+DEFAULT_LIVE_MARKET_ACCESS_LIMIT = MarketAccessLimit(
+    max_window_notional=50.0,
+    max_window_order_count=10,
+)
 
 
 class LiveOrderBlocked(OkxCliError):
@@ -76,6 +89,7 @@ class LiveGateDecision:
     guard_level: str
     notional: float | None
     max_notional: float
+    market_access: MarketAccessDecision | None = None
     blocking_reasons: list[str] = field(default_factory=list)
     guard_reasons: list[str] = field(default_factory=list)
     required_actions: list[str] = field(default_factory=list)
@@ -117,12 +131,25 @@ def order_notional(request: LiveOrderRequest) -> float | None:
     return abs(size) * abs(price)
 
 
+def market_access_key_for_live_order(request: LiveOrderRequest) -> MarketAccessKey:
+    symbol = _flag_value(request.args, "--instId") or f"{request.module}:{request.action}"
+    return MarketAccessKey(
+        environment="live",
+        venue="okx",
+        operator=request.attester.strip(),
+        account="okx_live_default",
+        symbol=symbol.upper(),
+    )
+
+
 def assess_live_order(
     request: LiveOrderRequest,
     *,
     state_path: str | Path | None = None,
     thresholds: GuardThresholds | None = None,
     ledger_root: Path | None = None,
+    market_access_limit: MarketAccessLimit | None = DEFAULT_LIVE_MARKET_ACCESS_LIMIT,
+    market_access_state_root: str | Path | None = None,
 ) -> LiveGateDecision:
     """Decide whether a live order may proceed. No mutation, no execution.
 
@@ -157,6 +184,7 @@ def assess_live_order(
         )
 
     # F3: notional cap. Unbounded (uncomputable) notional fails closed.
+    market_access: MarketAccessDecision | None = None
     notional = order_notional(request)
     if notional is None:
         blocking.append(
@@ -167,6 +195,23 @@ def assess_live_order(
         blocking.append(
             f"notional {notional:.4f} exceeds cap {request.max_notional:.4f}"
         )
+    else:
+        try:
+            market_access = evaluate_market_access(
+                key=market_access_key_for_live_order(request),
+                notional=notional,
+                limit=market_access_limit,
+                ledger=load_market_access_ledger(market_access_state_root),
+            )
+        except MarketAccessLedgerError as exc:
+            market_access = None
+            blocking.append(f"market-access ledger unreadable; refusing fail-closed: {exc}")
+        else:
+            if not market_access.allowed_within_limit:
+                blocking.extend(
+                    f"market-access ledger: {reason}"
+                    for reason in market_access.blocking_reasons
+                )
 
     # F7: attestation must be present.
     if not request.attester.strip():
@@ -179,6 +224,7 @@ def assess_live_order(
         guard_level=guard.level,
         notional=notional,
         max_notional=request.max_notional,
+        market_access=market_access,
         blocking_reasons=blocking,
         guard_reasons=list(guard.reasons),
         required_actions=list(guard.required_actions),
@@ -195,6 +241,7 @@ def _write_receipt(
     decision: LiveGateDecision,
     outcome: str,
     okx_result_ref: str | None,
+    market_access_entry_id: str | None,
     error: str | None,
 ) -> str:
     receipt_id = f"okxlive_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex[:8]}"
@@ -218,10 +265,14 @@ def _write_receipt(
             "allowed": decision.allowed,
             "guard_level": decision.guard_level,
             "notional": decision.notional,
+            "market_access": decision.market_access.model_dump(mode="json")
+            if decision.market_access is not None
+            else None,
             "blocking_reasons": decision.blocking_reasons,
             "guard_reasons": decision.guard_reasons,
         },
         "okx_result_ref": okx_result_ref,
+        "market_access_entry_id": market_access_entry_id,
         "error": error,
     }
     payload["content_hash"] = sha256_text(
@@ -242,6 +293,9 @@ def execute_live_order(
     *,
     state_path: str | Path | None = None,
     thresholds: GuardThresholds | None = None,
+    market_access_limit: MarketAccessLimit | None = DEFAULT_LIVE_MARKET_ACCESS_LIMIT,
+    market_access_state_root: str | Path | None = None,
+    market_access_receipt_root: str | Path | None = None,
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
     """Gate then execute a live OKX mutation.
@@ -251,7 +305,11 @@ def execute_live_order(
     On success, folds the placed order into persisted trading-state (F5).
     """
     decision = assess_live_order(
-        request, state_path=state_path, thresholds=thresholds
+        request,
+        state_path=state_path,
+        thresholds=thresholds,
+        market_access_limit=market_access_limit,
+        market_access_state_root=market_access_state_root,
     )
     if not decision.allowed:
         _write_receipt(
@@ -259,9 +317,30 @@ def execute_live_order(
             decision=decision,
             outcome="blocked",
             okx_result_ref=None,
+            market_access_entry_id=None,
             error=None,
         )
         raise LiveOrderBlocked(decision) from None
+
+    try:
+        market_access_entry = record_consumption(
+            key=market_access_key_for_live_order(request),
+            notional=decision.notional,
+            limit=market_access_limit,
+            source_ref="okx_live_pre_submit",
+            state_root=market_access_state_root,
+            receipt_root=market_access_receipt_root,
+        )
+    except MarketAccessLedgerError as exc:
+        _write_receipt(
+            request=request,
+            decision=decision,
+            outcome="error",
+            okx_result_ref=None,
+            market_access_entry_id=None,
+            error=f"market-access consumption failed before OKX submit: {exc}",
+        )
+        raise OkxCliError(str(exc)) from exc
 
     try:
         result = run_okx_live_mutation_command(
@@ -276,6 +355,7 @@ def execute_live_order(
             decision=decision,
             outcome="error",
             okx_result_ref=None,
+            market_access_entry_id=market_access_entry.entry_id,
             error=str(exc),
         )
         raise
@@ -285,6 +365,7 @@ def execute_live_order(
         decision=decision,
         outcome="executed",
         okx_result_ref=None,
+        market_access_entry_id=market_access_entry.entry_id,
         error=None,
     )
     # F5: live activity must update the state that bounds behavior.

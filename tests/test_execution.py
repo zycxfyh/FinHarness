@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,7 @@ from finharness.execution import (
     build_order_requests,
 )
 from finharness.execution_graph import execution_graph, run_execution_graph
+from finharness.market_access_ledger import MarketAccessLedgerError
 from finharness.proposal import build_proposal_bundle_from_validation_snapshot
 from finharness.risk_gate import build_risk_gate_bundle_from_proposal_snapshot
 from tests.test_proposal import build_sample_validation_bundle
@@ -48,6 +50,20 @@ def build_sample_risk_gate_bundle(
 
 
 class ExecutionLayerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+            },
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+
     def test_dry_run_stages_order_without_submission(self) -> None:
         bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
@@ -89,6 +105,62 @@ class ExecutionLayerTest(unittest.TestCase):
         self.assertIn("submitted_paper", statuses)
         self.assertIn("filled", statuses)
         self.assertTrue(execution_bundle.snapshot.post_trade_handoff)
+        self.assertFalse(execution_bundle.snapshot.execution_allowed)
+
+    def test_paper_execute_blocks_when_aggregate_limit_exceeded(self) -> None:
+        bundle = build_sample_risk_gate_bundle()
+        execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+            bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "requested_quantity": 2,
+                "reference_price": 100.0,
+                "market_access_limit": {
+                    "max_window_notional": 150.0,
+                    "max_window_order_count": 10,
+                },
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+
+        self.assertEqual(execution_bundle.snapshot.final_status, "blocked_before_submit")
+        self.assertTrue(
+            any(
+                "market-access ledger blocked order request" in event.raw_event.get("reason", "")
+                for event in execution_bundle.snapshot.events
+            )
+        )
+        self.assertFalse(execution_bundle.snapshot.execution_allowed)
+
+    def test_paper_execute_does_not_submit_when_market_access_record_fails(self) -> None:
+        bundle = build_sample_risk_gate_bundle()
+        adapter = FakePaperExecutionAdapter(fill_mode="filled")
+
+        with patch(
+            "finharness.execution.record_consumption",
+            side_effect=MarketAccessLedgerError("disk full"),
+        ):
+            execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+                bundle.snapshot,
+                context={
+                    "requested_mode": "paper",
+                    "operator_execute": True,
+                    "human_review_attested": True,
+                },
+                adapter=adapter,
+            )
+
+        self.assertEqual(execution_bundle.snapshot.final_status, "blocked_before_submit")
+        self.assertEqual(adapter.submitted_keys, set())
+        self.assertTrue(
+            any(
+                "market-access ledger consumption failed before paper submit"
+                in event.raw_event.get("reason", "")
+                for event in execution_bundle.snapshot.events
+            )
+        )
         self.assertFalse(execution_bundle.snapshot.execution_allowed)
 
     def test_default_paper_execute_uses_nautilus_typed_order_adapter(self) -> None:

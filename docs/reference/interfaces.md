@@ -11,7 +11,7 @@ Use this as a lookup page. For rationale, read
 
 | Interface | Mature owner | Local FinHarness owner | Primary docs/tasks |
 | --- | --- | --- | --- |
-| MarketDataInterface | OpenBB, yfinance, official broker/exchange data | Source disclosure, OHLCV contract, freshness notes, raw/normalized refs, receipts | [Market Data module](../modules/01-market-data.md), `task market-data:graph` |
+| MarketDataInterface | yfinance, optional OpenBB, official broker/exchange data | Source disclosure, OHLCV contract, freshness notes, raw/normalized refs, receipts | [Market Data module](../modules/01-market-data.md), `task market-data:graph` |
 | DataQualityInterface | Pandera | Required OHLCV contract, quality verdict, soft-path null/outlier semantics, quality backend disclosure | [Data quality spec](../architecture/data-quality-interface-pandera-spec.md) |
 | IndicatorInterface | TA-Lib, pandas-ta, vectorbt indicators | Feature names, state labels, lineage, non-advice output, `execution_allowed=false` | [Indicators module](../modules/02-indicators.md), `task feature:macd`, `task feature:squeeze` |
 | ResearchInterface | vectorbt | Parameter sweep/research evidence, validation handoff, rejected alternatives, no proposal authority | [Research spec](../architecture/research-interface-vectorbt-spec.md), `task validation:graph` |

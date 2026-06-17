@@ -64,6 +64,7 @@ Most snapshots use the following evidence fields:
 | Post trade | `PostTradeReceipt` | `post_trade_processing` | `stage_flow` | `PostTradeSnapshot` | `ok | warning | failed` |
 | Daily evidence | `DailyEvidenceReceipt` | `daily_evidence_bundle` | `stage_flow` | `DailyEvidenceSnapshot` | `ok | warning | failed` |
 | Control owner | n/a | `control_owner_certification` | `lineage` | `ControlCertification` | `certified | not_certified` |
+| Market access ledger | n/a | `market_access_consumption` | n/a | `LedgerEntry` | n/a |
 
 ## Snapshot Schemas
 
@@ -138,9 +139,11 @@ Location: `data/receipts/okx-live/`
 | `decision.allowed` | `bool` | Whether the live gate allowed the request. |
 | `decision.guard_level` | `str` | Behavioral guard state. |
 | `decision.notional` | `float | None` | Computed order notional. |
+| `decision.market_access` | `MarketAccessDecision | None` | Aggregate daily limit decision; never execution authority. |
 | `decision.blocking_reasons` | `list[str]` | Gate blockers. |
 | `decision.guard_reasons` | `list[str]` | Behavioral guard reasons. |
 | `okx_result_ref` | `str | None` | Future external result ref placeholder. |
+| `market_access_entry_id` | `str | None` | Consumption entry id when the live write proceeded past the gate. |
 | `error` | `str | None` | Error text for errored attempts. |
 | `content_hash` | `str` | Hash of the receipt payload. |
 
@@ -161,6 +164,7 @@ Location: `data/receipts/alpaca-paper/`
 | `pre_trade.positions_count_unknown_in_this_receipt` | `bool` | Explicit limitation. |
 | `pre_trade.open_orders_before` | `int` | Open order count before attempt. |
 | `risk_gate` | `GuardDecision` object | Behavioral guard decision. |
+| `market_access` | `MarketAccessDecision`-like object | Aggregate paper limit decision and entry id; never execution authority. |
 | `execution.attempted` | `bool` | Whether paper order was attempted. |
 | `execution.order` | `dict | None` | Broker order response. |
 | `execution.fetched` | `dict | None` | Broker order fetch response. |
@@ -169,6 +173,34 @@ Location: `data/receipts/alpaca-paper/`
 | `post_trade_assessment.workflow_passed` | `bool` | Whether paper workflow passed local checks. |
 | `post_trade_assessment.not_investment_advice` | `bool` | Non-advice flag. |
 | `post_trade_assessment.not_alpha_validation` | `bool` | Non-alpha-validation flag. |
+
+### Market Access Consumption Receipt
+
+Location: `data/receipts/market-access-ledger/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<entry_id>`. |
+| `kind` | `str` | `market_access_consumption`. |
+| `created_at_utc` | `str` | Receipt timestamp. |
+| `entry.entry_id` | `str` | Ledger entry id. |
+| `entry.window_id` | `str` | UTC daily window id. |
+| `entry.key.environment` | `Literal["paper", "live"]` | Environment bucket. |
+| `entry.key.venue` | `str` | Venue/adaptor bucket, e.g. `okx`, `alpaca`, or `paper_review`. |
+| `entry.key.operator` | `str` | Operator/attester identity used for the limit bucket. |
+| `entry.key.account` | `str` | Account bucket. |
+| `entry.key.symbol` | `str` | Symbol/instrument bucket. |
+| `entry.notional` | `float` | Consumed notional. |
+| `entry.source_ref` | `str | None` | Source order/request reference if available. |
+| `ledger_ref` | `str` | Persisted ledger JSON path. |
+| `window_usage_after.used_notional` | `float` | Aggregate notional after this entry. |
+| `window_usage_after.used_order_count` | `int` | Aggregate order count after this entry. |
+| `window_usage_after.remaining_notional` | `float | None` | Remaining configured notional after this entry. |
+| `window_usage_after.remaining_orders` | `int | None` | Remaining configured order count after this entry. |
+| `limit` | `MarketAccessLimit | None` | Limit used when recording the receipt. |
+| `not_claimed` | `list[str]` | Explicit non-claims: no execution authorization, no compliance certification, no investment advice. |
+| `execution_allowed` | `bool` | Always `false`; the ledger never grants order authority. |
+| `content_hash` | `str` | Hash of the receipt payload. |
 
 ### Lesson Draft Receipt
 

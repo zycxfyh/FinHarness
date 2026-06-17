@@ -24,6 +24,14 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.orders import LimitOrder, MarketOrder
 from pydantic import BaseModel, ConfigDict, Field
 
+from finharness.market_access_ledger import (
+    MarketAccessKey,
+    MarketAccessLedgerError,
+    MarketAccessLimit,
+    evaluate_market_access,
+    load_market_access_ledger,
+    record_consumption,
+)
 from finharness.market_data import ROOT, sha256_text
 from finharness.risk_gate import RiskGateDecision, RiskGateSnapshot
 
@@ -31,6 +39,10 @@ EXECUTION_NORMALIZED_ROOT = ROOT / "data" / "normalized" / "executions"
 EXECUTION_RECEIPT_ROOT = ROOT / "data" / "receipts" / "executions"
 NAUTILUS_ORDER_BACKEND = "NautilusTrader.model.orders"
 NAUTILUS_PAPER_ADAPTER_NAME = "nautilus_paper_order_adapter"
+DEFAULT_PAPER_MARKET_ACCESS_LIMIT = MarketAccessLimit(
+    max_window_notional=1000.0,
+    max_window_order_count=20,
+)
 
 ExecutionAdapterMode = Literal["dry_run", "paper", "live"]
 ExecutionStatus = Literal[
@@ -93,6 +105,11 @@ class ExecutionContext(BaseModel):
     routing_policy: str = "paper adapter; no smart routing"
     allow_fractional: bool = False
     cancel_after_submit: bool = False
+    market_access_operator: str = "paper_operator"
+    market_access_account: str = "paper_account"
+    market_access_limit: MarketAccessLimit | None = Field(
+        default_factory=lambda: DEFAULT_PAPER_MARKET_ACCESS_LIMIT
+    )
 
 
 class ExecutionIntent(BaseModel):
@@ -625,6 +642,20 @@ def blocked_event(reason: str) -> ExecutionEvent:
     )
 
 
+def market_access_key_for_order_request(
+    *,
+    context: ExecutionContext,
+    request: ExecutionOrderRequest,
+) -> MarketAccessKey:
+    return MarketAccessKey(
+        environment="paper",
+        venue="paper_review",
+        operator=context.market_access_operator.strip(),
+        account=context.market_access_account.strip(),
+        symbol=request.symbol.upper(),
+    )
+
+
 def collect_execution_events(
     *,
     context: ExecutionContext,
@@ -641,6 +672,51 @@ def collect_execution_events(
         return events
     paper_adapter = adapter or NautilusPaperExecutionAdapter()
     for request in order_requests:
+        notional = request.quantity * request.reference_price
+        try:
+            market_access = evaluate_market_access(
+                key=market_access_key_for_order_request(
+                    context=context,
+                    request=request,
+                ),
+                notional=notional,
+                limit=context.market_access_limit,
+                ledger=load_market_access_ledger(),
+            )
+        except MarketAccessLedgerError as exc:
+            events.append(
+                blocked_event(
+                    "market-access ledger unreadable; refusing fail-closed: "
+                    f"{exc}"
+                )
+            )
+            continue
+        if not market_access.allowed_within_limit:
+            events.append(
+                blocked_event(
+                    "market-access ledger blocked order request: "
+                    + "; ".join(market_access.blocking_reasons)
+                )
+            )
+            continue
+        try:
+            record_consumption(
+                key=market_access_key_for_order_request(
+                    context=context,
+                    request=request,
+                ),
+                notional=notional,
+                limit=context.market_access_limit,
+                source_ref=request.order_request_id,
+            )
+        except MarketAccessLedgerError as exc:
+            events.append(
+                blocked_event(
+                    "market-access ledger consumption failed before paper submit: "
+                    f"{exc}"
+                )
+            )
+            continue
         events.extend(paper_adapter.submit(request))
         if context.cancel_after_submit:
             events.extend(paper_adapter.cancel(request))

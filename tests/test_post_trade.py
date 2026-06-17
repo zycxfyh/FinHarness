@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,20 @@ from tests.test_execution import build_sample_risk_gate_bundle
 
 
 class PostTradeLayerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+            },
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+
     def test_filled_execution_reconciles_and_estimates_cost(self) -> None:
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
