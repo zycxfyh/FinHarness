@@ -36,6 +36,7 @@ tasks:
       - task: lint
       - task: test
       - task: test:properties
+      - task: rules:audit
       - task: experiments
       - task: eval:smoke
 
