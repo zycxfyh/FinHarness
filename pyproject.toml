@@ -75,6 +75,7 @@ check_untyped_defs = true
 [[tool.mypy.overrides]]
 module = [
     "finharness.risk_gate",
+    "finharness.risk_gate.*",
     "finharness.authorization",
     "finharness.market_access_ledger",
     "finharness.effective_rules",
