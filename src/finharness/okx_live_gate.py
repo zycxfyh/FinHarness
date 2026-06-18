@@ -168,6 +168,88 @@ def market_access_key_for_live_order(request: LiveOrderRequest) -> MarketAccessK
     )
 
 
+def resolve_live_notional_cap(
+    *,
+    request_limit: float,
+    ceiling_rule_root: Path | None,
+    ceiling_certification_root: Path | None,
+) -> tuple[EnforcedCap | None, list[str]]:
+    try:
+        return enforce_request_limit(
+            field=LIVE_NOTIONAL_CEILING_FIELD,
+            default_ceiling=DEFAULT_MAX_LIVE_NOTIONAL,
+            request_limit=request_limit,
+            rule_change_root=ceiling_rule_root,
+            certification_root=ceiling_certification_root,
+        ), []
+    except CeilingResolutionError as exc:
+        return None, [f"live notional ceiling could not be resolved; refusing fail-closed: {exc}"]
+
+
+def resolve_market_access_limit(
+    *,
+    market_access_limit: MarketAccessLimit | None,
+    ceiling_rule_root: Path | None,
+    ceiling_certification_root: Path | None,
+) -> tuple[EnforcedCap | None, MarketAccessLimit | None, list[str]]:
+    try:
+        requested_notional = (
+            market_access_limit.max_window_notional if market_access_limit is not None else None
+        )
+        cap = enforce_request_limit(
+            field=LIVE_MARKET_ACCESS_CEILING_FIELD,
+            default_ceiling=DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_notional,
+            request_limit=requested_notional,
+            rule_change_root=ceiling_rule_root,
+            certification_root=ceiling_certification_root,
+        )
+        requested_order_count = (
+            market_access_limit.max_window_order_count
+            if market_access_limit is not None
+            else DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_order_count
+        )
+        effective_limit = MarketAccessLimit(
+            max_window_notional=cap.enforced_cap,
+            max_window_order_count=min(
+                requested_order_count,
+                DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_order_count,
+            ),
+        )
+        return cap, effective_limit, []
+    except CeilingResolutionError as exc:
+        return None, None, [
+            "market-access notional ceiling could not be resolved; "
+            f"refusing fail-closed: {exc}"
+        ]
+
+
+def evaluate_live_market_access(
+    *,
+    request: LiveOrderRequest,
+    notional: float,
+    effective_limit: MarketAccessLimit | None,
+    market_access_cap: EnforcedCap | None,
+    market_access_state_root: str | Path | None,
+) -> tuple[MarketAccessDecision | None, list[str]]:
+    try:
+        market_access = evaluate_market_access(
+            key=market_access_key_for_live_order(request),
+            notional=notional,
+            limit=effective_limit,
+            ledger=load_market_access_ledger(market_access_state_root),
+            limit_evidence=market_access_cap.as_receipt_dict()
+            if market_access_cap is not None
+            else None,
+        )
+    except MarketAccessLedgerError as exc:
+        return None, [f"market-access ledger unreadable; refusing fail-closed: {exc}"]
+    if not market_access.allowed_within_limit:
+        return market_access, [
+            f"market-access ledger: {reason}" for reason in market_access.blocking_reasons
+        ]
+    return market_access, []
+
+
 def assess_live_order(
     request: LiveOrderRequest,
     *,
@@ -200,51 +282,20 @@ def assess_live_order(
     )
 
     blocking: list[str] = []
-    request_cap: EnforcedCap | None = None
-    market_access_cap: EnforcedCap | None = None
-    effective_market_access_limit: MarketAccessLimit | None = None
-
-    try:
-        request_cap = enforce_request_limit(
-            field=LIVE_NOTIONAL_CEILING_FIELD,
-            default_ceiling=DEFAULT_MAX_LIVE_NOTIONAL,
-            request_limit=request.request_limit,
-            rule_change_root=ceiling_rule_root,
-            certification_root=ceiling_certification_root,
+    request_cap, request_cap_blocking = resolve_live_notional_cap(
+        request_limit=request.request_limit,
+        ceiling_rule_root=ceiling_rule_root,
+        ceiling_certification_root=ceiling_certification_root,
+    )
+    blocking.extend(request_cap_blocking)
+    market_access_cap, effective_market_access_limit, market_access_cap_blocking = (
+        resolve_market_access_limit(
+            market_access_limit=market_access_limit,
+            ceiling_rule_root=ceiling_rule_root,
+            ceiling_certification_root=ceiling_certification_root,
         )
-    except CeilingResolutionError as exc:
-        blocking.append(f"live notional ceiling could not be resolved; refusing fail-closed: {exc}")
-
-    try:
-        requested_market_access_notional = (
-            market_access_limit.max_window_notional
-            if market_access_limit is not None
-            else None
-        )
-        market_access_cap = enforce_request_limit(
-            field=LIVE_MARKET_ACCESS_CEILING_FIELD,
-            default_ceiling=DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_notional,
-            request_limit=requested_market_access_notional,
-            rule_change_root=ceiling_rule_root,
-            certification_root=ceiling_certification_root,
-        )
-        requested_order_count = (
-            market_access_limit.max_window_order_count
-            if market_access_limit is not None
-            else DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_order_count
-        )
-        effective_market_access_limit = MarketAccessLimit(
-            max_window_notional=market_access_cap.enforced_cap,
-            max_window_order_count=min(
-                requested_order_count,
-                DEFAULT_LIVE_MARKET_ACCESS_LIMIT.max_window_order_count,
-            ),
-        )
-    except CeilingResolutionError as exc:
-        blocking.append(
-            "market-access notional ceiling could not be resolved; "
-            f"refusing fail-closed: {exc}"
-        )
+    )
+    blocking.extend(market_access_cap_blocking)
 
     # F4: the guard now ENFORCES. A non-clear decision blocks the order.
     if not guard.trade_allowed:
@@ -270,25 +321,14 @@ def assess_live_order(
             f"notional {notional:.4f} exceeds enforced cap {request_cap.enforced_cap:.4f}"
         )
     else:
-        try:
-            market_access = evaluate_market_access(
-                key=market_access_key_for_live_order(request),
-                notional=notional,
-                limit=effective_market_access_limit,
-                ledger=load_market_access_ledger(market_access_state_root),
-                limit_evidence=market_access_cap.as_receipt_dict()
-                if market_access_cap is not None
-                else None,
-            )
-        except MarketAccessLedgerError as exc:
-            market_access = None
-            blocking.append(f"market-access ledger unreadable; refusing fail-closed: {exc}")
-        else:
-            if not market_access.allowed_within_limit:
-                blocking.extend(
-                    f"market-access ledger: {reason}"
-                    for reason in market_access.blocking_reasons
-                )
+        market_access, market_access_blocking = evaluate_live_market_access(
+            request=request,
+            notional=notional,
+            effective_limit=effective_market_access_limit,
+            market_access_cap=market_access_cap,
+            market_access_state_root=market_access_state_root,
+        )
+        blocking.extend(market_access_blocking)
 
     # F7: attestation must be present.
     if not request.attester.strip():

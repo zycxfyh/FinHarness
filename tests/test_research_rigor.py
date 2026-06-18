@@ -78,7 +78,7 @@ class ResearchRigorTest(unittest.TestCase):
         self.assertGreater(many, few)  # more trials -> higher bar to clear
 
     def test_deflated_sharpe_is_psr_for_one_trial_and_lower_for_many(self) -> None:
-        kwargs = dict(observed_sharpe=0.15, n_samples=250, skew=0.0, kurtosis=3.0)
+        kwargs = {"observed_sharpe": 0.15, "n_samples": 250, "skew": 0.0, "kurtosis": 3.0}
         psr = probabilistic_sharpe_ratio(**kwargs)
         # With a single trial DSR reduces to PSR-against-zero.
         dsr_one = deflated_sharpe_ratio(**kwargs, trial_sharpe_variance=0.01, n_trials=1)

@@ -33,7 +33,7 @@ def load_corpus(path: Path = DEFAULT_CORPUS) -> list[dict[str, Any]]:
 
 
 def generated_cases(*, seed: int, count: int) -> list[dict[str, Any]]:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 -- deterministic fuzz corpus, not crypto.
     cases: list[dict[str, Any]] = []
     path_fragments = [
         "src/finharness/execution.py",
@@ -170,7 +170,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
             "invariant_ok": False,
             "error": "unknown target",
         }
-    except Exception as exc:  # noqa: BLE001 - fuzz harness records all unexpected failures.
+    except Exception as exc:
         return {
             "target": str(target),
             "case_id": str(case.get("id", "unnamed")),

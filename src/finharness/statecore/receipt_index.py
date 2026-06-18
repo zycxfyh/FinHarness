@@ -140,7 +140,7 @@ def receipt_index_record_from_path(
             source_refs=[_display_path(target)],
         )
     receipt_id = str(payload.get("receipt_id") or _fallback_receipt_id(target, root))
-    refs = sorted(set(ref for ref in _collect_receipt_refs(payload) if ref != receipt_id))
+    refs = sorted({ref for ref in _collect_receipt_refs(payload) if ref != receipt_id})
     return ReceiptIndex(
         receipt_id=receipt_id,
         kind=_kind(payload),

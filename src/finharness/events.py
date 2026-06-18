@@ -246,7 +246,7 @@ def fetch_sec_submission(
     retries: int = 3,
     retry_delay_seconds: float = 1.0,
 ) -> dict[str, Any]:
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310 -- SEC EDGAR HTTPS endpoint.
         sec_submission_url(cik),
         headers={
             "Accept": "application/json",
@@ -256,7 +256,7 @@ def fetch_sec_submission(
     last_error: Exception | None = None
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 -- request object targets SEC EDGAR HTTPS API.
                 return json.loads(response.read().decode("utf-8"))
         except (
             TimeoutError,

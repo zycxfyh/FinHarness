@@ -257,7 +257,7 @@ def reconcile_close(
         "provider": "yfinance",
         "second_provider": second_provider_name,
         "max_close_divergence_pct": float(divergence.max()),
-        "overlap_rows": int(len(joined)),
+        "overlap_rows": len(joined),
         "adjustment": adjustment,
     }
 

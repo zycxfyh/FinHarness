@@ -565,6 +565,33 @@ def formulate_hypothesis_record(
     )
 
 
+def missing_hypothesis_fields(record: HypothesisRecord) -> list[str]:
+    missing: list[str] = []
+    if not record.source_interpretation_ids:
+        missing.append("source_interpretation_ids")
+    if not record.source_event_ids:
+        missing.append("source_event_ids")
+    if not record.source_refs:
+        missing.append("source_refs")
+    if not record.mechanism:
+        missing.append("mechanism")
+    if not record.hypothesis:
+        missing.append("hypothesis")
+    if not record.horizon or record.horizon == "unknown":
+        missing.append("horizon")
+    if not record.expected_observations:
+        missing.append("expected_observations")
+    if not record.disconfirming_observations:
+        missing.append("disconfirming_observations")
+    if not record.validation_plan:
+        missing.append("validation_plan")
+    if not record.assumptions:
+        missing.append("assumptions")
+    if record.status != "ready_for_validation":
+        missing.append("status")
+    return missing
+
+
 def build_hypothesis_quality(records: list[HypothesisRecord]) -> HypothesisQuality:
     missing_required_fields: dict[str, list[str]] = {}
     blocked_language_hits: dict[str, list[str]] = {}
@@ -572,29 +599,7 @@ def build_hypothesis_quality(records: list[HypothesisRecord]) -> HypothesisQuali
     duplicate_ids: list[str] = []
 
     for record in records:
-        missing: list[str] = []
-        if not record.source_interpretation_ids:
-            missing.append("source_interpretation_ids")
-        if not record.source_event_ids:
-            missing.append("source_event_ids")
-        if not record.source_refs:
-            missing.append("source_refs")
-        if not record.mechanism:
-            missing.append("mechanism")
-        if not record.hypothesis:
-            missing.append("hypothesis")
-        if not record.horizon or record.horizon == "unknown":
-            missing.append("horizon")
-        if not record.expected_observations:
-            missing.append("expected_observations")
-        if not record.disconfirming_observations:
-            missing.append("disconfirming_observations")
-        if not record.validation_plan:
-            missing.append("validation_plan")
-        if not record.assumptions:
-            missing.append("assumptions")
-        if record.status != "ready_for_validation":
-            missing.append("status")
+        missing = missing_hypothesis_fields(record)
         if missing:
             missing_required_fields[record.hypothesis_id] = missing
 

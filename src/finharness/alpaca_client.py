@@ -75,13 +75,13 @@ class AlpacaPaperClient:
     ) -> dict[str, Any] | list[Any]:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         base_url = self.data_base_url if data_api else self.trading_base_url
-        req = urllib.request.Request(
+        req = urllib.request.Request(  # noqa: S310 -- Alpaca HTTPS endpoint from client config.
             f"{base_url}{path}",
             data=data,
             headers=paper_headers(),
             method=method,
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as response:
+        with urllib.request.urlopen(req, timeout=self.timeout) as response:  # noqa: S310 -- request object targets Alpaca HTTPS API.
             raw = response.read().decode("utf-8")
             return json.loads(raw) if raw else {}
 

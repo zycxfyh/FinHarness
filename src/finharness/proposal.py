@@ -498,6 +498,31 @@ def build_proposal_candidates(
     ]
 
 
+def missing_proposal_fields(candidate: ProposalCandidate) -> list[str]:
+    missing: list[str] = []
+    if not candidate.source_validation_result_ids:
+        missing.append("source_validation_result_ids")
+    if not candidate.evidence_summary:
+        missing.append("evidence_summary")
+    if not candidate.validation_summary:
+        missing.append("validation_summary")
+    if not candidate.portfolio_role:
+        missing.append("portfolio_role")
+    if not candidate.invalidation_triggers:
+        missing.append("invalidation_triggers")
+    if not candidate.risk_gate_request.required_checks:
+        missing.append("risk_gate_handoff")
+    if not candidate.constraint_notes:
+        missing.append("constraint_notes")
+    if not candidate.alternatives_considered:
+        missing.append("alternatives_considered")
+    if not candidate.do_nothing_case:
+        missing.append("do_nothing_case")
+    if not candidate.risk_gate_request.human_review_required:
+        missing.append("human_review_required")
+    return missing
+
+
 def build_proposal_quality(
     *,
     validation_snapshot: ValidationSnapshot,
@@ -506,27 +531,7 @@ def build_proposal_quality(
     missing_required_fields: dict[str, list[str]] = {}
     blocked_language_hits: dict[str, list[str]] = {}
     for candidate in candidates:
-        missing: list[str] = []
-        if not candidate.source_validation_result_ids:
-            missing.append("source_validation_result_ids")
-        if not candidate.evidence_summary:
-            missing.append("evidence_summary")
-        if not candidate.validation_summary:
-            missing.append("validation_summary")
-        if not candidate.portfolio_role:
-            missing.append("portfolio_role")
-        if not candidate.invalidation_triggers:
-            missing.append("invalidation_triggers")
-        if not candidate.risk_gate_request.required_checks:
-            missing.append("risk_gate_handoff")
-        if not candidate.constraint_notes:
-            missing.append("constraint_notes")
-        if not candidate.alternatives_considered:
-            missing.append("alternatives_considered")
-        if not candidate.do_nothing_case:
-            missing.append("do_nothing_case")
-        if not candidate.risk_gate_request.human_review_required:
-            missing.append("human_review_required")
+        missing = missing_proposal_fields(candidate)
         if missing:
             missing_required_fields[candidate.proposal_id] = missing
         hits = find_blocked_language(candidate_text_for_guard(candidate))

@@ -121,7 +121,7 @@ def run_okx_command(
     if demo:
         command.append("--demo")
     command.extend([module, action, *safe_args])
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 -- validated OKX CLI action/args, shell disabled.
         command,
         text=True,
         capture_output=True,

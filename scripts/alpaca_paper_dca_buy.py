@@ -161,6 +161,98 @@ def bounded_plan_notional(plan: DcaBuyPlan) -> float | None:
     return float(Decimal(plan.qty) * Decimal(plan.latest_price))
 
 
+def fetch_account_and_clock(client: AlpacaPaperClient) -> tuple[dict, dict | None]:
+    account = client.get("/v2/account")
+    clock = client.get("/v2/clock")
+    if not isinstance(account, dict):
+        raise RuntimeError("unexpected account response")
+    return account, clock if isinstance(clock, dict) else None
+
+
+def build_plan(
+    *,
+    args: argparse.Namespace,
+    symbol: str,
+    price: Decimal | None,
+    use_dollar: bool,
+    method: str,
+) -> DcaBuyPlan:
+    return DcaBuyPlan(
+        schedule_id="basic_investor_dca_v1",
+        symbol=symbol,
+        side="buy",
+        qty=None if use_dollar else args.qty,
+        notional=str(args.notional) if use_dollar else None,
+        order_type="market",
+        latest_price=str(price) if price is not None else None,
+        thesis=args.thesis,
+        invalidation=args.invalidation,
+        method=method,
+        not_investment_advice=True,
+    )
+
+
+def initial_market_access() -> dict:
+    return {
+        "evaluated": False,
+        "allowed_within_limit": False,
+        "blocking_reasons": [],
+        "entry_id": None,
+        "execution_allowed": False,
+    }
+
+
+def maybe_execute_plan(
+    *,
+    args: argparse.Namespace,
+    client: AlpacaPaperClient,
+    account: dict,
+    symbol: str,
+    plan: DcaBuyPlan,
+    may_execute: bool,
+    use_dollar: bool,
+) -> tuple[dict | None, str | None, dict]:
+    order = None
+    error = None
+    market_access = initial_market_access()
+    if not may_execute:
+        return order, error, market_access
+    try:
+        if not args.operator.strip():
+            raise MarketAccessLedgerError("named operator is required before paper execution")
+        key = market_access_key(account=account, operator=args.operator, symbol=symbol)
+        notional = bounded_plan_notional(plan)
+        decision = evaluate_market_access(
+            key=key,
+            notional=notional,
+            limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
+            ledger=load_market_access_ledger(),
+        )
+        market_access = decision.model_dump(mode="json") | {"evaluated": True, "entry_id": None}
+        if decision.allowed_within_limit:
+            entry = record_consumption(
+                key=key,
+                notional=notional,
+                limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
+                source_ref=f"alpaca_dca_pre_submit:{symbol}",
+            )
+            market_access["entry_id"] = entry.entry_id
+            order = place_market_buy(
+                client,
+                symbol,
+                qty=None if use_dollar else args.qty,
+                notional=args.notional if use_dollar else None,
+            )
+    except urllib.error.HTTPError as exc:
+        error = exc.read().decode("utf-8", errors="replace")
+    except MarketAccessLedgerError as exc:
+        error = str(exc)
+        market_access["blocking_reasons"] = [str(exc)]
+    except Exception as exc:
+        error = str(exc)
+    return order, error, market_access
+
+
 def main() -> int:
     args = parse_args()
     client = AlpacaPaperClient()
@@ -170,8 +262,7 @@ def main() -> int:
         return 1
 
     try:
-        account = client.get("/v2/account")
-        clock = client.get("/v2/clock")
+        account, clock = fetch_account_and_clock(client)
     except urllib.error.HTTPError as exc:
         print(f"alpaca_http_error={exc.code}", file=sys.stderr)
         print(exc.read().decode("utf-8", errors="replace"), file=sys.stderr)
@@ -179,11 +270,8 @@ def main() -> int:
     except Exception as exc:
         print(f"alpaca_error={exc}", file=sys.stderr)
         return 1
-    if not isinstance(account, dict):
-        print("alpaca_error=unexpected account response", file=sys.stderr)
-        return 1
 
-    market_open = bool(clock.get("is_open")) if isinstance(clock, dict) else None
+    market_open = bool(clock.get("is_open")) if clock else None
     account_ok = account.get("status") == "ACTIVE" and not account.get("trading_blocked")
 
     # Behavioral guard is account-level; evaluate once per run.
@@ -202,70 +290,22 @@ def main() -> int:
     results = []
     for symbol in symbols:
         price = latest_price(client, symbol)
-        plan = DcaBuyPlan(
-            schedule_id="basic_investor_dca_v1",
+        plan = build_plan(
+            args=args,
             symbol=symbol,
-            side="buy",
-            qty=None if use_dollar else args.qty,
-            notional=str(args.notional) if use_dollar else None,
-            order_type="market",
-            latest_price=str(price) if price is not None else None,
-            thesis=args.thesis,
-            invalidation=args.invalidation,
+            price=price,
+            use_dollar=use_dollar,
             method=method,
-            not_investment_advice=True,
         )
-        order = None
-        error = None
-        market_access = {
-            "evaluated": False,
-            "allowed_within_limit": False,
-            "blocking_reasons": [],
-            "entry_id": None,
-            "execution_allowed": False,
-        }
-        if may_execute:
-            try:
-                if not args.operator.strip():
-                    raise MarketAccessLedgerError(
-                        "named operator is required before paper execution"
-                    )
-                key = market_access_key(
-                    account=account,
-                    operator=args.operator,
-                    symbol=symbol,
-                )
-                decision = evaluate_market_access(
-                    key=key,
-                    notional=bounded_plan_notional(plan),
-                    limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
-                    ledger=load_market_access_ledger(),
-                )
-                market_access = decision.model_dump(mode="json") | {
-                    "evaluated": True,
-                    "entry_id": None,
-                }
-                if decision.allowed_within_limit:
-                    entry = record_consumption(
-                        key=key,
-                        notional=bounded_plan_notional(plan),
-                        limit=ALPACA_DCA_MARKET_ACCESS_LIMIT,
-                        source_ref=f"alpaca_dca_pre_submit:{symbol}",
-                    )
-                    market_access["entry_id"] = entry.entry_id
-                    order = place_market_buy(
-                        client,
-                        symbol,
-                        qty=None if use_dollar else args.qty,
-                        notional=args.notional if use_dollar else None,
-                    )
-            except urllib.error.HTTPError as exc:
-                error = exc.read().decode("utf-8", errors="replace")
-            except MarketAccessLedgerError as exc:
-                error = str(exc)
-                market_access["blocking_reasons"] = [str(exc)]
-            except Exception as exc:  # noqa: BLE001 - record, do not crash the batch
-                error = str(exc)
+        order, error, market_access = maybe_execute_plan(
+            args=args,
+            client=client,
+            account=account,
+            symbol=symbol,
+            plan=plan,
+            may_execute=may_execute,
+            use_dollar=use_dollar,
+        )
 
         receipt = {
             "timestamp_utc": datetime.now(UTC).isoformat(),

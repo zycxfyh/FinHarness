@@ -245,7 +245,7 @@ def build_test_map(root: Path = ROOT) -> dict[str, Any]:
 
 def git_changed_files(root: Path = ROOT) -> list[str]:
     result = subprocess.run(
-        ["git", "status", "--short"],
+        ["git", "status", "--short"],  # noqa: S607 -- local developer git executable.
         cwd=root,
         check=False,
         text=True,

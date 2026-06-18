@@ -214,6 +214,25 @@ def load_research_asset_catalog(root: Path = RESEARCH_DATA_ROOT) -> ResearchAsse
     )
 
 
+def _append_unique(target: list[str], value: str) -> None:
+    if value not in target:
+        target.append(value)
+
+
+def _select_typed_assets(
+    *,
+    requested_ids: list[str] | None,
+    lookup: dict[str, Any],
+    selected_ids: list[str],
+    missing_ids: list[str],
+) -> None:
+    for asset_id in requested_ids or []:
+        if asset_id in lookup:
+            _append_unique(selected_ids, asset_id)
+        else:
+            _append_unique(missing_ids, asset_id)
+
+
 def resolve_research_assets(
     *,
     research_asset_ids: list[str] | None = None,
@@ -237,35 +256,34 @@ def resolve_research_assets(
     selected_reference_ids: list[str] = []
     missing_ids: list[str] = []
 
-    def append_unique(target: list[str], value: str) -> None:
-        if value not in target:
-            target.append(value)
-
     for asset_id in research_asset_ids or []:
         if asset_id in strategy_by_id:
-            append_unique(selected_strategy_ids, asset_id)
+            _append_unique(selected_strategy_ids, asset_id)
         elif asset_id in method_by_id:
-            append_unique(selected_method_ids, asset_id)
+            _append_unique(selected_method_ids, asset_id)
         elif asset_id in reference_by_id:
-            append_unique(selected_reference_ids, asset_id)
+            _append_unique(selected_reference_ids, asset_id)
         else:
-            append_unique(missing_ids, asset_id)
+            _append_unique(missing_ids, asset_id)
 
-    for asset_id in strategy_spec_ids or []:
-        if asset_id in strategy_by_id:
-            append_unique(selected_strategy_ids, asset_id)
-        else:
-            append_unique(missing_ids, asset_id)
-    for asset_id in method_spec_ids or []:
-        if asset_id in method_by_id:
-            append_unique(selected_method_ids, asset_id)
-        else:
-            append_unique(missing_ids, asset_id)
-    for asset_id in reference_card_ids or []:
-        if asset_id in reference_by_id:
-            append_unique(selected_reference_ids, asset_id)
-        else:
-            append_unique(missing_ids, asset_id)
+    _select_typed_assets(
+        requested_ids=strategy_spec_ids,
+        lookup=strategy_by_id,
+        selected_ids=selected_strategy_ids,
+        missing_ids=missing_ids,
+    )
+    _select_typed_assets(
+        requested_ids=method_spec_ids,
+        lookup=method_by_id,
+        selected_ids=selected_method_ids,
+        missing_ids=missing_ids,
+    )
+    _select_typed_assets(
+        requested_ids=reference_card_ids,
+        lookup=reference_by_id,
+        selected_ids=selected_reference_ids,
+        missing_ids=missing_ids,
+    )
 
     return ResearchAssetSelection(
         policy=policy,

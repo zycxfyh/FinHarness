@@ -74,7 +74,7 @@ def evaluate_latest_risk_note_payload(timeout_seconds: float = 60.0) -> dict[str
         "--no-cache",
     ]
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 -- fixed local promptfoo command, shell disabled.
             command,
             cwd=ROOT,
             env={

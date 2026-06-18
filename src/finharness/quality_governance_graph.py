@@ -84,7 +84,7 @@ def repo_intelligence_node(
 
 def _run_command(command: list[str], *, cwd: Path) -> dict[str, Any]:
     started = time.perf_counter()
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 -- local quality command list, shell disabled.
         command,
         cwd=cwd,
         check=False,

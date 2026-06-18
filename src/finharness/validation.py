@@ -799,32 +799,35 @@ def backtest_metrics(
         "trade_count": trade_count,
         "provider": provider,
     }
-    if reason:
-        metrics["reason"] = reason
-    if strategy:
-        metrics["strategy"] = strategy
-    if rung:
-        metrics["rung"] = rung
-    if trial_count is not None:
-        metrics["trial_count"] = trial_count
-    if return_sample_count is not None:
-        metrics["return_sample_count"] = return_sample_count
-    if observed_sharpe is not None:
-        metrics["observed_sharpe"] = observed_sharpe
-    if return_skew is not None:
-        metrics["return_skew"] = return_skew
-    if return_kurtosis is not None:
-        metrics["return_kurtosis"] = return_kurtosis
-    if psr_gt_zero is not None:
-        metrics["psr_gt_zero"] = psr_gt_zero
-    if oos:
-        metrics["oos"] = oos
-    if walk_forward:
-        metrics["walk_forward"] = walk_forward
-    if discount:
-        metrics["discount"] = discount
-    if selected_config:
-        metrics["selected_config"] = selected_config
+    metrics.update(
+        {
+            key: value
+            for key, value in {
+                "trial_count": trial_count,
+                "return_sample_count": return_sample_count,
+                "observed_sharpe": observed_sharpe,
+                "return_skew": return_skew,
+                "return_kurtosis": return_kurtosis,
+                "psr_gt_zero": psr_gt_zero,
+            }.items()
+            if value is not None
+        }
+    )
+    metrics.update(
+        {
+            key: value
+            for key, value in {
+                "reason": reason,
+                "strategy": strategy,
+                "rung": rung,
+                "oos": oos,
+                "walk_forward": walk_forward,
+                "discount": discount,
+                "selected_config": selected_config,
+            }.items()
+            if value
+        }
+    )
     return metrics
 
 
@@ -886,6 +889,71 @@ def _nan_if_none(value: float | None) -> float:
 MIN_SUPPORTED_TRADES = 5
 
 
+def map_in_sample_backtest_result(total_return: float | None) -> ValidationResult:
+    if total_return is not None and total_return <= -0.02:
+        return "weakened"
+    return "inconclusive"
+
+
+def map_oos_backtest_result(
+    *,
+    trade_count: int,
+    oos_test_return: float | None,
+    oos_test_consistent: bool,
+    oos_test_trade_count: int | None,
+) -> ValidationResult:
+    if oos_test_trade_count is not None and oos_test_trade_count <= 0:
+        return "not_testable"
+    if oos_test_return is not None and oos_test_return <= -0.02:
+        return "weakened"
+    if (
+        oos_test_return is not None
+        and oos_test_return >= 0.02
+        and oos_test_consistent
+        and trade_count >= MIN_SUPPORTED_TRADES
+    ):
+        return "supported"
+    return "inconclusive"
+
+
+def map_walk_forward_backtest_result(
+    *,
+    trade_count: int,
+    walk_forward_frac_folds_positive: float | None,
+    walk_forward_mean_test_return: float | None,
+) -> ValidationResult:
+    if (
+        walk_forward_frac_folds_positive is not None
+        and walk_forward_mean_test_return is not None
+        and walk_forward_frac_folds_positive >= 0.6
+        and walk_forward_mean_test_return >= 0.0
+        and trade_count >= MIN_SUPPORTED_TRADES
+    ):
+        return "supported"
+    if walk_forward_frac_folds_positive is not None and walk_forward_frac_folds_positive <= 0.4:
+        return "weakened"
+    return "inconclusive"
+
+
+def map_trial_discounted_backtest_result(
+    *,
+    trade_count: int,
+    oos_test_return: float | None,
+    trial_psr_gt_zero: float | None,
+    trial_discount_method: str | None,
+) -> ValidationResult:
+    if oos_test_return is not None and oos_test_return <= -0.02:
+        return "weakened"
+    if (
+        trial_discount_method == "deflated_sharpe"
+        and trial_psr_gt_zero is not None
+        and trial_psr_gt_zero >= 0.95
+        and trade_count >= MIN_SUPPORTED_TRADES
+    ):
+        return "supported"
+    return "inconclusive"
+
+
 def map_backtest_result(
     *,
     rung: str,
@@ -902,48 +970,27 @@ def map_backtest_result(
     if trade_count == 0:
         return "not_testable"
     if rung == "in_sample":
-        if total_return is not None and total_return <= -0.02:
-            return "weakened"
-        return "inconclusive"
+        return map_in_sample_backtest_result(total_return)
     if rung == "out_of_sample":
-        if oos_test_trade_count is not None and oos_test_trade_count <= 0:
-            return "not_testable"
-        if oos_test_return is not None and oos_test_return <= -0.02:
-            return "weakened"
-        if (
-            oos_test_return is not None
-            and oos_test_return >= 0.02
-            and oos_test_consistent
-            and trade_count >= MIN_SUPPORTED_TRADES
-        ):
-            return "supported"
-        return "inconclusive"
+        return map_oos_backtest_result(
+            trade_count=trade_count,
+            oos_test_return=oos_test_return,
+            oos_test_consistent=oos_test_consistent,
+            oos_test_trade_count=oos_test_trade_count,
+        )
     if rung == "walk_forward":
-        if (
-            walk_forward_frac_folds_positive is not None
-            and walk_forward_mean_test_return is not None
-            and walk_forward_frac_folds_positive >= 0.6
-            and walk_forward_mean_test_return >= 0.0
-            and trade_count >= MIN_SUPPORTED_TRADES
-        ):
-            return "supported"
-        if (
-            walk_forward_frac_folds_positive is not None
-            and walk_forward_frac_folds_positive <= 0.4
-        ):
-            return "weakened"
-        return "inconclusive"
+        return map_walk_forward_backtest_result(
+            trade_count=trade_count,
+            walk_forward_frac_folds_positive=walk_forward_frac_folds_positive,
+            walk_forward_mean_test_return=walk_forward_mean_test_return,
+        )
     if rung == "trial_discounted":
-        if oos_test_return is not None and oos_test_return <= -0.02:
-            return "weakened"
-        if (
-            trial_discount_method == "deflated_sharpe"
-            and trial_psr_gt_zero is not None
-            and trial_psr_gt_zero >= 0.95
-            and trade_count >= MIN_SUPPORTED_TRADES
-        ):
-            return "supported"
-        return "inconclusive"
+        return map_trial_discounted_backtest_result(
+            trade_count=trade_count,
+            oos_test_return=oos_test_return,
+            trial_psr_gt_zero=trial_psr_gt_zero,
+            trial_discount_method=trial_discount_method,
+        )
     return "inconclusive"
 
 

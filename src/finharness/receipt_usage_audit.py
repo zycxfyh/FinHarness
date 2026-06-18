@@ -66,31 +66,28 @@ def _receipt_status(payload: dict[str, Any]) -> str:
     return str(payload.get("status") or payload.get("decision") or "unknown")
 
 
+CONSUMER_KIND_PREFIXES = (
+    ("docs/lessons/drafts/", "lesson_draft"),
+    ("docs/lessons/", "lesson"),
+    ("docs/reviews/", "review"),
+    ("docs/reports/", "report"),
+    ("data/reports/", "report"),
+    ("docs/operations/", "governance_doc"),
+    ("docs/architecture/", "governance_doc"),
+    ("docs/proposals/", "proposal_doc"),
+    ("docs/notes/", "note_doc"),
+    ("docs/think/", "think_doc"),
+    ("ideas/", "idea"),
+    ("data/research/", "research_asset"),
+    ("data/security/", "security_asset"),
+    ("data/watchlists/", "watchlist"),
+)
+
+
 def _consumer_kind(path: str) -> str:
-    if path.startswith("docs/lessons/drafts/"):
-        return "lesson_draft"
-    if path.startswith("docs/lessons/"):
-        return "lesson"
-    if path.startswith("docs/reviews/"):
-        return "review"
-    if path.startswith("docs/reports/") or path.startswith("data/reports/"):
-        return "report"
-    if path.startswith("docs/operations/") or path.startswith("docs/architecture/"):
-        return "governance_doc"
-    if path.startswith("docs/proposals/"):
-        return "proposal_doc"
-    if path.startswith("docs/notes/"):
-        return "note_doc"
-    if path.startswith("docs/think/"):
-        return "think_doc"
-    if path.startswith("ideas/"):
-        return "idea"
-    if path.startswith("data/research/"):
-        return "research_asset"
-    if path.startswith("data/security/"):
-        return "security_asset"
-    if path.startswith("data/watchlists/"):
-        return "watchlist"
+    for prefix, kind in CONSUMER_KIND_PREFIXES:
+        if path.startswith(prefix):
+            return kind
     return "project_doc"
 
 

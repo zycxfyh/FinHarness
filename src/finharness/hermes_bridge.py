@@ -36,7 +36,7 @@ def run_hermes_single_query(
 ) -> str:
     """Run one non-interactive hermes query (`hermes -z`) and return stdout."""
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603 -- local hermes CLI adapter, shell disabled.
             [hermes_bin, "-t", toolsets, "-z", prompt],
             text=True,
             capture_output=True,
