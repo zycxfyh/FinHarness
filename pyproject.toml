@@ -32,6 +32,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "mypy>=2.1.0",
     "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]
@@ -61,3 +62,29 @@ max-complexity = 12
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/finharness"]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "finharness.risk_gate",
+    "finharness.authorization",
+    "finharness.market_access_ledger",
+    "finharness.effective_rules",
+    "finharness.effective_ceilings",
+    "finharness.okx_live_gate",
+    "finharness.rule_change_ledger",
+    "finharness.restricted_symbols",
+    "finharness.trading_guard",
+    "finharness.statecore.*",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true

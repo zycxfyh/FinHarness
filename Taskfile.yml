@@ -34,6 +34,7 @@ tasks:
     desc: Run the standard local verification suite
     cmds:
       - task: lint
+      - task: typecheck
       - task: test
       - task: test:properties
       - task: rules:audit
@@ -129,6 +130,11 @@ tasks:
     desc: Run Python lint checks
     cmds:
       - uv run ruff check .
+
+  typecheck:
+    desc: Static type check (mypy; strict on safety-critical core)
+    cmds:
+      - uv run mypy
 
   format:
     desc: Format Python code

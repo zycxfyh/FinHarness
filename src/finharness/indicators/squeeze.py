@@ -28,7 +28,7 @@ def compute_squeeze_momentum(
         timeperiod=bb_length,
         nbdevup=bb_mult,
         nbdevdn=bb_mult,
-        matype=0,
+        matype=talib.MA_Type.SMA,
     )
     upper_bb = pd.Series(upper_bb_raw, index=data.index)
     lower_bb = pd.Series(lower_bb_raw, index=data.index)

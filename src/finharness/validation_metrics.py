@@ -45,7 +45,7 @@ def load_cached_close_series(symbol: str, *, cache_dir: Path | None = None) -> l
                 if value in (None, ""):
                     continue
                 try:
-                    closes.append(float(value))
+                    closes.append(float(str(value)))
                 except (TypeError, ValueError):
                     continue
     except OSError:

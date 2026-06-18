@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from finharness.data_entry import fetch_yfinance_history
 from finharness.market_data import (
+    AdjustmentMode,
     MarketDataQuality,
     SourceSpec,
     adjusted_from_adjustment,
@@ -25,7 +26,7 @@ class MarketDataGraphState(TypedDict, total=False):
     start: str
     end: str
     adjusted: bool
-    adjustment: str
+    adjustment: AdjustmentMode
     second_provider: Any
     write_catalog: bool
     source: dict[str, Any]
@@ -84,7 +85,7 @@ def fetch_market_data_node(state: MarketDataGraphState) -> MarketDataGraphState:
         state["symbol"],
         state["start"],
         state["end"],
-        adjustment=state["adjustment"],  # type: ignore[arg-type]
+        adjustment=state["adjustment"],
     )
     return {
         "history_records": _history_to_records(history),
@@ -114,7 +115,7 @@ def quality_node(state: MarketDataGraphState) -> MarketDataGraphState:
         state["end"],
         primary_history=history,
         second_provider=state.get("second_provider"),
-        adjustment=state["adjustment"],  # type: ignore[arg-type]
+        adjustment=state["adjustment"],
     )
     quality = build_quality_report(
         history,
@@ -150,7 +151,7 @@ def snapshot_node(state: MarketDataGraphState) -> MarketDataGraphState:
         },
         raw_payload=state["raw_payload"],
         adjusted=state["adjusted"],
-        adjustment=state["adjustment"],  # type: ignore[arg-type]
+        adjustment=state["adjustment"],
         quality=quality,
         write_catalog=state.get("write_catalog", True),
     )

@@ -19,7 +19,6 @@ from finharness.execution import (
     ExecutionEvent,
     ExecutionOrderRequest,
     ExecutionSnapshot,
-    ExecutionStatus,
 )
 from finharness.market_data import ROOT, sha256_text
 
@@ -37,6 +36,7 @@ PostTradeStatus = Literal[
     "needs_human_review",
 ]
 PostTradeExceptionSeverity = Literal["info", "warning", "critical"]
+TerminalQuantityStatus = Literal["pending_monitoring", "canceled", "rejected"]
 
 
 class PostTradeSourceSpec(BaseModel):
@@ -323,7 +323,7 @@ def terminal_quantity_for_events(
     *,
     requested_quantity: int,
     filled_quantity: int,
-    terminal_status: ExecutionStatus,
+    terminal_status: TerminalQuantityStatus,
 ) -> tuple[int, int]:
     remaining = max(requested_quantity - filled_quantity, 0)
     if terminal_status == "canceled":
@@ -394,7 +394,7 @@ def build_reconciliations(
         intended_quantity = requests_by_id[request.order_request_id].quantity
         submitted_quantity = submitted_quantity_for_events(events, intended_quantity)
         status = status_for_events(events)
-        terminal_status = "pending_monitoring"
+        terminal_status: TerminalQuantityStatus = "pending_monitoring"
         if status == "reconciled_canceled":
             terminal_status = "canceled"
         elif status == "reconciled_rejected":

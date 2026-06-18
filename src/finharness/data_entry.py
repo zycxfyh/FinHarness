@@ -71,8 +71,8 @@ def fetch_openbb_quote(symbol: str) -> QuoteSnapshot:
         symbol=str(row.get("symbol", symbol)),
         name=row.get("name"),
         exchange=row.get("exchange"),
-        last_price=float(last_price) if pd.notna(last_price) else None,
-        previous_close=float(previous_close) if pd.notna(previous_close) else None,
+        last_price=scalar_float_or_none(last_price),
+        previous_close=scalar_float_or_none(previous_close),
         currency=row.get("currency"),
         provider="openbb:yfinance",
     )
@@ -114,8 +114,8 @@ def fetch_yfinance_quote(symbol: str) -> QuoteSnapshot:
         symbol=str(info.get("symbol") or symbol).upper(),
         name=info.get("shortName") or info.get("longName"),
         exchange=info.get("exchange") or fast_info.get("exchange"),
-        last_price=float(last_price) if pd.notna(last_price) else None,
-        previous_close=float(previous_close) if pd.notna(previous_close) else None,
+        last_price=scalar_float_or_none(last_price),
+        previous_close=scalar_float_or_none(previous_close),
         currency=info.get("currency") or fast_info.get("currency"),
         provider="yfinance",
     )
@@ -136,6 +136,12 @@ def first_positive(*values: Any) -> float | None:
             if number > 0:
                 return number
     return None
+
+
+def scalar_float_or_none(value: Any) -> float | None:
+    if value is None or not pd.notna(value):
+        return None
+    return float(value)
 
 
 AdjustmentMode = Literal["raw", "auto_adjust"]

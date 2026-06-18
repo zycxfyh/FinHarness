@@ -199,7 +199,7 @@ def build_receipt_usage_audit(root: Path | str = ROOT) -> dict[str, Any]:
             }
         )
 
-    missing_references = [
+    missing_references: list[dict[str, Any]] = [
         {
             "receipt_ref": receipt_ref,
             "referrers": refs,

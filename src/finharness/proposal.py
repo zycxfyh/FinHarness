@@ -427,7 +427,7 @@ def formulate_proposal_candidate(
         source_validation_result_ids=result_ids(results),
         source_hypothesis_ids=[hypothesis_id],
         symbol=symbol,
-        action_type=str(draft.get("action_type") or action_type),  # type: ignore[arg-type]
+        action_type=str(draft.get("action_type") or action_type),
         portfolio_role=str(draft.get("portfolio_role") or portfolio_role),
         rationale=str(
             draft.get("rationale")

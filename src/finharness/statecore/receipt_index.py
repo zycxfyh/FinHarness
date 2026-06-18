@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Engine
 
@@ -173,4 +173,4 @@ def index_receipts(
     engine: Engine,
 ) -> list[ReceiptIndex]:
     records = build_receipt_index_records(receipt_root)
-    return list(upsert_records(records, engine=engine))
+    return cast(list[ReceiptIndex], upsert_records(records, engine=engine))

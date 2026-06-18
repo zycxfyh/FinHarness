@@ -14,7 +14,12 @@ from finharness.data_entry import (
     write_history_csv,
 )
 from finharness.indicator_layer import build_indicator_snapshot
-from finharness.market_data import SourceSpec, build_ohlcv_snapshot_from_history, package_version
+from finharness.market_data import (
+    AdjustmentMode,
+    SourceSpec,
+    build_ohlcv_snapshot_from_history,
+    package_version,
+)
 from finharness.metrics import RiskReturnSummary, summarize
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,7 +91,7 @@ def run_data_entry_workflow(
     CACHE.mkdir(parents=True, exist_ok=True)
 
     quote = fetch_quote_snapshot(symbol)
-    adjustment = "auto_adjust"
+    adjustment: AdjustmentMode = "auto_adjust"
     history = fetch_yfinance_history(symbol, start, end, adjustment=adjustment)
     data_receipt = build_ohlcv_snapshot_from_history(
         history,

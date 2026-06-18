@@ -20,7 +20,7 @@ gate adds the structural bounds the live path was missing.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -482,6 +482,24 @@ def execute_live_order(
             error=None,
         )
         raise LiveOrderBlocked(decision) from None
+    if decision.notional is None or decision.market_access_limit is None:
+        blocked_decision = replace(
+            decision,
+            allowed=False,
+            blocking_reasons=[
+                *decision.blocking_reasons,
+                "allowed decision missing bounded market-access inputs",
+            ],
+        )
+        _write_receipt(
+            request=request,
+            decision=blocked_decision,
+            outcome="error",
+            okx_result_ref=None,
+            market_access_entry_id=None,
+            error="allowed decision missing bounded market-access inputs",
+        )
+        raise LiveOrderBlocked(blocked_decision) from None
 
     try:
         market_access_entry = record_consumption(

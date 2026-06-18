@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Any
 
 import pandas as pd
 import quantstats as qs
@@ -78,11 +79,11 @@ def _returns_series(prices: list[float]) -> pd.Series:
     return pd.Series(prices, dtype="float64").pct_change().dropna()
 
 
-def _finite_float(value: object, *, default: float) -> float:
+def _finite_float(value: Any, *, default: float) -> float:
     result = float(value)
     return result if isfinite(result) else default
 
 
-def _nullable_float(value: object) -> float | None:
+def _nullable_float(value: Any) -> float | None:
     result = float(value)
     return result if isfinite(result) else None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import Engine
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from finharness.statecore.models import Position, Snapshot
 
@@ -17,7 +17,7 @@ def latest_portfolio_snapshot(
     statement = select(Snapshot).where(Snapshot.kind == "portfolio")
     if before is not None:
         statement = statement.where(Snapshot.as_of_utc < before)
-    statement = statement.order_by(Snapshot.as_of_utc.desc(), Snapshot.snapshot_id.desc())
+    statement = statement.order_by(col(Snapshot.as_of_utc).desc(), col(Snapshot.snapshot_id).desc())
     with Session(engine) as session:
         return session.exec(statement).first()
 

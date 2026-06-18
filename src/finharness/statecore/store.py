@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Any, cast
 
 from sqlalchemy import Engine, event, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -43,7 +44,7 @@ def _database_url(path: Path) -> str:
     return f"sqlite:///{path}"
 
 
-def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+def _enable_sqlite_foreign_keys(dbapi_connection: Any, _connection_record: Any) -> None:
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -161,7 +162,7 @@ def upsert_records(
 
 def read_all(model: type[StateCoreRecord], *, engine: Engine) -> Sequence[StateCoreRecord]:
     with Session(engine) as session:
-        return list(session.exec(select(model)).all())
+        return cast(Sequence[StateCoreRecord], list(session.exec(select(model)).all()))
 
 
 def get_account(account_id: str, *, engine: Engine) -> Account | None:

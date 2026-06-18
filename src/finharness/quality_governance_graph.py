@@ -21,7 +21,7 @@ from finharness.repo_intelligence_graph import run_repo_intelligence_graph
 
 WORKFLOW_VERSION = "langgraph_quality_governance_v1"
 
-DEFAULT_CHECKS = [
+DEFAULT_CHECKS: list[dict[str, Any]] = [
     {
         "name": "task check",
         "command": ["task", "check"],
