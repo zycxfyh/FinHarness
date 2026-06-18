@@ -58,8 +58,8 @@ class PropertyBaselineTest(unittest.TestCase):
 
     def test_security_surface_never_authorizes_execution_for_high_risk_files(self) -> None:
         samples = [
-            ["src/finharness/execution.py"],
-            ["src/finharness/risk_gate.py"],
+            ["src/finharness/execution/__init__.py"],
+            ["src/finharness/risk_gate/__init__.py"],
             [".github/workflows/security.yml"],
             ["docs/ordinary.md"],
         ]

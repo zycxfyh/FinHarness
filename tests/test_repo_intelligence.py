@@ -19,7 +19,7 @@ class RepoIntelligenceTest(unittest.TestCase):
         graph = build_import_graph()
         node_paths = {node["path"] for node in graph["nodes"]}
         self.assertIn("src/finharness/ten_layer_graph.py", node_paths)
-        self.assertIn("src/finharness/risk_gate.py", node_paths)
+        self.assertIn("src/finharness/risk_gate/__init__.py", node_paths)
         self.assertTrue(
             any(edge["source"] == "src/finharness/ten_layer_graph.py" for edge in graph["edges"])
         )
@@ -40,12 +40,12 @@ class RepoIntelligenceTest(unittest.TestCase):
     def test_blast_radius_recommends_risk_checks(self) -> None:
         graph = build_import_graph()
         tests = build_test_map()
-        blast = build_blast_radius(["src/finharness/risk_gate.py"], graph, tests)
+        blast = build_blast_radius(["src/finharness/risk_gate/__init__.py"], graph, tests)
         self.assertIn("task eval:redteam-boundary", blast["required_checks"])
         self.assertIn("uv run python -m unittest tests/test_risk_gate.py", blast["required_checks"])
 
     def test_execution_boundary_requires_human_review(self) -> None:
-        surface = classify_security_surface(["src/finharness/execution.py"])
+        surface = classify_security_surface(["src/finharness/execution/__init__.py"])
         self.assertTrue(surface["requires_human_review"])
         self.assertFalse(surface["execution_allowed"])
 
@@ -56,7 +56,7 @@ class RepoIntelligenceTest(unittest.TestCase):
 
     def test_repo_intelligence_graph_outputs_final_decision_context(self) -> None:
         result = run_repo_intelligence_graph(
-            changed_files=["src/finharness/execution.py"]
+            changed_files=["src/finharness/execution/__init__.py"]
         )
         final = result["final"]
         self.assertEqual(final["source"]["graph"], "repo_intelligence_graph")

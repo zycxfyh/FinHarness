@@ -17,9 +17,9 @@ pnpm-lock.yaml @zycxfyh
 docs/archive/legacy-rust-crate/ @zycxfyh
 
 # Trading, provider, execution, risk, and governance code.
-src/finharness/execution.py @zycxfyh
+src/finharness/execution/ @zycxfyh
 src/finharness/execution_graph.py @zycxfyh
-src/finharness/risk_gate.py @zycxfyh
+src/finharness/risk_gate/ @zycxfyh
 src/finharness/risk_gate_graph.py @zycxfyh
 src/finharness/okx_cli.py @zycxfyh
 src/finharness/alpaca_client.py @zycxfyh
