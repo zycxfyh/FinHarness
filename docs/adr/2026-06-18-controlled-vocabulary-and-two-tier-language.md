@@ -1,7 +1,7 @@
 # ADR: 受控词表与两层语言政策
 
 Date: 2026-06-18
-Status: proposed
+Status: accepted
 Deciders: FinHarness project operator
 Authors: Claude draft, Codex review/implementation notes
 
