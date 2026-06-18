@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from finharness.authorization import AuthorizationDecision
 from finharness.execution._constants import (
-    EXECUTION_NORMALIZED_ROOT,
-    EXECUTION_RECEIPT_ROOT,
     NAUTILUS_PAPER_ADAPTER_NAME,
     ExecutionStatus,
 )
@@ -37,6 +36,15 @@ from finharness.execution.planning import (
 )
 from finharness.market_data import sha256_text
 from finharness.risk_gate import RiskGateSnapshot
+
+
+def execution_storage_roots() -> tuple[Path, Path]:
+    from finharness import execution as execution_package
+
+    return (
+        execution_package.EXECUTION_NORMALIZED_ROOT,
+        execution_package.EXECUTION_RECEIPT_ROOT,
+    )
 
 
 def final_status(events: list[ExecutionEvent]) -> ExecutionStatus:
@@ -176,9 +184,10 @@ def persist_execution_bundle(
         receipt_written=False,
     )
     snapshot_id = f"exsnap_{uuid4().hex[:12]}"
-    payload_path = EXECUTION_NORMALIZED_ROOT / f"{snapshot_id}.json"
+    normalized_root, receipt_root = execution_storage_roots()
+    payload_path = normalized_root / f"{snapshot_id}.json"
     receipt_id = f"receipt_exec_{uuid4().hex[:12]}"
-    receipt_path = EXECUTION_RECEIPT_ROOT / f"{receipt_id}.json"
+    receipt_path = receipt_root / f"{receipt_id}.json"
     order_request_hash = sha256_text(
         json.dumps(
             [request.model_dump(mode="json") for request in order_requests],

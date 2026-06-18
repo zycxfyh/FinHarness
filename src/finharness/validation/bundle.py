@@ -10,10 +10,6 @@ from uuid import uuid4
 
 from finharness.hypotheses import HypothesisSnapshot
 from finharness.market_data import display_path, sha256_text
-from finharness.validation._constants import (
-    VALIDATION_NORMALIZED_ROOT,
-    VALIDATION_RECEIPT_ROOT,
-)
 from finharness.validation._util import (
     find_blocked_language,
     now_utc,
@@ -38,6 +34,15 @@ from finharness.validation.providers import (
     HermesValidationDraftProvider,
     NullValidationDraftProvider,
 )
+
+
+def validation_storage_roots() -> tuple[Path, Path]:
+    from finharness import validation as validation_package
+
+    return (
+        validation_package.VALIDATION_NORMALIZED_ROOT,
+        validation_package.VALIDATION_RECEIPT_ROOT,
+    )
 
 
 def build_validation_quality(
@@ -204,8 +209,9 @@ def persist_validation_bundle(
     suffix = uuid4().hex[:8]
     snapshot_id = f"vals_{stamp}_{suffix}"
     receipt_id = f"receipt_{snapshot_id}"
-    output_ref = VALIDATION_NORMALIZED_ROOT / f"{snapshot_id}.json"
-    receipt_ref = VALIDATION_RECEIPT_ROOT / f"{receipt_id}.json"
+    normalized_root, receipt_root = validation_storage_roots()
+    output_ref = normalized_root / f"{snapshot_id}.json"
+    receipt_ref = receipt_root / f"{receipt_id}.json"
     quality = build_validation_quality(
         snapshot=input_hypothesis_snapshot,
         jobs=jobs,
