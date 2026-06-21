@@ -37,6 +37,7 @@ tasks:
       - task: typecheck
       - task: test
       - task: test:properties
+      - task: test:frontend
       - task: rules:audit
       - task: experiments
       - task: eval:smoke
@@ -90,6 +91,11 @@ tasks:
     desc: Run property-style governance and boundary tests
     cmds:
       - uv run python -m unittest tests/test_property_baseline.py
+
+  test:frontend:
+    desc: Run jsdom-based frontend DOM tests (revision history render)
+    cmds:
+      - node frontend/tests/revision_history.test.cjs
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
