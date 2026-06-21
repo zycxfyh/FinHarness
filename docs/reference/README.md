@@ -10,6 +10,7 @@ Current reference surfaces:
 - Interfaces: [Interface Reference](interfaces.md).
 - Receipts: [Receipt Reference](receipts.md).
 - Config and environment variables: [Config And Environment Reference](config-env.md).
+- Engineering collaboration roles: [Engineering Roles Cheat Sheet](engineering-roles.md).
 - Wheels: [../wheels.md](../wheels.md).
 - Policy rules: [../architecture/policy-contract.md](../architecture/policy-contract.md).
 - Evidence and receipts: [../architecture/evidence-inventory.md](../architecture/evidence-inventory.md).

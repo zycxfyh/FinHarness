@@ -152,6 +152,31 @@ tasks:
     cmds:
       - uv run uvicorn finharness.api.app:app --host 127.0.0.1 --port 8765
 
+  personal-finance:import:
+    desc: Import a read-only FinHarness-contract personal-finance CSV into state core
+    cmds:
+      - uv run python scripts/import_personal_finance_export.py {{.CLI_ARGS}}
+
+  beancount:import:
+    desc: Mirror a real Beancount ledger (via bean-query) into state core, read-only
+    cmds:
+      - uv run python scripts/import_beancount_ledger.py {{.CLI_ARGS}}
+
+  db:migrate:
+    desc: Apply state-core schema migrations (PRAGMA user_version) to the database
+    cmds:
+      - uv run python scripts/migrate_state_core.py {{.CLI_ARGS}}
+
+  brief:daily:
+    desc: Compute and archive the unified daily brief as a dated receipt
+    cmds:
+      - uv run python scripts/record_daily_brief.py {{.CLI_ARGS}}
+
+  decisions:scan:
+    desc: Scan the exposure map and record capital-allocation candidates as governed proposals (read-only)
+    cmds:
+      - uv run python scripts/record_decisions.py {{.CLI_ARGS}}
+
   backup:
     desc: Back up state-core SQLite and receipts without relying on git
     cmds:

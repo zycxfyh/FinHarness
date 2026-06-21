@@ -95,6 +95,56 @@ changes, or execution authority. It may surface evidence-bound suggestions,
 warnings, and review prompts; those must remain conditional, auditable, and
 separate from any broker action.
 
+The local B0 cockpit is served by the product API. The API is read plus governed
+human attestation: it exposes reads and lets a named human attest a proposal, and
+nothing else — there is no order, transfer, live execution, or ceiling-raise
+endpoint (a test asserts the exact route set).
+
+```bash
+task api:serve
+# open http://127.0.0.1:8765/cockpit/
+```
+
+The browser surface shows Overview, Exposure, Proposals, and Timeline views.
+Proposal details include candidate evidence, options, attestations, and revision
+history. Human attestations are governance evidence, not execution authorization
+(`execution_allowed=false` everywhere).
+
+Personal-finance state can be mirrored without making FinHarness the ledger.
+There are two read-only adapters:
+
+- A direct connection to a real Beancount ledger via `bean-query` (no
+  intermediate file). This reads Assets holdings and Liabilities balances:
+
+  ```bash
+  task beancount:import -- path/to/ledger.beancount
+  ```
+
+- A FinHarness-contract CSV import (the CSV shape is defined by FinHarness;
+  produce it from your tool of choice). It supports holdings-only files and
+  typed rows for liabilities, goals, cashflows, tax events, insurance policies,
+  and document refs:
+
+  ```bash
+  task personal-finance:import -- path/to/export.csv
+  ```
+
+After importing state, build the read-only daily brief and capital-allocation
+candidates:
+
+```bash
+task brief:daily
+task decisions:scan
+```
+
+The candidates are recorded as governed proposals, so they appear in the
+existing Proposals view with receipts and revision history.
+
+Monetary fields are stored as exact `Decimal` (TEXT-backed so SQLite does not
+round-trip through float): personal-finance amounts and `Position`
+quantity/market value/cost basis. Snapshot diffs and observations aggregate in
+`Decimal` and present `float` at the receipt/API layer.
+
 Human attestation is fail-closed everywhere: risk-gate and execution runs
 stay at needs_human_review until a human attests with a written reason
 (`scripts/run_risk_gate_graph.py --interactive` pauses at a real LangGraph

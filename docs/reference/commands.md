@@ -64,6 +64,16 @@ need for human attestation.
 | `task release:preflight` | Run release preflight graph. |
 | `task repo:intelligence` | Build local repo intelligence graph and receipt. |
 
+## Personal Finance State
+
+| Command | Purpose | Boundary |
+| --- | --- | --- |
+| `task api:serve` | Serve the read-only local API and cockpit at `/cockpit/`. | Local read/review surface; does not create execution endpoints. |
+| `task beancount:import -- path/to/ledger.beancount` | Mirror a real Beancount ledger's holdings and liabilities into state core via `bean-query` (no intermediate CSV). | Read-only mirror; not accounting, tax, investment, or execution authority. |
+| `task personal-finance:import -- path/to/export.csv` | Import a FinHarness-contract personal-finance CSV into state core, including typed personal-finance rows when present. | Read-only mirror; not accounting, tax, investment, or execution authority. |
+| `task brief:daily` | Compute and archive the unified daily brief as a dated receipt. | Descriptive summary; not advice or execution authorization. |
+| `task decisions:scan` | Scan the exposure map and record capital-allocation candidates as governed proposals. | Read-only candidates with do-nothing option; human attestation is review evidence only. |
+
 ## Trading Guard And State
 
 | Command | Purpose | Safety note |
