@@ -116,6 +116,7 @@ class ExposureReport(BaseModel):
     annual_interest_estimate: float
     insurance_active_count: int
     insurance_review_gaps: tuple[str, ...]
+    tax_review_gaps: tuple[str, ...]
     upcoming_obligations: tuple[UpcomingObligation, ...]
     data_gaps: tuple[str, ...]
     source_refs: tuple[str, ...]
@@ -296,6 +297,54 @@ def _insurance_review(
     return len(active), review_gaps
 
 
+_TAX_HANDLED_STATUSES = frozenset({"paid", "filed", "settled", "done", "complete", "closed"})
+
+
+def _tax_review(
+    tax_events: list[TaxEvent],
+    as_of_date: date,
+    horizon_days: int,
+    data_gaps: list[str],
+) -> list[str]:
+    """Deadline / estimated-payment / document review (not tax advice).
+
+    Surfaces tax obligations that need human confirmation: missing or unverifiable
+    due dates, estimated payments with no recorded amount, upcoming or past-due
+    deadlines not yet marked handled. It never computes tax owed, optimizes tax, or
+    recommends filing/payment. Zero tax events on record is a data gap, not a
+    review gap, so an empty state core does not nag.
+    """
+    if not tax_events:
+        data_gaps.append("no tax event on record")
+        return []
+    horizon_end = date.fromordinal(as_of_date.toordinal() + horizon_days)
+    review_gaps: list[str] = []
+    for event in tax_events:
+        label = f"{event.event_type} ({event.jurisdiction})"
+        handled = (event.status or "").strip().lower() in _TAX_HANDLED_STATUSES
+        if not event.due_date.strip():
+            review_gaps.append(f"missing due date for {label}")
+        else:
+            due = _parse_date(event.due_date)
+            if due is None:
+                review_gaps.append(f"unverifiable due date for {label}")
+            elif not handled and due < as_of_date:
+                review_gaps.append(
+                    f"tax deadline {due.isoformat()} for {label} is past but not marked "
+                    "handled; confirm status"
+                )
+            elif not handled and due <= horizon_end:
+                review_gaps.append(
+                    f"tax deadline {due.isoformat()} for {label} is within {horizon_days} "
+                    "days; confirm it is handled"
+                )
+        if event.event_type.strip().lower().replace(" ", "_") == "estimated_payment" and (
+            event.estimated_amount is None or event.estimated_amount <= 0
+        ):
+            review_gaps.append(f"estimated payment amount not recorded for {label}")
+    return review_gaps
+
+
 def _base_currency(
     positions: list[Position],
     liabilities: list[Liability],
@@ -361,6 +410,7 @@ def compute_exposure(
     insurance_active_count, insurance_review_gaps = _insurance_review(
         insurance, reference_date, data_gaps
     )
+    tax_review_gaps = _tax_review(tax_events, reference_date, horizon_days, data_gaps)
     base_currency = _base_currency(positions, liabilities, data_gaps)
     # Aggregate provenance from every state input that participated in this report,
     # not just the portfolio snapshot. Otherwise candidates derived from non-position
@@ -404,6 +454,7 @@ def compute_exposure(
         annual_interest_estimate=float(annual_interest),
         insurance_active_count=insurance_active_count,
         insurance_review_gaps=tuple(insurance_review_gaps),
+        tax_review_gaps=tuple(tax_review_gaps),
         upcoming_obligations=tuple(obligations),
         data_gaps=tuple(data_gaps),
         source_refs=source_refs,

@@ -20,6 +20,7 @@ from finharness.statecore.models import (
     Proposal,
     ReceiptIndex,
     Snapshot,
+    TaxEvent,
 )
 from finharness.statecore.store import init_state_core, read_all, write_records
 
@@ -357,6 +358,133 @@ class AllocationCandidateTest(unittest.TestCase):
         self.assertNotIn("insurance_gap", kinds)
         self.assertIn("no insurance policy on record", report.data_gaps)
         self.assertEqual(report.insurance_active_count, 0)
+
+    def _tax_scan(self, *tax_events: TaxEvent):
+        write_records(list(tax_events), engine=self.engine)
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        return report, {c.detector_kind: c for c in compute_allocation_candidates(report)}
+
+    def test_tax_window_fires_on_upcoming_unhandled_deadline(self) -> None:
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="q3",
+                event_type="estimated_payment",
+                jurisdiction="US",
+                due_date="2026-07-15",
+                estimated_amount=Decimal("1200"),
+                currency="USD",
+                status="planned",
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        tax = candidates["tax_window"]
+        self.assertEqual(tax.dimension, "flow")
+        self.assertFalse(tax.execution_allowed)
+        option_kinds = [option.kind for option in tax.options]
+        self.assertIn("do_nothing", option_kinds)
+        self.assertLess(option_kinds.index("flow"), option_kinds.index("stock"))
+        self.assertTrue(any("within" in g for g in tax.evidence["review_gaps"]))
+
+    def test_tax_window_does_not_fire_when_handled(self) -> None:
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="q3",
+                event_type="estimated_payment",
+                jurisdiction="US",
+                due_date="2026-07-15",
+                estimated_amount=Decimal("1200"),
+                currency="USD",
+                status="paid",
+            )
+        )
+        self.assertNotIn("tax_window", candidates)
+
+    def test_tax_window_fires_on_missing_estimated_amount(self) -> None:
+        # Far-future due date (beyond the 90-day window) isolates the amount gap.
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="q4",
+                event_type="estimated_payment",
+                jurisdiction="US",
+                due_date="2026-12-15",
+                estimated_amount=None,
+                currency="USD",
+                status="planned",
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        gaps = candidates["tax_window"].evidence["review_gaps"]
+        self.assertTrue(any("amount not recorded" in g for g in gaps))
+
+    def test_tax_window_fires_on_past_due_unhandled(self) -> None:
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="q1",
+                event_type="estimated_payment",
+                jurisdiction="US",
+                due_date="2026-01-01",
+                estimated_amount=Decimal("500"),
+                currency="USD",
+                status="planned",
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        self.assertTrue(
+            any("is past" in g for g in candidates["tax_window"].evidence["review_gaps"])
+        )
+
+    def test_tax_window_fires_on_missing_due_date(self) -> None:
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="nodate",
+                event_type="filing",
+                jurisdiction="US",
+                due_date="",
+                currency="USD",
+                status="planned",
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        gaps = candidates["tax_window"].evidence["review_gaps"]
+        self.assertTrue(any("missing due date" in g for g in gaps))
+
+    def test_tax_window_fires_on_unverifiable_due_date(self) -> None:
+        _report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="baddate",
+                event_type="filing",
+                jurisdiction="US",
+                due_date="not-a-date",
+                currency="USD",
+                status="planned",
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        gaps = candidates["tax_window"].evidence["review_gaps"]
+        self.assertTrue(any("unverifiable due date" in g for g in gaps))
+
+    def test_tax_window_candidate_carries_event_source_refs(self) -> None:
+        report, candidates = self._tax_scan(
+            TaxEvent(
+                tax_event_id="q3",
+                event_type="estimated_payment",
+                jurisdiction="US",
+                due_date="2026-07-15",
+                estimated_amount=Decimal("1200"),
+                currency="USD",
+                status="planned",
+                source_refs=["receipt_tax_q3"],
+            )
+        )
+        self.assertIn("tax_window", candidates)
+        self.assertIn("receipt_tax_q3", candidates["tax_window"].evidence["source_refs"])
+        self.assertIn("receipt_tax_q3", report.source_refs)
+
+    def test_zero_tax_events_is_data_gap_not_tax_candidate(self) -> None:
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        kinds = {c.detector_kind for c in compute_allocation_candidates(report)}
+        self.assertNotIn("tax_window", kinds)
+        self.assertIn("no tax event on record", report.data_gaps)
 
     def test_quiet_state_emits_no_candidates(self) -> None:
         # No cashflows -> runway not computed; no holdings -> no concentration.

@@ -415,12 +415,77 @@ def _insurance_gap_candidate(
     )
 
 
+def _tax_window_candidate(
+    report: ExposureReport,
+    thresholds: ObservationThresholds,
+) -> AllocationCandidate | None:
+    gaps = report.tax_review_gaps
+    if not gaps:
+        return None
+    options = (
+        CandidateOption(
+            kind="do_nothing",
+            label="Do nothing",
+            cost="Tax deadlines/amounts stay unconfirmed; a missed filing or payment could "
+            "create penalties or interest.",
+            reversibility="Fully reversible (no action taken).",
+        ),
+        CandidateOption(
+            kind="flow",
+            label="Confirm each deadline's status, record estimated amounts, set a reminder, "
+            "and reserve funds for what is due",
+            cost="Time to gather documents and confirm status; small cash reserve for amounts due.",
+            reversibility="Reversible: this only confirms status, records data, and reserves cash.",
+        ),
+        CandidateOption(
+            kind="stock",
+            label="Free up funds to cover a confirmed tax liability (human review)",
+            cost="May require moving cash or selling assets; depends on the confirmed amount.",
+            reversibility="Less reversible: liquidating to pay can carry market/tax/timing costs.",
+        ),
+    )
+    evidence = {
+        "review_gaps": list(gaps),
+        "as_of_date": report.as_of_date,
+        "metric_precision": "descriptive review gaps; reconstruct exact via source_refs",
+        "source_refs": list(report.source_refs),
+    }
+    plural = "item" if len(gaps) == 1 else "items"
+    return AllocationCandidate(
+        detector_kind="tax_window",
+        dimension="flow",
+        claim=(
+            f"{len(gaps)} tax review {plural} found; tax deadlines/amounts cannot be "
+            "confirmed from current records."
+        ),
+        evidence=evidence,
+        assumptions=(
+            "Tax events in the state core reflect the user's actual obligations.",
+            "Status marks (paid/filed/planned) are kept current by the user.",
+        ),
+        limitations=(
+            "This is a deadline / records review, not tax advice or a filing recommendation.",
+            "Does not compute tax owed, optimize tax, or recommend filing/payment timing.",
+            "No jurisdiction-specific tax rules are applied.",
+        ),
+        options=options,
+        key_risks=(
+            "An unconfirmed or missed tax deadline could create penalties or interest.",
+        ),
+        reversibility=(
+            "Flow (confirming status / recording amounts / reserving cash) is reversible; "
+            "freeing up funds to pay (stock) is flagged for human review."
+        ),
+    )
+
+
 _DETECTORS = (
     _cash_buffer_candidate,
     _concentration_candidate,
     _cash_overweight_candidate,
     _rate_exposure_candidate,
     _insurance_gap_candidate,
+    _tax_window_candidate,
 )
 
 
