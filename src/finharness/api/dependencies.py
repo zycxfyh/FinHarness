@@ -9,20 +9,23 @@ from fastapi import Depends, Request
 from sqlalchemy import Engine
 
 from finharness.market_data import ROOT
-from finharness.statecore.store import open_state_core
+from finharness.statecore.store import ensure_state_core_schema, open_state_core
 
 DEFAULT_STATE_CORE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "state-core"
 
 
-def get_state_core_engine(request: Request) -> Engine:
+async def get_state_core_engine(request: Request) -> Engine:
     engine = getattr(request.app.state, "state_core_engine", None)
     if engine is None:
         engine = open_state_core()
+        # An existing database may predate tables added in later slices; create
+        # any missing ones so cockpit reads do not 500 with "no such table".
+        ensure_state_core_schema(engine)
         request.app.state.state_core_engine = engine
     return engine
 
 
-def get_state_core_receipt_root(request: Request) -> Path:
+async def get_state_core_receipt_root(request: Request) -> Path:
     return Path(
         getattr(
             request.app.state,

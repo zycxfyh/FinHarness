@@ -1,0 +1,347 @@
+"""Deterministic personal exposure map over the state core.
+
+This is the B0 "situational awareness" foundation: a pure, read-only computation
+that turns mirrored state (holdings, liabilities, cashflows, tax/insurance dates)
+into net worth, concentration, cash runway, rate exposure, and upcoming
+obligations. It is descriptive aggregation, not advice, and it never executes.
+
+Money is aggregated in exact ``Decimal`` and exposed as ``float`` display rollups
+at the report boundary (the raw exact values live in the state core). Standard
+metrics are adopted rather than invented: concentration uses the Herfindahl-
+Hirschman Index (HHI) plus top-N share; cash runway is months of expenses covered.
+Cases we cannot value (unpriced holdings, mixed currency, missing cashflows) are
+disclosed as data gaps, not silently guessed.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from pydantic import BaseModel
+from sqlalchemy import Engine, desc
+from sqlmodel import Session, select
+
+from finharness.statecore.models import (
+    CashflowEvent,
+    InsurancePolicy,
+    Liability,
+    Position,
+    Snapshot,
+    TaxEvent,
+)
+from finharness.statecore.observations import ObservationThresholds
+
+DEFAULT_OBLIGATION_HORIZON_DAYS = 90
+NON_CLAIMS = (
+    "Descriptive exposure map over mirrored state.",
+    "Not investment, tax, or accounting advice.",
+    "Not a net-worth guarantee; disclosed data gaps may apply.",
+    "Not execution authorization.",
+)
+_FIAT_CURRENCIES = frozenset(
+    {
+        "USD",
+        "EUR",
+        "GBP",
+        "JPY",
+        "CNY",
+        "CAD",
+        "AUD",
+        "CHF",
+        "HKD",
+        "SGD",
+        "NZD",
+        "SEK",
+        "NOK",
+    }
+)
+
+
+def _is_cash_symbol(symbol: str) -> bool:
+    upper = symbol.upper()
+    return upper in _FIAT_CURRENCIES or upper.startswith("CASH")
+
+
+def _symbol_currency(symbol: str) -> str | None:
+    upper = symbol.upper()
+    if upper in _FIAT_CURRENCIES:
+        return upper
+    if upper.startswith("CASH:"):
+        return upper.split(":", 1)[1] or None
+    return None
+
+
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+class HoldingExposure(BaseModel):
+    symbol: str
+    market_value: float
+    weight: float
+
+
+class UpcomingObligation(BaseModel):
+    kind: str
+    label: str
+    due_date: str
+    amount: float | None
+    currency: str | None
+
+
+class ExposureReport(BaseModel):
+    as_of_date: str
+    base_currency: str | None
+    total_assets: float
+    total_liabilities: float
+    net_worth: float
+    holding_count: int
+    holdings: tuple[HoldingExposure, ...]
+    concentration_hhi: float
+    top_holding_weight: float
+    top5_weight: float
+    concentration_flagged: bool
+    concentration_threshold: float
+    cash_total: float
+    monthly_net_cashflow: float | None
+    cash_runway_months: float | None
+    interest_bearing_debt_total: float
+    weighted_avg_interest_rate: float | None
+    annual_interest_estimate: float
+    upcoming_obligations: tuple[UpcomingObligation, ...]
+    data_gaps: tuple[str, ...]
+    source_refs: tuple[str, ...]
+    non_claims: tuple[str, ...] = NON_CLAIMS
+    execution_allowed: bool = False
+
+
+def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
+    return session.exec(
+        select(Snapshot)
+        .where(Snapshot.kind == "portfolio")
+        .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
+        .limit(1)
+    ).first()
+
+
+def _holdings(
+    positions: list[Position],
+    data_gaps: list[str],
+) -> tuple[list[HoldingExposure], Decimal, Decimal, Decimal]:
+    by_symbol: dict[str, Decimal] = {}
+    for position in positions:
+        if position.quantity != 0 and position.market_value == 0:
+            data_gaps.append(f"unpriced holding: {position.symbol}")
+        # Cash/fiat is liquidity, not a single-name concentration risk; it is
+        # reported separately via cash_total and excluded from the holdings book
+        # so it is never surfaced as a holding to "trim".
+        if _is_cash_symbol(position.symbol):
+            continue
+        by_symbol[position.symbol] = by_symbol.get(position.symbol, Decimal("0")) + (
+            position.market_value
+        )
+    ordered = sorted(by_symbol.items(), key=lambda item: (item[1], item[0]), reverse=True)
+    # Concentration is measured over the long securities book (positive holdings,
+    # excluding cash) so weights stay in [0, 1] and reflect single-name risk; a
+    # negative position (e.g. margin/short) is not a share of exposure.
+    gross_long = sum((value for value in by_symbol.values() if value > 0), Decimal("0"))
+    holdings: list[HoldingExposure] = []
+    hhi = Decimal("0")
+    positive_weights: list[Decimal] = []
+    for symbol, value in ordered:
+        weight = value / gross_long if gross_long > 0 else Decimal("0")
+        holdings.append(
+            HoldingExposure(symbol=symbol, market_value=float(value), weight=float(weight))
+        )
+        if value > 0:
+            positive_weights.append(weight)
+            hhi += weight * weight
+    top_weight = positive_weights[0] if positive_weights else Decimal("0")
+    top5_weight = sum(positive_weights[:5], Decimal("0"))
+    return holdings, hhi, top_weight, top5_weight
+
+
+def _rate_exposure(liabilities: list[Liability]) -> tuple[Decimal, Decimal, Decimal | None]:
+    interest_bearing = Decimal("0")
+    annual_interest = Decimal("0")
+    for liability in liabilities:
+        if liability.interest_rate is None:
+            continue
+        interest_bearing += liability.balance
+        annual_interest += liability.balance * liability.interest_rate
+    weighted_avg = annual_interest / interest_bearing if interest_bearing > 0 else None
+    return interest_bearing, annual_interest, weighted_avg
+
+
+def _cash_runway(
+    cash_total: Decimal,
+    cashflows: list[CashflowEvent],
+    data_gaps: list[str],
+) -> tuple[Decimal | None, Decimal | None]:
+    monthly = [flow for flow in cashflows if (flow.frequency or "").lower() == "monthly"]
+    if not monthly:
+        data_gaps.append("no recurring monthly cashflow; cash runway not computed")
+        return None, None
+    income = sum((flow.amount for flow in monthly if flow.amount > 0), Decimal("0"))
+    expenses = sum((-flow.amount for flow in monthly if flow.amount < 0), Decimal("0"))
+    net = income - expenses
+    if expenses <= 0:
+        data_gaps.append("no recurring monthly expenses; cash runway not computed")
+        return net, None
+    # Emergency-fund standard: months of expenses covered by liquid cash (CFP-style),
+    # independent of whether the month nets to saving or burning.
+    return net, cash_total / expenses
+
+
+def _upcoming_obligations(
+    *,
+    tax_events: list[TaxEvent],
+    insurance: list[InsurancePolicy],
+    cashflows: list[CashflowEvent],
+    as_of_date: date,
+    horizon_days: int,
+) -> list[UpcomingObligation]:
+    horizon_end = date.fromordinal(as_of_date.toordinal() + horizon_days)
+    obligations: list[UpcomingObligation] = []
+
+    def _within(due: date | None) -> bool:
+        return due is not None and as_of_date <= due <= horizon_end
+
+    for event in tax_events:
+        due = _parse_date(event.due_date)
+        if _within(due) and due is not None:
+            obligations.append(
+                UpcomingObligation(
+                    kind="tax_event",
+                    label=f"{event.event_type} ({event.jurisdiction})",
+                    due_date=due.isoformat(),
+                    amount=float(event.estimated_amount)
+                    if event.estimated_amount is not None
+                    else None,
+                    currency=event.currency,
+                )
+            )
+    for policy in insurance:
+        due = _parse_date(policy.renewal_date)
+        if _within(due) and due is not None:
+            obligations.append(
+                UpcomingObligation(
+                    kind="insurance_renewal",
+                    label=f"{policy.policy_type} ({policy.provider})",
+                    due_date=due.isoformat(),
+                    amount=float(policy.premium_amount)
+                    if policy.premium_amount is not None
+                    else None,
+                    currency=policy.currency,
+                )
+            )
+    for flow in cashflows:
+        due = _parse_date(flow.event_date)
+        if _within(due) and due is not None:
+            obligations.append(
+                UpcomingObligation(
+                    kind="cashflow",
+                    label=flow.description,
+                    due_date=due.isoformat(),
+                    amount=float(flow.amount),
+                    currency=flow.currency,
+                )
+            )
+    obligations.sort(key=lambda item: (item.due_date, item.kind, item.label))
+    return obligations
+
+
+def _base_currency(
+    positions: list[Position],
+    liabilities: list[Liability],
+    data_gaps: list[str],
+) -> str | None:
+    currencies: set[str] = {liability.currency.upper() for liability in liabilities}
+    for position in positions:
+        currency = _symbol_currency(position.symbol)
+        if currency is not None:
+            currencies.add(currency)
+    if len(currencies) == 1:
+        return next(iter(currencies))
+    if len(currencies) > 1:
+        data_gaps.append(
+            "mixed currencies present; net worth is not FX-adjusted "
+            f"({', '.join(sorted(currencies))})"
+        )
+    return None
+
+
+def compute_exposure(
+    engine: Engine,
+    *,
+    as_of_date: date | None = None,
+    horizon_days: int = DEFAULT_OBLIGATION_HORIZON_DAYS,
+    thresholds: ObservationThresholds | None = None,
+) -> ExposureReport:
+    """Compute a read-only personal exposure map from the state core."""
+    active_thresholds = thresholds or ObservationThresholds()
+    reference_date = as_of_date or datetime.now(UTC).date()
+    with Session(engine) as session:
+        snapshot = _latest_portfolio_snapshot(session)
+        positions: list[Position] = []
+        if snapshot is not None:
+            positions = list(
+                session.exec(
+                    select(Position).where(Position.snapshot_id == snapshot.snapshot_id)
+                ).all()
+            )
+        liabilities = list(session.exec(select(Liability)).all())
+        cashflows = list(session.exec(select(CashflowEvent)).all())
+        tax_events = list(session.exec(select(TaxEvent)).all())
+        insurance = list(session.exec(select(InsurancePolicy)).all())
+
+    data_gaps: list[str] = []
+    total_assets = sum((position.market_value for position in positions), Decimal("0"))
+    total_liabilities = sum((liability.balance for liability in liabilities), Decimal("0"))
+    cash_total = sum(
+        (position.market_value for position in positions if _is_cash_symbol(position.symbol)),
+        Decimal("0"),
+    )
+
+    holdings, hhi, top_weight, top5_weight = _holdings(positions, data_gaps)
+    interest_bearing, annual_interest, weighted_avg = _rate_exposure(liabilities)
+    monthly_net, runway = _cash_runway(cash_total, cashflows, data_gaps)
+    obligations = _upcoming_obligations(
+        tax_events=tax_events,
+        insurance=insurance,
+        cashflows=cashflows,
+        as_of_date=reference_date,
+        horizon_days=horizon_days,
+    )
+    base_currency = _base_currency(positions, liabilities, data_gaps)
+    source_refs = tuple(sorted(set(snapshot.source_refs))) if snapshot is not None else ()
+
+    return ExposureReport(
+        as_of_date=reference_date.isoformat(),
+        base_currency=base_currency,
+        total_assets=float(total_assets),
+        total_liabilities=float(total_liabilities),
+        net_worth=float(total_assets - total_liabilities),
+        holding_count=len(holdings),
+        holdings=tuple(holdings),
+        concentration_hhi=float(hhi),
+        top_holding_weight=float(top_weight),
+        top5_weight=float(top5_weight),
+        concentration_flagged=float(top_weight) >= active_thresholds.concentration_pct,
+        concentration_threshold=active_thresholds.concentration_pct,
+        cash_total=float(cash_total),
+        monthly_net_cashflow=float(monthly_net) if monthly_net is not None else None,
+        cash_runway_months=float(runway) if runway is not None else None,
+        interest_bearing_debt_total=float(interest_bearing),
+        weighted_avg_interest_rate=float(weighted_avg) if weighted_avg is not None else None,
+        annual_interest_estimate=float(annual_interest),
+        upcoming_obligations=tuple(obligations),
+        data_gaps=tuple(data_gaps),
+        source_refs=source_refs,
+    )
