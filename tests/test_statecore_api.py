@@ -350,6 +350,9 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertIn("evidence.dimension", text)
         self.assertIn("renderRevisionHistory", text)
         self.assertIn("/revisions", text)
+        # Revision history shows a read-only per-version diff (why a candidate changed).
+        self.assertIn("describeRevisionChanges", text)
+        self.assertIn("Changes from previous", text)
 
     def test_product_bff_read_endpoints_return_non_authority_summary(self) -> None:
         dashboard = self.client.get("/dashboard/summary")

@@ -393,6 +393,41 @@ function renderCandidateDetail(parent, proposal) {
   renderTextList(parent, "Limitations", proposal.limitations && proposal.limitations.items);
 }
 
+function shortenValue(value) {
+  if (value === null || value === undefined) {
+    return "∅";
+  }
+  if (typeof value === "object") {
+    return Array.isArray(value) ? `[${value.length} items]` : "{…}";
+  }
+  const text = String(value);
+  return text.length > 40 ? `${text.slice(0, 37)}…` : text;
+}
+
+// Read-only diff of one revision against the next-older one (its supersedes
+// target). Surfaces why a candidate changed, not just that it changed.
+function describeRevisionChanges(current, previous) {
+  const changes = [];
+  const now = current.proposal || {};
+  const before = previous.proposal || {};
+  if (now.claim !== before.claim) {
+    changes.push(`claim: "${before.claim ?? ""}" → "${now.claim ?? ""}"`);
+  }
+  for (const field of ["evidence", "assumptions", "limitations"]) {
+    const nowField = now[field] || {};
+    const beforeField = before[field] || {};
+    const keys = new Set([...Object.keys(nowField), ...Object.keys(beforeField)]);
+    for (const key of [...keys].sort()) {
+      if (JSON.stringify(nowField[key]) !== JSON.stringify(beforeField[key])) {
+        changes.push(
+          `${field}.${key}: ${shortenValue(beforeField[key])} → ${shortenValue(nowField[key])}`,
+        );
+      }
+    }
+  }
+  return changes;
+}
+
 function renderRevisionHistory(parent, revisionHistory) {
   const revisions =
     revisionHistory && Array.isArray(revisionHistory.revisions) ? revisionHistory.revisions : [];
@@ -401,7 +436,7 @@ function renderRevisionHistory(parent, revisionHistory) {
     parent.append(textElement("p", "empty-state", "No revisions recorded."));
     return;
   }
-  for (const revision of revisions) {
+  revisions.forEach((revision, index) => {
     const proposal = revision.proposal || {};
     const item = document.createElement("div");
     item.className = "item";
@@ -420,8 +455,29 @@ function renderRevisionHistory(parent, revisionHistory) {
       item.append(textElement("span", "item-meta", `Supersedes: ${revision.supersedes}`));
     }
     item.append(textElement("span", "tag", `execution_allowed=${revision.execution_allowed}`));
+
+    // Revisions are latest-first, so the previous version is the next entry.
+    const previous = revisions[index + 1];
+    if (!previous) {
+      item.append(textElement("span", "item-meta", "Initial version"));
+    } else {
+      const changes = describeRevisionChanges(revision, previous);
+      if (!changes.length) {
+        item.append(textElement("span", "item-meta", "No field changes from previous version"));
+      } else {
+        item.append(textElement("span", "item-meta", "Changes from previous:"));
+        const list = document.createElement("ul");
+        list.className = "revision-changes";
+        for (const change of changes) {
+          const entry = document.createElement("li");
+          entry.textContent = change;
+          list.append(entry);
+        }
+        item.append(list);
+      }
+    }
     parent.append(item);
-  }
+  });
 }
 
 async function renderProposalDetail() {
