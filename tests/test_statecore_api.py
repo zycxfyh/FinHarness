@@ -6,18 +6,29 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 from finharness.api.app import create_app
 from finharness.statecore.models import (
     Account,
     Attestation,
+    CashflowEvent,
+    DocumentRef,
+    FinancialGoal,
+    InsurancePolicy,
+    Liability,
     Position,
     Proposal,
     ReceiptIndex,
     Snapshot,
+    TaxEvent,
 )
-from finharness.statecore.store import StateCoreStoreError, init_state_core, read_all, write_records
+from finharness.statecore.proposals import create_governed_proposal
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    init_state_core,
+    read_all,
+    write_records,
+)
+from tests.asgi_test_client import AsgiTestClient
 
 
 class StateCoreApiTest(unittest.TestCase):
@@ -28,12 +39,11 @@ class StateCoreApiTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts" / "state-core"
         self.engine = init_state_core(self.db_path)
         self._seed_state()
-        self.client = TestClient(
-            create_app(
-                state_core_engine=self.engine,
-                receipt_root=str(self.receipt_root),
-            )
+        self.app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
         )
+        self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
@@ -67,6 +77,13 @@ class StateCoreApiTest(unittest.TestCase):
             created_at_utc="2026-06-17T10:00:00+00:00",
             source_refs=["data/receipts/after.json"],
         )
+        brief_receipt = ReceiptIndex(
+            receipt_id="receipt_daily_brief",
+            kind="daily_change_brief",
+            path="data/receipts/daily-change-brief/latest.json",
+            created_at_utc="2026-06-17T10:05:00+00:00",
+            source_refs=["data/receipts/after.json"],
+        )
         positions = [
             Position(
                 position_id="pos_before_spy",
@@ -96,11 +113,84 @@ class StateCoreApiTest(unittest.TestCase):
                 source_refs=["data/receipts/after.json"],
             ),
         ]
-        write_records([account, before, after, receipt, *positions], engine=self.engine)
+        liability = Liability(
+            liability_id="liab_api",
+            name="API Liability",
+            liability_type="loan",
+            balance=1200.0,
+            currency="USD",
+            source_refs=["data/receipts/after.json"],
+        )
+        goal = FinancialGoal(
+            goal_id="goal_api",
+            name="API Goal",
+            target_amount=5000.0,
+            current_amount=1250.0,
+            currency="USD",
+            source_refs=["data/receipts/after.json"],
+        )
+        cashflow = CashflowEvent(
+            cashflow_id="cashflow_api",
+            description="API Cashflow",
+            amount=250.0,
+            currency="USD",
+            event_date="2026-06-30",
+            category="income",
+            source_refs=["data/receipts/after.json"],
+        )
+        tax_event = TaxEvent(
+            tax_event_id="tax_api",
+            event_type="estimated_payment",
+            jurisdiction="US",
+            due_date="2026-06-15",
+            estimated_amount=100.0,
+            currency="USD",
+            source_refs=["data/receipts/after.json"],
+        )
+        insurance = InsurancePolicy(
+            policy_id="policy_api",
+            policy_type="home",
+            provider="Example Mutual",
+            coverage_amount=100000.0,
+            premium_amount=1000.0,
+            currency="USD",
+            source_refs=["data/receipts/after.json"],
+        )
+        document = DocumentRef(
+            document_id="doc_api",
+            document_type="insurance_policy",
+            title="API Document",
+            path="documents/api.pdf",
+            related_object_id="policy_api",
+            source_refs=["data/receipts/after.json"],
+        )
+        write_records(
+            [
+                account,
+                before,
+                after,
+                receipt,
+                brief_receipt,
+                *positions,
+                liability,
+                goal,
+                cashflow,
+                tax_event,
+                insurance,
+                document,
+            ],
+            engine=self.engine,
+        )
 
     def test_read_only_state_endpoints_return_pydantic_state_models(self) -> None:
         accounts = self.client.get("/state/accounts")
         positions = self.client.get("/state/positions", params={"snapshot_id": "snap_after"})
+        liabilities = self.client.get("/state/liabilities")
+        goals = self.client.get("/state/goals")
+        cashflows = self.client.get("/state/cashflows")
+        tax_events = self.client.get("/state/tax-events")
+        insurance = self.client.get("/state/insurance")
+        documents = self.client.get("/state/documents")
         snapshots = self.client.get("/snapshots", params={"kind": "portfolio"})
         receipt = self.client.get("/receipts/receipt_after")
 
@@ -109,6 +199,24 @@ class StateCoreApiTest(unittest.TestCase):
 
         self.assertEqual(positions.status_code, 200)
         self.assertEqual([row["symbol"] for row in positions.json()], ["AAPL", "SPY"])
+
+        self.assertEqual(liabilities.status_code, 200)
+        self.assertEqual(liabilities.json()[0]["liability_id"], "liab_api")
+
+        self.assertEqual(goals.status_code, 200)
+        self.assertEqual(goals.json()[0]["goal_id"], "goal_api")
+
+        self.assertEqual(cashflows.status_code, 200)
+        self.assertEqual(cashflows.json()[0]["cashflow_id"], "cashflow_api")
+
+        self.assertEqual(tax_events.status_code, 200)
+        self.assertEqual(tax_events.json()[0]["tax_event_id"], "tax_api")
+
+        self.assertEqual(insurance.status_code, 200)
+        self.assertEqual(insurance.json()[0]["policy_id"], "policy_api")
+
+        self.assertEqual(documents.status_code, 200)
+        self.assertEqual(documents.json()[0]["document_id"], "doc_api")
 
         self.assertEqual(snapshots.status_code, 200)
         self.assertEqual(
@@ -158,12 +266,29 @@ class StateCoreApiTest(unittest.TestCase):
         schema = response.json()
         paths = schema["paths"]
         allowed_methods = {
+            "/health": {"get"},
+            "/exposure": {"get"},
+            "/brief/daily": {"get"},
+            "/dashboard/summary": {"get"},
+            "/brief/latest": {"get"},
             "/state/accounts": {"get"},
             "/state/positions": {"get"},
+            "/state/liabilities": {"get"},
+            "/state/goals": {"get"},
+            "/state/cashflows": {"get"},
+            "/state/tax-events": {"get"},
+            "/state/insurance": {"get"},
+            "/state/documents": {"get"},
             "/snapshots": {"get"},
             "/diff": {"get"},
+            "/receipts": {"get"},
             "/receipts/{receipt_id}": {"get"},
-            "/proposals": {"post"},
+            "/timeline": {"get"},
+            "/controls/status": {"get"},
+            "/controls/limits": {"get"},
+            "/proposals": {"get", "post"},
+            "/proposals/{proposal_id}": {"get"},
+            "/proposals/{proposal_id}/revisions": {"get"},
             "/proposals/{proposal_id}/attest": {"post"},
         }
         self.assertEqual(set(paths), set(allowed_methods))
@@ -177,12 +302,140 @@ class StateCoreApiTest(unittest.TestCase):
         for model_name in (
             "Account",
             "Attestation",
+            "CashflowEvent",
+            "DocumentRef",
+            "FinancialGoal",
+            "InsurancePolicy",
+            "Liability",
             "Position",
             "Proposal",
             "ReceiptIndex",
             "Snapshot",
+            "TaxEvent",
         ):
             self.assertIn(model_name, schemas)
+
+    def test_health_and_trace_header_are_non_authority_observability(self) -> None:
+        response = self.client.get(
+            "/health",
+            headers={"X-FinHarness-Trace-Id": "trace_test_state_api"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-FinHarness-Trace-Id"], "trace_test_state_api")
+        body = response.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertFalse(body["execution_allowed"])
+        self.assertIn("Not execution authorization.", body["non_claims"])
+
+    def test_cockpit_static_frontend_is_served_by_api_origin(self) -> None:
+        frontend_index = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
+        mounted_paths = {getattr(route, "path", "") for route in self.app.routes}
+
+        self.assertIn("/cockpit", mounted_paths)
+        text = frontend_index.read_text(encoding="utf-8")
+        self.assertIn("FinHarness Cockpit", text)
+        self.assertIn("execution_allowed=false", text)
+        # The Exposure view is wired into the cockpit shell.
+        self.assertIn('data-view="exposure"', text)
+        self.assertIn('id="exposure-view"', text)
+
+    def test_cockpit_renders_allocation_candidate_detail(self) -> None:
+        app_js = Path(__file__).resolve().parents[1] / "frontend" / "app.js"
+        text = app_js.read_text(encoding="utf-8")
+        # Capital-allocation candidates render their dimension/options/evidence in
+        # the existing proposal detail view (no separate Decisions view/endpoint).
+        self.assertIn("renderCandidateDetail", text)
+        self.assertIn("evidence.options", text)
+        self.assertIn("evidence.dimension", text)
+        self.assertIn("renderRevisionHistory", text)
+        self.assertIn("/revisions", text)
+
+    def test_product_bff_read_endpoints_return_non_authority_summary(self) -> None:
+        dashboard = self.client.get("/dashboard/summary")
+        brief = self.client.get("/brief/latest")
+        receipts = self.client.get("/receipts", params={"kind": "daily_change_brief"})
+        timeline = self.client.get("/timeline")
+        controls = self.client.get("/controls/status")
+        limits = self.client.get("/controls/limits")
+
+        self.assertEqual(dashboard.status_code, 200)
+        dashboard_body = dashboard.json()
+        self.assertFalse(dashboard_body["execution_allowed"])
+        self.assertEqual(dashboard_body["account_count"], 1)
+        self.assertEqual(dashboard_body["latest_snapshot_id"], "snap_after")
+        self.assertEqual(dashboard_body["position_count"], 2)
+        self.assertEqual(dashboard_body["total_market_value"], 235.0)
+        self.assertEqual(dashboard_body["latest_brief_receipt_id"], "receipt_daily_brief")
+        self.assertEqual(dashboard_body["liability_count"], 1)
+        self.assertEqual(dashboard_body["liability_balance_total"], 1200.0)
+        self.assertEqual(dashboard_body["goal_count"], 1)
+        self.assertEqual(dashboard_body["cashflow_count"], 1)
+        self.assertEqual(dashboard_body["tax_event_count"], 1)
+        self.assertEqual(dashboard_body["insurance_policy_count"], 1)
+        self.assertEqual(dashboard_body["document_count"], 1)
+        self.assertIn("Not execution authorization.", dashboard_body["non_claims"])
+
+        self.assertEqual(brief.status_code, 200)
+        self.assertFalse(brief.json()["execution_allowed"])
+        self.assertTrue(brief.json()["available"])
+        self.assertEqual(brief.json()["receipt"]["receipt_id"], "receipt_daily_brief")
+
+        self.assertEqual(receipts.status_code, 200)
+        self.assertEqual([row["receipt_id"] for row in receipts.json()], ["receipt_daily_brief"])
+
+        self.assertEqual(timeline.status_code, 200)
+        self.assertTrue(timeline.json())
+        self.assertTrue(all(not row["execution_allowed"] for row in timeline.json()))
+        self.assertIn("receipt:daily_change_brief", {row["event_type"] for row in timeline.json()})
+
+        self.assertEqual(controls.status_code, 200)
+        self.assertFalse(controls.json()["execution_allowed"])
+        self.assertFalse(controls.json()["api_execution_endpoints_present"])
+        self.assertFalse(controls.json()["proposal_approval_is_execution_authorization"])
+
+        self.assertEqual(limits.status_code, 200)
+        self.assertFalse(limits.json()["execution_allowed"])
+        self.assertFalse(limits.json()["raising_limits_via_api_allowed"])
+        self.assertEqual(limits.json()["configured_limits"], [])
+
+    def test_timeline_limit_is_applied(self) -> None:
+        full = self.client.get("/timeline")
+        limited = self.client.get("/timeline", params={"limit": 1})
+
+        self.assertEqual(full.status_code, 200)
+        self.assertGreater(len(full.json()), 1)
+        self.assertEqual(limited.status_code, 200)
+        self.assertEqual(len(limited.json()), 1)
+        # The single entry is the newest across all sources (correct merge).
+        self.assertEqual(limited.json()[0], full.json()[0])
+
+    def test_exposure_endpoint_is_read_only_and_internally_consistent(self) -> None:
+        response = self.client.get("/exposure")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["execution_allowed"])
+        self.assertIn("Not execution authorization.", body["non_claims"])
+        # Reflects the seeded liability, and net worth is assets - liabilities.
+        self.assertEqual(body["total_liabilities"], 1200.0)
+        self.assertAlmostEqual(
+            body["net_worth"], body["total_assets"] - body["total_liabilities"], places=6
+        )
+        self.assertTrue(body["holdings"])
+
+    def test_daily_brief_endpoint_assembles_read_only_sections(self) -> None:
+        response = self.client.get("/brief/daily")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["execution_allowed"])
+        self.assertIn("Not execution authorization.", body["non_claims"])
+        self.assertTrue(body["headline"])
+        section_titles = {section["title"] for section in body["sections"]}
+        self.assertIn("Change since last", section_titles)
+        self.assertIn("Exposure & concentration", section_titles)
+        self.assertIn("Needs review", section_titles)
 
     def test_create_proposal_writes_db_receipt_and_index_without_authority(self) -> None:
         response = self.client.post(
@@ -209,7 +462,7 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertEqual(len(proposals), 1)
         self.assertFalse(proposals[0].execution_allowed)
         self.assertEqual(proposals[0].receipt_ref, body["receipt_ref"])
-        self.assertEqual(len(receipts), 2)
+        self.assertEqual(len(receipts), 3)
         proposal_receipt = next(
             receipt for receipt in receipts if receipt.kind == "state_core_proposal"
         )
@@ -289,6 +542,88 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertEqual(payload["kind"], "state_core_attestation")
         self.assertFalse(payload["governance"]["execution_allowed"])
         self.assertTrue(payload["governance"]["approved_is_not_execution_authorization"])
+
+    def test_proposal_review_queue_and_detail_remain_non_executing(self) -> None:
+        created = self.client.post(
+            "/proposals",
+            json={
+                "kind": "rebalance_review",
+                "claim": "Review concentration before any human decision.",
+                "source_refs": ["data/receipts/after.json"],
+            },
+        )
+        proposal_id = created.json()["proposal"]["proposal_id"]
+
+        open_list = self.client.get("/proposals", params={"status": "open"})
+        detail = self.client.get(f"/proposals/{proposal_id}")
+
+        self.assertEqual(open_list.status_code, 200)
+        self.assertEqual(len(open_list.json()), 1)
+        self.assertTrue(open_list.json()[0]["open_for_review"])
+        self.assertFalse(open_list.json()[0]["execution_allowed"])
+        self.assertFalse(open_list.json()[0]["proposal"]["execution_allowed"])
+        self.assertEqual(detail.status_code, 200)
+        self.assertTrue(detail.json()["open_for_review"])
+        self.assertFalse(detail.json()["execution_allowed"])
+
+        approved = self.client.post(
+            f"/proposals/{proposal_id}/attest",
+            json={
+                "decision": "approved",
+                "attester": "Jane Control",
+                "reason": "I reviewed the evidence; this records review only.",
+            },
+        )
+        attested_list = self.client.get("/proposals", params={"status": "attested"})
+        updated_detail = self.client.get(f"/proposals/{proposal_id}")
+
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(attested_list.status_code, 200)
+        self.assertEqual(len(attested_list.json()), 1)
+        self.assertFalse(attested_list.json()[0]["open_for_review"])
+        self.assertFalse(attested_list.json()[0]["execution_allowed"])
+        self.assertEqual(updated_detail.status_code, 200)
+        self.assertFalse(updated_detail.json()["open_for_review"])
+        self.assertEqual(updated_detail.json()["attestations"][0]["decision"], "approved")
+        self.assertFalse(updated_detail.json()["execution_allowed"])
+
+    def test_proposal_revisions_follow_supersedes_chain_without_authority(self) -> None:
+        proposal_id = "alloc_cash_buffer_low_2026-06-20"
+        first = create_governed_proposal(
+            kind="cash_buffer_low",
+            claim="Cash covers 1.0 months.",
+            evidence={"runway": 1.0},
+            source_refs=["data/receipts/snap.json"],
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            proposal_id=proposal_id,
+            idempotent=True,
+        )
+        second = create_governed_proposal(
+            kind="cash_buffer_low",
+            claim="Cash covers 0.5 months.",
+            evidence={"runway": 0.5},
+            source_refs=["data/receipts/snap.json"],
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            proposal_id=proposal_id,
+            idempotent=True,
+        )
+
+        response = self.client.get(f"/proposals/{proposal_id}/revisions")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["execution_allowed"])
+        self.assertEqual(body["proposal_id"], proposal_id)
+        self.assertEqual(len(body["revisions"]), 2)
+        self.assertEqual(body["revisions"][0]["receipt_ref"], second.receipt_ref)
+        self.assertEqual(body["revisions"][0]["supersedes"], first.receipt_ref)
+        self.assertEqual(body["revisions"][0]["proposal"]["claim"], "Cash covers 0.5 months.")
+        self.assertEqual(body["revisions"][1]["receipt_ref"], first.receipt_ref)
+        self.assertIsNone(body["revisions"][1]["supersedes"])
+        self.assertFalse(body["revisions"][0]["execution_allowed"])
+        self.assertFalse(body["revisions"][1]["proposal"]["execution_allowed"])
 
     def test_proposal_db_failure_cleans_orphan_receipt_best_effort(self) -> None:
         with patch(

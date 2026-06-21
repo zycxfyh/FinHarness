@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,6 +43,10 @@ def _now_utc() -> str:
 
 def _stamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _revision_stamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 
 
 def _safe_id(value: str) -> str:
@@ -85,11 +91,63 @@ def _dedupe_text(values: list[str]) -> list[str]:
     return result
 
 
-def _proposal_receipt_payload(proposal: Proposal, receipt_id: str) -> dict[str, Any]:
+def _content_hash(
+    *,
+    kind: str,
+    claim: str,
+    evidence: dict[str, Any],
+    assumptions: dict[str, Any],
+    limitations: dict[str, Any],
+    non_claims: list[str],
+    source_refs: list[str],
+) -> str:
+    """Stable hash of a proposal's substantive content (excludes timestamps/ids).
+
+    Two writes with identical content hash to the same value, so an idempotent
+    re-scan that sees no change does not append a redundant receipt revision.
+    """
+    canonical = json.dumps(
+        {
+            "kind": kind,
+            "claim": claim,
+            "evidence": evidence,
+            "assumptions": assumptions,
+            "limitations": limitations,
+            "non_claims": non_claims,
+            "source_refs": source_refs,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _content_hash_of_row(proposal: Proposal) -> str:
+    return _content_hash(
+        kind=proposal.kind,
+        claim=proposal.claim,
+        evidence=proposal.evidence,
+        assumptions=proposal.assumptions,
+        limitations=proposal.limitations,
+        non_claims=proposal.non_claims,
+        source_refs=proposal.source_refs,
+    )
+
+
+def _proposal_receipt_payload(
+    proposal: Proposal,
+    receipt_id: str,
+    *,
+    content_hash: str,
+    supersedes: str | None,
+) -> dict[str, Any]:
     return {
         "receipt_id": receipt_id,
         "kind": "state_core_proposal",
         "created_at_utc": proposal.created_at_utc,
+        "content_hash": content_hash,
+        "supersedes": supersedes,
         "proposal": proposal.model_dump(mode="json"),
         "governance": {
             "execution_allowed": False,
@@ -141,33 +199,72 @@ def create_governed_proposal(
     created_at_utc: str | None = None,
     idempotent: bool = False,
 ) -> GovernedProposalWrite:
-    """Write a governed proposal and its receipt without execution authority."""
+    """Write a governed proposal without execution authority.
+
+    The ``Proposal`` row is current-state (idempotent upsert by id). The receipt
+    file is **append-only**: each content change writes a new revision
+    (``receipt_<id>_<stamp>_<hash8>.json``), the receipt index keeps every
+    revision, and the proposal points at the latest. An idempotent re-write whose
+    content is unchanged is a no-op (no redundant revision), so the audit/replay
+    chain records what changed and when, without noise.
+    """
     created_at = created_at_utc or _now_utc()
     resolved_proposal_id = _safe_id(proposal_id or f"prop_{_stamp()}_{uuid4().hex[:8]}")
-    receipt_id = f"receipt_{resolved_proposal_id}"
+    final_non_claims = _dedupe_text(
+        [
+            *(non_claims or []),
+            "Not execution authorization.",
+            "Not investment advice.",
+        ]
+    )
+    final_evidence = evidence
+    final_assumptions = assumptions or {}
+    final_limitations = limitations or {}
+    final_source_refs = list(source_refs or [])
+    content_hash = _content_hash(
+        kind=kind.strip(),
+        claim=claim.strip(),
+        evidence=final_evidence,
+        assumptions=final_assumptions,
+        limitations=final_limitations,
+        non_claims=final_non_claims,
+        source_refs=final_source_refs,
+    )
+
+    supersedes: str | None = None
+    if idempotent:
+        with Session(engine) as session:
+            existing = session.get(Proposal, resolved_proposal_id)
+        if existing is not None:
+            if _content_hash_of_row(existing) == content_hash:
+                # Unchanged content: keep the existing latest revision, no new file.
+                return GovernedProposalWrite(
+                    proposal=existing,
+                    receipt_ref=existing.receipt_ref or "",
+                    execution_allowed=False,
+                )
+            supersedes = existing.receipt_ref
+
+    receipt_id = f"receipt_{resolved_proposal_id}_{_revision_stamp()}_{content_hash[:8]}"
     receipt_path = Path(receipt_root) / "proposals" / f"{receipt_id}.json"
     receipt_ref = _display_path(receipt_path)
     proposal = Proposal(
         proposal_id=resolved_proposal_id,
         kind=kind.strip(),
         claim=claim.strip(),
-        evidence=evidence,
-        assumptions=assumptions or {},
-        limitations=limitations or {},
-        non_claims=_dedupe_text(
-            [
-                *(non_claims or []),
-                "Not execution authorization.",
-                "Not investment advice.",
-            ]
-        ),
-        source_refs=list(source_refs or []),
+        evidence=final_evidence,
+        assumptions=final_assumptions,
+        limitations=final_limitations,
+        non_claims=final_non_claims,
+        source_refs=final_source_refs,
         execution_allowed=False,
         receipt_ref=receipt_ref,
         created_at_utc=created_at,
         as_of_utc=created_at,
     )
-    receipt_payload = _proposal_receipt_payload(proposal, receipt_id)
+    receipt_payload = _proposal_receipt_payload(
+        proposal, receipt_id, content_hash=content_hash, supersedes=supersedes
+    )
     receipt_existed = receipt_path.exists()
     atomic_write_json(receipt_path, receipt_payload)
     receipt_index = _receipt_index(
@@ -175,9 +272,11 @@ def create_governed_proposal(
         kind="state_core_proposal",
         path=receipt_path,
         created_at_utc=created_at,
-        refs=list(source_refs or []),
+        refs=[resolved_proposal_id, *final_source_refs],
     )
     try:
+        # Proposal row is upserted to latest; the receipt revision is always a new
+        # (unique) row, so revision history accumulates append-only.
         if idempotent:
             upsert_records([proposal, receipt_index], engine=engine)
         else:

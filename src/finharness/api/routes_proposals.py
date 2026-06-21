@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import json
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import desc
+from sqlmodel import Session, select
 
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.market_data import ROOT
 from finharness.statecore.models import Attestation, Proposal
 from finharness.statecore.proposals import (
     create_governed_attestation,
@@ -69,8 +74,209 @@ class AttestationCreateResponse(BaseModel):
     execution_allowed: bool = False
 
 
+class ProposalReviewResponse(BaseModel):
+    proposal: Proposal
+    attestations: list[Attestation]
+    open_for_review: bool
+    non_claims: tuple[str, ...] = (
+        "Proposal is review evidence only.",
+        "Human attestation is not execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+
+
+class ProposalRevision(BaseModel):
+    receipt_id: str
+    receipt_ref: str
+    created_at_utc: str
+    content_hash: str | None = None
+    supersedes: str | None = None
+    proposal: dict[str, Any] = Field(default_factory=dict)
+    execution_allowed: bool = False
+
+
+class ProposalRevisionResponse(BaseModel):
+    proposal_id: str
+    revisions: list[ProposalRevision]
+    non_claims: tuple[str, ...] = (
+        "Proposal revisions are historical evidence only.",
+        "Revision history is not execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+
+
+def _proposal_attestations(
+    proposal_id: str,
+    *,
+    session: Session,
+) -> list[Attestation]:
+    return list(
+        session.exec(
+            select(Attestation)
+            .where(Attestation.proposal_id == proposal_id)
+            .order_by(desc(Attestation.created_at_utc), desc(Attestation.attestation_id))
+        ).all()
+    )
+
+
+def _safe_receipt_path(receipt_ref: str, *, receipt_root: Path) -> Path:
+    raw = Path(receipt_ref)
+    candidate = raw if raw.is_absolute() else ROOT / raw
+    resolved = candidate.resolve(strict=False)
+    allowed_roots = (ROOT.resolve(), receipt_root.resolve())
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=404,
+            detail=f"receipt path is outside allowed receipt roots: {receipt_ref}",
+        )
+    return resolved
+
+
+def _read_proposal_receipt_payload(
+    receipt_ref: str,
+    *,
+    proposal_id: str,
+    receipt_root: Path,
+) -> dict[str, Any]:
+    path = _safe_receipt_path(receipt_ref, receipt_root=receipt_root)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"receipt file not found: {receipt_ref}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"receipt file is not valid JSON: {receipt_ref}",
+        ) from exc
+    if payload.get("kind") != "state_core_proposal":
+        raise HTTPException(status_code=500, detail=f"receipt is not a proposal: {receipt_ref}")
+    payload_proposal = payload.get("proposal") or {}
+    if payload_proposal.get("proposal_id") != proposal_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"receipt does not belong to proposal: {receipt_ref}",
+        )
+    return payload
+
+
+def _proposal_revision_chain(
+    proposal: Proposal,
+    *,
+    receipt_root: Path,
+    max_revisions: int = 100,
+) -> list[ProposalRevision]:
+    receipt_ref = proposal.receipt_ref
+    if not receipt_ref:
+        return []
+    revisions: list[ProposalRevision] = []
+    seen: set[str] = set()
+    while receipt_ref:
+        if receipt_ref in seen:
+            raise HTTPException(
+                status_code=500,
+                detail=f"proposal receipt chain has a cycle at: {receipt_ref}",
+            )
+        if len(revisions) >= max_revisions:
+            raise HTTPException(
+                status_code=500,
+                detail=f"proposal receipt chain exceeds {max_revisions} revisions",
+            )
+        seen.add(receipt_ref)
+        payload = _read_proposal_receipt_payload(
+            receipt_ref,
+            proposal_id=proposal.proposal_id,
+            receipt_root=receipt_root,
+        )
+        revisions.append(
+            ProposalRevision(
+                receipt_id=str(payload.get("receipt_id") or ""),
+                receipt_ref=receipt_ref,
+                created_at_utc=str(payload.get("created_at_utc") or ""),
+                content_hash=payload.get("content_hash"),
+                supersedes=payload.get("supersedes"),
+                proposal=payload.get("proposal") or {},
+                execution_allowed=False,
+            )
+        )
+        supersedes = payload.get("supersedes")
+        receipt_ref = supersedes if isinstance(supersedes, str) and supersedes else None
+    return revisions
+
+
+@router.get("/proposals", response_model=list[ProposalReviewResponse])
+async def list_proposals(
+    engine: EngineDependency,
+    status: Annotated[Literal["all", "open", "attested"], Query()] = "all",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[ProposalReviewResponse]:
+    with Session(engine) as session:
+        proposals = list(
+            session.exec(
+                select(Proposal)
+                .order_by(desc(Proposal.created_at_utc), desc(Proposal.proposal_id))
+                .limit(limit)
+            ).all()
+        )
+        responses: list[ProposalReviewResponse] = []
+        for proposal in proposals:
+            attestations = _proposal_attestations(proposal.proposal_id, session=session)
+            responses.append(
+                ProposalReviewResponse(
+                    proposal=proposal,
+                    attestations=attestations,
+                    open_for_review=not attestations,
+                    execution_allowed=False,
+                )
+            )
+    if status == "open":
+        return [response for response in responses if response.open_for_review]
+    if status == "attested":
+        return [response for response in responses if not response.open_for_review]
+    return responses
+
+
+@router.get("/proposals/{proposal_id}", response_model=ProposalReviewResponse)
+async def get_proposal(proposal_id: str, engine: EngineDependency) -> ProposalReviewResponse:
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+        if proposal is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"proposal not found: {proposal_id}",
+            )
+        attestations = _proposal_attestations(proposal_id, session=session)
+    return ProposalReviewResponse(
+        proposal=proposal,
+        attestations=attestations,
+        open_for_review=not attestations,
+        execution_allowed=False,
+    )
+
+
+@router.get("/proposals/{proposal_id}/revisions", response_model=ProposalRevisionResponse)
+async def get_proposal_revisions(
+    proposal_id: str,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ProposalRevisionResponse:
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"proposal not found: {proposal_id}",
+        )
+    return ProposalRevisionResponse(
+        proposal_id=proposal.proposal_id,
+        revisions=_proposal_revision_chain(proposal, receipt_root=receipt_root),
+        execution_allowed=False,
+    )
+
+
 @router.post("/proposals", response_model=ProposalCreateResponse)
-def create_proposal(
+async def create_proposal(
     request: ProposalCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
@@ -97,7 +303,7 @@ def create_proposal(
 
 
 @router.post("/proposals/{proposal_id}/attest", response_model=AttestationCreateResponse)
-def attest_proposal(
+async def attest_proposal(
     proposal_id: str,
     request: AttestationCreateRequest,
     engine: EngineDependency,
