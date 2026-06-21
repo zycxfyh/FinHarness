@@ -1,0 +1,3 @@
+account_id,account_name,account_kind,venue,symbol,quantity,market_value,cost_basis,as_of_utc
+Assets:Brokerage,Brokerage,broker,beancount,SPY,1.5,750.25,700.00,2026-06-19T00:00:00+00:00
+Assets:Cash,Cash,cash,beancount,CASH:USD,1000,1000,,2026-06-19T00:00:00+00:00

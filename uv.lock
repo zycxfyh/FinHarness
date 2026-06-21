@@ -223,6 +223,40 @@ wheels = [
 ]
 
 [[package]]
+name = "beancount"
+version = "3.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "python-dateutil" },
+    { name = "regex" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/21/ed48e671a5e474c620762a7ea9c6b7f402f847d74dd2b73ceb5d2dec79a3/beancount-3.2.3.tar.gz", hash = "sha256:f52c4d237bcb092cbf02a29373d3e59d95349c2828a91491818ae437ee220f74", size = 590847, upload-time = "2026-05-05T23:09:30.329Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/84/4d189150d6118a14731a87065daca7ad3556d84a43f1dab89ccaf9304e7b/beancount-3.2.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:03abcc7a7ef459128bb80227830826802014de0a8a923013fe470f02aa5c07ce", size = 431495, upload-time = "2026-05-05T23:08:44.594Z" },
+    { url = "https://files.pythonhosted.org/packages/22/ee/9693c7fe00913d691c40759c6b62152e630af495df0c3accf20413aaea1c/beancount-3.2.3-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:6b6490ac316e8f32b7f35c6088536140265ef43c5fd7555d7cb346d2b47e2862", size = 431680, upload-time = "2026-05-05T23:08:45.896Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/53/a2aba8c2903f4e5d4d4de26a8dff464a83aecd5f711e8ce535b2b28114ad/beancount-3.2.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:89e66a583b8d6d5e5e23246eb0b0d2049fff9bcbaa40cc2569ac88e90bc8c95c", size = 437750, upload-time = "2026-05-05T23:08:47.65Z" },
+    { url = "https://files.pythonhosted.org/packages/93/71/36321cd52fbfbc76cbce79fb92e82c3d853a6abcf4e3cf1a384afb394393/beancount-3.2.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:60a8febabd2e128c51ca1f8cdb4f86b02fd83fa20cfe9ecd74be5b1a32c3d40b", size = 439712, upload-time = "2026-05-05T23:08:49.582Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/bc/7a6bfdd352e3a5891ebc048071979d79ae34f6191a3d2fd7a2a7ef7ba06c/beancount-3.2.3-cp312-cp312-win32.whl", hash = "sha256:c4b7d357c1d77948f3ec2bdab0bdf35f5be4401f0dc2fb6cf09095410ebd6db3", size = 432031, upload-time = "2026-05-05T23:08:51.03Z" },
+    { url = "https://files.pythonhosted.org/packages/91/f6/cd046dc82e99ca5c2821c17ed438144efff4e597d6711467529a991d50dc/beancount-3.2.3-cp312-cp312-win_amd64.whl", hash = "sha256:91aab58194d6f2ee38625db89d52a551196e1f03f8ce1198bf8775338face60e", size = 450586, upload-time = "2026-05-05T23:08:52.677Z" },
+]
+
+[[package]]
+name = "beanquery"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beancount" },
+    { name = "click" },
+    { name = "python-dateutil" },
+    { name = "tatsu-lts" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/90/801eec23a07072dcf8df061cb6f27be6045e08c12a90b287e872ce0a12d3/beanquery-0.2.0.tar.gz", hash = "sha256:2d72b50a39003435c7fed183666572b8ea878b9860499d0f196b38469384cd2c", size = 99399, upload-time = "2025-03-24T20:27:53.116Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/b8/5b31f6047e50bc82f743760b4e0e7b42a9989c5b8986909c1309d65263ed/beanquery-0.2.0-py3-none-any.whl", hash = "sha256:980b7a328486d58cfd3e8fa98983fd501c33cf3a9be67f8b1e16c81e94018a3c", size = 108224, upload-time = "2025-03-24T20:27:51.728Z" },
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.14.3"
 source = { registry = "https://pypi.org/simple" }
@@ -591,6 +625,8 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "backtrader" },
+    { name = "beancount" },
+    { name = "beanquery" },
     { name = "deepeval" },
     { name = "fastapi" },
     { name = "keyring" },
@@ -624,6 +660,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "backtrader", specifier = ">=1.9.78.123" },
+    { name = "beancount", specifier = ">=3.2.3" },
+    { name = "beanquery", specifier = ">=0.2.0" },
     { name = "deepeval", specifier = ">=3.7.0" },
     { name = "fastapi", specifier = ">=0.137.1" },
     { name = "keyring", specifier = ">=25.7.0" },
@@ -2784,6 +2822,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ec/fe/802052aecb21e3797b8f7902564ab6ea0d60ff8ca23952079064155d1ae1/tabulate-0.9.0.tar.gz", hash = "sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c", size = 81090, upload-time = "2022-10-06T17:21:48.54Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/40/44/4a5f08c96eb108af5cb50b41f76142f0afa346dfa99d5296fe7202a11854/tabulate-0.9.0-py3-none-any.whl", hash = "sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f", size = 35252, upload-time = "2022-10-06T17:21:44.262Z" },
+]
+
+[[package]]
+name = "tatsu-lts"
+version = "5.16.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/81/9ab714191017d23a0e73921e7d869890e5bf6a5eca89dee57d2b76c6c536/tatsu_lts-5.16.0.tar.gz", hash = "sha256:40ad376b4ed4e139a8d00d00bd6659d44c3b7546933fb3314132f776bfa1f44f", size = 226534, upload-time = "2026-01-14T00:00:57.794Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/d3/c4c50188b3a75530eab685899c2efae85a1892be50335f4700963d8a1e14/tatsu_lts-5.16.0-py3-none-any.whl", hash = "sha256:43b21f741a8d1b03148e84294aa6867ab0607f9c3325d93df8b0cf3ad8ece74b", size = 82963, upload-time = "2026-01-14T00:00:56.406Z" },
 ]
 
 [[package]]

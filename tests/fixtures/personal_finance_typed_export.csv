@@ -1,0 +1,8 @@
+record_type,account_id,account_name,account_kind,venue,symbol,quantity,market_value,cost_basis,as_of_utc,liability_id,name,liability_type,balance,currency,interest_rate,due_date,goal_id,target_amount,current_amount,target_date,status,cashflow_id,description,amount,event_date,category,frequency,tax_event_id,event_type,jurisdiction,estimated_amount,policy_id,policy_type,provider,coverage_amount,premium_amount,renewal_date,document_id,document_type,title,path,related_object_id
+position,Assets:Brokerage,Brokerage,broker,beancount,SPY,1.5,750.25,700.00,2026-06-19T00:00:00+00:00,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+liability,,,,,,,,,2026-06-19T00:00:00+00:00,liab_mortgage,Mortgage,mortgage,250000,USD,0.035,2046-01-01,,,,,,,,,,,,,,,,,,,,,,,,,,
+goal,,,,,,,,,2026-06-19T00:00:00+00:00,,Emergency Fund,,,USD,,,goal_emergency,30000,12000,2027-12-31,active,,,,,,,,,,,,,,,,,,,,,
+cashflow,,,,,,,,,2026-06-19T00:00:00+00:00,,,,,USD,,,,,,,,cashflow_salary,Salary,5000,2026-06-30,income,monthly,,,,,,,,,,,,,,,
+tax_event,,,,,,,,,2026-06-19T00:00:00+00:00,,,,,USD,,2026-06-15,,,,,planned,,,,,,,tax_2026_q2,estimated_payment,US,1200,,,,,,,,,,,
+insurance,,,,,,,,,2026-06-19T00:00:00+00:00,,,,,USD,,,,,,,active,,,,,,,,,,,policy_home,home,Example Mutual,500000,1250,2027-01-01,,,,,
+document,,,,,,,,,2026-06-19T00:00:00+00:00,,,,,,,,,,,,,,,,,,,,,,,,,,,,,doc_policy_home,insurance_policy,Home Policy Declaration,documents/home-policy.pdf,policy_home
