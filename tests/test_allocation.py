@@ -14,6 +14,7 @@ from finharness.exposure import compute_exposure
 from finharness.statecore.models import (
     Account,
     CashflowEvent,
+    InsurancePolicy,
     Liability,
     Position,
     Proposal,
@@ -252,6 +253,110 @@ class AllocationCandidateTest(unittest.TestCase):
 
         self.assertIn("cash_buffer_low", candidates)
         self.assertNotIn("cash_overweight", candidates)
+
+    def _insurance_scan(self, *policies: InsurancePolicy):
+        write_records(list(policies), engine=self.engine)
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        return report, {c.detector_kind: c for c in compute_allocation_candidates(report)}
+
+    def test_insurance_gap_fires_on_missing_renewal(self) -> None:
+        report, candidates = self._insurance_scan(
+            InsurancePolicy(
+                policy_id="home",
+                policy_type="home",
+                provider="Acme",
+                coverage_amount=Decimal("500000"),
+                currency="USD",
+                renewal_date=None,
+                status="active",
+            )
+        )
+        self.assertIn("insurance_gap", candidates)
+        gap = candidates["insurance_gap"]
+        self.assertEqual(gap.dimension, "flow")
+        self.assertFalse(gap.execution_allowed)
+        option_kinds = [option.kind for option in gap.options]
+        self.assertIn("do_nothing", option_kinds)
+        self.assertLess(option_kinds.index("flow"), option_kinds.index("stock"))
+        self.assertTrue(any("missing renewal" in g for g in gap.evidence["review_gaps"]))
+        self.assertEqual(report.insurance_active_count, 1)
+
+    def test_insurance_gap_candidate_carries_policy_source_refs(self) -> None:
+        # Regression: report.source_refs used to come only from the portfolio
+        # snapshot, so insurance-only candidates lost their policy provenance and
+        # shipped empty source_refs (breaks the "evidence reconstructible" line).
+        report, candidates = self._insurance_scan(
+            InsurancePolicy(
+                policy_id="home",
+                policy_type="home",
+                provider="Acme",
+                coverage_amount=Decimal("500000"),
+                currency="USD",
+                renewal_date=None,
+                status="active",
+                source_refs=["receipt_policy_home"],
+            )
+        )
+        self.assertIn("insurance_gap", candidates)
+        evidence_refs = candidates["insurance_gap"].evidence["source_refs"]
+        self.assertIn("receipt_policy_home", evidence_refs)
+        self.assertIn("receipt_policy_home", report.source_refs)
+
+    def test_insurance_gap_fires_on_expired_renewal(self) -> None:
+        _report, candidates = self._insurance_scan(
+            InsurancePolicy(
+                policy_id="auto",
+                policy_type="auto",
+                provider="Acme",
+                coverage_amount=Decimal("30000"),
+                currency="USD",
+                renewal_date="2026-01-01",
+                status="active",
+            )
+        )
+        self.assertIn("insurance_gap", candidates)
+        self.assertTrue(
+            any("is past" in g for g in candidates["insurance_gap"].evidence["review_gaps"])
+        )
+
+    def test_healthy_active_policy_does_not_fire_insurance_gap(self) -> None:
+        _report, candidates = self._insurance_scan(
+            InsurancePolicy(
+                policy_id="home",
+                policy_type="home",
+                provider="Acme",
+                coverage_amount=Decimal("500000"),
+                currency="USD",
+                renewal_date="2026-12-01",
+                status="active",
+            )
+        )
+        self.assertNotIn("insurance_gap", candidates)
+
+    def test_policies_on_record_but_none_active_fires_insurance_gap(self) -> None:
+        report, candidates = self._insurance_scan(
+            InsurancePolicy(
+                policy_id="old",
+                policy_type="home",
+                provider="Acme",
+                coverage_amount=Decimal("500000"),
+                currency="USD",
+                renewal_date="2026-12-01",
+                status="cancelled",
+            )
+        )
+        self.assertIn("insurance_gap", candidates)
+        self.assertTrue(
+            any("none active" in g for g in candidates["insurance_gap"].evidence["review_gaps"])
+        )
+        self.assertEqual(report.insurance_active_count, 0)
+
+    def test_zero_policies_is_data_gap_not_insurance_candidate(self) -> None:
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        kinds = {c.detector_kind for c in compute_allocation_candidates(report)}
+        self.assertNotIn("insurance_gap", kinds)
+        self.assertIn("no insurance policy on record", report.data_gaps)
+        self.assertEqual(report.insurance_active_count, 0)
 
     def test_quiet_state_emits_no_candidates(self) -> None:
         # No cashflows -> runway not computed; no holdings -> no concentration.

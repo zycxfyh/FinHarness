@@ -114,6 +114,8 @@ class ExposureReport(BaseModel):
     interest_bearing_debt_total: float
     weighted_avg_interest_rate: float | None
     annual_interest_estimate: float
+    insurance_active_count: int
+    insurance_review_gaps: tuple[str, ...]
     upcoming_obligations: tuple[UpcomingObligation, ...]
     data_gaps: tuple[str, ...]
     source_refs: tuple[str, ...]
@@ -257,6 +259,43 @@ def _upcoming_obligations(
     return obligations
 
 
+def _insurance_review(
+    policies: list[InsurancePolicy],
+    as_of_date: date,
+    data_gaps: list[str],
+) -> tuple[int, list[str]]:
+    """Coverage-evidence review (not a needs/actuarial analysis).
+
+    Returns the active policy count and concrete review gaps: policies on record
+    but none active, unrecorded coverage, or missing/unverifiable/expired renewal
+    dates. Zero policies on record is disclosed as a data gap, not a review gap,
+    so a brand-new state core does not nag about absent data.
+    """
+    if not policies:
+        data_gaps.append("no insurance policy on record")
+        return 0, []
+    active = [policy for policy in policies if (policy.status or "").strip().lower() == "active"]
+    review_gaps: list[str] = []
+    if not active:
+        review_gaps.append("insurance policies on record but none active")
+        return 0, review_gaps
+    for policy in active:
+        label = f"{policy.policy_type} ({policy.provider})"
+        if policy.coverage_amount <= 0:
+            review_gaps.append(f"coverage amount not recorded for {label}")
+        if not policy.renewal_date:
+            review_gaps.append(f"missing renewal date for {label}")
+        else:
+            due = _parse_date(policy.renewal_date)
+            if due is None:
+                review_gaps.append(f"unverifiable renewal date for {label}")
+            elif due < as_of_date:
+                review_gaps.append(
+                    f"renewal date {due.isoformat()} is past but {label} is still active"
+                )
+    return len(active), review_gaps
+
+
 def _base_currency(
     positions: list[Position],
     liabilities: list[Liability],
@@ -319,8 +358,30 @@ def compute_exposure(
         as_of_date=reference_date,
         horizon_days=horizon_days,
     )
+    insurance_active_count, insurance_review_gaps = _insurance_review(
+        insurance, reference_date, data_gaps
+    )
     base_currency = _base_currency(positions, liabilities, data_gaps)
-    source_refs = tuple(sorted(set(snapshot.source_refs))) if snapshot is not None else ()
+    # Aggregate provenance from every state input that participated in this report,
+    # not just the portfolio snapshot. Otherwise candidates derived from non-position
+    # state (insurance, liabilities, cashflows) lose their source_refs and break the
+    # "evidence carries source_refs, reconstructible" line.
+    source_ref_set: set[str] = set()
+    if snapshot is not None:
+        source_ref_set.update(snapshot.source_refs)
+    # Per-type loops (not a mixed tuple) so each element keeps its concrete type;
+    # source_refs lives on the subclasses, not on the StateCoreBase ancestor.
+    for position in positions:
+        source_ref_set.update(position.source_refs)
+    for liability in liabilities:
+        source_ref_set.update(liability.source_refs)
+    for flow in cashflows:
+        source_ref_set.update(flow.source_refs)
+    for event in tax_events:
+        source_ref_set.update(event.source_refs)
+    for policy in insurance:
+        source_ref_set.update(policy.source_refs)
+    source_refs = tuple(sorted(source_ref_set))
 
     return ExposureReport(
         as_of_date=reference_date.isoformat(),
@@ -341,6 +402,8 @@ def compute_exposure(
         interest_bearing_debt_total=float(interest_bearing),
         weighted_avg_interest_rate=float(weighted_avg) if weighted_avg is not None else None,
         annual_interest_estimate=float(annual_interest),
+        insurance_active_count=insurance_active_count,
+        insurance_review_gaps=tuple(insurance_review_gaps),
         upcoming_obligations=tuple(obligations),
         data_gaps=tuple(data_gaps),
         source_refs=source_refs,

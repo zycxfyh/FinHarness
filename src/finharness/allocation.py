@@ -351,11 +351,76 @@ def _rate_exposure_candidate(
     )
 
 
+def _insurance_gap_candidate(
+    report: ExposureReport,
+    thresholds: ObservationThresholds,
+) -> AllocationCandidate | None:
+    gaps = report.insurance_review_gaps
+    if not gaps:
+        return None
+    options = (
+        CandidateOption(
+            kind="do_nothing",
+            label="Do nothing",
+            cost="Coverage stays unverifiable; a real protection gap could go unnoticed.",
+            reversibility="Fully reversible (no action taken).",
+        ),
+        CandidateOption(
+            kind="flow",
+            label="Collect policy declaration pages, fill missing renewal/coverage data, "
+            "and schedule an annual review",
+            cost="Time to gather records and set up a recurring review; small premium reserve.",
+            reversibility="Reversible: this only organizes records and schedules a review.",
+        ),
+        CandidateOption(
+            kind="stock",
+            label="Review potential policy changes (human review)",
+            cost="Any change means new premiums or contract terms; depends on actual needs "
+            "and underwriting.",
+            reversibility="Less reversible: a policy change is a new contract with its own terms.",
+        ),
+    )
+    evidence = {
+        "insurance_active_count": report.insurance_active_count,
+        "review_gaps": list(gaps),
+        "as_of_date": report.as_of_date,
+        "metric_precision": "descriptive review gaps; reconstruct exact via source_refs",
+        "source_refs": list(report.source_refs),
+    }
+    plural = "gap" if len(gaps) == 1 else "gaps"
+    return AllocationCandidate(
+        detector_kind="insurance_gap",
+        dimension="flow",
+        claim=(
+            f"{len(gaps)} insurance coverage review {plural} found; coverage cannot be "
+            "verified from current records."
+        ),
+        evidence=evidence,
+        assumptions=(
+            "Insurance records in the state core reflect the user's actual policies.",
+        ),
+        limitations=(
+            "This is a records / coverage-evidence review, not an actuarial or needs analysis.",
+            "No household structure, income-replacement need, or risk profile is modeled.",
+            "Does not assert whether coverage is sufficient, only that it is unverifiable.",
+        ),
+        options=options,
+        key_risks=(
+            "Unverifiable, lapsed, or expired coverage could leave a real exposure undetected.",
+        ),
+        reversibility=(
+            "Flow (collecting records / scheduling a review) is fully reversible; a policy "
+            "change (stock) is a new contract and is flagged for human review."
+        ),
+    )
+
+
 _DETECTORS = (
     _cash_buffer_candidate,
     _concentration_candidate,
     _cash_overweight_candidate,
     _rate_exposure_candidate,
+    _insurance_gap_candidate,
 )
 
 
