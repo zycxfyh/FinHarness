@@ -36,11 +36,11 @@ from finharness.lesson_loop import (
 from finharness.market_data import ROOT, display_path
 from finharness.rule_change_ledger import audit_untraceable, is_traceable, load_rule_changes
 from finharness.statecore.models import Attestation, Proposal, ReceiptIndex, utc_now_iso
+from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.receipt_io import atomic_write_json
 from finharness.statecore.store import upsert_records
 
 ANNUAL_REVIEW_KIND = "annual_review"
-PROPOSAL_RECEIPT_KIND = "state_core_proposal"
 DEFAULT_ANNUAL_REVIEW_RECEIPT_ROOT = ROOT / "data" / "receipts" / "annual-review"
 NON_CLAIMS = (
     "Descriptive decision retrospective over mirrored state.",
@@ -95,93 +95,26 @@ def _safe(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in value)
 
 
-def _receipt_path(receipt_ref: str) -> Path:
-    path = Path(receipt_ref)
-    if path.is_absolute():
-        return path
-    return ROOT / path
-
-
 def _proposal_revision_count(
     proposal: Proposal,
     *,
     data_gaps: list[str],
     max_revisions: int = 100,
 ) -> int:
-    """Count valid proposal receipt revisions by walking receipt_ref -> supersedes.
+    """Count valid proposal receipt revisions, degrading broken links to gaps.
 
-    Receipt files are the replay source of truth. The DB index can help lookup, but
-    it cannot prove the revision chain is intact, so this deliberately reads the
-    chain and degrades broken links into data gaps.
+    Delegates the chain walk to the shared replay-truth walker so this report and
+    the API revision view never diverge. The retrospective trusts DB-sourced
+    refs, so no path guard is applied; every anomaly becomes a data gap.
     """
-    receipt_ref = proposal.receipt_ref
-    if not receipt_ref:
-        data_gaps.append(f"proposal {proposal.proposal_id} has no receipt_ref")
-        return 0
-
-    seen: set[str] = set()
-    count = 0
-    while receipt_ref:
-        if receipt_ref in seen:
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision chain cycle at {receipt_ref}"
-            )
-            break
-        if count >= max_revisions:
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision chain exceeds {max_revisions}"
-            )
-            break
-        seen.add(receipt_ref)
-
-        path = _receipt_path(receipt_ref)
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt missing: "
-                f"{display_path(path)}"
-            )
-            break
-        except (json.JSONDecodeError, OSError):
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt unreadable: "
-                f"{display_path(path)}"
-            )
-            break
-
-        if payload.get("kind") != PROPOSAL_RECEIPT_KIND:
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt has unexpected kind: "
-                f"{display_path(path)}"
-            )
-            break
-        payload_proposal = payload.get("proposal")
-        if not isinstance(payload_proposal, dict):
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt lacks proposal payload: "
-                f"{display_path(path)}"
-            )
-            break
-        if payload_proposal.get("proposal_id") != proposal.proposal_id:
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt points to "
-                f"{payload_proposal.get('proposal_id')}: {display_path(path)}"
-            )
-            break
-
-        count += 1
-        supersedes = payload.get("supersedes")
-        if supersedes is None or supersedes == "":
-            break
-        if not isinstance(supersedes, str):
-            data_gaps.append(
-                f"proposal {proposal.proposal_id} revision receipt has invalid supersedes: "
-                f"{display_path(path)}"
-            )
-            break
-        receipt_ref = supersedes
-    return count
+    walk = walk_proposal_revisions(
+        proposal.proposal_id,
+        proposal.receipt_ref,
+        max_revisions=max_revisions,
+    )
+    for anomaly in walk.anomalies:
+        data_gaps.append(anomaly.detail)
+    return walk.count
 
 
 def _receipt_digest_date(digest: ReceiptDigest) -> date | None:

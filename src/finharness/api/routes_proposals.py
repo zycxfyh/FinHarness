@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -14,6 +13,7 @@ from sqlmodel import Session, select
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.market_data import ROOT
 from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
@@ -121,44 +121,12 @@ def _proposal_attestations(
     )
 
 
-def _safe_receipt_path(receipt_ref: str, *, receipt_root: Path) -> Path:
-    raw = Path(receipt_ref)
-    candidate = raw if raw.is_absolute() else ROOT / raw
-    resolved = candidate.resolve(strict=False)
-    allowed_roots = (ROOT.resolve(), receipt_root.resolve())
-    if not any(resolved.is_relative_to(root) for root in allowed_roots):
-        raise HTTPException(
-            status_code=404,
-            detail=f"receipt path is outside allowed receipt roots: {receipt_ref}",
-        )
-    return resolved
-
-
-def _read_proposal_receipt_payload(
-    receipt_ref: str,
-    *,
-    proposal_id: str,
-    receipt_root: Path,
-) -> dict[str, Any]:
-    path = _safe_receipt_path(receipt_ref, receipt_root=receipt_root)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"receipt file not found: {receipt_ref}")
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"receipt file is not valid JSON: {receipt_ref}",
-        ) from exc
-    if payload.get("kind") != "state_core_proposal":
-        raise HTTPException(status_code=500, detail=f"receipt is not a proposal: {receipt_ref}")
-    payload_proposal = payload.get("proposal") or {}
-    if payload_proposal.get("proposal_id") != proposal_id:
-        raise HTTPException(
-            status_code=500,
-            detail=f"receipt does not belong to proposal: {receipt_ref}",
-        )
-    return payload
+# Anomaly codes from the shared walker default to a 500 (a corrupt chain is a
+# server-side data problem); these are the exceptions surfaced as 404.
+_REVISION_ANOMALY_STATUS: dict[str, int] = {
+    "missing": 404,
+    "outside_allowed_roots": 404,
+}
 
 
 def _proposal_revision_chain(
@@ -167,42 +135,32 @@ def _proposal_revision_chain(
     receipt_root: Path,
     max_revisions: int = 100,
 ) -> list[ProposalRevision]:
-    receipt_ref = proposal.receipt_ref
-    if not receipt_ref:
-        return []
-    revisions: list[ProposalRevision] = []
-    seen: set[str] = set()
-    while receipt_ref:
-        if receipt_ref in seen:
-            raise HTTPException(
-                status_code=500,
-                detail=f"proposal receipt chain has a cycle at: {receipt_ref}",
-            )
-        if len(revisions) >= max_revisions:
-            raise HTTPException(
-                status_code=500,
-                detail=f"proposal receipt chain exceeds {max_revisions} revisions",
-            )
-        seen.add(receipt_ref)
-        payload = _read_proposal_receipt_payload(
-            receipt_ref,
-            proposal_id=proposal.proposal_id,
-            receipt_root=receipt_root,
+    walk = walk_proposal_revisions(
+        proposal.proposal_id,
+        proposal.receipt_ref,
+        allowed_roots=(ROOT.resolve(), receipt_root.resolve()),
+        max_revisions=max_revisions,
+    )
+    for anomaly in walk.anomalies:
+        if anomaly.code == "no_receipt_ref":
+            # No receipt yet just means no history to show, not an error.
+            continue
+        raise HTTPException(
+            status_code=_REVISION_ANOMALY_STATUS.get(anomaly.code, 500),
+            detail=anomaly.detail,
         )
-        revisions.append(
-            ProposalRevision(
-                receipt_id=str(payload.get("receipt_id") or ""),
-                receipt_ref=receipt_ref,
-                created_at_utc=str(payload.get("created_at_utc") or ""),
-                content_hash=payload.get("content_hash"),
-                supersedes=payload.get("supersedes"),
-                proposal=payload.get("proposal") or {},
-                execution_allowed=False,
-            )
+    return [
+        ProposalRevision(
+            receipt_id=record.receipt_id,
+            receipt_ref=record.receipt_ref,
+            created_at_utc=record.created_at_utc,
+            content_hash=record.content_hash,
+            supersedes=record.supersedes,
+            proposal=record.proposal,
+            execution_allowed=False,
         )
-        supersedes = payload.get("supersedes")
-        receipt_ref = supersedes if isinstance(supersedes, str) and supersedes else None
-    return revisions
+        for record in walk.revisions
+    ]
 
 
 @router.get("/proposals", response_model=list[ProposalReviewResponse])
