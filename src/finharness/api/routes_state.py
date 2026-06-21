@@ -2,18 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlmodel import Session, select
+from sqlalchemy import Engine
+from sqlmodel import Session, SQLModel, select
 
 from finharness.api.dependencies import EngineDependency
 from finharness.statecore.diff import diff_snapshots
-from finharness.statecore.models import Account, Position, ReceiptIndex, Snapshot
+from finharness.statecore.models import (
+    Account,
+    CashflowEvent,
+    DocumentRef,
+    FinancialGoal,
+    InsurancePolicy,
+    Liability,
+    Position,
+    ReceiptIndex,
+    Snapshot,
+    TaxEvent,
+)
 from finharness.statecore.store import StateCoreStoreError
 
 router = APIRouter(tags=["state"])
+
+def _list_all[ModelT: SQLModel](
+    engine: Engine, model: type[ModelT], *order_by: Any
+) -> list[ModelT]:
+    """Return every row of a read-only state table in a stable order."""
+    with Session(engine) as session:
+        return list(session.exec(select(model).order_by(*order_by)).all())
 
 
 class PositionChangeResponse(BaseModel):
@@ -50,15 +69,12 @@ class SnapshotDiffResponse(BaseModel):
 
 
 @router.get("/state/accounts", response_model=list[Account])
-def list_accounts(engine: EngineDependency) -> list[Account]:
-    with Session(engine) as session:
-        return list(
-            session.exec(select(Account).order_by(Account.account_id)).all()
-        )
+async def list_accounts(engine: EngineDependency) -> list[Account]:
+    return _list_all(engine, Account, Account.account_id)
 
 
 @router.get("/state/positions", response_model=list[Position])
-def list_positions(
+async def list_positions(
     engine: EngineDependency,
     snapshot_id: Annotated[str | None, Query()] = None,
 ) -> list[Position]:
@@ -69,8 +85,38 @@ def list_positions(
         return list(session.exec(statement).all())
 
 
+@router.get("/state/liabilities", response_model=list[Liability])
+async def list_liabilities(engine: EngineDependency) -> list[Liability]:
+    return _list_all(engine, Liability, Liability.name)
+
+
+@router.get("/state/goals", response_model=list[FinancialGoal])
+async def list_goals(engine: EngineDependency) -> list[FinancialGoal]:
+    return _list_all(engine, FinancialGoal, FinancialGoal.name)
+
+
+@router.get("/state/cashflows", response_model=list[CashflowEvent])
+async def list_cashflows(engine: EngineDependency) -> list[CashflowEvent]:
+    return _list_all(engine, CashflowEvent, CashflowEvent.event_date, CashflowEvent.cashflow_id)
+
+
+@router.get("/state/tax-events", response_model=list[TaxEvent])
+async def list_tax_events(engine: EngineDependency) -> list[TaxEvent]:
+    return _list_all(engine, TaxEvent, TaxEvent.due_date, TaxEvent.tax_event_id)
+
+
+@router.get("/state/insurance", response_model=list[InsurancePolicy])
+async def list_insurance(engine: EngineDependency) -> list[InsurancePolicy]:
+    return _list_all(engine, InsurancePolicy, InsurancePolicy.policy_id)
+
+
+@router.get("/state/documents", response_model=list[DocumentRef])
+async def list_documents(engine: EngineDependency) -> list[DocumentRef]:
+    return _list_all(engine, DocumentRef, DocumentRef.document_id)
+
+
 @router.get("/snapshots", response_model=list[Snapshot])
-def list_snapshots(
+async def list_snapshots(
     engine: EngineDependency,
     kind: Annotated[str | None, Query()] = None,
 ) -> list[Snapshot]:
@@ -82,7 +128,7 @@ def list_snapshots(
 
 
 @router.get("/diff", response_model=SnapshotDiffResponse)
-def get_diff(
+async def get_diff(
     engine: EngineDependency,
     before_snapshot_id: Annotated[str, Query()],
     after_snapshot_id: Annotated[str, Query()],
@@ -102,7 +148,7 @@ def get_diff(
 
 
 @router.get("/receipts/{receipt_id}", response_model=ReceiptIndex)
-def get_receipt(receipt_id: str, engine: EngineDependency) -> ReceiptIndex:
+async def get_receipt(receipt_id: str, engine: EngineDependency) -> ReceiptIndex:
     with Session(engine) as session:
         receipt = session.get(ReceiptIndex, receipt_id)
     if receipt is None:

@@ -8,10 +8,13 @@ governed proposals that never carry execution authority.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import field_validator
-from sqlalchemy import JSON, CheckConstraint, Column, Index
+from sqlalchemy import JSON, CheckConstraint, Column, Index, String
+from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 STATE_CORE_SCHEMA_VERSION = "finharness.state_core.v1"
@@ -31,12 +34,56 @@ def json_dict_column() -> Any:
     return Column(JSON, nullable=False)
 
 
+class DecimalText(TypeDecorator[Decimal]):
+    """Store ``Decimal`` exactly as TEXT.
+
+    SQLite ``NUMERIC`` affinity round-trips decimals through float, which
+    reintroduces the precision loss money columns must avoid. Storing the
+    canonical string keeps amounts exact for personal-finance state.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: Decimal | None, dialect: Dialect) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    def process_result_value(self, value: object, dialect: Dialect) -> Decimal | None:
+        if value is None:
+            return None
+        if isinstance(value, Decimal):
+            return value
+        # A pre-existing database may still have REAL/NUMERIC affinity on this
+        # column, so SQLite can hand back a float/int. Normalise via str() (its
+        # shortest round-trip repr) instead of Decimal(float), which would carry
+        # binary noise into the value.
+        return Decimal(str(value))
+
+
+def money_column(*, nullable: bool = False) -> Any:
+    """Column for an exact monetary/decimal amount."""
+    return Column(DecimalText, nullable=nullable)
+
+
 class StateCoreBase(SQLModel):
     """Common governance columns shared by state-core tables."""
 
     schema_version: str = STATE_CORE_SCHEMA_VERSION
     as_of_utc: str = Field(default_factory=utc_now_iso)
     authority_level: AuthorityLevel = "read_only"
+
+
+class SourcedStateCoreBase(StateCoreBase):
+    """State-core tables fully owned by the import source that produced them.
+
+    ``source`` names the adapter/import (e.g. ``personal_finance_export``,
+    ``beancount_ledger``) so a re-import can replace exactly its own rows instead
+    of accumulating stale rows through upsert. See ``replace_source_records``.
+    """
+
+    source: str = Field(default="")
 
 
 class Account(StateCoreBase, table=True):
@@ -67,9 +114,88 @@ class Position(StateCoreBase, table=True):
     snapshot_id: str = Field(foreign_key="snapshots.snapshot_id", index=True)
     account_id: str = Field(foreign_key="accounts.account_id")
     symbol: str
-    quantity: float
-    market_value: float
-    cost_basis: float | None = None
+    quantity: Decimal = Field(sa_column=money_column())
+    market_value: Decimal = Field(sa_column=money_column())
+    cost_basis: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class Liability(SourcedStateCoreBase, table=True):
+    __tablename__ = "liabilities"
+
+    liability_id: str = Field(primary_key=True)
+    name: str
+    liability_type: str
+    balance: Decimal = Field(sa_column=money_column())
+    currency: str
+    account_id: str | None = Field(default=None, foreign_key="accounts.account_id")
+    interest_rate: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    due_date: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class FinancialGoal(SourcedStateCoreBase, table=True):
+    __tablename__ = "financial_goals"
+
+    goal_id: str = Field(primary_key=True)
+    name: str
+    target_amount: Decimal = Field(sa_column=money_column())
+    current_amount: Decimal = Field(sa_column=money_column())
+    currency: str
+    target_date: str | None = None
+    status: str = "active"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class CashflowEvent(SourcedStateCoreBase, table=True):
+    __tablename__ = "cashflow_events"
+
+    cashflow_id: str = Field(primary_key=True)
+    description: str
+    amount: Decimal = Field(sa_column=money_column())
+    currency: str
+    event_date: str
+    category: str
+    account_id: str | None = Field(default=None, foreign_key="accounts.account_id")
+    frequency: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class TaxEvent(SourcedStateCoreBase, table=True):
+    __tablename__ = "tax_events"
+
+    tax_event_id: str = Field(primary_key=True)
+    event_type: str
+    jurisdiction: str
+    due_date: str
+    estimated_amount: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    currency: str | None = None
+    status: str = "planned"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class InsurancePolicy(SourcedStateCoreBase, table=True):
+    __tablename__ = "insurance_policies"
+
+    policy_id: str = Field(primary_key=True)
+    policy_type: str
+    provider: str
+    coverage_amount: Decimal = Field(sa_column=money_column())
+    premium_amount: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    currency: str
+    renewal_date: str | None = None
+    status: str = "active"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class DocumentRef(SourcedStateCoreBase, table=True):
+    __tablename__ = "document_refs"
+
+    document_id: str = Field(primary_key=True)
+    document_type: str
+    title: str
+    path: str
+    related_object_id: str | None = None
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
 
 

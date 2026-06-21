@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Connection, Engine, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -15,16 +15,35 @@ from finharness.market_data import ROOT
 from finharness.statecore.models import (
     Account,
     Attestation,
+    CashflowEvent,
+    DocumentRef,
+    FinancialGoal,
+    InsurancePolicy,
+    Liability,
     Position,
     Proposal,
     ReceiptIndex,
     Snapshot,
+    TaxEvent,
 )
 
 STATE_CORE_DB_ENV_VAR = "FINHARNESS_STATE_CORE_DB_PATH"
 DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-core.sqlite"
 
-StateCoreRecord = Account | Position | Snapshot | ReceiptIndex | Proposal | Attestation
+StateCoreRecord = (
+    Account
+    | Position
+    | Liability
+    | FinancialGoal
+    | CashflowEvent
+    | TaxEvent
+    | InsurancePolicy
+    | DocumentRef
+    | Snapshot
+    | ReceiptIndex
+    | Proposal
+    | Attestation
+)
 
 
 class StateCoreStoreError(RuntimeError):
@@ -96,11 +115,132 @@ def open_state_core(path: str | Path | None = None, *, create: bool = False) -> 
 def init_state_core(path: str | Path | None = None) -> Engine:
     """Create tables and return an opened WAL-enabled engine."""
     engine = open_state_core(path, create=True)
+    ensure_state_core_schema(engine)
+    return engine
+
+
+def ensure_state_core_schema(engine: Engine) -> None:
+    """Bring an already-open state-core database to the current schema.
+
+    First ``create_all`` adds any tables missing from an older database (it only
+    emits ``CREATE TABLE`` for absent tables), so cockpit reads do not fail with
+    ``no such table``. Then versioned migrations fix column-level changes that
+    ``create_all`` cannot, such as money columns left with REAL affinity before
+    the Decimal migration. Both steps are idempotent and safe on every open.
+    """
     try:
         SQLModel.metadata.create_all(engine)
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core schema initialization failed: {exc}") from exc
-    return engine
+    migrate_state_core(engine)
+
+
+CURRENT_STATE_CORE_USER_VERSION = 2
+
+_SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
+    ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+    ("financial_goals", "ALTER TABLE financial_goals ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+    ("cashflow_events", "ALTER TABLE cashflow_events ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+    ("tax_events", "ALTER TABLE tax_events ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+    (
+        "insurance_policies",
+        "ALTER TABLE insurance_policies ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+    ),
+    ("document_refs", "ALTER TABLE document_refs ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
+)
+
+_SOURCE_DELETES: tuple[Any, ...] = (
+    text("DELETE FROM liabilities WHERE source = :source"),
+    text("DELETE FROM financial_goals WHERE source = :source"),
+    text("DELETE FROM cashflow_events WHERE source = :source"),
+    text("DELETE FROM tax_events WHERE source = :source"),
+    text("DELETE FROM insurance_policies WHERE source = :source"),
+    text("DELETE FROM document_refs WHERE source = :source"),
+)
+
+_POSITION_MONEY_COLUMNS = ("quantity", "market_value", "cost_basis")
+_POSITIONS_SELECT = text(
+    "SELECT position_id, snapshot_id, account_id, symbol, quantity, market_value, "
+    "cost_basis, schema_version, as_of_utc, authority_level, source_refs FROM positions"
+)
+_POSITIONS_INSERT = text(
+    "INSERT INTO positions (position_id, snapshot_id, account_id, symbol, quantity, "
+    "market_value, cost_basis, schema_version, as_of_utc, authority_level, source_refs) "
+    "VALUES (:position_id, :snapshot_id, :account_id, :symbol, :quantity, :market_value, "
+    ":cost_basis, :schema_version, :as_of_utc, :authority_level, :source_refs)"
+)
+
+
+def _positions_money_already_text(connection: Connection) -> bool:
+    info = connection.execute(text("PRAGMA table_info(positions)")).all()
+    if not info:
+        return True  # no positions table yet: nothing to migrate
+    declared = {row[1]: (row[2] or "").upper() for row in info}
+    return all(
+        "CHAR" in declared.get(column, "") or "TEXT" in declared.get(column, "")
+        for column in _POSITION_MONEY_COLUMNS
+    )
+
+
+def _migrate_positions_money_to_text(connection: Connection) -> None:
+    """Rebuild legacy REAL money columns on ``positions`` as exact TEXT.
+
+    ``positions`` is a leaf table (nothing references it), so it can be dropped
+    and recreated from current metadata. Money values are converted with Python
+    ``str`` (shortest round-trip repr) rather than SQLite ``CAST``, which would
+    truncate to ~15 significant digits.
+    """
+    if _positions_money_already_text(connection):
+        return
+    rows = [dict(row) for row in connection.execute(_POSITIONS_SELECT).mappings()]
+    for row in rows:
+        for column in _POSITION_MONEY_COLUMNS:
+            if row[column] is not None:
+                row[column] = str(row[column])
+    connection.execute(text("DROP TABLE positions"))
+    SQLModel.metadata.tables["positions"].create(connection)
+    if rows:
+        connection.execute(_POSITIONS_INSERT, rows)
+
+
+def _migrate_add_source_columns(connection: Connection) -> None:
+    """Add the ``source`` column to source-owned personal-finance tables.
+
+    SQLite supports ``ALTER TABLE ... ADD COLUMN`` natively (no table rebuild).
+    Idempotent: tables that already have ``source`` (fresh ``create_all``) are
+    skipped.
+    """
+    inspector = inspect(connection)
+    existing_tables = set(inspector.get_table_names())
+    for table, alter_sql in _SOURCE_COLUMN_ALTERS:
+        if table not in existing_tables:
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "source" in columns:
+            continue
+        connection.exec_driver_sql(alter_sql)
+
+
+def migrate_state_core(engine: Engine) -> None:
+    """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
+    migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
+        (1, _migrate_positions_money_to_text),
+        (2, _migrate_add_source_columns),
+    )
+    try:
+        with engine.connect() as connection:
+            current = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+            # Release the transaction SQLAlchemy autobegins on the read above so
+            # the per-migration begin() blocks below can start cleanly.
+            connection.rollback()
+            for version, step in migrations:
+                if version <= current:
+                    continue
+                with connection.begin():
+                    step(connection)
+                    connection.exec_driver_sql(f"PRAGMA user_version = {version}")
+    except (SQLAlchemyError, OSError) as exc:
+        raise StateCoreStoreError(f"state-core migration failed: {exc}") from exc
 
 
 def write_records(
@@ -157,6 +297,36 @@ def upsert_records(
     finally:
         if owned_engine:
             active_engine.dispose()
+    return saved
+
+
+def replace_source_records(
+    records: Iterable[StateCoreRecord],
+    *,
+    source: str,
+    engine: Engine,
+) -> list[StateCoreRecord]:
+    """Reconcile a personal-finance import: replace ``source``-owned rows, then upsert.
+
+    Source-owned tables (liabilities, goals, cashflows, tax events, insurance,
+    documents) are deleted for ``source`` first so a re-import drops rows that no
+    longer exist upstream, instead of accumulating them. Other records (snapshot,
+    accounts, positions, receipt index) are merged as usual. All in one transaction.
+    """
+    materialized = list(records)
+    saved: list[StateCoreRecord] = []
+    try:
+        with Session(engine) as session:
+            with session.begin():
+                for statement in _SOURCE_DELETES:
+                    session.execute(statement, {"source": source})
+                for record in materialized:
+                    saved.append(session.merge(record))
+                session.flush()
+            for record in saved:
+                session.refresh(record)
+    except (SQLAlchemyError, OSError) as exc:
+        raise StateCoreStoreError(f"state-core atomic replace failed: {exc}") from exc
     return saved
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import inspect, text
@@ -20,6 +21,7 @@ from finharness.statecore.store import (
     get_account,
     get_snapshot,
     init_state_core,
+    migrate_state_core,
     open_state_core,
     read_all,
     write_records,
@@ -103,6 +105,149 @@ class StateCoreStoreTest(unittest.TestCase):
         self.assertIsNone(positions[0].cost_basis)
         self.assertEqual(receipts[0].path, "data/receipts/sample.json")
         self.assertEqual(receipts[0].source_refs, [])
+
+    def test_position_money_round_trips_as_exact_decimal(self) -> None:
+        engine = init_state_core(self.db_path)
+        account = Account(
+            account_id="acct_dec",
+            kind="broker",
+            venue="manual",
+            display_name="Decimal Brokerage",
+        )
+        snapshot = Snapshot(snapshot_id="snap_dec", kind="portfolio")
+        # 0.1 + 0.2 drifts to 0.30000000000000004 in float; Decimal stays exact.
+        positions = [
+            Position(
+                position_id="pos_a",
+                snapshot_id="snap_dec",
+                account_id="acct_dec",
+                symbol="AAA",
+                quantity=Decimal("1"),
+                market_value=Decimal("0.1"),
+            ),
+            Position(
+                position_id="pos_b",
+                snapshot_id="snap_dec",
+                account_id="acct_dec",
+                symbol="BBB",
+                quantity=Decimal("1"),
+                market_value=Decimal("0.2"),
+            ),
+        ]
+        write_records([account, snapshot, *positions], engine=engine)
+
+        loaded = read_all(Position, engine=engine)
+        for position in loaded:
+            self.assertIsInstance(position.market_value, Decimal)
+        total = sum((position.market_value for position in loaded), Decimal("0"))
+        self.assertEqual(total, Decimal("0.3"))
+
+    def test_legacy_real_affinity_money_reads_back_clean_decimal(self) -> None:
+        # A database created before the Decimal migration has REAL affinity on
+        # money columns; reads must still yield clean Decimals (not float noise).
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE accounts (account_id TEXT PRIMARY KEY, kind TEXT, "
+                    "venue TEXT, display_name TEXT, schema_version TEXT, as_of_utc TEXT, "
+                    "authority_level TEXT, source_refs JSON, created_at_utc TEXT)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE snapshots (snapshot_id TEXT PRIMARY KEY, kind TEXT, "
+                    "schema_version TEXT, as_of_utc TEXT, authority_level TEXT, "
+                    "payload JSON, source_refs JSON)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE positions (position_id TEXT PRIMARY KEY, snapshot_id TEXT, "
+                    "account_id TEXT, symbol TEXT, quantity REAL, market_value REAL, "
+                    "cost_basis REAL, schema_version TEXT, as_of_utc TEXT, "
+                    "authority_level TEXT, source_refs JSON)"
+                )
+            )
+
+        write_records(
+            [
+                Account(account_id="a", kind="broker", venue="m", display_name="A"),
+                Snapshot(snapshot_id="s", kind="portfolio"),
+                Position(
+                    position_id="p1",
+                    snapshot_id="s",
+                    account_id="a",
+                    symbol="AAA",
+                    quantity=Decimal("1"),
+                    market_value=Decimal("0.1"),
+                ),
+                Position(
+                    position_id="p2",
+                    snapshot_id="s",
+                    account_id="a",
+                    symbol="BBB",
+                    quantity=Decimal("1"),
+                    market_value=Decimal("0.2"),
+                ),
+            ],
+            engine=engine,
+        )
+
+        loaded = read_all(Position, engine=engine)
+        total = sum((position.market_value for position in loaded), Decimal("0"))
+        self.assertEqual(total, Decimal("0.3"))
+        self.assertEqual({str(p.market_value) for p in loaded}, {"0.1", "0.2"})
+
+    def test_migration_rebuilds_legacy_real_money_columns_as_text(self) -> None:
+        engine = init_state_core(self.db_path)
+        write_records(
+            [
+                Account(account_id="a", kind="broker", venue="m", display_name="A"),
+                Snapshot(snapshot_id="s", kind="portfolio"),
+            ],
+            engine=engine,
+        )
+        # Simulate a pre-Decimal database: positions money columns as REAL, and
+        # the schema version reset so the migration treats it as unmigrated.
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE positions"))
+            connection.execute(
+                text(
+                    "CREATE TABLE positions (position_id TEXT PRIMARY KEY, snapshot_id TEXT, "
+                    "account_id TEXT, symbol TEXT, quantity REAL, market_value REAL, "
+                    "cost_basis REAL, schema_version TEXT, as_of_utc TEXT, authority_level TEXT, "
+                    "source_refs JSON, FOREIGN KEY(account_id) REFERENCES accounts(account_id), "
+                    "FOREIGN KEY(snapshot_id) REFERENCES snapshots(snapshot_id))"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO positions (position_id, snapshot_id, account_id, symbol, "
+                    "quantity, market_value, cost_basis, schema_version, as_of_utc, "
+                    "authority_level, source_refs) VALUES ('p1','s','a','AAA',1,0.1,NULL,"
+                    "'finharness.state_core.v1','2026-06-19T00:00:00+00:00','read_only','[]')"
+                )
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 0")
+
+        migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()), 2
+            )
+            self.assertEqual(
+                connection.execute(text("SELECT typeof(market_value) FROM positions")).scalar_one(),
+                "text",
+            )
+        loaded = read_all(Position, engine=engine)
+        self.assertIsInstance(loaded[0].market_value, Decimal)
+        self.assertEqual(loaded[0].market_value, Decimal("0.1"))
+        self.assertIsNone(loaded[0].cost_basis)
+        # Idempotent: a second run is a no-op.
+        migrate_state_core(engine)
+        self.assertEqual(len(read_all(Position, engine=engine)), 1)
 
     def test_write_records_is_atomic(self) -> None:
         engine = init_state_core(self.db_path)

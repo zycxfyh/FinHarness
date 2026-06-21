@@ -21,6 +21,9 @@ data/receipts/repo-intelligence/
 data/receipts/risk-gates/
 data/receipts/receipt-usage-audit/
 data/receipts/validations/
+data/receipts/state-core/
+data/receipts/beancount/
+data/receipts/daily-brief/
 data/redteam/exports/
 data/state/*
 !data/state/rule-changes/

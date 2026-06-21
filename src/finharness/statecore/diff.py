@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import Engine
@@ -19,8 +20,8 @@ PositionKey = tuple[str, str]
 class PositionExposure:
     account_id: str
     symbol: str
-    quantity: float
-    market_value: float
+    quantity: Decimal
+    market_value: Decimal
     source_refs: tuple[str, ...]
 
 
@@ -107,10 +108,10 @@ def _change(
     before: PositionExposure | None,
     after: PositionExposure | None,
 ) -> PositionChange:
-    before_quantity = before.quantity if before else 0.0
-    after_quantity = after.quantity if after else 0.0
-    before_market_value = before.market_value if before else 0.0
-    after_market_value = after.market_value if after else 0.0
+    before_quantity = before.quantity if before else Decimal("0")
+    after_quantity = after.quantity if after else Decimal("0")
+    before_market_value = before.market_value if before else Decimal("0")
+    after_market_value = after.market_value if after else Decimal("0")
     source_refs = tuple(
         sorted(
             set(before.source_refs if before else ()).union(
@@ -118,16 +119,17 @@ def _change(
             )
         )
     )
+    # Aggregate exactly in Decimal, present the diff as float (JSON/evidence layer).
     return PositionChange(
         change_type=change_type,
         account_id=key[0],
         symbol=key[1],
-        before_quantity=before_quantity,
-        after_quantity=after_quantity,
-        quantity_delta=after_quantity - before_quantity,
-        before_market_value=before_market_value,
-        after_market_value=after_market_value,
-        market_value_delta=after_market_value - before_market_value,
+        before_quantity=float(before_quantity),
+        after_quantity=float(after_quantity),
+        quantity_delta=float(after_quantity - before_quantity),
+        before_market_value=float(before_market_value),
+        after_market_value=float(after_market_value),
+        market_value_delta=float(after_market_value - before_market_value),
         source_refs=source_refs,
     )
 
@@ -171,8 +173,12 @@ def diff_snapshots(
             or before_positions[key].market_value != after_positions[key].market_value
         )
     )
-    total_before = sum(position.market_value for position in before_positions.values())
-    total_after = sum(position.market_value for position in after_positions.values())
+    total_before = sum(
+        (position.market_value for position in before_positions.values()), Decimal("0")
+    )
+    total_after = sum(
+        (position.market_value for position in after_positions.values()), Decimal("0")
+    )
     return SnapshotDiff(
         before_snapshot_id=before_snapshot.snapshot_id,
         after_snapshot_id=after_snapshot.snapshot_id,
@@ -181,9 +187,9 @@ def diff_snapshots(
         added=added,
         removed=removed,
         changed=changed,
-        total_market_value_before=total_before,
-        total_market_value_after=total_after,
-        total_market_value_delta=total_after - total_before,
+        total_market_value_before=float(total_before),
+        total_market_value_after=float(total_after),
+        total_market_value_delta=float(total_after - total_before),
         source_refs=tuple(
             sorted(set(before_snapshot.source_refs).union(after_snapshot.source_refs))
         ),

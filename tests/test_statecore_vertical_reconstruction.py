@@ -5,7 +5,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from finharness.api.app import create_app
@@ -19,6 +18,7 @@ from finharness.statecore.models import (
     Snapshot,
 )
 from finharness.statecore.store import init_state_core, open_state_core, write_records
+from tests.asgi_test_client import AsgiTestClient
 
 
 class StateCoreVerticalReconstructionTest(unittest.TestCase):
@@ -37,7 +37,7 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts" / "state-core"
         self.engine = init_state_core(self.db_path)
         self._seed_two_snapshots()
-        self.client = TestClient(
+        self.client = AsgiTestClient(
             create_app(
                 state_core_engine=self.engine,
                 receipt_root=str(self.receipt_root),
