@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 from typing import Any, Literal
 
 from finharness.statecore.diff import PositionChange, SnapshotDiff
@@ -38,6 +39,9 @@ class ObservationThresholds:
     market_value_change_pct: float = 0.25
     total_exposure_change_pct: float = 0.20
     concentration_pct: float = 0.40
+    cash_runway_target_months: float = 6.0
+    cash_overweight_pct: float = 0.50
+    high_interest_rate_pct: float = 0.10
     data_gap_min_market_value: float = 1.0
 
     def as_dict(self) -> dict[str, float]:
@@ -167,11 +171,11 @@ def _total_exposure_delta(
     )
 
 
-def _position_totals_by_symbol(positions: Sequence[Position]) -> dict[str, float]:
-    totals: dict[str, float] = {}
+def _position_totals_by_symbol(positions: Sequence[Position]) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
     for position in positions:
         symbol = position.symbol.upper()
-        totals[symbol] = totals.get(symbol, 0.0) + position.market_value
+        totals[symbol] = totals.get(symbol, Decimal("0")) + position.market_value
     return totals
 
 
@@ -180,12 +184,12 @@ def _concentration_observations(
     thresholds: ObservationThresholds,
 ) -> list[Observation]:
     totals = _position_totals_by_symbol(positions)
-    total_market_value = sum(totals.values())
+    total_market_value = sum(totals.values(), Decimal("0"))
     if total_market_value <= 0:
         return []
     observations: list[Observation] = []
     for symbol, market_value in sorted(totals.items()):
-        concentration_pct = market_value / total_market_value
+        concentration_pct = float(market_value / total_market_value)
         if concentration_pct < thresholds.concentration_pct:
             continue
         observations.append(
@@ -196,8 +200,8 @@ def _concentration_observations(
                 ),
                 numbers={
                     "symbol": symbol,
-                    "symbol_market_value": market_value,
-                    "total_market_value": total_market_value,
+                    "symbol_market_value": float(market_value),
+                    "total_market_value": float(total_market_value),
                     "concentration_pct": concentration_pct,
                 },
                 threshold={"concentration_pct": thresholds.concentration_pct},
@@ -230,7 +234,7 @@ def _data_gap_observations(
                 numbers={
                     "account_id": position.account_id,
                     "symbol": position.symbol.upper(),
-                    "market_value": position.market_value,
+                    "market_value": float(position.market_value),
                     "cost_basis_disclosed": False,
                 },
                 threshold={"data_gap_min_market_value": thresholds.data_gap_min_market_value},
