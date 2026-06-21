@@ -43,6 +43,14 @@ CANDIDATE_NON_CLAIMS = (
     "Not execution authorization.",
 )
 
+def _refs(*groups: tuple[str, ...]) -> list[str]:
+    """Merge per-domain provenance into a minimal, deduped, sorted ref list."""
+    merged: set[str] = set()
+    for group in groups:
+        merged.update(group)
+    return sorted(merged)
+
+
 OptionKind = Literal["do_nothing", "flow", "stock"]
 
 
@@ -71,6 +79,10 @@ def _cash_buffer_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
 ) -> AllocationCandidate | None:
+    # Without a portfolio snapshot, cash_total is an unverified 0; do not assert a
+    # runway claim that the candidate's own source_refs cannot reconstruct.
+    if not report.cash_total_verified:
+        return None
     runway = report.cash_runway_months
     target = thresholds.cash_runway_target_months
     if runway is None or runway >= target:
@@ -102,7 +114,7 @@ def _cash_buffer_candidate(
         "monthly_net_cashflow": report.monthly_net_cashflow,
         "as_of_date": report.as_of_date,
         "metric_precision": "float_descriptive; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(report.provenance.cash, report.provenance.cashflow),
     }
     return AllocationCandidate(
         detector_kind="cash_buffer_low",
@@ -168,7 +180,7 @@ def _concentration_candidate(
         "holding_count": report.holding_count,
         "as_of_date": report.as_of_date,
         "metric_precision": "float_descriptive; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(report.provenance.portfolio, report.provenance.cash),
     }
     return AllocationCandidate(
         detector_kind="concentration_high",
@@ -249,7 +261,11 @@ def _cash_overweight_candidate(
         "target_months": thresholds.cash_runway_target_months,
         "as_of_date": report.as_of_date,
         "metric_precision": "float_descriptive; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(
+            report.provenance.portfolio,
+            report.provenance.cash,
+            report.provenance.cashflow,
+        ),
     }
     return AllocationCandidate(
         detector_kind="cash_overweight",
@@ -320,7 +336,7 @@ def _rate_exposure_candidate(
         "threshold": threshold,
         "as_of_date": report.as_of_date,
         "metric_precision": "float_descriptive; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(report.provenance.liability),
     }
     return AllocationCandidate(
         detector_kind="rate_exposure_high",
@@ -385,7 +401,7 @@ def _insurance_gap_candidate(
         "review_gaps": list(gaps),
         "as_of_date": report.as_of_date,
         "metric_precision": "descriptive review gaps; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(report.provenance.insurance),
     }
     plural = "gap" if len(gaps) == 1 else "gaps"
     return AllocationCandidate(
@@ -448,7 +464,7 @@ def _tax_window_candidate(
         "review_gaps": list(gaps),
         "as_of_date": report.as_of_date,
         "metric_precision": "descriptive review gaps; reconstruct exact via source_refs",
-        "source_refs": list(report.source_refs),
+        "source_refs": _refs(report.provenance.tax),
     }
     plural = "item" if len(gaps) == 1 else "items"
     return AllocationCandidate(

@@ -95,6 +95,21 @@ class UpcomingObligation(BaseModel):
     currency: str | None
 
 
+class ExposureProvenance(BaseModel):
+    """Per-domain source refs so each candidate carries only its own provenance.
+
+    The report-level ``source_refs`` stays a global union (API invariant); detectors
+    read the specific domain(s) they actually use, avoiding cross-domain ref leakage.
+    """
+
+    portfolio: tuple[str, ...] = ()
+    cash: tuple[str, ...] = ()
+    cashflow: tuple[str, ...] = ()
+    liability: tuple[str, ...] = ()
+    tax: tuple[str, ...] = ()
+    insurance: tuple[str, ...] = ()
+
+
 class ExposureReport(BaseModel):
     as_of_date: str
     base_currency: str | None
@@ -109,6 +124,7 @@ class ExposureReport(BaseModel):
     concentration_flagged: bool
     concentration_threshold: float
     cash_total: float
+    cash_total_verified: bool
     monthly_net_cashflow: float | None
     cash_runway_months: float | None
     interest_bearing_debt_total: float
@@ -120,6 +136,7 @@ class ExposureReport(BaseModel):
     upcoming_obligations: tuple[UpcomingObligation, ...]
     data_gaps: tuple[str, ...]
     source_refs: tuple[str, ...]
+    provenance: ExposureProvenance = ExposureProvenance()
     non_claims: tuple[str, ...] = NON_CLAIMS
     execution_allowed: bool = False
 
@@ -390,6 +407,12 @@ def compute_exposure(
         insurance = list(session.exec(select(InsurancePolicy)).all())
 
     data_gaps: list[str] = []
+    # Cash total is only verifiable when a portfolio snapshot exists (the snapshot
+    # is what proves how much cash is held, including a real zero). Without one, a
+    # 0 cash total is unverified and must not back a candidate.
+    cash_total_verified = snapshot is not None
+    if not cash_total_verified:
+        data_gaps.append("no portfolio snapshot on record; cash total not verified")
     total_assets = sum((position.market_value for position in positions), Decimal("0"))
     total_liabilities = sum((liability.balance for liability in liabilities), Decimal("0"))
     cash_total = sum(
@@ -416,22 +439,53 @@ def compute_exposure(
     # not just the portfolio snapshot. Otherwise candidates derived from non-position
     # state (insurance, liabilities, cashflows) lose their source_refs and break the
     # "evidence carries source_refs, reconstructible" line.
-    source_ref_set: set[str] = set()
+    # Domain-grouped provenance: each detector reads only the domain(s) it uses, so
+    # candidate evidence carries minimal source refs (no cross-domain leakage). The
+    # report-level source_refs stays a global union for the API. Per-type loops keep
+    # each element's concrete type (source_refs lives on the subclasses).
+    portfolio_refs: set[str] = set()
+    cash_refs: set[str] = set()
     if snapshot is not None:
-        source_ref_set.update(snapshot.source_refs)
-    # Per-type loops (not a mixed tuple) so each element keeps its concrete type;
-    # source_refs lives on the subclasses, not on the StateCoreBase ancestor.
+        # The snapshot is the provenance of the whole position set, so it backs both
+        # the securities (portfolio) and the cash total (including cash_total == 0,
+        # when no cash position exists).
+        portfolio_refs.update(snapshot.source_refs)
+        cash_refs.update(snapshot.source_refs)
     for position in positions:
-        source_ref_set.update(position.source_refs)
-    for liability in liabilities:
-        source_ref_set.update(liability.source_refs)
+        if _is_cash_symbol(position.symbol):
+            cash_refs.update(position.source_refs)
+        else:
+            portfolio_refs.update(position.source_refs)
+    cashflow_refs: set[str] = set()
     for flow in cashflows:
-        source_ref_set.update(flow.source_refs)
+        cashflow_refs.update(flow.source_refs)
+    liability_refs: set[str] = set()
+    for liability in liabilities:
+        liability_refs.update(liability.source_refs)
+    tax_refs: set[str] = set()
     for event in tax_events:
-        source_ref_set.update(event.source_refs)
+        tax_refs.update(event.source_refs)
+    insurance_refs: set[str] = set()
     for policy in insurance:
-        source_ref_set.update(policy.source_refs)
-    source_refs = tuple(sorted(source_ref_set))
+        insurance_refs.update(policy.source_refs)
+    provenance = ExposureProvenance(
+        portfolio=tuple(sorted(portfolio_refs)),
+        cash=tuple(sorted(cash_refs)),
+        cashflow=tuple(sorted(cashflow_refs)),
+        liability=tuple(sorted(liability_refs)),
+        tax=tuple(sorted(tax_refs)),
+        insurance=tuple(sorted(insurance_refs)),
+    )
+    source_refs = tuple(
+        sorted(
+            portfolio_refs
+            | cash_refs
+            | cashflow_refs
+            | liability_refs
+            | tax_refs
+            | insurance_refs
+        )
+    )
 
     return ExposureReport(
         as_of_date=reference_date.isoformat(),
@@ -447,6 +501,7 @@ def compute_exposure(
         concentration_flagged=float(top_weight) >= active_thresholds.concentration_pct,
         concentration_threshold=active_thresholds.concentration_pct,
         cash_total=float(cash_total),
+        cash_total_verified=cash_total_verified,
         monthly_net_cashflow=float(monthly_net) if monthly_net is not None else None,
         cash_runway_months=float(runway) if runway is not None else None,
         interest_bearing_debt_total=float(interest_bearing),
@@ -458,4 +513,5 @@ def compute_exposure(
         upcoming_obligations=tuple(obligations),
         data_gaps=tuple(data_gaps),
         source_refs=source_refs,
+        provenance=provenance,
     )

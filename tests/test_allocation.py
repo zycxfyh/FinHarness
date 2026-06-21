@@ -486,6 +486,149 @@ class AllocationCandidateTest(unittest.TestCase):
         self.assertNotIn("tax_window", kinds)
         self.assertIn("no tax event on record", report.data_gaps)
 
+    def test_candidate_provenance_is_domain_scoped(self) -> None:
+        # Each detector must carry only its own domain's source refs, not a global
+        # blob. Distinct refs per domain make any cross-domain leak visible.
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="s",
+            kind="portfolio",
+            as_of_utc="2026-06-19T00:00:00+00:00",
+            source_refs=["r_snap"],
+        )
+        write_records(
+            [
+                account,
+                snapshot,
+                Position(
+                    position_id="spy", snapshot_id="s", account_id="brk", symbol="SPY",
+                    quantity=Decimal("10"), market_value=Decimal("8000"), source_refs=["r_sec"],
+                ),
+                Position(
+                    position_id="aapl", snapshot_id="s", account_id="brk", symbol="AAPL",
+                    quantity=Decimal("5"), market_value=Decimal("2000"), source_refs=["r_sec"],
+                ),
+                Position(
+                    position_id="cash", snapshot_id="s", account_id="brk", symbol="USD",
+                    quantity=Decimal("1000"), market_value=Decimal("1000"), source_refs=["r_cash"],
+                ),
+                CashflowEvent(
+                    cashflow_id="salary", description="Salary", amount=Decimal("1000"),
+                    currency="USD", event_date="2026-07-15", category="income",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+                CashflowEvent(
+                    cashflow_id="rent", description="Rent", amount=Decimal("-3000"),
+                    currency="USD", event_date="2026-07-01", category="expense",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+                Liability(
+                    liability_id="card", name="Card", liability_type="card",
+                    balance=Decimal("5000"), currency="USD", interest_rate=Decimal("0.18"),
+                    source_refs=["r_liab"],
+                ),
+                InsurancePolicy(
+                    policy_id="home", policy_type="home", provider="Acme",
+                    coverage_amount=Decimal("500000"), currency="USD", renewal_date=None,
+                    status="active", source_refs=["r_ins"],
+                ),
+                TaxEvent(
+                    tax_event_id="q3", event_type="estimated_payment", jurisdiction="US",
+                    due_date="2026-07-15", estimated_amount=Decimal("1200"), currency="USD",
+                    status="planned", source_refs=["r_tax"],
+                ),
+            ],
+            engine=self.engine,
+        )
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        by_kind = {c.detector_kind: c for c in compute_allocation_candidates(report)}
+
+        def refs(kind: str) -> set[str]:
+            return set(by_kind[kind].evidence["source_refs"])
+
+        # Snapshot ref backs the cash total, so cash-domain candidates carry it too.
+        self.assertEqual(refs("cash_buffer_low"), {"r_snap", "r_cash", "r_flow"})
+        self.assertEqual(refs("concentration_high"), {"r_snap", "r_sec", "r_cash"})
+        self.assertEqual(refs("rate_exposure_high"), {"r_liab"})
+        self.assertEqual(refs("insurance_gap"), {"r_ins"})
+        self.assertEqual(refs("tax_window"), {"r_tax"})
+        # Explicit leakage guards across domains.
+        self.assertNotIn("r_liab", refs("cash_buffer_low"))
+        self.assertNotIn("r_tax", refs("insurance_gap"))
+        self.assertNotIn("r_ins", refs("tax_window"))
+        self.assertNotIn("r_flow", refs("rate_exposure_high"))
+        # Report-level source_refs stays the global union (API invariant).
+        self.assertEqual(
+            set(report.source_refs),
+            {"r_snap", "r_sec", "r_cash", "r_flow", "r_liab", "r_tax", "r_ins"},
+        )
+
+    def test_cash_overweight_provenance_includes_cashflow(self) -> None:
+        snapshot = Snapshot(
+            snapshot_id="s",
+            kind="portfolio",
+            as_of_utc="2026-06-19T00:00:00+00:00",
+            source_refs=["r_snap"],
+        )
+        write_records(
+            [
+                Account(account_id="brk", kind="broker", venue="m", display_name="Brk"),
+                snapshot,
+                Position(
+                    position_id="cash", snapshot_id="s", account_id="brk", symbol="USD",
+                    quantity=Decimal("8000"), market_value=Decimal("8000"), source_refs=["r_cash"],
+                ),
+                CashflowEvent(
+                    cashflow_id="salary", description="Salary", amount=Decimal("4000"),
+                    currency="USD", event_date="2026-07-15", category="income",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+                CashflowEvent(
+                    cashflow_id="rent", description="Rent", amount=Decimal("-1000"),
+                    currency="USD", event_date="2026-07-01", category="expense",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+            ],
+            engine=self.engine,
+        )
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        by_kind = {c.detector_kind: c for c in compute_allocation_candidates(report)}
+
+        # The claim cites cash_runway_months (derived from cashflows), so the
+        # candidate must carry the cashflow ref to stay reconstructible.
+        self.assertIn("cash_overweight", by_kind)
+        overweight_refs = set(by_kind["cash_overweight"].evidence["source_refs"])
+        self.assertEqual(overweight_refs, {"r_snap", "r_cash", "r_flow"})
+        self.assertIn("r_flow", overweight_refs)
+
+    def test_cash_buffer_does_not_fire_without_a_portfolio_snapshot(self) -> None:
+        # Cashflows but no snapshot: cash_total is an unverified 0, so cash_buffer
+        # must not assert a runway claim it cannot reconstruct; it becomes a data gap.
+        write_records(
+            [
+                CashflowEvent(
+                    cashflow_id="salary", description="Salary", amount=Decimal("1000"),
+                    currency="USD", event_date="2026-07-15", category="income",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+                CashflowEvent(
+                    cashflow_id="rent", description="Rent", amount=Decimal("-3000"),
+                    currency="USD", event_date="2026-07-01", category="expense",
+                    frequency="monthly", source_refs=["r_flow"],
+                ),
+            ],
+            engine=self.engine,
+        )
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        kinds = {c.detector_kind for c in compute_allocation_candidates(report)}
+
+        self.assertNotIn("cash_buffer_low", kinds)
+        self.assertFalse(report.cash_total_verified)
+        self.assertIn("no portfolio snapshot on record; cash total not verified", report.data_gaps)
+
     def test_quiet_state_emits_no_candidates(self) -> None:
         # No cashflows -> runway not computed; no holdings -> no concentration.
         report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
