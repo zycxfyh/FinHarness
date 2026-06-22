@@ -261,3 +261,59 @@ class Attestation(StateCoreBase, table=True):
         if not value.strip():
             raise ValueError("attestation requires a named human and written reason")
         return value
+
+
+REVIEW_EVENT_KINDS: tuple[str, ...] = ("annotation", "archive", "reopen", "compare_mark")
+
+
+class ReviewEvent(StateCoreBase, table=True):
+    """Append-only ledger of human review interactions on a governed proposal.
+
+    Additive to (not a replacement for) Attestation: attestation stays the decision of
+    record (approve/reject); ReviewEvent records annotation / archive / reopen /
+    compare_mark. Never carries execution authority. ``content_hash`` is for
+    integrity/replay only — it is NOT an idempotency key, so a repeated human annotation
+    is a new event, not a no-op.
+    """
+
+    __tablename__ = "review_events"
+    __table_args__ = (
+        CheckConstraint(
+            "execution_allowed = 0", name="ck_review_events_execution_allowed_false"
+        ),
+    )
+
+    review_event_id: str = Field(primary_key=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id")
+    kind: str
+    attester: str
+    reason: str
+    text: str | None = None
+    attestation_ref: str | None = None
+    compare_with: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    content_hash: str = ""
+    authority_level: AuthorityLevel = "needs_human_confirm"
+    execution_allowed: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("kind")
+    @classmethod
+    def require_known_kind(cls, value: str) -> str:
+        if value not in REVIEW_EVENT_KINDS:
+            raise ValueError(f"review event kind must be one of {REVIEW_EVENT_KINDS}")
+        return value
+
+    @field_validator("attester", "reason")
+    @classmethod
+    def require_written_human_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("review event requires a named human and written reason")
+        return value
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("review events never carry execution authority")
+        return False

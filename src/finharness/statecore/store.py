@@ -23,6 +23,7 @@ from finharness.statecore.models import (
     Position,
     Proposal,
     ReceiptIndex,
+    ReviewEvent,
     Snapshot,
     TaxEvent,
 )
@@ -43,6 +44,7 @@ StateCoreRecord = (
     | ReceiptIndex
     | Proposal
     | Attestation
+    | ReviewEvent
 )
 
 
