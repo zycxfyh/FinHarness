@@ -22,8 +22,15 @@ independent gate + governance:check 硬化。
 - **Archive 是事件,不是 Proposal 上的可变状态**:`is_archived` 像 `attested` 一样**派生**自最新的 archive/reopen 事件;
   Proposal 保持不可变、append-only 历史(archive→reopen→archive 全留痕)。
 - **Review Workspace = 既有 proposal 复核面的增强**,不是新顶级 dashboard:每个 proposal 一条**合并时间线**
-  (attestations + review events 按时间只读渲染)+ 最小人工写入(加批注 / 归档 / 重开,均显式确认);queue 加
-  `archived` 过滤(默认隐藏 archived)。复用既有 cockpit 渲染原语 + revision-history 模式。
+  (attestations + review events 按时间只读渲染)+ 最小人工写入(加批注 / 归档 / 重开,均显式确认)。复用既有
+  cockpit 渲染原语 + revision-history 模式。
+- **旧 `/proposals` 默认语义不变**:现有端点**默认仍返回 all**,archive 事件**绝不**悄悄改变它。"默认隐藏 archived"
+  只在 **显式 opt-in** 下成立——新增 `archive=active|all|archived` 查询参数(缺省=`all`,= 今天),或一个独立的
+  workspace 读端点;前端 Review Workspace 显式传 `archive=active`。避免把协作面做成隐性 breaking change。
+- **ReviewEvent 失败语义**(沿用 attestation 模式):生成唯一 `review_event_id` → 写 receipt → DB 写入失败则
+  **清理刚写的 receipt** 再抛错;`content_hash` 只做**完整性/复盘**,**不做幂等去重**——人工重复批注是**新事件**,不是 no-op
+  (archive/reopen 同理:每次都是新留痕事件)。
+- **合并时间线排序**:`created_at_utc desc` + 稳定 tie-breaker(`source_type` 再 `id`),避免同秒事件前端抖动。
 
 ### PM 点名的 5 个边界(锁定)
 1. **ReviewEvent 是统一事件账本吗** → 是**复核交互**的统一账本(annotation/archive/reopen/compare_mark);
@@ -40,24 +47,29 @@ independent gate + governance:check 硬化。
 
 ### 4. Surface Inventory
 - **输入(人工写入)**:加批注(proposal_id, attester, reason/text)、archive(proposal_id, attester, reason)、
-  reopen(同)、compare_mark(标记两个 candidate 待比较)。
-- **输出**:`ReviewEvent` 记录 + 各自 receipt(经 `resolve_under` 写 receipt root);派生 `is_archived`。
-- **只读视图**:proposal 合并时间线、queue 的 archived 过滤。
+  reopen(同)、compare_mark(**仅落事件标记**,R2 不做比较 UI)。
+- **输出**:`ReviewEvent` 记录(唯一 `review_event_id`)+ 各自 receipt(经 `resolve_under` 写 receipt root);派生 `is_archived`。
+- **只读视图**:proposal 合并时间线;queue 的 archived 过滤**仅经显式 `archive=` 参数 / workspace 端点**(旧默认不变)。
 - **外部面**:无(纯本地 state + receipt,不联网)。
-- **失败面**:空 attester/reason 拒;未知 proposal_id → 404;非法 kind 拒。
+- **失败面**:空 attester/reason 拒;未知 proposal_id → 404;非法 kind 拒;DB 写失败 → 清理新 receipt 后抛错。
 - **排除面(明确不碰)**:不改 Proposal/Attestation schema 语义、不加执行面、不新增网络、不动 `decisions:scan`/
-  既有 queue/attest 端点的现有响应、archive 不触发任何自动动作。
+  **既有 `/proposals` 默认列表语义(默认仍 all)**及 attest 端点现有响应、archive 不触发任何自动动作、
+  `compare_mark` 不改变当前 queue 行为(纯 future marker,比较 UI 是 R4)。
 
 ### 5. Default Path Invariant
 **无 review 事件时,现有行为逐字节不变**:
 - **现状事实**:proposal 详情/queue/attest 响应今天不含任何 review-event/archive 字段;`open/attested` 派生不变。
-- **承诺**:ReviewEvent 表与端点**附加**;proposal 无 review 事件 → 时间线只含既有 attestations、queue 不隐藏任何东西、
-  现有端点响应**字段级不变**(新字段可选/独立端点)。**用快照测试锁**既有 proposal/queue 响应在 R2 前后相等。
+- **承诺**:ReviewEvent 表与端点**附加**;**旧 `/proposals` 默认仍返回 all**,archive 事件不改其默认语义;隐藏
+  archived 只在显式 `archive=active` / workspace 端点下发生。proposal 无 review 事件 → 时间线只含既有 attestations、
+  现有端点响应**字段级不变**(新字段可选/独立端点)。**用快照测试锁**既有 proposal/queue(默认 all)响应在 R2 前后相等。
 
 ### 6. Traceability Matrix
 | 设计承诺 | 计划代码点 | 测试 | gate 探针 |
 | --- | --- | --- | --- |
 | 默认无事件 → 现有响应不变 | ReviewEvent 附加、不改既有端点 | 既有 proposal/queue 响应快照逐字段相等 | 快照对比 R2 前后 |
+| 旧 `/proposals` 默认=all 不变 | 隐藏 archived 仅经显式 `archive=active`/workspace 端点 | 默认 list 仍含 archived 的 proposal;`archive=active` 才隐藏 | 断言默认响应不因 archive 事件变化 |
+| ReviewEvent 失败语义 | 唯一 id→写 receipt→DB 失败清理 receipt;`content_hash` 非幂等 | DB 失败 → 无残留 receipt;重复批注 = 两条事件 | 注入 DB 失败 + 重复写断言 |
+| 合并时间线稳定排序 | `created_at_utc desc` + tie-breaker(`source_type`,`id`) | 同秒事件顺序确定 | 同秒构造断言 |
 | annotation/archive receipt 化 | 复用 governed receipt 写(`resolve_under`) | 写事件→receipt 落盘可复盘、content-hash | 断言 receipt 存在 + 可读 |
 | archive 是事件非状态 | 无 Proposal 列;`is_archived` 派生 | archive→reopen→archive 历史全留、派生正确 | 序列断言 |
 | archive ≠ reject | archive 与 attestation 解耦 | reject 不产生 archive;archive 不改 decision | 交叉断言 |
