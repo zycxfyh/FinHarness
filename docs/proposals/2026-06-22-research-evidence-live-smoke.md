@@ -31,8 +31,9 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码。** 按
 ### 4. Surface Inventory
 - **输入**:隔离临时 DB(`--db-path` 指向 tempdir)+ 一个合成 concentration 持仓(public symbol);`--with-research` flag;`--receipt-root` 指向 tempdir。
 - **输出**:harness 读回 proposal evidence 后打印**有限 JSON summary**(命中 detector、有无 research item、
-  value 键集、有无 gap、lineage 字段是否齐、receipt 路径)——**不**回显原始 provider payload/真实账本/堆栈;
-  proposal/receipt 落 tempdir。
+  value 键集、有无 gap、lineage 字段是否齐、receipt 路径 + `artifact_root`/`receipt_exists`/`cleanup_hint`)
+  ——**不**回显原始 provider payload/真实账本/堆栈;artifact root **保留不自动删**(`mkdtemp`),receipt 可在
+  run 后被审计,operator 用 `cleanup_hint` 删除。
 - **外部调用/网络面**:`MarketDataHistorySource._fetch_openbb_history`(OpenBB/yfinance)——**仅此一处**,属 RE2/market_data,本 slice 不新增。
 - **失败面**:网络不可达、symbol 不存在、历史不足、reconciliation 单源 → 各自一条 `data_gap`(RE1/RE2 已守)。
 - **用户可见面**:**无新增**——冒烟是开发者/运维动作,不进 cockpit、不改前端。

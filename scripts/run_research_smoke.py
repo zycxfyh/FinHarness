@@ -9,6 +9,9 @@ operator's real ledger.
 It prints a **bounded** JSON summary (which detector fired, whether the provider was
 attempted, whether a research item or a data gap came back, the lineage fields present,
 the receipt ref) — never the raw provider payload, the real ledger, or a stack trace.
+The artifact root is **retained** (not auto-deleted) so the receipt stays readable for
+audit; the summary carries ``artifact_root`` / ``receipt_exists`` / ``cleanup_hint`` and
+the operator deletes it via the hint.
 
 Exit code semantics (see the C3 mini-RFC):
 - Pipeline working but provider offline / bad symbol / failure -> exit 0 with a
@@ -80,7 +83,9 @@ def _seed_synthetic_concentration(engine: Any) -> None:
     write_records([account, snapshot, *positions], engine=engine)
 
 
-def _bounded_summary(evidence: dict[str, Any], receipt_ref: str, attempted: bool) -> dict[str, Any]:
+def _bounded_summary(
+    evidence: dict[str, Any], receipt_ref: str, attempted: bool, root: Path
+) -> dict[str, Any]:
     items = evidence.get("research_evidence") or []
     first = items[0] if items else {}
     lineage = first.get("lineage") or {}
@@ -94,14 +99,21 @@ def _bounded_summary(evidence: dict[str, Any], receipt_ref: str, attempted: bool
         "lineage_fields_present": [f for f in _LINEAGE_FIELDS if f in lineage],
         "source_refs_count": len(first.get("source_refs") or []),
         "receipt_ref": receipt_ref,
+        # The artifact root is retained (not auto-deleted) so a reviewer can actually
+        # open the receipt after the run; receipt_exists proves it is readable now.
+        "artifact_root": str(root),
+        "receipt_exists": bool(receipt_ref) and Path(receipt_ref).exists(),
+        "cleanup_hint": f"rm -rf {root}",
         "execution_allowed": False,
     }
 
 
 def main() -> int:
-    tmp = tempfile.TemporaryDirectory(prefix="finharness-research-smoke-")
+    # mkdtemp (not TemporaryDirectory): keep the artifact root after the run so the
+    # printed receipt_ref stays readable for audit. The operator deletes it via the
+    # cleanup_hint. Synthetic sample only, so nothing sensitive is retained.
+    root = Path(tempfile.mkdtemp(prefix="finharness-research-smoke-"))
     try:
-        root = Path(tmp.name)
         engine = init_state_core(root / "state-core.sqlite")
         try:
             _seed_synthetic_concentration(engine)
@@ -124,20 +136,37 @@ def main() -> int:
         if concentration is None:
             # Synthetic seed should always trigger concentration_high; if not, the
             # harness/setup is wrong, not the pipeline.
-            print(json.dumps({"ok": False, "error": "synthetic sample did not trigger detector"}))
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": "synthetic sample did not trigger detector",
+                        "artifact_root": str(root),
+                    }
+                )
+            )
             return 1
 
         summary = _bounded_summary(
-            concentration.proposal.evidence, concentration.receipt_ref, bool(source.attempts)
+            concentration.proposal.evidence,
+            concentration.receipt_ref,
+            bool(source.attempts),
+            root,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:  # harness/setup/schema/import failure -> non-zero
         # Sanitized: type name only, never the raw message/stack/provider payload.
-        print(json.dumps({"ok": False, "error": f"smoke harness failure: {type(exc).__name__}"}))
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"smoke harness failure: {type(exc).__name__}",
+                    "artifact_root": str(root),
+                }
+            )
+        )
         return 1
-    finally:
-        tmp.cleanup()
 
 
 if __name__ == "__main__":
