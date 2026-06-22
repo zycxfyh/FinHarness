@@ -290,6 +290,8 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}": {"get"},
             "/proposals/{proposal_id}/revisions": {"get"},
             "/proposals/{proposal_id}/attest": {"post"},
+            "/proposals/{proposal_id}/timeline": {"get"},
+            "/proposals/{proposal_id}/review-events": {"post"},
         }
         self.assertEqual(set(paths), set(allowed_methods))
         for path, methods in paths.items():

@@ -11,10 +11,16 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from sqlalchemy import Engine
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from finharness.market_data import ROOT
-from finharness.statecore.models import Attestation, Proposal, ReceiptIndex
+from finharness.statecore.models import (
+    REVIEW_EVENT_KINDS,
+    Attestation,
+    Proposal,
+    ReceiptIndex,
+    ReviewEvent,
+)
 from finharness.statecore.receipt_io import (
     atomic_write_json,
     remove_file_best_effort,
@@ -358,3 +364,186 @@ def create_governed_attestation(
         approved_is_not_execution_authorization=True,
         execution_allowed=False,
     )
+
+
+ReviewEventKind = Literal["annotation", "archive", "reopen", "compare_mark"]
+
+
+@dataclass(frozen=True)
+class GovernedReviewEventWrite:
+    review_event: ReviewEvent
+    receipt_ref: str
+    execution_allowed: bool = False
+
+
+def _review_event_content_hash(
+    *,
+    proposal_id: str,
+    kind: str,
+    attester: str,
+    reason: str,
+    text: str | None,
+    attestation_ref: str | None,
+    compare_with: str | None,
+    source_refs: list[str],
+    created_at_utc: str,
+) -> str:
+    core = {
+        "proposal_id": proposal_id,
+        "kind": kind,
+        "attester": attester,
+        "reason": reason,
+        "text": text,
+        "attestation_ref": attestation_ref,
+        "compare_with": compare_with,
+        "source_refs": source_refs,
+        "created_at_utc": created_at_utc,
+    }
+    return hashlib.sha256(
+        json.dumps(core, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _review_event_receipt_payload(event: ReviewEvent, proposal: Proposal) -> dict[str, Any]:
+    return {
+        "receipt_id": f"receipt_{event.review_event_id}",
+        "kind": "state_core_review_event",
+        "created_at_utc": event.created_at_utc,
+        "proposal_id": proposal.proposal_id,
+        "proposal_receipt_ref": proposal.receipt_ref,
+        "review_event": event.model_dump(mode="json"),
+        "governance": {
+            "execution_allowed": False,
+            "not_execution_authorization": True,
+            "not_investment_advice": True,
+        },
+    }
+
+
+def create_governed_review_event(
+    *,
+    proposal_id: str,
+    kind: ReviewEventKind,
+    attester: str,
+    reason: str,
+    text: str | None = None,
+    attestation_ref: str | None = None,
+    compare_with: str | None = None,
+    source_refs: list[str] | None = None,
+    engine: Engine,
+    receipt_root: str | Path,
+) -> GovernedReviewEventWrite:
+    """Append a human review event (annotation/archive/reopen/compare_mark).
+
+    Receipt-backed and append-only: a unique id is minted, the receipt is written, then
+    the DB record; on DB failure the freshly written receipt is cleaned up. content_hash
+    is integrity/replay only (not idempotency) — a repeated annotation is a new event.
+    """
+    # Enforce inputs here: SQLModel table models do not run field validators on
+    # construction, so the create function is the real input guard (the DB CheckConstraint
+    # guards execution_allowed at persistence).
+    if kind not in REVIEW_EVENT_KINDS:
+        raise ValueError(f"unknown review event kind: {kind}")
+    if not attester.strip() or not reason.strip():
+        raise ValueError("review event requires a named human and written reason")
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+    if proposal is None:
+        raise KeyError(proposal_id)
+
+    if kind == "compare_mark":
+        target = (compare_with or "").strip()
+        if not target:
+            raise ValueError("compare_mark requires a compare_with proposal id")
+        if target == proposal.proposal_id:
+            raise ValueError("compare_mark cannot compare a proposal with itself")
+        with Session(engine) as session:
+            if session.get(Proposal, target) is None:
+                raise KeyError(target)
+        compare_with = target
+
+    created_at = _now_utc()
+    review_event_id = _safe_id(f"rev_{kind}_{_revision_stamp()}_{uuid4().hex[:8]}")
+    content_hash = _review_event_content_hash(
+        proposal_id=proposal.proposal_id,
+        kind=kind,
+        attester=attester.strip(),
+        reason=reason.strip(),
+        text=text,
+        attestation_ref=attestation_ref,
+        compare_with=compare_with,
+        source_refs=list(source_refs or []),
+        created_at_utc=created_at,
+    )
+    receipt_id = f"receipt_{review_event_id}"
+    receipt_path = resolve_under(receipt_root, "review-events", f"{receipt_id}.json")
+    receipt_ref = _display_path(receipt_path)
+    event = ReviewEvent(
+        review_event_id=review_event_id,
+        proposal_id=proposal.proposal_id,
+        kind=kind,
+        attester=attester.strip(),
+        reason=reason.strip(),
+        text=text,
+        attestation_ref=attestation_ref,
+        compare_with=compare_with,
+        source_refs=[
+            ref
+            for ref in [proposal.receipt_ref, receipt_ref, *(source_refs or [])]
+            if ref
+        ],
+        content_hash=content_hash,
+        created_at_utc=created_at,
+        as_of_utc=created_at,
+    )
+    atomic_write_json(receipt_path, _review_event_receipt_payload(event, proposal))
+    receipt_index = _receipt_index(
+        receipt_id=receipt_id,
+        kind="state_core_review_event",
+        path=receipt_path,
+        created_at_utc=created_at,
+        refs=[ref for ref in [proposal.receipt_ref, proposal.proposal_id] if ref],
+    )
+    try:
+        write_records([event, receipt_index], engine=engine)
+    except StateCoreStoreError:
+        remove_file_best_effort(receipt_path)
+        raise
+    return GovernedReviewEventWrite(review_event=event, receipt_ref=receipt_ref)
+
+
+def _latest_archive_event(events: list[ReviewEvent]) -> ReviewEvent | None:
+    # Stable ordering: created_at_utc then review_event_id, so same-second events resolve
+    # deterministically. Only archive/reopen toggle the derived state.
+    toggles = [event for event in events if event.kind in ("archive", "reopen")]
+    if not toggles:
+        return None
+    toggles.sort(key=lambda event: (event.created_at_utc, event.review_event_id))
+    return toggles[-1]
+
+
+def is_archived(proposal_id: str, *, engine: Engine) -> bool:
+    """Derive archived state from the latest archive/reopen event (append-only history)."""
+    with Session(engine) as session:
+        events = list(
+            session.exec(
+                select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)
+            )
+        )
+    latest = _latest_archive_event(events)
+    return latest is not None and latest.kind == "archive"
+
+
+def archived_proposal_ids(engine: Engine) -> set[str]:
+    """Set of proposal ids whose latest archive/reopen toggle is 'archive'."""
+    with Session(engine) as session:
+        events = list(session.exec(select(ReviewEvent)))
+    by_proposal: dict[str, list[ReviewEvent]] = {}
+    for event in events:
+        by_proposal.setdefault(event.proposal_id, []).append(event)
+    return {
+        proposal_id
+        for proposal_id, proposal_events in by_proposal.items()
+        if (latest := _latest_archive_event(proposal_events)) is not None
+        and latest.kind == "archive"
+    }
