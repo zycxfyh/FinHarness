@@ -191,6 +191,11 @@ tasks:
     cmds:
       - uv run python scripts/record_decisions.py {{.CLI_ARGS}}
 
+  decisions:research-smoke:
+    desc: "MANUAL/ON-DEMAND/NETWORK: opt-in --with-research live smoke on an isolated synthetic sample (NOT in task check)"
+    cmds:
+      - uv run python scripts/run_research_smoke.py
+
   review:annual:
     desc: Record an annual (period) decision retrospective as a dated receipt (read-only; --year optional)
     cmds:

@@ -17,6 +17,7 @@ import json
 import unittest
 from pathlib import Path
 
+import yaml
 from pydantic import ValidationError
 
 from finharness.research_enrichment import ResearchEvidenceAttachment
@@ -28,7 +29,20 @@ from finharness.research_evidence import (
     ResearchEvidenceResult,
 )
 
-_SRC = Path(__file__).resolve().parents[1] / "src" / "finharness"
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / "src" / "finharness"
+
+
+def _reachable_tasks(name: str, tasks: dict, seen: set[str] | None = None) -> set[str]:
+    """Recursive task-dependency closure following `- task: <name>` references."""
+    seen = seen if seen is not None else set()
+    if name in seen or name not in tasks:
+        return seen
+    seen.add(name)
+    for cmd in (tasks.get(name) or {}).get("cmds") or []:
+        if isinstance(cmd, dict) and "task" in cmd:
+            _reachable_tasks(cmd["task"], tasks, seen)
+    return seen
 
 # Research surfaces are read-only evidence; they must not reach advice/optimizer or the
 # proposal/route writing surfaces, whether by import or by name reference.
@@ -106,6 +120,29 @@ class AttachmentRedlineProbe(unittest.TestCase):
             data_gaps=("market history unavailable for SPY.",)
         )
         self.assertTrue(attachment.data_gaps)
+
+
+class NetworkSmokeExclusionProbe(unittest.TestCase):
+    def test_research_smoke_is_not_in_the_default_check_chain(self) -> None:
+        # The --with-research live smoke hits the network; it must never be reachable
+        # from `task check` (which transitively includes governance:check and test:*).
+        tasks = (yaml.safe_load((_ROOT / "Taskfile.yml").read_text(encoding="utf-8")) or {}).get(
+            "tasks", {}
+        )
+        reachable = _reachable_tasks("check", tasks)
+        self.assertIn("check", reachable)
+        self.assertNotIn(
+            "decisions:research-smoke", reachable, "network smoke must not be in task check"
+        )
+        # No task reachable from check may shell out to the smoke script either.
+        for name in reachable:
+            for cmd in (tasks.get(name) or {}).get("cmds") or []:
+                if isinstance(cmd, str):
+                    self.assertNotIn(
+                        "run_research_smoke", cmd, f"task {name} must not run the smoke script"
+                    )
+        # Sanity: the manual smoke task exists.
+        self.assertIn("decisions:research-smoke", tasks)
 
 
 class NoPydanticLeakProbe(unittest.TestCase):
