@@ -25,7 +25,7 @@
 | read_model | [`review_read.py`](../../src/finharness/review_read.py):`read_proposal_timeline` / `read_retrospective` / `read_compare_marks`(纯只读 DTO) |
 | adapters | [`api/routes_proposals.py`](../../src/finharness/api/routes_proposals.py)、[`api/routes_review.py`](../../src/finharness/api/routes_review.py)(薄 HTTP)、`frontend/app.js` 的 review renderers |
 | fixtures | [`tests/_review_fixtures.py`](../../tests/_review_fixtures.py)(`ReviewFixture`:隔离库 + proposal/attest/event helpers) |
-| governance | `tests/test_governance_invariants.py`:`ReviewReadOnlyProbe`(read 面不写/不计算)、`AttachmentRedlineProbe` 等 |
+| governance | [`tests/_policy_registry.py`](../../tests/_policy_registry.py)(`PolicyRule` 注册表:`GOV-REVIEW-001` 等带 id/owner/scope/source/check)+ 薄 driver `tests/test_governance_invariants.py` |
 
 > 这套形状已被 R2/R3/R4 + Golden Path 反复验证;新 read model(timeline→retrospective→compare)是**在 read_model 层扩展**,
 > 不是在 route 散点——这就是标准要复制的行为。
