@@ -21,7 +21,7 @@ from finharness.repo_intelligence_graph import run_repo_intelligence_graph
 
 WORKFLOW_VERSION = "langgraph_quality_governance_v1"
 
-DEFAULT_CHECKS = [
+DEFAULT_CHECKS: list[dict[str, Any]] = [
     {
         "name": "task check",
         "command": ["task", "check"],
@@ -84,7 +84,7 @@ def repo_intelligence_node(
 
 def _run_command(command: list[str], *, cwd: Path) -> dict[str, Any]:
     started = time.perf_counter()
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 -- local quality command list, shell disabled.
         command,
         cwd=cwd,
         check=False,

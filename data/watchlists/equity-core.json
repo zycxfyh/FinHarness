@@ -1,0 +1,18 @@
+{
+  "name": "equity-core",
+  "description": "Core US equity watchlist consumed by the daily evidence loop (Loop 1).",
+  "updated": "2026-06-12",
+  "universe": [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "META",
+    "TSLA",
+    "SPY",
+    "QQQ"
+  ],
+  "market_symbols": ["SPY", "QQQ"],
+  "forms": ["8-K", "10-Q", "10-K"]
+}

@@ -90,6 +90,21 @@ proposal_handoff
 review_questions
 ```
 
+Result vocabulary is deliberately split by evidence type:
+
+```text
+Empirical / hypothesis evidence:
+supported, weakened, disconfirmed, inconclusive, not_testable
+
+Structural readiness:
+linked, present, well_formed
+```
+
+Only rung-gated empirical checks such as backtests may use `supported`.
+Source linkage, mechanism presence, benchmark context, and limitation checks use
+structural readiness values; they do not imply an edge and do not grant trading
+authorization.
+
 Runtime artifacts:
 
 ```text

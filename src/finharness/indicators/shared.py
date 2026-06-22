@@ -5,24 +5,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-REQUIRED_OHLCV = ["date", "open", "high", "low", "close", "volume"]
+from finharness import data_quality
+
+REQUIRED_OHLCV = data_quality.REQUIRED_OHLCV
 
 
 def validate_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:
-    missing = [column for column in REQUIRED_OHLCV if column not in frame.columns]
-    if missing:
-        raise ValueError(f"OHLCV data missing columns: {missing}")
-    if frame.empty:
-        raise ValueError("OHLCV data is empty")
-
-    normalized = frame[REQUIRED_OHLCV].copy()
-    for column in ["open", "high", "low", "close", "volume"]:
-        normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
-    if normalized[["open", "high", "low", "close"]].isna().any().any():
-        raise ValueError("OHLC data contains non-numeric values")
-    if (normalized[["open", "high", "low", "close"]] <= 0).any().any():
-        raise ValueError("OHLC prices must be positive")
-    return normalized
+    return data_quality.validate_ohlcv_strict(frame)
 
 
 def latest_snapshot(
@@ -56,17 +45,3 @@ def clean_values(values: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned[key] = value
     return cleaned
-
-
-def true_range(frame: pd.DataFrame) -> pd.Series:
-    data = validate_ohlcv(frame)
-    previous_close = data["close"].shift(1)
-    ranges = pd.concat(
-        [
-            data["high"] - data["low"],
-            (data["high"] - previous_close).abs(),
-            (data["low"] - previous_close).abs(),
-        ],
-        axis=1,
-    )
-    return ranges.max(axis=1)

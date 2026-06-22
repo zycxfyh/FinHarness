@@ -5,7 +5,15 @@
 FinHarness is an AI-native financial decision operating system.
 
 It is not an AI trading bot. It is a research, evidence, workflow, risk,
-execution, and review harness.
+execution, and review harness that can produce governed financial suggestions.
+Those suggestions must be evidence-bound, conditional, auditable, and separated
+from execution authority.
+
+Do not pretend the system is advice-free. The point is to help the operator
+form better financial judgments. Do prevent advice from becoming a magic answer
+or an automatic action: every non-trivial suggestion should expose its evidence,
+assumptions, rejected alternatives, risks, authority boundary, receipt path, and
+future review condition.
 
 The core loop is:
 

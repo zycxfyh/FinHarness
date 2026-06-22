@@ -15,7 +15,5 @@ updates:
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "weekly"
+  # Rust crate archived 2026-06-13 (docs/archive/legacy-rust-crate); no cargo
+  # manifest on the build path, so the cargo ecosystem entry was removed.

@@ -7,8 +7,11 @@ Decision: FinHarness is not a trading-engine project.
 We use mature, market-tested projects for the hard parts and keep local code as
 thin adapters, risk gates, workflow glue, and receipts.
 
-Second decision: new local implementation is Rust-first. Python is only a
-narrow bridge for mature Python-native wheels that we intentionally adopt.
+Second decision (updated 2026-06-13): new local implementation is
+pragmatism-first — Python by default for the control plane. The first decision
+above (adopt, do not invent; thin local code) is the one that carries the
+safety value and is unchanged. The earlier "Rust-first" language mandate is
+superseded by docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md.
 
 ## Why
 
@@ -57,7 +60,10 @@ command allowlists
 tests around gates and adapters
 ```
 
-New allowed local code should be Rust by default.
+New local control-plane code should be Python by default, because the active
+state, workflow, guard, receipt, and mature-wheel integration path is already
+Python. A second language must be justified by a concrete measured need and
+must share the same persisted state and gates.
 
 ## Local Code Forbidden
 
@@ -71,8 +77,8 @@ homemade broker/exchange auth
 new ad hoc Python trading scripts
 ```
 
-Python may remain only as a narrow bridge to adopted Python-native projects
-such as vectorbt, Riskfolio-Lib, QuantStats, NautilusTrader Python APIs,
+Python remains the active local control-plane language for adopted Python-native
+projects such as vectorbt, Riskfolio-Lib, QuantStats, NautilusTrader Python APIs,
 LangGraph, OpenAI Agents SDK, OpenBB, and yfinance.
 
 ## Execution Architecture
@@ -101,16 +107,17 @@ strategy signal
 FinHarness may decide whether a trade is allowed. It should not pretend to be
 the exchange, broker, matching engine, margin engine, or institutional OMS.
 
-## Near-Term Refactor Queue
+## Near-Term Implementation Queue
 
-1. Expand the Rust workspace as the local control plane.
-2. Deepen Rust receipt types and risk gates.
-3. Keep OKX command gating in Rust while still calling the official OKX CLI.
-4. Move Alpaca paper wrappers to Rust.
-5. Keep Python-only mature wheels behind isolated bridge commands.
+1. Keep the Python control plane connected to one persisted state and one set of gates.
+2. Deepen receipt types and risk gates in the Python control plane.
+3. Keep OKX command gating in Python while still calling official venue tooling.
+4. Keep Alpaca paper wrappers behind the same Python guard/receipt discipline.
+5. Keep mature third-party libraries behind thin adapter commands.
 6. Use QuantStats for reports once strategy returns exist.
 7. Use Riskfolio-Lib for multi-asset position sizing.
 8. Make NautilusTrader the serious simulation/live-parity path before expanding
    automated execution.
 
-See [rust-first-local-implementation.md](rust-first-local-implementation.md).
+See [../adr/2026-06-13-pragmatism-first-supersedes-rust-first.md](../adr/2026-06-13-pragmatism-first-supersedes-rust-first.md)
+(supersedes the earlier rust-first-local-implementation.md note).

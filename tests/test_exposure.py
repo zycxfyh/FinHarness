@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+from finharness.exposure import compute_exposure
+from finharness.statecore.models import (
+    Account,
+    CashflowEvent,
+    InsurancePolicy,
+    Liability,
+    Position,
+    Snapshot,
+    TaxEvent,
+)
+from finharness.statecore.store import init_state_core, write_records
+
+
+class ExposureTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.engine = init_state_core(Path(self.tmp.name) / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+
+    def _seed(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brokerage")
+        snapshot = Snapshot(
+            snapshot_id="snap1", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        positions = [
+            Position(
+                position_id="p_spy",
+                snapshot_id="snap1",
+                account_id="brk",
+                symbol="SPY",
+                quantity=Decimal("10"),
+                market_value=Decimal("8000"),
+            ),
+            Position(
+                position_id="p_aapl",
+                snapshot_id="snap1",
+                account_id="brk",
+                symbol="AAPL",
+                quantity=Decimal("5"),
+                market_value=Decimal("2000"),
+            ),
+            Position(
+                position_id="p_cash",
+                snapshot_id="snap1",
+                account_id="brk",
+                symbol="USD",
+                quantity=Decimal("5000"),
+                market_value=Decimal("5000"),
+            ),
+        ]
+        liabilities = [
+            Liability(
+                liability_id="mortgage",
+                name="Mortgage",
+                liability_type="mortgage",
+                balance=Decimal("100000"),
+                currency="USD",
+                interest_rate=Decimal("0.04"),
+            ),
+            Liability(
+                liability_id="card",
+                name="Card",
+                liability_type="card",
+                balance=Decimal("5000"),
+                currency="USD",
+            ),
+        ]
+        cashflows = [
+            CashflowEvent(
+                cashflow_id="salary",
+                description="Salary",
+                amount=Decimal("5000"),
+                currency="USD",
+                event_date="2026-07-15",
+                category="income",
+                frequency="monthly",
+            ),
+            CashflowEvent(
+                cashflow_id="rent",
+                description="Rent",
+                amount=Decimal("-7000"),
+                currency="USD",
+                event_date="2026-07-01",
+                category="expense",
+                frequency="monthly",
+            ),
+        ]
+        tax = TaxEvent(
+            tax_event_id="q3",
+            event_type="estimated_payment",
+            jurisdiction="US",
+            due_date="2026-07-15",
+            estimated_amount=Decimal("1200"),
+            currency="USD",
+        )
+        insurance = InsurancePolicy(
+            policy_id="home",
+            policy_type="home",
+            provider="Example Mutual",
+            coverage_amount=Decimal("500000"),
+            premium_amount=Decimal("300"),
+            currency="USD",
+            renewal_date="2026-08-01",
+        )
+        write_records(
+            [account, snapshot, *positions, *liabilities, *cashflows, tax, insurance],
+            engine=self.engine,
+        )
+
+    def test_exposure_map_aggregates_net_worth_concentration_runway_and_obligations(self) -> None:
+        self._seed()
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertFalse(report.execution_allowed)
+        self.assertEqual(report.base_currency, "USD")
+        self.assertEqual(report.total_assets, 15000.0)
+        self.assertEqual(report.total_liabilities, 105000.0)
+        self.assertEqual(report.net_worth, -90000.0)
+        self.assertEqual(report.cash_total, 5000.0)
+
+        # Concentration is over the securities book (cash excluded): SPY and AAPL
+        # only. SPY 8000 / (8000+2000) = 80%, crossing the 40% flag.
+        self.assertEqual(report.holding_count, 2)
+        self.assertEqual(report.holdings[0].symbol, "SPY")
+        self.assertAlmostEqual(report.top_holding_weight, 8000 / 10000, places=6)
+        self.assertTrue(report.concentration_flagged)
+        self.assertAlmostEqual(report.concentration_hhi, 0.8**2 + 0.2**2, places=4)
+
+        # Rate exposure: only the mortgage carries a rate.
+        self.assertEqual(report.interest_bearing_debt_total, 100000.0)
+        self.assertAlmostEqual(report.weighted_avg_interest_rate or 0.0, 0.04, places=6)
+        self.assertEqual(report.annual_interest_estimate, 4000.0)
+
+        # Cash runway (emergency-fund standard): monthly expenses 7000, cash 5000
+        # -> 5000/7000 months of expenses covered; net is income 5000 - expenses 7000.
+        self.assertEqual(report.monthly_net_cashflow, -2000.0)
+        self.assertAlmostEqual(report.cash_runway_months or 0.0, 5000 / 7000, places=6)
+
+        # Upcoming obligations within 90 days, sorted by date.
+        kinds = {item.kind for item in report.upcoming_obligations}
+        self.assertEqual(kinds, {"cashflow", "tax_event", "insurance_renewal"})
+        self.assertEqual(report.upcoming_obligations[0].due_date, "2026-07-01")
+        self.assertEqual(report.data_gaps, ())
+
+    def test_negative_cash_does_not_break_concentration_weights(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        positions = [
+            Position(
+                position_id="spy",
+                snapshot_id="s",
+                account_id="brk",
+                symbol="SPY",
+                quantity=Decimal("10"),
+                market_value=Decimal("6000"),
+            ),
+            Position(
+                position_id="cash",
+                snapshot_id="s",
+                account_id="brk",
+                symbol="USD",
+                quantity=Decimal("-5000"),
+                market_value=Decimal("-5000"),
+            ),
+        ]
+        write_records([account, snapshot, *positions], engine=self.engine)
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertEqual(report.total_assets, 1000.0)
+        # Long book is 100% SPY; concentration must stay in [0, 1] despite the
+        # negative cash position (which previously made the weight 600%).
+        self.assertEqual(report.top_holding_weight, 1.0)
+        self.assertEqual(report.concentration_hhi, 1.0)
+
+    def test_empty_state_reports_zero_net_worth_and_runway_gap(self) -> None:
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertEqual(report.net_worth, 0.0)
+        self.assertEqual(report.holding_count, 0)
+        self.assertIsNone(report.cash_runway_months)
+        self.assertIn(
+            "no recurring monthly cashflow; cash runway not computed",
+            report.data_gaps,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

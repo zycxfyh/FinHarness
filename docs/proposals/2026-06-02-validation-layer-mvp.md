@@ -90,15 +90,24 @@ ValidationBundle
 
 ## Result Vocabulary
 
-Allowed result values:
+Allowed result values are split by evidence type:
 
 ```text
-supported
+Empirical / hypothesis evidence:
+supported          # only for rung-gated empirical evidence such as backtests
 weakened
 disconfirmed
 inconclusive
 not_testable
+
+Structural readiness:
+linked             # source/reference linkage is present
+present            # required context or mechanism field is present
+well_formed        # required structure is parseable and complete
 ```
+
+Structural readiness values do not mean the hypothesis has empirical support,
+do not imply an edge, and do not grant trading authorization.
 
 Forbidden language:
 

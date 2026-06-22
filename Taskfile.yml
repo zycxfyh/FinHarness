@@ -33,10 +33,13 @@ tasks:
   check:
     desc: Run the standard local verification suite
     cmds:
-      - task: rust:check
       - task: lint
+      - task: typecheck
       - task: test
       - task: test:properties
+      - task: test:frontend
+      - task: governance:check
+      - task: rules:audit
       - task: experiments
       - task: eval:smoke
 
@@ -49,6 +52,11 @@ tasks:
     desc: Build local repo intelligence graph, Mermaid doc, and receipt
     cmds:
       - uv run python scripts/run_repo_intelligence_graph.py
+
+  receipt:usage-audit:
+    desc: Audit which receipts are consumed by reviews, lessons, and docs
+    cmds:
+      - uv run python scripts/run_receipt_usage_audit.py --write
 
   quality:governance:
     desc: Run quality governance graph with authoritative local checks
@@ -70,10 +78,32 @@ tasks:
     cmds:
       - uv run python scripts/run_governance_dashboard.py
 
+  governance:certify-controls:
+    desc: "NOW-3: certify control-owner baseline with a named human owner"
+    cmds:
+      - uv run python scripts/run_control_certification.py {{.CLI_ARGS}}
+
+  project:governance-adapter:
+    desc: Adapt workstation Project Governance Loop receipt into FinHarness compatibility receipt
+    cmds:
+      - uv run python scripts/run_project_governance_adapter.py
+
   test:properties:
     desc: Run property-style governance and boundary tests
     cmds:
       - uv run python -m unittest tests/test_property_baseline.py
+
+  test:frontend:
+    desc: Run jsdom-based frontend DOM tests (revision history + research evidence render)
+    cmds:
+      - node frontend/tests/revision_history.test.cjs
+      - node frontend/tests/research_evidence.test.cjs
+
+  governance:check:
+    desc: Run EOS machine guardrails (import boundaries, redline coverage, no-action-affordance)
+    cmds:
+      - uv run python -m unittest tests.test_governance_invariants
+      - node frontend/tests/research_evidence.test.cjs
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
@@ -95,6 +125,11 @@ tasks:
     cmds:
       - uv run python scripts/run_hardening_gate.py --checks dependency gitleaks trivy
 
+  security:audit:
+    desc: Audit installed dependencies for known advisories (pip-audit; needs network, fail-closed)
+    cmds:
+      - uv run python scripts/run_hardening_gate.py --checks pip-audit
+
   security:sbom:
     desc: Generate local SBOM and provenance baseline artifacts
     cmds:
@@ -105,16 +140,15 @@ tasks:
     cmds:
       - uv run python scripts/run_fuzz_baseline.py
 
-  rust:check:
-    desc: Run Rust format and tests
-    cmds:
-      - cargo fmt --check
-      - cargo test
-
   lint:
     desc: Run Python lint checks
     cmds:
       - uv run ruff check .
+
+  typecheck:
+    desc: Static type check (mypy; strict on safety-critical core)
+    cmds:
+      - uv run mypy
 
   format:
     desc: Format Python code
@@ -127,10 +161,62 @@ tasks:
       - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
       - uv run python -m unittest discover -s tests
 
+  api:serve:
+    desc: Serve the read-only local state API
+    cmds:
+      - uv run uvicorn finharness.api.app:app --host 127.0.0.1 --port 8765
+
+  personal-finance:import:
+    desc: Import a read-only FinHarness-contract personal-finance CSV into state core
+    cmds:
+      - uv run python scripts/import_personal_finance_export.py {{.CLI_ARGS}}
+
+  beancount:import:
+    desc: Mirror a real Beancount ledger (via bean-query) into state core, read-only
+    cmds:
+      - uv run python scripts/import_beancount_ledger.py {{.CLI_ARGS}}
+
+  db:migrate:
+    desc: Apply state-core schema migrations (PRAGMA user_version) to the database
+    cmds:
+      - uv run python scripts/migrate_state_core.py {{.CLI_ARGS}}
+
+  brief:daily:
+    desc: Compute and archive the unified daily brief as a dated receipt
+    cmds:
+      - uv run python scripts/record_daily_brief.py {{.CLI_ARGS}}
+
+  decisions:scan:
+    desc: Scan the exposure map and record capital-allocation candidates as governed proposals (read-only)
+    cmds:
+      - uv run python scripts/record_decisions.py {{.CLI_ARGS}}
+
+  decisions:research-smoke:
+    desc: "MANUAL/ON-DEMAND/NETWORK: opt-in --with-research live smoke on an isolated synthetic sample (NOT in task check)"
+    cmds:
+      - uv run python scripts/run_research_smoke.py
+
+  review:annual:
+    desc: Record an annual (period) decision retrospective as a dated receipt (read-only; --year optional)
+    cmds:
+      - uv run python scripts/record_annual_review.py {{.CLI_ARGS}}
+
+  backup:
+    desc: Back up state-core SQLite and receipts without relying on git
+    cmds:
+      - uv run python scripts/backup.py {{.CLI_ARGS}}
+
+  cockpit:daily:
+    desc: Build a governed deterministic daily portfolio-change brief
+    cmds:
+      - uv run python scripts/run_daily_change_brief.py {{.CLI_ARGS}}
+
   experiments:
     desc: Run mature-wheel local backtest experiments
     cmds:
       - uv run python experiments/backtrader_ma.py
+      - uv run python experiments/vectorbt_ma.py
+      - uv run python experiments/riskfolio_allocation.py
 
   wheels:size:
     desc: Show local wheel sizes
@@ -141,6 +227,11 @@ tasks:
     desc: List project docs
     cmds:
       - find docs -type f | sort
+
+  vocab:lint:
+    desc: Advisory controlled-vocabulary lint for formal docs and code strings
+    cmds:
+      - uv run python scripts/vocab_lint.py {{.CLI_ARGS}}
 
   smoke:
     desc: Run a minimal Python smoke test
@@ -184,7 +275,12 @@ tasks:
   data:entry:
     desc: Run OpenBB quote + yfinance history + Backtrader workflow
     cmds:
-      - uv run python scripts/run_data_entry_workflow.py
+      - uv run python scripts/run_data_entry_workflow.py {{.CLI_ARGS}}
+
+  cockpit:market:
+    desc: Build the read-only market cockpit for a watchlist
+    cmds:
+      - uv run python scripts/run_market_cockpit.py {{.CLI_ARGS}}
 
   market-data:graph:
     desc: Run first-layer market data LangGraph workflow
@@ -266,6 +362,26 @@ tasks:
     cmds:
       - uv run python scripts/run_daily_evidence_graph.py {{.CLI_ARGS}}
 
+  lessons:draft:
+    desc: Draft lesson candidates from recent receipts (Loop 4 v0; human promotes)
+    cmds:
+      - uv run python scripts/run_lesson_draft.py {{.CLI_ARGS}}
+
+  lessons:promote:
+    desc: "B4: promote a lesson draft into a rule change with lineage (human action)"
+    cmds:
+      - uv run python scripts/promote_lesson.py {{.CLI_ARGS}}
+
+  rules:audit:
+    desc: "B4: list recorded rule changes; fail if any lacks lesson->receipt lineage"
+    cmds:
+      - uv run python scripts/audit_rule_lineage.py
+
+  trading-state:show:
+    desc: Show the persisted behavioral trading state (Loop 3 feedback edge)
+    cmds:
+      - uv run python -c "from finharness.trading_state_store import load_trading_state; import json; print(json.dumps(load_trading_state().model_dump(mode='json'), indent=2))"
+
   eval:risk:
     desc: Evaluate generated finance risk note
     cmds:
@@ -284,22 +400,22 @@ tasks:
   okx:live-read:
     desc: Run an allowlisted live read-only OKX command, e.g. task okx:live-read -- account balance
     cmds:
-      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+      - uv run python scripts/run_okx_read.py {{.CLI_ARGS}}
 
   okx:demo:
     desc: Run an allowlisted OKX demo command
     cmds:
-      - cargo run -q -p finharness-cli -- okx --demo {{.CLI_ARGS}}
+      - uv run python scripts/run_okx_read.py --demo {{.CLI_ARGS}}
 
   okx:live-write:
-    desc: Run an allowlisted live mutating OKX command after env and flag gates
+    desc: Place a live OKX order through the fail-closed gate (guard + notional cap + receipt + attestation)
     cmds:
-      - cargo run -q -p finharness-cli -- okx --live {{.CLI_ARGS}}
+      - uv run python scripts/okx_live_order.py {{.CLI_ARGS}}
 
   trading:reset-check:
-    desc: Run behavioral trading guard example for large drawdown
+    desc: Evaluate the behavioral trading guard against persisted trading-state
     cmds:
-      - cargo run -q -p finharness-cli -- guard --drawdown-pct -3 --consecutive-losses 3 --thesis
+      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
 
   trading:validation-report:
     desc: Generate RC0.2 trading validation report v1
@@ -307,14 +423,9 @@ tasks:
       - uv run python scripts/generate_trading_validation_report.py
 
   guard:interactive:
-    desc: Interactive pre-trade guard — entry, stop, equity, thesis
+    desc: Evaluate the behavioral guard for a what-if drawdown/loss, e.g. -- --drawdown-pct -3 --consecutive-losses 3
     cmds:
-      - cargo run -q -p finharness-cli -- guard --interactive
-
-  receipt:rust:
-    desc: Write a minimal Rust receipt
-    cmds:
-      - cargo run -q -p finharness-cli -- receipt --kind manual --symbol NA --status ok
+      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
 
   workflow:cognitive:
     desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."
@@ -370,3 +481,8 @@ tasks:
     desc: Run a paper order with written thesis, risk gate, cancel, and receipt
     cmds:
       - uv run python scripts/alpaca_paper_strategy_order.py --execute
+
+  alpaca:paper-dca:
+    desc: "Paper DCA accumulation buy (dry-run; add -- --execute to fill). e.g. task alpaca:paper-dca -- --symbols SPY,QQQ --execute"
+    cmds:
+      - uv run python scripts/alpaca_paper_dca_buy.py {{.CLI_ARGS}}

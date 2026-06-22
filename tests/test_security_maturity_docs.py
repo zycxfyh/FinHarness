@@ -76,8 +76,8 @@ class SecurityMaturityDocsTest(unittest.TestCase):
         required = [
             ".github/",
             "Taskfile.yml",
-            "src/finharness/execution.py",
-            "src/finharness/risk_gate.py",
+            "src/finharness/execution/",
+            "src/finharness/risk_gate/",
             "src/finharness/okx_cli.py",
             "src/finharness/alpaca_client.py",
             "src/finharness/release_preflight_graph.py",

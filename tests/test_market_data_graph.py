@@ -29,7 +29,7 @@ class MarketDataGraphTest(unittest.TestCase):
         with patch(
             "finharness.market_data_graph.fetch_yfinance_history",
             return_value=sample_history(),
-        ):
+        ) as fetch_history:
             result = run_market_data_graph(
                 symbol="SPY",
                 start="2026-01-01",
@@ -37,15 +37,53 @@ class MarketDataGraphTest(unittest.TestCase):
                 write_catalog=False,
             )
 
+        fetch_history.assert_called_once()
+        self.assertEqual(fetch_history.call_args.kwargs["adjustment"], "auto_adjust")
         final = result["final"]
         self.assertEqual(final["workflow"], "langgraph_market_data_v1")
         self.assertEqual(final["symbol"], "SPY")
         self.assertEqual(final["row_count"], 2)
         self.assertTrue(final["quality_ok"])
         self.assertFalse(final["execution_allowed"])
+        self.assertEqual(final["adjustment"], "auto_adjust")
+        self.assertEqual(final["reconciliation"]["status"], "single_source_unreconciled")
+        self.assertIn("survivorship_uncontrolled", final["data_bias_controls"])
         self.assertEqual(final["consumer_handoff"]["consumer"], "indicator_layer_research_review")
         self.assertEqual(final["review_hook"]["status"], "open")
         self.assertTrue(result["snapshot"]["receipt_ref"])
+        self.assertTrue(result["snapshot"]["adjusted"])
+        self.assertEqual(
+            result["snapshot"]["lineage"]["fetch_config"]["adjustment"],
+            "auto_adjust",
+        )
+        self.assertEqual(
+            result["snapshot"]["lineage"]["source"]["adjustment"],
+            "auto_adjust",
+        )
+
+    def test_graph_records_second_source_reconciliation_without_blocking(self) -> None:
+        def second_provider(symbol: str, start: str, end: str, *, adjustment: str):
+            secondary = sample_history()
+            secondary.loc[1, "close"] = 103.525
+            return secondary
+
+        with patch(
+            "finharness.market_data_graph.fetch_yfinance_history",
+            return_value=sample_history(),
+        ):
+            result = run_market_data_graph(
+                symbol="SPY",
+                start="2026-01-01",
+                end="2026-01-05",
+                second_provider=second_provider,
+                write_catalog=False,
+            )
+
+        final = result["final"]
+        self.assertTrue(final["quality_ok"])
+        self.assertFalse(final["execution_allowed"])
+        self.assertEqual(final["reconciliation"]["status"], "reconciled")
+        self.assertEqual(final["reconciliation"]["overlap_rows"], 2)
 
 
 if __name__ == "__main__":

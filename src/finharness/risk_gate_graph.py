@@ -1,10 +1,22 @@
-"""LangGraph workflow for eighth-layer independent risk gates."""
+"""LangGraph workflow for eighth-layer independent risk gates.
+
+Two build modes:
+
+- default: non-interactive; missing human attestation simply leaves decisions
+  at needs_human_review (fail-closed).
+- interactive: a real LangGraph interrupt pauses the run after decisions are
+  built; a human resumes with an explicit attestation, which is recorded in
+  the context and the decisions are rebuilt. Approval is an event in the graph
+  state, not a default.
+"""
 
 from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from finharness.proposal import ProposalSnapshot
 from finharness.proposal_graph import run_proposal_graph
@@ -16,6 +28,11 @@ from finharness.risk_gate import (
     build_risk_gate_decisions,
     build_risk_gate_quality,
     persist_risk_gate_bundle,
+)
+from finharness.trading_state_store import (
+    load_trading_state,
+    merge_into_risk_context,
+    trading_state_path,
 )
 
 
@@ -30,6 +47,9 @@ class RiskGateGraphState(TypedDict, total=False):
     research_asset_context: dict[str, Any]
     proposal_snapshot: dict[str, Any]
     risk_context: dict[str, Any]
+    trading_state_path: str
+    trading_state: dict[str, Any]
+    human_review_event: dict[str, Any]
     source: dict[str, Any]
     proposal_quality_check: dict[str, Any]
     mandate_check: dict[str, Any]
@@ -48,6 +68,25 @@ class RiskGateGraphState(TypedDict, total=False):
     consumer_handoff: dict[str, Any]
     review_hook: dict[str, Any]
     final: dict[str, Any]
+
+
+def load_trading_state_node(state: RiskGateGraphState) -> RiskGateGraphState:
+    """Loop 3 feedback edge: persisted behavioral state is the default input.
+
+    Explicit risk_context keys still win, so operator overrides stay possible
+    and visible; everything else comes from the durable TradingStateRecord
+    written back by post-trade runs.
+    """
+    path = state.get("trading_state_path")
+    record = load_trading_state(path)
+    merged = merge_into_risk_context(state.get("risk_context"), path=path)
+    return {
+        "risk_context": merged,
+        "trading_state": {
+            "record": record.model_dump(mode="json"),
+            "path": str(trading_state_path(path)),
+        },
+    }
 
 
 def source_config_node(state: RiskGateGraphState) -> RiskGateGraphState:
@@ -213,6 +252,62 @@ def decision_node(state: RiskGateGraphState) -> RiskGateGraphState:
     return {"decisions": [decision.model_dump(mode="json") for decision in decisions]}
 
 
+def human_review_gate_node(state: RiskGateGraphState) -> RiskGateGraphState:
+    """Interactive-only: pause for a human attestation via LangGraph interrupt.
+
+    Resumes with {"attest": bool, "reason": str}. A positive attestation is
+    written into the risk context and decisions are rebuilt so the receipt
+    records both the pre- and post-attestation evidence path. Anything else
+    leaves the fail-closed needs_human_review decisions untouched.
+    """
+    context = RiskGateContext.model_validate(state["risk_context"])
+    needs_review = [
+        item
+        for item in state.get("decisions", [])
+        if item.get("decision") == "needs_human_review"
+    ]
+    if context.human_review_attested or not needs_review:
+        return {}
+    answer = interrupt(
+        {
+            "question": (
+                "Attest human review for these paper-review candidates? "
+                "Resume with {'attest': true, 'reason': '...'} to approve."
+            ),
+            "pending_decisions": [
+                {
+                    "decision_id": item.get("decision_id"),
+                    "symbol": item.get("symbol"),
+                    "action_type": item.get("action_type"),
+                    "blocking_reasons": item.get("blocking_reasons", []),
+                }
+                for item in needs_review
+            ],
+        }
+    )
+    if not (isinstance(answer, dict) and answer.get("attest") is True):
+        return {}
+    reason = str(answer.get("reason") or "").strip()
+    if not reason:
+        # An attestation without a written reason is not an attestation.
+        return {}
+    attested_context = context.model_copy(update={"human_review_attested": True})
+    snapshot = ProposalSnapshot.model_validate(state["proposal_snapshot"])
+    decisions = build_risk_gate_decisions(
+        proposal_snapshot=snapshot,
+        context=attested_context,
+    )
+    return {
+        "risk_context": attested_context.model_dump(mode="json"),
+        "human_review_event": {
+            "attested": True,
+            "reason": reason,
+            "decisions_before": [item.get("decision_id") for item in needs_review],
+        },
+        "decisions": [decision.model_dump(mode="json") for decision in decisions],
+    }
+
+
 def quality_node(state: RiskGateGraphState) -> RiskGateGraphState:
     snapshot = ProposalSnapshot.model_validate(state["proposal_snapshot"])
     context = RiskGateContext.model_validate(state["risk_context"])
@@ -310,12 +405,14 @@ def final_node(state: RiskGateGraphState) -> RiskGateGraphState:
             "review_hook": state["review_hook"],
             "llm_enabled": state.get("source", {}).get("llm_enabled", False),
             "hermes_root": state.get("source", {}).get("hermes_root"),
+            "trading_state": state.get("trading_state", {}),
         }
     }
 
 
-def build_risk_gate_graph():
+def build_risk_gate_graph(*, interactive: bool = False):
     graph = StateGraph(RiskGateGraphState)
+    graph.add_node("load_trading_state", load_trading_state_node)
     graph.add_node("source_config", source_config_node)
     graph.add_node("load_proposal_snapshot", load_proposal_snapshot_node)
     graph.add_node("proposal_quality_check", proposal_quality_check_node)
@@ -328,6 +425,8 @@ def build_risk_gate_graph():
     graph.add_node("drawdown_behavior_check", drawdown_behavior_check_node)
     graph.add_node("scenario_check", scenario_check_node)
     graph.add_node("decision", decision_node)
+    if interactive:
+        graph.add_node("human_review_gate", human_review_gate_node)
     graph.add_node("quality", quality_node)
     graph.add_node("lineage", lineage_node)
     graph.add_node("snapshot", snapshot_node)
@@ -335,7 +434,8 @@ def build_risk_gate_graph():
     graph.add_node("consumer_handoff", consumer_handoff_node)
     graph.add_node("review_hook", review_hook_node)
     graph.add_node("final", final_node)
-    graph.add_edge(START, "source_config")
+    graph.add_edge(START, "load_trading_state")
+    graph.add_edge("load_trading_state", "source_config")
     graph.add_edge("source_config", "load_proposal_snapshot")
     graph.add_edge("load_proposal_snapshot", "proposal_quality_check")
     graph.add_edge("proposal_quality_check", "mandate_check")
@@ -347,7 +447,11 @@ def build_risk_gate_graph():
     graph.add_edge("liquidity_check", "drawdown_behavior_check")
     graph.add_edge("drawdown_behavior_check", "scenario_check")
     graph.add_edge("scenario_check", "decision")
-    graph.add_edge("decision", "quality")
+    if interactive:
+        graph.add_edge("decision", "human_review_gate")
+        graph.add_edge("human_review_gate", "quality")
+    else:
+        graph.add_edge("decision", "quality")
     graph.add_edge("quality", "lineage")
     graph.add_edge("lineage", "snapshot")
     graph.add_edge("snapshot", "receipt")
@@ -355,6 +459,8 @@ def build_risk_gate_graph():
     graph.add_edge("consumer_handoff", "review_hook")
     graph.add_edge("review_hook", "final")
     graph.add_edge("final", END)
+    if interactive:
+        return graph.compile(checkpointer=MemorySaver())
     return graph.compile()
 
 
@@ -373,6 +479,7 @@ def run_risk_gate_graph(
     llm_enabled: bool = False,
     hermes_root: str = "/root/projects/hermes-agent",
     research_asset_context: dict[str, Any] | None = None,
+    trading_state_path: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "universe": universe,
@@ -385,7 +492,41 @@ def run_risk_gate_graph(
         "hermes_root": hermes_root,
         "research_asset_context": research_asset_context or {},
     }
+    if trading_state_path is not None:
+        payload["trading_state_path"] = trading_state_path
     if proposal_snapshot is not None:
         payload["proposal_snapshot"] = proposal_snapshot
     result = risk_gate_graph.invoke(payload)
+    return dict(result)
+
+
+def run_risk_gate_graph_interactive(
+    *,
+    payload: dict[str, Any],
+    thread_id: str,
+    graph=None,
+) -> dict[str, Any]:
+    """Start an interactive risk-gate run; may pause at the human gate.
+
+    Returns the raw state. When paused, the state contains "__interrupt__";
+    resume with resume_risk_gate_graph on the same graph and thread_id.
+    """
+    compiled = graph or build_risk_gate_graph(interactive=True)
+    config = {"configurable": {"thread_id": thread_id}}
+    result = compiled.invoke(payload, config=config)
+    return dict(result)
+
+
+def resume_risk_gate_graph(
+    *,
+    graph,
+    thread_id: str,
+    attest: bool,
+    reason: str,
+) -> dict[str, Any]:
+    """Resume a paused interactive run with an explicit human attestation."""
+    config = {"configurable": {"thread_id": thread_id}}
+    result = graph.invoke(
+        Command(resume={"attest": attest, "reason": reason}), config=config
+    )
     return dict(result)

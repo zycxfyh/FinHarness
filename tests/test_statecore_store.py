@@ -1,0 +1,350 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from decimal import Decimal
+from pathlib import Path
+
+from sqlalchemy import inspect, text
+from sqlmodel import Session
+
+from finharness.statecore.models import (
+    Account,
+    Position,
+    Proposal,
+    ReceiptIndex,
+    Snapshot,
+)
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    get_account,
+    get_snapshot,
+    init_state_core,
+    migrate_state_core,
+    open_state_core,
+    read_all,
+    write_records,
+)
+
+
+class StateCoreStoreTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.tmp.name) / "state-core.sqlite"
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_init_creates_six_tables_and_wal_mode(self) -> None:
+        engine = init_state_core(self.db_path)
+
+        inspector = inspect(engine)
+        self.assertTrue(
+            {
+                "accounts",
+                "positions",
+                "snapshots",
+                "receipt_index",
+                "proposals",
+                "attestations",
+            }.issubset(set(inspector.get_table_names()))
+        )
+        with engine.connect() as connection:
+            journal_mode = connection.execute(text("PRAGMA journal_mode")).scalar_one()
+        self.assertEqual(str(journal_mode).lower(), "wal")
+        snapshot_indexes = {
+            index["name"] for index in inspector.get_indexes("snapshots")
+        }
+        position_indexes = {
+            index["name"] for index in inspector.get_indexes("positions")
+        }
+        self.assertIn("ix_snapshots_kind_as_of_utc", snapshot_indexes)
+        self.assertIn("ix_positions_snapshot_id", position_indexes)
+
+    def test_write_and_read_round_trip(self) -> None:
+        engine = init_state_core(self.db_path)
+        account = Account(
+            account_id="acct_manual",
+            kind="broker",
+            venue="manual",
+            display_name="Manual Brokerage",
+            source_refs=["data/receipts/sample.json"],
+        )
+        snapshot = Snapshot(
+            snapshot_id="snap_portfolio_1",
+            kind="portfolio",
+            payload={"total_market_value": 101.25},
+            source_refs=["data/receipts/sample.json"],
+        )
+        position = Position(
+            position_id="pos_1",
+            snapshot_id=snapshot.snapshot_id,
+            account_id=account.account_id,
+            symbol="SPY",
+            quantity=1.5,
+            market_value=101.25,
+            cost_basis=None,
+            source_refs=["data/receipts/sample.json"],
+        )
+        receipt = ReceiptIndex(
+            receipt_id="receipt_1",
+            kind="portfolio_snapshot",
+            path="data/receipts/sample.json",
+            refs=["snap_portfolio_1"],
+        )
+
+        write_records([account, snapshot, position, receipt], engine=engine)
+
+        loaded_account = get_account("acct_manual", engine=engine)
+        loaded_snapshot = get_snapshot("snap_portfolio_1", engine=engine)
+        positions = read_all(Position, engine=engine)
+        receipts = read_all(ReceiptIndex, engine=engine)
+
+        self.assertEqual(loaded_account, account)
+        self.assertEqual(loaded_snapshot, snapshot)
+        self.assertEqual(len(positions), 1)
+        self.assertIsNone(positions[0].cost_basis)
+        self.assertEqual(receipts[0].path, "data/receipts/sample.json")
+        self.assertEqual(receipts[0].source_refs, [])
+
+    def test_position_money_round_trips_as_exact_decimal(self) -> None:
+        engine = init_state_core(self.db_path)
+        account = Account(
+            account_id="acct_dec",
+            kind="broker",
+            venue="manual",
+            display_name="Decimal Brokerage",
+        )
+        snapshot = Snapshot(snapshot_id="snap_dec", kind="portfolio")
+        # 0.1 + 0.2 drifts to 0.30000000000000004 in float; Decimal stays exact.
+        positions = [
+            Position(
+                position_id="pos_a",
+                snapshot_id="snap_dec",
+                account_id="acct_dec",
+                symbol="AAA",
+                quantity=Decimal("1"),
+                market_value=Decimal("0.1"),
+            ),
+            Position(
+                position_id="pos_b",
+                snapshot_id="snap_dec",
+                account_id="acct_dec",
+                symbol="BBB",
+                quantity=Decimal("1"),
+                market_value=Decimal("0.2"),
+            ),
+        ]
+        write_records([account, snapshot, *positions], engine=engine)
+
+        loaded = read_all(Position, engine=engine)
+        for position in loaded:
+            self.assertIsInstance(position.market_value, Decimal)
+        total = sum((position.market_value for position in loaded), Decimal("0"))
+        self.assertEqual(total, Decimal("0.3"))
+
+    def test_legacy_real_affinity_money_reads_back_clean_decimal(self) -> None:
+        # A database created before the Decimal migration has REAL affinity on
+        # money columns; reads must still yield clean Decimals (not float noise).
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE accounts (account_id TEXT PRIMARY KEY, kind TEXT, "
+                    "venue TEXT, display_name TEXT, schema_version TEXT, as_of_utc TEXT, "
+                    "authority_level TEXT, source_refs JSON, created_at_utc TEXT)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE snapshots (snapshot_id TEXT PRIMARY KEY, kind TEXT, "
+                    "schema_version TEXT, as_of_utc TEXT, authority_level TEXT, "
+                    "payload JSON, source_refs JSON)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE TABLE positions (position_id TEXT PRIMARY KEY, snapshot_id TEXT, "
+                    "account_id TEXT, symbol TEXT, quantity REAL, market_value REAL, "
+                    "cost_basis REAL, schema_version TEXT, as_of_utc TEXT, "
+                    "authority_level TEXT, source_refs JSON)"
+                )
+            )
+
+        write_records(
+            [
+                Account(account_id="a", kind="broker", venue="m", display_name="A"),
+                Snapshot(snapshot_id="s", kind="portfolio"),
+                Position(
+                    position_id="p1",
+                    snapshot_id="s",
+                    account_id="a",
+                    symbol="AAA",
+                    quantity=Decimal("1"),
+                    market_value=Decimal("0.1"),
+                ),
+                Position(
+                    position_id="p2",
+                    snapshot_id="s",
+                    account_id="a",
+                    symbol="BBB",
+                    quantity=Decimal("1"),
+                    market_value=Decimal("0.2"),
+                ),
+            ],
+            engine=engine,
+        )
+
+        loaded = read_all(Position, engine=engine)
+        total = sum((position.market_value for position in loaded), Decimal("0"))
+        self.assertEqual(total, Decimal("0.3"))
+        self.assertEqual({str(p.market_value) for p in loaded}, {"0.1", "0.2"})
+
+    def test_migration_rebuilds_legacy_real_money_columns_as_text(self) -> None:
+        engine = init_state_core(self.db_path)
+        write_records(
+            [
+                Account(account_id="a", kind="broker", venue="m", display_name="A"),
+                Snapshot(snapshot_id="s", kind="portfolio"),
+            ],
+            engine=engine,
+        )
+        # Simulate a pre-Decimal database: positions money columns as REAL, and
+        # the schema version reset so the migration treats it as unmigrated.
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE positions"))
+            connection.execute(
+                text(
+                    "CREATE TABLE positions (position_id TEXT PRIMARY KEY, snapshot_id TEXT, "
+                    "account_id TEXT, symbol TEXT, quantity REAL, market_value REAL, "
+                    "cost_basis REAL, schema_version TEXT, as_of_utc TEXT, authority_level TEXT, "
+                    "source_refs JSON, FOREIGN KEY(account_id) REFERENCES accounts(account_id), "
+                    "FOREIGN KEY(snapshot_id) REFERENCES snapshots(snapshot_id))"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO positions (position_id, snapshot_id, account_id, symbol, "
+                    "quantity, market_value, cost_basis, schema_version, as_of_utc, "
+                    "authority_level, source_refs) VALUES ('p1','s','a','AAA',1,0.1,NULL,"
+                    "'finharness.state_core.v1','2026-06-19T00:00:00+00:00','read_only','[]')"
+                )
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 0")
+
+        migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()), 2
+            )
+            self.assertEqual(
+                connection.execute(text("SELECT typeof(market_value) FROM positions")).scalar_one(),
+                "text",
+            )
+        loaded = read_all(Position, engine=engine)
+        self.assertIsInstance(loaded[0].market_value, Decimal)
+        self.assertEqual(loaded[0].market_value, Decimal("0.1"))
+        self.assertIsNone(loaded[0].cost_basis)
+        # Idempotent: a second run is a no-op.
+        migrate_state_core(engine)
+        self.assertEqual(len(read_all(Position, engine=engine)), 1)
+
+    def test_write_records_is_atomic(self) -> None:
+        engine = init_state_core(self.db_path)
+        existing = Account(
+            account_id="acct_1",
+            kind="broker",
+            venue="manual",
+            display_name="Existing",
+        )
+        duplicate = Account(
+            account_id="acct_1",
+            kind="broker",
+            venue="manual",
+            display_name="Duplicate",
+        )
+        new_snapshot = Snapshot(
+            snapshot_id="snap_should_not_commit",
+            kind="portfolio",
+            payload={},
+        )
+
+        write_records([existing], engine=engine)
+        with self.assertRaises(StateCoreStoreError):
+            write_records([new_snapshot, duplicate], engine=engine)
+
+        self.assertIsNone(get_snapshot("snap_should_not_commit", engine=engine))
+        self.assertEqual(len(read_all(Account, engine=engine)), 1)
+
+    def test_corrupt_database_fails_closed(self) -> None:
+        self.db_path.write_text("not sqlite", encoding="utf-8")
+
+        with self.assertRaises(StateCoreStoreError):
+            open_state_core(self.db_path)
+
+    def test_missing_database_requires_explicit_create(self) -> None:
+        with self.assertRaises(StateCoreStoreError):
+            open_state_core(self.db_path)
+
+        engine = init_state_core(self.db_path)
+        self.assertTrue(self.db_path.exists())
+        engine.dispose()
+
+    def test_proposal_cannot_persist_execution_authority(self) -> None:
+        engine = init_state_core(self.db_path)
+        proposal = Proposal(
+            proposal_id="prop_1",
+            kind="rebalance",
+            claim="Consider reducing concentration.",
+            evidence={"snapshot_id": "snap_1"},
+            assumptions={"operator_review": "required"},
+            limitations={"not_investment_advice": True},
+            non_claims=["Not execution authorization."],
+            execution_allowed=True,
+        )
+
+        with self.assertRaises(StateCoreStoreError):
+            write_records([proposal], engine=engine)
+
+    def test_json_columns_store_structured_values(self) -> None:
+        engine = init_state_core(self.db_path)
+        snapshot = Snapshot(
+            snapshot_id="snap_json",
+            kind="portfolio",
+            payload={"positions": [{"symbol": "SPY"}]},
+            source_refs=["data/receipts/r.json"],
+        )
+
+        write_records([snapshot], engine=engine)
+
+        with Session(engine) as session:
+            row = session.get(Snapshot, "snap_json")
+        self.assertEqual(row.payload["positions"][0]["symbol"], "SPY")
+        self.assertEqual(json.loads(json.dumps(row.source_refs)), ["data/receipts/r.json"])
+
+    def test_foreign_keys_are_enforced_on_new_connections(self) -> None:
+        engine = init_state_core(self.db_path)
+        account = Account(
+            account_id="acct_fk",
+            kind="broker",
+            venue="manual",
+            display_name="Foreign Key Account",
+        )
+        write_records([account], engine=engine)
+
+        engine.dispose()
+        orphan_position = Position(
+            position_id="pos_orphan",
+            snapshot_id="snap_missing",
+            account_id=account.account_id,
+            symbol="SPY",
+            quantity=1.0,
+            market_value=100.0,
+        )
+
+        with self.assertRaises(StateCoreStoreError):
+            write_records([orphan_position], engine=engine)
+
+
+if __name__ == "__main__":
+    unittest.main()

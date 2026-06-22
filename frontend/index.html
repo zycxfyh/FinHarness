@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FinHarness Cockpit</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>FinHarness Cockpit</h1>
+        <p id="boundary-line">execution_allowed=false</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="api-status" class="status-pill">Connecting</span>
+        <button id="refresh-button" class="icon-text-button" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Cockpit views">
+      <button class="tab active" type="button" data-view="overview">Overview</button>
+      <button class="tab" type="button" data-view="exposure">Exposure</button>
+      <button class="tab" type="button" data-view="proposals">Proposals</button>
+      <button class="tab" type="button" data-view="timeline">Timeline</button>
+    </nav>
+
+    <main>
+      <section id="overview-view" class="view active" aria-labelledby="overview-title">
+        <h2 id="overview-title">Overview</h2>
+        <section class="panel" aria-labelledby="daily-brief-title">
+          <h3 id="daily-brief-title">Daily Brief</h3>
+          <p id="daily-brief-headline" class="brief-headline"></p>
+          <div id="daily-brief-sections" class="data-block"></div>
+        </section>
+        <div id="summary-grid" class="summary-grid"></div>
+        <section class="panel" aria-labelledby="brief-title">
+          <h3 id="brief-title">Latest Brief</h3>
+          <div id="latest-brief" class="data-block"></div>
+        </section>
+        <section class="panel" aria-labelledby="controls-title">
+          <h3 id="controls-title">Controls</h3>
+          <div id="controls-block" class="data-block"></div>
+        </section>
+      </section>
+
+      <section id="exposure-view" class="view" aria-labelledby="exposure-title">
+        <h2 id="exposure-title">Exposure</h2>
+        <div id="exposure-grid" class="summary-grid"></div>
+        <section class="panel" aria-labelledby="exposure-holdings-title">
+          <h3 id="exposure-holdings-title">Concentration</h3>
+          <div id="exposure-holdings" class="data-block"></div>
+        </section>
+        <section class="panel" aria-labelledby="exposure-obligations-title">
+          <h3 id="exposure-obligations-title">Upcoming Obligations</h3>
+          <div id="exposure-obligations" class="item-list"></div>
+        </section>
+        <section class="panel" aria-labelledby="exposure-gaps-title">
+          <h3 id="exposure-gaps-title">Data Gaps</h3>
+          <div id="exposure-gaps" class="data-block"></div>
+        </section>
+      </section>
+
+      <section id="proposals-view" class="view" aria-labelledby="proposals-title">
+        <div class="section-heading">
+          <h2 id="proposals-title">Proposals</h2>
+          <select id="proposal-filter" aria-label="Proposal filter">
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="attested">Attested</option>
+          </select>
+        </div>
+        <div class="proposal-layout">
+          <section class="panel" aria-labelledby="proposal-list-title">
+            <h3 id="proposal-list-title">Queue</h3>
+            <div id="proposal-list" class="item-list"></div>
+          </section>
+          <section class="panel" aria-labelledby="proposal-detail-title">
+            <h3 id="proposal-detail-title">Detail</h3>
+            <div id="proposal-detail" class="data-block"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="timeline-view" class="view" aria-labelledby="timeline-title">
+        <h2 id="timeline-title">Timeline</h2>
+        <section class="panel" aria-label="Timeline entries">
+          <div id="timeline-list" class="item-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="empty-template">
+      <p class="empty-state">No records found.</p>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

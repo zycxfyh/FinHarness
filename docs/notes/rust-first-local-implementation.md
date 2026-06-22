@@ -1,5 +1,15 @@
 # Rust-First Local Implementation
 
+> SUPERSEDED 2026-06-13 by
+> docs/adr/2026-06-13-pragmatism-first-supersedes-rust-first.md.
+> The language mandate is now pragmatism-first (Python by default for the local
+> control plane). A red-team pass showed the Rust split produced two sources of
+> behavioral truth and left the live path decoupled from the guard, the
+> persisted state, and any notional cap — the opposite of this note's goal. The
+> safety rules below (typed models, explicit errors, control around live
+> execution, adopt-not-invent) still stand; only "use Rust for it" is retired.
+> This file is kept for history. Do not treat it as current policy.
+
 Date: 2026-05-29
 
 Decision: new FinHarness local implementation should be Rust-first.

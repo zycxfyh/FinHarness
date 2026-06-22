@@ -7,19 +7,36 @@ license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "backtrader>=1.9.78.123",
+    "beancount>=3.2.3",
+    "beanquery>=0.2.0",
     "deepeval>=3.7.0",
+    "fastapi>=0.137.1",
+    "keyring>=25.7.0",
     "langgraph>=1.2.1",
     "nautilus-trader>=1.227.0",
     "openai-agents>=0.6.1",
-    "openbb>=4.7.1",
     "pandas>=2.2.0",
     "pandas-ta>=0.4.71b0",
+    "pandera>=0.20",
     "plotly>=5.20.0",
+    "pydantic-settings>=2.14.1",
     "quantstats>=0.0.81",
     "riskfolio-lib>=7.2.1",
+    "scipy>=1.17.1",
+    "sqlmodel>=0.0.38",
+    "structlog>=26.1.0",
     "ta-lib>=0.6.8",
+    "uvicorn[standard]>=0.40.0",
     "vectorbt>=1.0.0",
     "yfinance>=0.2.60",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.14",
 ]
 
 [tool.uv]
@@ -33,9 +50,44 @@ src = ["src", "tests", "scripts", "experiments"]
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["B", "E", "F", "I", "SIM", "UP"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "S", "RUF", "PTH", "TID", "C901"]
 ignore = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S108"]
+"scripts/*" = ["S603", "S607"]
+"experiments/*" = ["S101"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/finharness"]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "finharness.risk_gate",
+    "finharness.risk_gate.*",
+    "finharness.authorization",
+    "finharness.market_access_ledger",
+    "finharness.effective_rules",
+    "finharness.effective_ceilings",
+    "finharness.okx_live_gate",
+    "finharness.rule_change_ledger",
+    "finharness.restricted_symbols",
+    "finharness.trading_guard",
+    "finharness.statecore.*",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true

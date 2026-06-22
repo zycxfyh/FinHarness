@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-
-from tests.test_execution import build_sample_risk_gate_bundle
 
 from finharness import execution, post_trade
 from finharness.execution import (
@@ -14,9 +13,24 @@ from finharness.execution import (
 )
 from finharness.post_trade import build_post_trade_bundle_from_execution_snapshot
 from finharness.post_trade_graph import post_trade_graph, run_post_trade_graph
+from tests.test_execution import build_sample_risk_gate_bundle
 
 
 class PostTradeLayerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "FINHARNESS_MARKET_ACCESS_LEDGER_PATH": str(root / "ledger.json"),
+                "FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT": str(root / "receipts"),
+            },
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+
     def test_filled_execution_reconciles_and_estimates_cost(self) -> None:
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
@@ -24,6 +38,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "requested_quantity": 2,
                 "reference_price": 100.0,
             },
@@ -44,10 +59,82 @@ class PostTradeLayerTest(unittest.TestCase):
             all(item.filled_quantity == 2 for item in bundle.snapshot.reconciliations)
         )
         self.assertTrue(
+            all(item.intended_quantity == 2 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.submitted_quantity == 2 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.lifecycle_quantity_reconciled for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
             all(item.inputs_disclosed for item in bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(item.arrival_price == 100.0 for item in bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(item.execution_price == 100.0 for item in bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(item.implementation_shortfall == 0.0 for item in bundle.snapshot.cost_estimates)
         )
         self.assertTrue(bundle.snapshot.portfolio_handoff)
         self.assertFalse(bundle.snapshot.order_creation_allowed)
+
+    def test_implementation_shortfall_is_side_aware_for_buy_and_sell(self) -> None:
+        risk_bundle = build_sample_risk_gate_bundle()
+        buy_execution = build_execution_bundle_from_risk_gate_snapshot(
+            risk_bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "requested_quantity": 2,
+                "reference_price": 100.0,
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+        buy_events = [
+            event.model_copy(update={"average_price": 101.0})
+            if event.filled_quantity > 0
+            else event
+            for event in buy_execution.snapshot.events
+        ]
+        buy_snapshot = buy_execution.snapshot.model_copy(update={"events": buy_events})
+        buy_bundle = build_post_trade_bundle_from_execution_snapshot(buy_snapshot)
+
+        self.assertTrue(
+            all(item.side == "buy" for item in buy_bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(item.implementation_shortfall == 2.0 for item in buy_bundle.snapshot.cost_estimates)
+        )
+
+        sell_requests = [
+            request.model_copy(update={"side": "sell"})
+            for request in buy_execution.snapshot.order_requests
+        ]
+        sell_events = [
+            event.model_copy(update={"average_price": 99.0})
+            if event.filled_quantity > 0
+            else event
+            for event in buy_execution.snapshot.events
+        ]
+        sell_snapshot = buy_execution.snapshot.model_copy(
+            update={"order_requests": sell_requests, "events": sell_events}
+        )
+        sell_bundle = build_post_trade_bundle_from_execution_snapshot(sell_snapshot)
+
+        self.assertTrue(
+            all(item.side == "sell" for item in sell_bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(
+                item.implementation_shortfall == 2.0
+                for item in sell_bundle.snapshot.cost_estimates
+            )
+        )
 
     def test_partial_fill_stays_exception_with_remaining_quantity(self) -> None:
         risk_bundle = build_sample_risk_gate_bundle()
@@ -56,6 +143,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "requested_quantity": 4,
             },
             adapter=FakePaperExecutionAdapter(fill_mode="partial"),
@@ -66,6 +154,18 @@ class PostTradeLayerTest(unittest.TestCase):
         self.assertEqual(bundle.snapshot.final_status, "partial_fill_exception")
         self.assertTrue(
             all(item.remaining_quantity == 2 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.filled_quantity == 2 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.canceled_quantity == 0 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.rejected_quantity == 0 for item in bundle.snapshot.reconciliations)
+        )
+        self.assertTrue(
+            all(item.lifecycle_quantity_reconciled for item in bundle.snapshot.reconciliations)
         )
         self.assertIn(
             "partial_fill",
@@ -79,6 +179,7 @@ class PostTradeLayerTest(unittest.TestCase):
             context={
                 "requested_mode": "paper",
                 "operator_execute": True,
+                "human_review_attested": True,
                 "cancel_after_submit": True,
             },
             adapter=FakePaperExecutionAdapter(fill_mode="accepted"),
@@ -87,6 +188,12 @@ class PostTradeLayerTest(unittest.TestCase):
 
         self.assertTrue(bundle.snapshot.quality.ok)
         self.assertEqual(bundle.snapshot.final_status, "reconciled_canceled")
+        self.assertTrue(
+            all(
+                item.canceled_quantity == item.intended_quantity
+                for item in bundle.snapshot.reconciliations
+            )
+        )
         self.assertIn(
             "execution_canceled",
             {item.exception_type for item in bundle.snapshot.exceptions},
@@ -97,23 +204,71 @@ class PostTradeLayerTest(unittest.TestCase):
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
             adapter=FakePaperExecutionAdapter(fill_mode="reject"),
         )
         bundle = build_post_trade_bundle_from_execution_snapshot(execution_bundle.snapshot)
 
         self.assertTrue(bundle.snapshot.quality.ok)
         self.assertEqual(bundle.snapshot.final_status, "reconciled_rejected")
+        self.assertTrue(
+            all(
+                item.rejected_quantity == item.intended_quantity
+                for item in bundle.snapshot.reconciliations
+            )
+        )
         self.assertIn(
             "execution_rejected",
             {item.exception_type for item in bundle.snapshot.exceptions},
+        )
+
+    def test_missing_arrival_price_records_undisclosed_tca_input(self) -> None:
+        risk_bundle = build_sample_risk_gate_bundle()
+        execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
+            risk_bundle.snapshot,
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+                "requested_quantity": 2,
+                "reference_price": 100.0,
+            },
+            adapter=FakePaperExecutionAdapter(fill_mode="filled"),
+        )
+        requests = [
+            request.model_copy(update={"reference_price": None})
+            for request in execution_bundle.snapshot.order_requests
+        ]
+        snapshot = execution_bundle.snapshot.model_copy(update={"order_requests": requests})
+        bundle = build_post_trade_bundle_from_execution_snapshot(snapshot)
+
+        self.assertFalse(bundle.snapshot.quality.ok)
+        self.assertTrue(
+            all(item.arrival_price is None for item in bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(item.implementation_shortfall is None for item in bundle.snapshot.cost_estimates)
+        )
+        self.assertTrue(
+            all(
+                "tca_input_undisclosed: arrival price missing" in item.notes
+                for item in bundle.snapshot.cost_estimates
+            )
         )
 
     def test_staged_dry_run_is_not_counted_as_trade(self) -> None:
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "dry_run", "operator_execute": False},
+            context={
+                "requested_mode": "dry_run",
+                "operator_execute": False,
+                "human_review_attested": True,
+            },
         )
         bundle = build_post_trade_bundle_from_execution_snapshot(execution_bundle.snapshot)
 
@@ -129,7 +284,11 @@ class PostTradeLayerTest(unittest.TestCase):
         risk_bundle = build_sample_risk_gate_bundle()
         execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
             risk_bundle.snapshot,
-            context={"requested_mode": "paper", "operator_execute": True},
+            context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
             adapter=FakePaperExecutionAdapter(fill_mode="filled"),
         )
         bad_snapshot = execution_bundle.snapshot.model_copy(update={"receipt_ref": ""})
@@ -158,7 +317,11 @@ class PostTradeLayerTest(unittest.TestCase):
                 risk_bundle = build_sample_risk_gate_bundle()
                 execution_bundle = build_execution_bundle_from_risk_gate_snapshot(
                     risk_bundle.snapshot,
-                    context={"requested_mode": "paper", "operator_execute": True},
+                    context={
+                "requested_mode": "paper",
+                "operator_execute": True,
+                "human_review_attested": True,
+            },
                     adapter=FakePaperExecutionAdapter(fill_mode="filled"),
                 )
                 result = run_post_trade_graph(

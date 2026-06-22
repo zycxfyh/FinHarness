@@ -126,6 +126,92 @@ def summarize_findings(findings: Iterable[ClassifiedFinding]) -> HardeningSummar
     )
 
 
+def summarize_trivy_results(payload: dict[str, Any]) -> dict[str, Any]:
+    """Summarize Trivy output without carrying long descriptions or raw evidence."""
+    vulnerabilities: list[dict[str, Any]] = []
+    misconfigurations: list[dict[str, Any]] = []
+    for result in payload.get("Results", []) or []:
+        target = str(result.get("Target", ""))
+        for item in result.get("Vulnerabilities", []) or []:
+            vulnerabilities.append(
+                {
+                    "target": target,
+                    "id": item.get("VulnerabilityID"),
+                    "pkg_name": item.get("PkgName"),
+                    "installed_version": item.get("InstalledVersion"),
+                    "fixed_version": item.get("FixedVersion"),
+                    "severity": item.get("Severity"),
+                    "primary_url": item.get("PrimaryURL"),
+                }
+            )
+        for item in result.get("Misconfigurations", []) or []:
+            misconfigurations.append(
+                {
+                    "target": target,
+                    "id": item.get("ID"),
+                    "type": item.get("Type"),
+                    "severity": item.get("Severity"),
+                    "title": item.get("Title"),
+                }
+            )
+    return {
+        "vulnerability_count": len(vulnerabilities),
+        "misconfiguration_count": len(misconfigurations),
+        "vulnerabilities": vulnerabilities,
+        "misconfigurations": misconfigurations,
+    }
+
+
+def summarize_pip_audit_results(payload: dict[str, Any]) -> dict[str, Any]:
+    """Summarize pip-audit output to counts and minimal advisory identifiers.
+
+    Mirrors the Trivy summary discipline: keep package, version, advisory id, and
+    fix versions only. Long advisory descriptions and aliases are dropped so the
+    receipt carries identifiers, not narrative payloads.
+    """
+    dependencies = payload.get("dependencies", []) or []
+    vulnerabilities: list[dict[str, Any]] = []
+    for dependency in dependencies:
+        name = dependency.get("name")
+        version = dependency.get("version")
+        for vuln in dependency.get("vulns", []) or []:
+            vulnerabilities.append(
+                {
+                    "package": name,
+                    "version": version,
+                    "id": vuln.get("id"),
+                    "fix_versions": list(vuln.get("fix_versions", []) or []),
+                }
+            )
+    vulnerable_packages = sorted(
+        {str(item["package"]) for item in vulnerabilities if item["package"]}
+    )
+    return {
+        "dependency_count": len(dependencies),
+        "vulnerability_count": len(vulnerabilities),
+        "vulnerable_package_count": len(vulnerable_packages),
+        "vulnerable_packages": vulnerable_packages,
+        "vulnerabilities": vulnerabilities,
+    }
+
+
+def build_hardening_gate_report(
+    *,
+    checks: Iterable[dict[str, Any]],
+    generated_at: str,
+) -> dict[str, Any]:
+    """Build the scanner aggregation receipt without granting execution authority."""
+
+    check_items = list(checks)
+    return {
+        "workflow": "finharness_hardening_gate_v1",
+        "generated_at": generated_at,
+        "execution_allowed": False,
+        "release_blocked": any(bool(item.get("release_blocked")) for item in check_items),
+        "checks": check_items,
+    }
+
+
 RED_TEAM_BOUNDARY_MATRIX = [
     {
         "id": "FH-RT-001",

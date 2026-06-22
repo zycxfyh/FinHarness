@@ -193,7 +193,7 @@ def market_data_node(state: TenLayerGraphState) -> TenLayerGraphState:
         symbol=state.get("symbol", "SPY"),
         start=state.get("start", "2025-01-01"),
         end=state.get("end", "2025-06-30"),
-        adjusted=state.get("adjusted", False),
+        adjusted=state.get("adjusted", True),
         write_catalog=state.get("write_catalog", True),
     )
     snapshot = result["snapshot"]
@@ -502,10 +502,12 @@ def post_trade_node(state: TenLayerGraphState) -> TenLayerGraphState:
 
 
 def final_node(state: TenLayerGraphState) -> TenLayerGraphState:
-    snapshots = {
-        LAYER_KEYS[layer]: _snapshot_ref(state.get(snapshot_key))
-        for layer, snapshot_key in SNAPSHOT_KEYS.items()
-    }
+    snapshots: dict[str, str | None] = {}
+    for layer, snapshot_key in SNAPSHOT_KEYS.items():
+        snapshot = state.get(snapshot_key)
+        snapshots[LAYER_KEYS[layer]] = _snapshot_ref(
+            snapshot if isinstance(snapshot, dict) else None
+        )
     layer_status = state.get("layer_status") or {}
     research_asset_context = state.get("research_asset_context") or {}
     return {

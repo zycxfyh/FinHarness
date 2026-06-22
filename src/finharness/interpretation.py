@@ -28,10 +28,10 @@ Stance = Literal["positive", "negative", "mixed", "neutral", "unknown"]
 Materiality = Literal["low", "medium", "high", "unknown"]
 
 NO_EXECUTION_PATTERNS = [
-    r"\bbuy\b",
-    r"\bsell\b",
+    r"\bbuy\b(?!-side)",
+    r"\bsell\b(?!-side)",
     r"\bhold\b",
-    r"\bshort\b",
+    r"\bshort\b(?!-term|-run|-dated|-horizon)",
     r"\bincrease position\b",
     r"\breduce position\b",
     r"\bposition sizing\b",
@@ -387,29 +387,34 @@ def record_text_for_guard(record: InterpretationRecord) -> str:
     )
 
 
+def missing_interpretation_fields(record: InterpretationRecord) -> list[str]:
+    missing: list[str] = []
+    if not record.event_ids:
+        missing.append("event_ids")
+    if not record.evidence_refs:
+        missing.append("evidence_refs")
+    if not record.source_facts:
+        missing.append("source_facts")
+    if not record.claim:
+        missing.append("claim")
+    if not record.inference:
+        missing.append("inference")
+    if not record.counterevidence:
+        missing.append("counterevidence")
+    if not record.watch_questions:
+        missing.append("watch_questions")
+    if record.horizon == "unknown":
+        missing.append("horizon")
+    if record.confidence not in {"low", "medium", "high", "unknown"}:
+        missing.append("confidence")
+    return missing
+
+
 def build_interpretation_quality(records: list[InterpretationRecord]) -> InterpretationQuality:
     missing_required_fields: dict[str, list[str]] = {}
     execution_language_hits: dict[str, list[str]] = {}
     for record in records:
-        missing: list[str] = []
-        if not record.event_ids:
-            missing.append("event_ids")
-        if not record.evidence_refs:
-            missing.append("evidence_refs")
-        if not record.source_facts:
-            missing.append("source_facts")
-        if not record.claim:
-            missing.append("claim")
-        if not record.inference:
-            missing.append("inference")
-        if not record.counterevidence:
-            missing.append("counterevidence")
-        if not record.watch_questions:
-            missing.append("watch_questions")
-        if record.horizon == "unknown":
-            missing.append("horizon")
-        if record.confidence not in {"low", "medium", "high", "unknown"}:
-            missing.append("confidence")
+        missing = missing_interpretation_fields(record)
         if missing:
             missing_required_fields[record.interpretation_id] = missing
         hits = find_execution_language(record_text_for_guard(record))

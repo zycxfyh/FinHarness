@@ -4,12 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.test_proposal import build_sample_validation_bundle
-
 from finharness.proposal import build_proposal_bundle_from_validation_snapshot
 from finharness.quality_governance_graph import run_quality_governance_graph
 from finharness.repo_intelligence import build_file_inventory, classify_security_surface
 from finharness.risk_gate import build_risk_gate_bundle_from_proposal_snapshot
+from tests.test_proposal import build_sample_validation_bundle
 
 
 class PropertyBaselineTest(unittest.TestCase):
@@ -59,8 +58,8 @@ class PropertyBaselineTest(unittest.TestCase):
 
     def test_security_surface_never_authorizes_execution_for_high_risk_files(self) -> None:
         samples = [
-            ["src/finharness/execution.py"],
-            ["src/finharness/risk_gate.py"],
+            ["src/finharness/execution/__init__.py"],
+            ["src/finharness/risk_gate/__init__.py"],
             [".github/workflows/security.yml"],
             ["docs/ordinary.md"],
         ]

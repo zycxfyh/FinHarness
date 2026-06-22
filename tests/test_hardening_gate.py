@@ -5,12 +5,20 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
+from scripts.run_hardening_gate import (
+    run_command,
+    run_gitleaks,
+    run_pip_audit,
+    run_trivy,
+)
 from scripts.validate_promptfoo_redteam_dryrun import validate_config
 
 from finharness.hardening import (
     RED_TEAM_BOUNDARY_MATRIX,
+    build_hardening_gate_report,
     build_red_team_manifest,
     build_red_team_tool_readiness_report,
     classify_gitleaks_findings,
@@ -21,6 +29,8 @@ from finharness.hardening import (
     render_red_team_jsonl,
     render_red_team_manifest,
     summarize_findings,
+    summarize_pip_audit_results,
+    summarize_trivy_results,
 )
 from finharness.research_assets import (
     ReferenceCard,
@@ -257,6 +267,207 @@ class HardeningGateTest(unittest.TestCase):
         self.assertEqual(summary.vendor_warnings, 1)
         self.assertEqual(summary.generated_data_warnings, 1)
         self.assertNotIn("do-not-copy", repr(classified))
+
+    def test_trivy_summary_keeps_actionable_fields_without_long_descriptions(self) -> None:
+        payload = {
+            "Results": [
+                {
+                    "Target": "uv.lock",
+                    "Vulnerabilities": [
+                        {
+                            "VulnerabilityID": "CVE-2026-48710",
+                            "PkgName": "starlette",
+                            "InstalledVersion": "0.52.1",
+                            "FixedVersion": "1.0.1",
+                            "Severity": "MEDIUM",
+                            "PrimaryURL": "https://example.test/cve",
+                            "Description": "long advisory text should not be copied",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        summary = summarize_trivy_results(payload)
+
+        self.assertEqual(summary["vulnerability_count"], 1)
+        self.assertEqual(summary["misconfiguration_count"], 0)
+        self.assertEqual(summary["vulnerabilities"][0]["pkg_name"], "starlette")
+        self.assertEqual(summary["vulnerabilities"][0]["fixed_version"], "1.0.1")
+        self.assertNotIn("long advisory text", repr(summary))
+
+    def test_pip_audit_summary_keeps_identifiers_without_long_descriptions(self) -> None:
+        payload = {
+            "dependencies": [
+                {
+                    "name": "requests",
+                    "version": "2.0.0",
+                    "vulns": [
+                        {
+                            "id": "GHSA-xxxx-yyyy-zzzz",
+                            "fix_versions": ["2.31.0"],
+                            "aliases": ["CVE-2026-00000"],
+                            "description": "long advisory text should not be copied",
+                        }
+                    ],
+                },
+                {"name": "pandas", "version": "2.2.0", "vulns": []},
+            ]
+        }
+
+        summary = summarize_pip_audit_results(payload)
+
+        self.assertEqual(summary["dependency_count"], 2)
+        self.assertEqual(summary["vulnerability_count"], 1)
+        self.assertEqual(summary["vulnerable_package_count"], 1)
+        self.assertEqual(summary["vulnerable_packages"], ["requests"])
+        self.assertEqual(summary["vulnerabilities"][0]["id"], "GHSA-xxxx-yyyy-zzzz")
+        self.assertEqual(summary["vulnerabilities"][0]["fix_versions"], ["2.31.0"])
+        self.assertNotIn("long advisory text", repr(summary))
+
+    def test_pip_audit_clean_payload_reports_no_vulnerabilities(self) -> None:
+        summary = summarize_pip_audit_results(
+            {"dependencies": [{"name": "pandas", "version": "2.2.0", "vulns": []}]}
+        )
+
+        self.assertEqual(summary["vulnerability_count"], 0)
+        self.assertEqual(summary["vulnerable_package_count"], 0)
+        self.assertEqual(summary["vulnerable_packages"], [])
+
+    def test_unreachable_pip_audit_blocks_release(self) -> None:
+        # Mirrors a sandbox without advisory-network access: pip-audit crashes,
+        # stdout is not valid JSON. The gate must fail closed, not pass silently.
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "scripts.run_hardening_gate.run_command",
+            return_value={
+                "command": ["uv", "run", "--with", "pip-audit", "pip-audit"],
+                "returncode": 1,
+                "stdout": "",
+                "stderr": "ConnectionError: Remote end closed connection",
+                "tool_missing": False,
+                "timed_out": False,
+            },
+        ):
+            result = run_pip_audit(
+                cwd=REPO_ROOT,
+                report_path=Path(tmp) / "pip-audit.json",
+            )
+
+        self.assertTrue(result["release_blocked"])
+        self.assertTrue(result["scanner_error"])
+
+    def test_clean_pip_audit_run_does_not_block_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "scripts.run_hardening_gate.run_command",
+            return_value={
+                "command": ["uv", "run", "--with", "pip-audit", "pip-audit"],
+                "returncode": 0,
+                "stdout": json.dumps({"dependencies": [], "fixes": []}),
+                "stderr": "",
+                "tool_missing": False,
+                "timed_out": False,
+            },
+        ):
+            result = run_pip_audit(
+                cwd=REPO_ROOT,
+                report_path=Path(tmp) / "pip-audit.json",
+            )
+
+        self.assertFalse(result["release_blocked"])
+        self.assertFalse(result["scanner_error"])
+
+    def test_pip_audit_findings_block_release_without_scanner_error(self) -> None:
+        payload = {
+            "dependencies": [
+                {
+                    "name": "requests",
+                    "version": "2.0.0",
+                    "vulns": [{"id": "GHSA-1", "fix_versions": ["2.31.0"]}],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "scripts.run_hardening_gate.run_command",
+            return_value={
+                "command": ["uv", "run", "--with", "pip-audit", "pip-audit"],
+                "returncode": 1,
+                "stdout": json.dumps(payload),
+                "stderr": "",
+                "tool_missing": False,
+                "timed_out": False,
+            },
+        ):
+            result = run_pip_audit(
+                cwd=REPO_ROOT,
+                report_path=Path(tmp) / "pip-audit.json",
+            )
+
+        self.assertTrue(result["release_blocked"])
+        self.assertFalse(result["scanner_error"])
+        self.assertEqual(result["vulnerable_packages"], 1)
+
+    def test_hardening_gate_report_blocks_without_execution_authority(self) -> None:
+        report = build_hardening_gate_report(
+            checks=[{"tool": "gitleaks", "release_blocked": True}],
+            generated_at="2026-06-15T00:00:00Z",
+        )
+
+        self.assertTrue(report["release_blocked"])
+        self.assertFalse(report["execution_allowed"])
+        self.assertEqual(report["workflow"], "finharness_hardening_gate_v1")
+
+    def test_scanner_command_missing_is_normalized(self) -> None:
+        result = run_command(
+            ["finharness-definitely-missing-scanner"],
+            cwd=REPO_ROOT,
+            timeout_seconds=0.1,
+        )
+
+        self.assertEqual(result["returncode"], 127)
+        self.assertTrue(result["tool_missing"])
+        self.assertFalse(result["timed_out"])
+
+    def test_missing_gitleaks_blocks_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "scripts.run_hardening_gate.run_command",
+            return_value={
+                "command": ["gitleaks"],
+                "returncode": 127,
+                "stdout": "",
+                "stderr": "missing",
+                "tool_missing": True,
+                "timed_out": False,
+            },
+        ):
+            result = run_gitleaks(
+                cwd=REPO_ROOT,
+                report_path=Path(tmp) / "gitleaks.json",
+            )
+
+        self.assertTrue(result["release_blocked"])
+        self.assertTrue(result["scanner_error"])
+        self.assertTrue(result["tool_missing"])
+
+    def test_missing_trivy_blocks_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "scripts.run_hardening_gate.run_command",
+            return_value={
+                "command": ["trivy"],
+                "returncode": 127,
+                "stdout": "",
+                "stderr": "missing",
+                "tool_missing": True,
+                "timed_out": False,
+            },
+        ):
+            result = run_trivy(
+                cwd=REPO_ROOT,
+                report_path=Path(tmp) / "trivy-summary.json",
+            )
+
+        self.assertTrue(result["release_blocked"])
+        self.assertTrue(result["scanner_error"])
+        self.assertTrue(result["tool_missing"])
 
     def test_red_team_boundary_matrix_has_evidence_links(self) -> None:
         self.assertGreaterEqual(len(RED_TEAM_BOUNDARY_MATRIX), 4)

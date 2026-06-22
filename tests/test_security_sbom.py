@@ -20,11 +20,13 @@ class SecuritySbomTest(unittest.TestCase):
         self.assertFalse(sbom["execution_allowed"])
         self.assertGreater(ecosystems["pypi"], 0)
         self.assertGreater(ecosystems["npm"], 0)
-        self.assertGreater(ecosystems["cargo"], 0)
+        # Rust crate archived 2026-06-13; the SBOM no longer carries a cargo
+        # ecosystem (docs/archive/legacy-rust-crate).
+        self.assertNotIn("cargo", ecosystems)
         self.assertGreaterEqual(ecosystems["local"], 2)
         self.assertIn("uv.lock", sbom["source_files"])
         self.assertIn("pnpm-lock.yaml", sbom["source_files"])
-        self.assertIn("Cargo.lock", sbom["source_files"])
+        self.assertNotIn("Cargo.lock", sbom["source_files"])
         self.assertIn("local:finharness@0.1.0", {item["bom_ref"] for item in sbom["components"]})
 
     def test_provenance_baseline_is_not_formal_attestation(self) -> None:

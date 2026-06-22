@@ -8,74 +8,31 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-ALLOWED_MARKET_ACTIONS = frozenset(
-    {
-        "ticker",
-        "tickers",
-        "orderbook",
-        "candles",
-        "instruments",
-        "funding-rate",
-        "mark-price",
-        "trades",
-        "index-ticker",
-        "index-candles",
-        "price-limit",
-        "open-interest",
-        "stock-tokens",
-        "instruments-by-category",
-        "filter",
-        "oi-history",
-        "oi-change",
-        "pair-spread",
-    }
+from finharness.okx_policy import (
+    action_is_mutating,
+    action_is_read_only,
+    blocked_tokens,
+    disallowed_flag,
 )
+from finharness.okx_redaction import redact_okx_output, redact_text
+from finharness.okx_symbols import candidate_inst_ids, normalize_usdt_symbol
 
-READ_ONLY_ACTIONS: dict[str, frozenset[str]] = {
-    "market": ALLOWED_MARKET_ACTIONS,
-    "account": frozenset(
-        {
-            "balance",
-            "asset-balance",
-            "positions",
-            "positions-history",
-            "bills",
-            "fees",
-            "config",
-            "max-size",
-            "max-avail-size",
-            "max-withdrawal",
-            "audit",
-        }
-    ),
-    "spot": frozenset({"orders", "get", "fills"}),
-    "swap": frozenset({"positions", "orders", "get", "fills", "get-leverage"}),
-    "futures": frozenset({"positions", "orders", "get", "fills", "get-leverage"}),
-    "option": frozenset({"orders", "get", "positions", "fills", "instruments", "greeks"}),
-}
-
-MUTATING_ACTIONS: dict[str, frozenset[str]] = {
-    "account": frozenset({"set-position-mode", "transfer"}),
-    "spot": frozenset({"place", "amend", "cancel", "batch", "leverage"}),
-    "swap": frozenset({"place", "amend", "cancel", "batch", "close", "leverage"}),
-    "futures": frozenset({"place", "amend", "cancel", "batch", "close", "leverage"}),
-    "option": frozenset({"place", "amend", "cancel", "batch-cancel"}),
-}
-
-BLOCKED_TOKENS = frozenset(
-    {
-        "earn",
-        "bot",
-        "event",
-        "smartmoney",
-        "setup",
-        "pilot",
-        "skill",
-        "upgrade",
-    }
-)
-
-BLOCKED_ARG_TOKENS = frozenset({"--live", "--demo", "--json", "--env", "--profile"})
+__all__ = [
+    "OkxCliError",
+    "OkxCliResult",
+    "action_is_mutating",
+    "action_is_read_only",
+    "candidate_inst_ids",
+    "normalize_usdt_symbol",
+    "okx_ticker",
+    "redact_okx_output",
+    "redact_text",
+    "run_okx_command",
+    "run_okx_live_mutation_command",
+    "run_okx_live_read_command",
+    "run_okx_market_command",
+    "validate_command_args",
+]
 
 
 class OkxCliError(RuntimeError):
@@ -90,35 +47,34 @@ class OkxCliResult:
     data: Any
 
 
-def normalize_usdt_symbol(symbol: str) -> str:
-    """Normalize compact OKX app-style symbols such as BTCUSDT into BTC-USDT."""
-    clean = symbol.strip().upper()
-    if "-" in clean:
-        return clean
-    if clean.endswith("USDT") and len(clean) > 4:
-        return f"{clean[:-4]}-USDT"
-    return clean
-
-
-def candidate_inst_ids(symbol: str) -> list[str]:
-    """Return likely OKX instrument IDs for app-style symbols."""
-    normalized = normalize_usdt_symbol(symbol)
-    candidates = [normalized]
-    if normalized.endswith("-USDT") and not normalized.endswith("-USDT-SWAP"):
-        candidates.append(f"{normalized}-SWAP")
-    return candidates
-
-
-def action_is_read_only(module: str, action: str) -> bool:
-    return action in READ_ONLY_ACTIONS.get(module, frozenset())
-
-
-def action_is_mutating(module: str, action: str) -> bool:
-    return action in MUTATING_ACTIONS.get(module, frozenset())
-
-
 def live_mutations_enabled() -> bool:
     return os.environ.get("FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS") == "1"
+
+
+# Compensating control for deployments without an OKX IP allowlist (e.g. a
+# rotating-IP VPN). The IP allowlist normally bounds a leaked key to known IPs;
+# without it, this hard kill-switch keeps live writes impossible through the
+# harness unless an operator deliberately arms it. It defaults to DISARMED
+# (fail-closed) and is independent of FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS, so a
+# live write now requires two separate, deliberate opt-ins. Reads are never
+# affected.
+OKX_LIVE_WRITE_ARM_ENV = "FINHARNESS_OKX_LIVE_WRITE_ARMED"
+
+
+def live_writes_armed() -> bool:
+    return os.environ.get(OKX_LIVE_WRITE_ARM_ENV) == "1"
+
+
+def validate_command_args(module: str, action: str, args: list[str]) -> None:
+    """Reject any flag not on the per-action allowlist (red-team F8).
+
+    Catches --live=1, --profile=live, --env=prod, and short/abbreviated forms by
+    construction: a flag-looking token outside the allowlist is refused. Non-flag
+    tokens (instrument ids, sizes, prices) pass through for okx to validate.
+    """
+    name = disallowed_flag(module, action, args)
+    if name is not None:
+        raise OkxCliError(f"argument flag not allowed for {module} {action}: {name}")
 
 
 def run_okx_command(
@@ -142,14 +98,22 @@ def run_okx_command(
 
     if mutating and not allow_mutation:
         raise OkxCliError(f"mutation requires explicit approval: {module} {action}")
+    # Hard kill-switch (compensating control for a missing IP allowlist). Checked
+    # before the env gate so a live write needs both this and the env opt-in.
+    if mutating and live and not live_writes_armed():
+        raise OkxCliError(
+            f"live OKX writes are disabled by kill-switch ({OKX_LIVE_WRITE_ARM_ENV}!=1); "
+            "compensating control for no IP allowlist"
+        )
     if mutating and live and not live_mutations_enabled():
         raise OkxCliError("live mutation requires FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1")
 
     safe_args = args or []
-    blocked = [token for token in [module, action, *safe_args] if token in BLOCKED_TOKENS]
-    blocked.extend(token for token in safe_args if token in BLOCKED_ARG_TOKENS)
+    blocked = blocked_tokens(module, action, safe_args)
     if blocked:
         raise OkxCliError(f"blocked OKX token(s): {blocked}")
+    # F8: per-action flag allowlist (replaces the bypassable arg denylist).
+    validate_command_args(module, action, safe_args)
 
     command = ["okx", "--json"]
     if live:
@@ -157,7 +121,7 @@ def run_okx_command(
     if demo:
         command.append("--demo")
     command.extend([module, action, *safe_args])
-    completed = subprocess.run(
+    completed = subprocess.run(  # noqa: S603 -- validated OKX CLI action/args, shell disabled.
         command,
         text=True,
         capture_output=True,
@@ -165,7 +129,8 @@ def run_okx_command(
         check=False,
     )
     if completed.returncode != 0:
-        stderr = completed.stderr.strip()
+        # F9: never surface raw stderr; secrets can appear in error payloads.
+        stderr = redact_text(completed.stderr.strip())
         raise OkxCliError(f"okx command failed with exit {completed.returncode}: {stderr}")
 
     try:
@@ -173,7 +138,10 @@ def run_okx_command(
     except json.JSONDecodeError as exc:
         raise OkxCliError("okx command did not return JSON") from exc
 
-    return OkxCliResult(module=module, action=action, command=command, data=data)
+    # F9: mask sensitive fields before any caller can log/store the response.
+    return OkxCliResult(
+        module=module, action=action, command=command, data=redact_okx_output(data)
+    )
 
 
 def run_okx_market_command(

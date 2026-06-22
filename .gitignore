@@ -19,8 +19,16 @@ data/receipts/quality-governance/
 data/receipts/release-preflight/
 data/receipts/repo-intelligence/
 data/receipts/risk-gates/
+data/receipts/receipt-usage-audit/
 data/receipts/validations/
+data/receipts/state-core/
+data/receipts/beancount/
+data/receipts/daily-brief/
+data/receipts/annual-review/
 data/redteam/exports/
+data/state/*
+!data/state/rule-changes/
+!data/state/rule-changes/*.json
 data/*.csv
 data/*.parquet
 .env
@@ -35,3 +43,11 @@ node_modules/
 dist/
 build/
 target/
+src/finharness.egg-info/
+data/receipts/lessons/
+.hermes/
+research/
+
+# Generated repo-intelligence doc (regenerate via `task repo:intelligence`;
+# its receipt half data/receipts/repo-intelligence/ is already ignored above).
+docs/architecture/generated/

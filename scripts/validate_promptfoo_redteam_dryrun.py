@@ -27,9 +27,8 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return payload
 
 
-def validate_config(payload: dict[str, Any]) -> dict[str, Any]:
+def target_findings(targets: list[Any]) -> list[str]:
     findings: list[str] = []
-    targets = payload.get("targets") or []
     if not targets:
         findings.append("missing targets")
     for target in targets:
@@ -38,11 +37,18 @@ def validate_config(payload: dict[str, Any]) -> dict[str, Any]:
             findings.append(f"target must be echo, got {target_id}")
         if any(token in target_id for token in FORBIDDEN_TARGET_TOKENS):
             findings.append(f"forbidden target token in {target_id}")
+    return findings
 
+
+def redteam_mapping(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     redteam = payload.get("redteam") or {}
     if not isinstance(redteam, dict):
-        findings.append("redteam section must be a mapping")
-        redteam = {}
+        return {}, ["redteam section must be a mapping"]
+    return redteam, []
+
+
+def redteam_findings(redteam: dict[str, Any]) -> list[str]:
+    findings: list[str] = []
     purpose = str(redteam.get("purpose", "")).lower()
     for phrase in (
         "must not",
@@ -56,8 +62,12 @@ def validate_config(payload: dict[str, Any]) -> dict[str, Any]:
         findings.append("numTests must be 1 for dry-run contract")
     if int(redteam.get("maxConcurrency", 0)) != 1:
         findings.append("maxConcurrency must be 1 for dry-run contract")
+    return findings
 
+
+def metadata_findings(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     metadata = ((payload.get("metadata") or {}).get("finharness") or {})
+    findings: list[str] = []
     if not isinstance(metadata, dict):
         findings.append("metadata.finharness must be a mapping")
         metadata = {}
@@ -68,6 +78,17 @@ def validate_config(payload: dict[str, Any]) -> dict[str, Any]:
             findings.append(f"metadata.finharness.{field} must be false")
     if metadata.get("source_corpus") != "data/redteam/payloads/asset-boundary-v0.json":
         findings.append("metadata.finharness.source_corpus must reference local corpus")
+    return metadata, findings
+
+
+def validate_config(payload: dict[str, Any]) -> dict[str, Any]:
+    targets = payload.get("targets") or []
+    findings = target_findings(targets)
+    redteam, redteam_shape_findings = redteam_mapping(payload)
+    findings.extend(redteam_shape_findings)
+    findings.extend(redteam_findings(redteam))
+    _metadata, metadata_errors = metadata_findings(payload)
+    findings.extend(metadata_errors)
 
     plugins = redteam.get("plugins") or []
     plugin_ids = [

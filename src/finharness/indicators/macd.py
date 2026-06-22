@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import talib
 
 from finharness.indicators.shared import validate_ohlcv
+
+MACD_BACKEND = "TA-Lib.MACD"
 
 
 def compute_macd(
@@ -14,20 +17,21 @@ def compute_macd(
 ) -> pd.DataFrame:
     """Compute MACD, signal, histogram, and display-style states."""
     data = validate_ohlcv(frame)
-    close = data["close"]
-
-    fast_ma = close.ewm(span=fast_length, adjust=False).mean()
-    slow_ma = close.ewm(span=slow_length, adjust=False).mean()
-    macd = fast_ma - slow_ma
-    signal = macd.rolling(signal_length, min_periods=signal_length).mean()
-    hist = macd - signal
+    close = data["close"].astype(float)
+    macd, signal, hist = talib.MACD(
+        close,
+        fastperiod=fast_length,
+        slowperiod=slow_length,
+        signalperiod=signal_length,
+    )
 
     output = pd.DataFrame(
         {
-            "macd": macd,
-            "macd_signal": signal,
-            "macd_hist": hist,
-        }
+            "macd": pd.Series(macd, index=data.index),
+            "macd_signal": pd.Series(signal, index=data.index),
+            "macd_hist": pd.Series(hist, index=data.index),
+        },
+        index=data.index,
     )
     previous_hist = output["macd_hist"].shift(1)
     output["macd_hist_state"] = np.select(
