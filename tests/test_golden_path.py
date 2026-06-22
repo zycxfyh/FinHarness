@@ -33,10 +33,19 @@ class GoldenPathHappyTest(unittest.TestCase):
         self.assertFalse(self.summary["execution_allowed"])
 
     def test_summary_is_bounded(self) -> None:
-        # No raw ledger amounts / claims / PII in the summary — only counts + refs.
-        for key in self.summary:
-            self.assertNotIn("amount", key)
-            self.assertNotIn("claim", key)
+        # Structural bound: only an allowlisted, shallow set of counts / refs / flags — no
+        # nested dicts and no raw numeric ledger values (which would carry amounts/PII).
+        allowed = {
+            "ok", "proposals", "detector_kinds", "compare_pairs", "timeline_entries",
+            "proposal_receipt_ref", "review_event_receipt_ref", "replayed", "replay_gaps",
+            "artifact_root", "cleanup_hint", "execution_allowed",
+        }
+        self.assertEqual(set(self.summary), allowed)
+        for value in self.summary.values():
+            self.assertNotIsInstance(value, dict)  # no nested ledger payload
+            self.assertNotIsInstance(value, float)  # counts are ints; no money floats
+            if isinstance(value, list):
+                self.assertTrue(all(isinstance(item, str) for item in value))
 
 
 class GoldenPathFaultInjectionTest(unittest.TestCase):
