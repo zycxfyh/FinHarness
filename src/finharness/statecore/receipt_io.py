@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -17,18 +18,17 @@ def resolve_under(root: str | Path, *parts: str | Path) -> Path:
 
     Defense-in-depth against path injection: even if an upstream id sanitizer is
     bypassed, a path that escapes the allowed root raises ``ReceiptPathError`` instead of
-    writing outside it. The ``resolve`` + ``relative_to`` barrier is also what lets static
-    analysis (CodeQL py/path-injection) see the taint as guarded rather than free.
+    writing outside it. Uses ``os.path.realpath`` + a containment ``startswith`` check —
+    the canonical normalize-then-verify barrier that static analysis (CodeQL
+    py/path-injection) recognizes as a sanitizer.
     """
-    root_resolved = Path(root).resolve()
-    candidate = root_resolved.joinpath(*[str(part) for part in parts]).resolve()
-    try:
-        candidate.relative_to(root_resolved)
-    except ValueError as exc:
+    root_real = os.path.realpath(root)
+    candidate = os.path.realpath(Path(root_real).joinpath(*[str(part) for part in parts]))
+    if candidate != root_real and not candidate.startswith(root_real + os.sep):
         raise ReceiptPathError(
-            f"receipt path {candidate} escapes its allowed root {root_resolved}"
-        ) from exc
-    return candidate
+            f"receipt path {candidate} escapes its allowed root {root_real}"
+        )
+    return Path(candidate)
 
 
 def atomic_write_text(path: str | Path, content: str) -> Path:
