@@ -20,7 +20,8 @@
    同一 system 内第 3 次散点加同类 route/renderer/read-model,**必须**先抽该 system 的共享接口
    (read model / command / adapter),再实现本次。前两次可旁补,第三次是信号。
 
-4. **系统形状固定**:domain model / read model / command(write)model / adapters / tests。
+4. **系统形状固定**:domain / commands / read_model / adapters / fixtures / governance(6 角色,
+   具体标准见 [system-directory-standard.md](./system-directory-standard.md),Review System 为参考实现)。
    - read model:给 API/frontend 消费的**只读形状**,集中而非每个 route 内联拼。
    - command model:写入统一走 governed command + receipt(唯一 id → receipt → DB,失败清理)。
    - adapters:API/CLI/frontend 只是适配器,不放业务不变量。
