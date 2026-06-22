@@ -26,6 +26,9 @@ class PropertyBaselineTest(unittest.TestCase):
                 "required": True,
             },
         ]
+        cached_repo_intelligence = run_quality_governance_graph(checks=base)[
+            "repo_intelligence"
+        ]
         for failed_index in range(len(base)):
             checks = [
                 {
@@ -35,7 +38,10 @@ class PropertyBaselineTest(unittest.TestCase):
                 }
                 for index, item in enumerate(base)
             ]
-            decision = run_quality_governance_graph(checks=checks)["final"]["release_decision"]
+            decision = run_quality_governance_graph(
+                checks=checks,
+                repo_intelligence=cached_repo_intelligence,
+            )["final"]["release_decision"]
             self.assertTrue(decision["release_blocked"])
             self.assertIn(base[failed_index]["name"], decision["failed_required_checks"])
             self.assertFalse(decision["execution_allowed"])
