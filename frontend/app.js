@@ -400,16 +400,20 @@ function renderCompareMarksPanel(parent, data, onSelect) {
   placeholder.value = "";
   placeholder.textContent = "Select a pair…";
   select.append(placeholder);
-  for (const pair of pairs) {
+  pairs.forEach((pair, index) => {
     const option = document.createElement("option");
-    option.value = `${pair.proposal_id}|${pair.compare_with}`;
+    // Index, not a delimited id string: robust even if ids ever contain the delimiter.
+    option.value = String(index);
     option.textContent = pair.missing_side
       ? `${pair.proposal_id} vs ${pair.compare_with} (missing ${pair.missing_side})`
       : `${pair.proposal_id} vs ${pair.compare_with}`;
     select.append(option);
-  }
+  });
   if (typeof onSelect === "function") {
-    select.addEventListener("change", () => onSelect(select.value));
+    select.addEventListener("change", () => {
+      const pair = select.value === "" ? null : pairs[Number(select.value)];
+      onSelect(pair);
+    });
   }
   parent.append(select);
   const missing = pairs.filter((pair) => pair.missing_side);
@@ -449,15 +453,14 @@ async function renderCompare() {
   const chrome = document.createElement("div");
   chrome.className = "compare-chrome";
   const sideBySide = document.createElement("div");
-  renderCompareMarksPanel(chrome, data, async (value) => {
+  renderCompareMarksPanel(chrome, data, async (pair) => {
     clear(sideBySide);
-    if (!value) {
+    if (!pair) {
       return;
     }
-    const [leftId, rightId] = value.split("|");
     const [left, right] = await Promise.all([
-      apiGet(`/proposals/${leftId}`).catch(() => null),
-      apiGet(`/proposals/${rightId}`).catch(() => null),
+      apiGet(`/proposals/${encodeURIComponent(pair.proposal_id)}`).catch(() => null),
+      apiGet(`/proposals/${encodeURIComponent(pair.compare_with)}`).catch(() => null),
     ]);
     renderCompareSideBySide(sideBySide, left, right);
   });

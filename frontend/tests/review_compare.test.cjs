@@ -73,8 +73,8 @@ const populated = renderPanel({
 const select = populated.querySelector("#compare-pair-select");
 assert.ok(select, "pair selector renders");
 assert.ok(
-  [...select.options].some((o) => o.value === "A|B"),
-  "a pair option is present",
+  [...select.options].some((o) => o.textContent.includes("A vs B")),
+  "a pair option is present (labelled A vs B)",
 );
 assert.ok(populated.textContent.includes("missing right"), "missing-side disclosure renders");
 assert.strictEqual(
@@ -93,11 +93,12 @@ for (const verdict of ["winner", "recommended", "better", "should pick", "you sh
 let picked = null;
 const withCb = renderPanel({ pairs: [
   { proposal_id: "A", compare_with: "B", attester: "op", reason: "r", created_at_utc: "t", review_event_id: "rev1", proposal_exists: true, compare_with_exists: true, missing_side: null, data_gaps: [] },
-], non_claims: NON_CLAIMS }, (value) => { picked = value; });
+], non_claims: NON_CLAIMS }, (pair) => { picked = pair; });
 const sel = withCb.querySelector("#compare-pair-select");
-sel.value = "A|B";
+sel.value = "0"; // option index, not a delimited id string
 sel.dispatchEvent(new window.Event("change", { bubbles: true }));
-assert.strictEqual(picked, "A|B", "selection invokes the read-only onSelect with the pair");
+assert.ok(picked && picked.proposal_id === "A" && picked.compare_with === "B",
+  "selection invokes the read-only onSelect with the resolved pair object");
 
 // 4. Side-by-side renders both candidates' own facts; a missing side degrades to a notice.
 const cols = window.document.createElement("div");
@@ -121,7 +122,7 @@ window.fetch = (p, opts) => {
 
 window.renderCompare().then(() => {
   const select5 = window.document.querySelector("#compare-pair-select");
-  select5.value = "A|B";
+  select5.value = "0"; // option index
   select5.dispatchEvent(new window.Event("change", { bubbles: true }));
   setTimeout(() => {
     assert.ok(fetchCalls.length > 0, "compare view fetched");
