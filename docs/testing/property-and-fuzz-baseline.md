@@ -21,12 +21,16 @@ The deterministic fuzz baseline exercises malformed and generated inputs across:
 ## Task Entry
 
 ```bash
+task test:integration
 task test:properties
 task security:fuzz
 ```
 
-`task check` runs `task test:properties`. The fuzz baseline is separate so it can
-write a report without making every local check mutate generated evidence.
+`task check` runs `task test:integration`, which includes this property baseline
+alongside the slower graph integration checks. `task test:properties` remains as
+a focused compatibility entry for the property baseline alone. The fuzz baseline
+is separate so it can write a report without making every local check mutate
+generated evidence.
 
 ## Fuzz Corpus And Report
 

@@ -19,8 +19,9 @@ need for human attestation.
 | `task setup` | Sync dependencies from lockfiles. | May install/update local packages; run deliberately. |
 | `task check` | Standard local verification suite. | Passing checks is evidence, not trading permission. |
 | `task lint` | Run Python lint checks. | Code quality only. |
-| `task test` | Compile Python files and run unit tests. | Test pass does not prove strategy correctness. |
-| `task test:properties` | Run property-style governance/boundary tests. | Boundary evidence only. |
+| `task test` | Compile Python files and run fast unit tests. | Test pass does not prove strategy correctness. |
+| `task test:integration` | Run slower graph/property integration tests. | Included in `task check`; boundary evidence only. |
+| `task test:properties` | Run property-style governance/boundary tests. | Compatibility entry; also covered by `test:integration`. |
 
 ## Golden Path Commands
 
