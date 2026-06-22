@@ -72,7 +72,6 @@ class AllocationCandidate(BaseModel):
     options: tuple[CandidateOption, ...]
     key_risks: tuple[str, ...]
     reversibility: str
-    research_evidence: tuple[Any, ...] = ()
     execution_allowed: bool = False
 
 
