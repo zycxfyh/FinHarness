@@ -83,7 +83,8 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码、不改既有 API 
 
 ### 7. Test / Gate Plan
 - **进 `task check`**:`/review/compare-marks` 端点后端单测(空/有/缺失一侧)、既有响应快照不变、OpenAPI 契约、
-  jsdom Compare view(空/并排/无动作面/无裁决措辞)。
+  jsdom Compare view(空/并排;**无写/执行动作面;只读 selection 允许且选 pair 无 POST/无表单提交**;
+  裁决措辞探针限 compare 层)。
 - **进 `task governance:check`**:`/review/compare-marks` AST 无写入口(无 `create_governed_*`/write);Compare view
   允许只读 selection 但**无写/POST/提交**;裁决措辞探针**限定 compare-generated 元素**(不扫 raw proposal facts/non_claims)。
 - **Gate**:C2 → design gate(本稿)+ implementation gate。
