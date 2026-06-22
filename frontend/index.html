@@ -23,6 +23,7 @@
       <button class="tab" type="button" data-view="exposure">Exposure</button>
       <button class="tab" type="button" data-view="proposals">Proposals</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
+      <button class="tab" type="button" data-view="retrospective">Retrospective</button>
     </nav>
 
     <main>
@@ -86,6 +87,14 @@
         <h2 id="timeline-title">Timeline</h2>
         <section class="panel" aria-label="Timeline entries">
           <div id="timeline-list" class="item-list"></div>
+        </section>
+      </section>
+
+      <section id="retrospective-view" class="view" aria-labelledby="retrospective-title">
+        <h2 id="retrospective-title">Retrospective</h2>
+        <section class="panel" aria-labelledby="retrospective-panel-title">
+          <h3 id="retrospective-panel-title">Annual Review &amp; Lesson/Rule Closure</h3>
+          <div id="retrospective-block" class="data-block"></div>
         </section>
       </section>
     </main>
