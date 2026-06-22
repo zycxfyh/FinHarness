@@ -36,7 +36,7 @@ tasks:
       - task: lint
       - task: typecheck
       - task: test
-      - task: test:properties
+      - task: test:integration
       - task: test:frontend
       - task: governance:check
       - task: rules:audit
@@ -89,9 +89,14 @@ tasks:
       - uv run python scripts/run_project_governance_adapter.py
 
   test:properties:
-    desc: Run property-style governance and boundary tests
+    desc: Run property-style governance and boundary tests (also included in test:integration)
     cmds:
-      - uv run python -m unittest tests/test_property_baseline.py
+      - uv run python -m unittest tests.integration_property_baseline
+
+  test:integration:
+    desc: Run slower graph/property integration tests outside the default unit loop
+    cmds:
+      - uv run python -m unittest tests.integration_quality_governance_graph tests.integration_release_preflight_graph tests.integration_property_baseline
 
   test:frontend:
     desc: Run jsdom-based frontend DOM tests (revision history + research evidence render)
@@ -162,7 +167,7 @@ tasks:
       - uv run ruff format .
 
   test:
-    desc: Run Python compile and unit tests
+    desc: Run Python compile and fast unit tests
     cmds:
       - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
       - uv run python -m unittest discover -s tests
