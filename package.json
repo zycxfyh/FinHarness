@@ -13,6 +13,6 @@
   "packageManager": "pnpm@10.33.2",
   "devDependencies": {
     "jsdom": "^29.1.1",
-    "promptfoo": "^0.121.12"
+    "promptfoo": "^0.121.17"
   }
 }
