@@ -150,18 +150,19 @@ class NetworkSmokeExclusionProbe(unittest.TestCase):
         )
         reachable = _reachable_tasks("check", tasks)
         self.assertIn("check", reachable)
-        self.assertNotIn(
-            "decisions:research-smoke", reachable, "network smoke must not be in task check"
-        )
-        # No task reachable from check may shell out to the smoke script either.
+        for manual in ("decisions:research-smoke", "decisions:golden-path"):
+            self.assertNotIn(manual, reachable, f"{manual} must not be in task check")
+        # No task reachable from check may shell out to a manual demo/smoke script either.
         for name in reachable:
             for cmd in (tasks.get(name) or {}).get("cmds") or []:
                 if isinstance(cmd, str):
-                    self.assertNotIn(
-                        "run_research_smoke", cmd, f"task {name} must not run the smoke script"
-                    )
-        # Sanity: the manual smoke task exists.
+                    for script in ("run_research_smoke", "run_golden_path"):
+                        self.assertNotIn(
+                            script, cmd, f"task {name} must not run {script}"
+                        )
+        # Sanity: the manual tasks exist.
         self.assertIn("decisions:research-smoke", tasks)
+        self.assertIn("decisions:golden-path", tasks)
 
 
 class NoPydanticLeakProbe(unittest.TestCase):
