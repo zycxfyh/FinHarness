@@ -19,8 +19,10 @@ def resolve_under(root: str | Path, *parts: str | Path) -> Path:
     Defense-in-depth against path injection: even if an upstream id sanitizer is
     bypassed, a path that escapes the allowed root raises ``ReceiptPathError`` instead of
     writing outside it. Uses ``os.path.realpath`` + a containment ``startswith`` check —
-    the canonical normalize-then-verify barrier that static analysis (CodeQL
-    py/path-injection) recognizes as a sanitizer.
+    the canonical normalize-then-verify barrier. This is a project-level allowed-root
+    barrier; CodeQL does not currently model it, so its py/path-injection alerts on these
+    flows are dismissed as false positives with this guard (and the regression tests) as
+    the justification.
     """
     root_real = os.path.realpath(root)
     candidate = os.path.realpath(Path(root_real).joinpath(*[str(part) for part in parts]))
