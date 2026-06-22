@@ -15,7 +15,11 @@ from sqlmodel import Session
 
 from finharness.market_data import ROOT
 from finharness.statecore.models import Attestation, Proposal, ReceiptIndex
-from finharness.statecore.receipt_io import atomic_write_json, remove_file_best_effort
+from finharness.statecore.receipt_io import (
+    atomic_write_json,
+    remove_file_best_effort,
+    resolve_under,
+)
 from finharness.statecore.store import StateCoreStoreError, upsert_records, write_records
 
 DecisionInput = Literal["approved", "rejected"]
@@ -50,7 +54,9 @@ def _revision_stamp() -> str:
 
 
 def _safe_id(value: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in value)
+    # Map every path-significant character (including ".") to "_", so an id can never
+    # carry a ".." traversal segment even before resolve_under guards the final path.
+    return "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in value)
 
 
 def _display_path(path: Path) -> str:
@@ -246,7 +252,7 @@ def create_governed_proposal(
             supersedes = existing.receipt_ref
 
     receipt_id = f"receipt_{resolved_proposal_id}_{_revision_stamp()}_{content_hash[:8]}"
-    receipt_path = Path(receipt_root) / "proposals" / f"{receipt_id}.json"
+    receipt_path = resolve_under(receipt_root, "proposals", f"{receipt_id}.json")
     receipt_ref = _display_path(receipt_path)
     proposal = Proposal(
         proposal_id=resolved_proposal_id,
@@ -311,7 +317,7 @@ def create_governed_attestation(
     created_at = _now_utc()
     attestation_id = _safe_id(f"att_{_stamp()}_{uuid4().hex[:8]}")
     receipt_id = f"receipt_{attestation_id}"
-    receipt_path = Path(receipt_root) / "attestations" / f"{receipt_id}.json"
+    receipt_path = resolve_under(receipt_root, "attestations", f"{receipt_id}.json")
     receipt_ref = _display_path(receipt_path)
     attestation = Attestation(
         attestation_id=attestation_id,

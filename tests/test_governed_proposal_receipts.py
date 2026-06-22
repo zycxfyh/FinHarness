@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from finharness.statecore.models import Proposal, ReceiptIndex
-from finharness.statecore.proposals import create_governed_proposal
+from finharness.statecore.proposals import _safe_id, create_governed_proposal
+from finharness.statecore.receipt_io import ReceiptPathError, resolve_under
 from finharness.statecore.store import init_state_core, read_all
 
 
@@ -90,6 +92,66 @@ class GovernedProposalReceiptRevisionTest(unittest.TestCase):
         self.assertEqual(second_payload["supersedes"], first.receipt_ref)
         self.assertEqual(third_payload["supersedes"], second.receipt_ref)
         self.assertEqual(third_payload["content_hash"], first_payload["content_hash"])
+
+
+class ReceiptPathSafetyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.receipt_root = self.root / "receipts"
+        self.engine = init_state_core(self.root / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+
+    # --- resolve_under guard (defense-in-depth) ---------------------------------------
+    def test_resolve_under_allows_paths_within_root(self) -> None:
+        resolved = resolve_under(self.root, "proposals", "x.json")
+        resolved.relative_to(self.root.resolve())  # raises if escaped
+
+    def test_resolve_under_rejects_parent_traversal(self) -> None:
+        with self.assertRaises(ReceiptPathError):
+            resolve_under(self.root, "..", "evil.json")
+
+    def test_resolve_under_rejects_absolute_escape(self) -> None:
+        with self.assertRaises(ReceiptPathError):
+            resolve_under(self.root, "/etc/passwd")
+
+    # --- _safe_id neutralizes traversal -----------------------------------------------
+    def test_safe_id_neutralizes_traversal_characters(self) -> None:
+        out = _safe_id("../../etc/passwd")
+        self.assertNotIn("/", out)
+        self.assertNotIn("..", out)
+        self.assertTrue(re.fullmatch(r"[A-Za-z0-9_-]*", out))
+
+    # --- end-to-end: a malicious proposal_id cannot escape the receipt root ------------
+    def test_malicious_proposal_id_stays_within_receipt_root(self) -> None:
+        write = create_governed_proposal(
+            kind="cash_buffer_low",
+            claim="x",
+            evidence={"runway": 1.0},
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            proposal_id="../../evil",
+            idempotent=True,
+        )
+        written = Path(write.receipt_ref).resolve()
+        # Must live under the allowed receipt root, never escape via traversal.
+        written.relative_to(self.receipt_root.resolve())
+        self.assertTrue(written.exists())
+
+    def test_legitimate_proposal_receipt_written_under_root(self) -> None:
+        write = create_governed_proposal(
+            kind="cash_buffer_low",
+            claim="Cash covers 1.0 months",
+            evidence={"runway": 1.0},
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            proposal_id="alloc_cash_buffer_low_2026-06-20",
+            idempotent=True,
+        )
+        written = Path(write.receipt_ref).resolve()
+        written.relative_to(self.receipt_root.resolve())
+        self.assertTrue(written.exists())
 
 
 if __name__ == "__main__":

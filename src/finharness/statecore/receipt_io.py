@@ -8,6 +8,29 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 
+class ReceiptPathError(ValueError):
+    """Raised when a receipt path would resolve outside its allowed root."""
+
+
+def resolve_under(root: str | Path, *parts: str | Path) -> Path:
+    """Resolve ``root / parts...`` and guarantee the result stays within ``root``.
+
+    Defense-in-depth against path injection: even if an upstream id sanitizer is
+    bypassed, a path that escapes the allowed root raises ``ReceiptPathError`` instead of
+    writing outside it. The ``resolve`` + ``relative_to`` barrier is also what lets static
+    analysis (CodeQL py/path-injection) see the taint as guarded rather than free.
+    """
+    root_resolved = Path(root).resolve()
+    candidate = root_resolved.joinpath(*[str(part) for part in parts]).resolve()
+    try:
+        candidate.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ReceiptPathError(
+            f"receipt path {candidate} escapes its allowed root {root_resolved}"
+        ) from exc
+    return candidate
+
+
 def atomic_write_text(path: str | Path, content: str) -> Path:
     """Write text by replacing the target with a complete temp file."""
     target = Path(path)
