@@ -113,6 +113,22 @@ class ReviewReadOnlyProbe(unittest.TestCase):
                 self.assertNotIn(banned, identifiers, f"{module.name} must not call {banned}")
 
 
+class SystemDirectoryStandardProbe(unittest.TestCase):
+    def test_review_system_reference_implementation_exists(self) -> None:
+        # The system-directory standard names Review System as the reference for the
+        # domain/commands/read_model/adapters/fixtures/governance shape. If a reference
+        # file is deleted/renamed, the standard would silently rot — fail instead.
+        for role_file in (
+            _SRC / "statecore" / "models.py",  # domain
+            _SRC / "statecore" / "proposals.py",  # commands
+            _SRC / "review_read.py",  # read_model
+            _SRC / "api" / "routes_review.py",  # adapters
+            _ROOT / "tests" / "_review_fixtures.py",  # fixtures
+            _ROOT / "tests" / "test_governance_invariants.py",  # governance
+        ):
+            self.assertTrue(role_file.exists(), f"Review System reference missing: {role_file}")
+
+
 class RedlinePolicyCoverageProbe(unittest.TestCase):
     def test_every_research_output_field_has_a_policy(self) -> None:
         # A new provider-output field cannot be added without assigning a redline policy.
