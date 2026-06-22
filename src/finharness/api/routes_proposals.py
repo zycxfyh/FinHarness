@@ -12,11 +12,15 @@ from sqlmodel import Session, select
 
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.market_data import ROOT
-from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposals import (
+    ReviewEventKind,
+    archived_proposal_ids,
     create_governed_attestation,
     create_governed_proposal,
+    create_governed_review_event,
+    is_archived,
 )
 from finharness.statecore.store import StateCoreStoreError
 
@@ -167,8 +171,12 @@ def _proposal_revision_chain(
 async def list_proposals(
     engine: EngineDependency,
     status: Annotated[Literal["all", "open", "attested"], Query()] = "all",
+    archive: Annotated[Literal["all", "active", "archived"], Query()] = "all",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[ProposalReviewResponse]:
+    # `archive` defaults to "all": the legacy response (contents + shape) is unchanged.
+    # Only an explicit archive=active|archived hides/keeps archived proposals; archive
+    # events never silently change the default list.
     with Session(engine) as session:
         proposals = list(
             session.exec(
@@ -189,9 +197,15 @@ async def list_proposals(
                 )
             )
     if status == "open":
-        return [response for response in responses if response.open_for_review]
-    if status == "attested":
-        return [response for response in responses if not response.open_for_review]
+        responses = [response for response in responses if response.open_for_review]
+    elif status == "attested":
+        responses = [response for response in responses if not response.open_for_review]
+    if archive != "all":
+        archived = archived_proposal_ids(engine)
+        if archive == "active":
+            responses = [r for r in responses if r.proposal.proposal_id not in archived]
+        else:  # archived
+            responses = [r for r in responses if r.proposal.proposal_id in archived]
     return responses
 
 
@@ -289,5 +303,139 @@ async def attest_proposal(
         proposal=result.proposal,
         receipt_ref=result.receipt_ref,
         approved_is_not_execution_authorization=True,
+        execution_allowed=False,
+    )
+
+
+class TimelineEntry(BaseModel):
+    source_type: Literal["attestation", "review_event"]
+    id: str
+    kind: str
+    created_at_utc: str
+    attester: str
+    reason: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProposalTimelineResponse(BaseModel):
+    proposal_id: str
+    is_archived: bool
+    entries: list[TimelineEntry]
+    non_claims: tuple[str, ...] = (
+        "Review timeline is historical evidence only.",
+        "Annotations and archive actions are not execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+
+
+class ReviewEventCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: ReviewEventKind
+    attester: str
+    reason: str
+    text: str | None = None
+    attestation_ref: str | None = None
+    compare_with: str | None = None
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator("attester", "reason")
+    @classmethod
+    def require_human_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("review event requires a named human and written reason")
+        return value
+
+
+class ReviewEventCreateResponse(BaseModel):
+    review_event: ReviewEvent
+    receipt_ref: str
+    execution_allowed: bool = False
+
+
+@router.get("/proposals/{proposal_id}/timeline", response_model=ProposalTimelineResponse)
+async def get_proposal_timeline(
+    proposal_id: str, engine: EngineDependency
+) -> ProposalTimelineResponse:
+    """Read-only merged review timeline: attestations + review events, newest first.
+
+    Attestation stays the decision of record; review events are the interaction ledger.
+    Stable order: created_at_utc then source_type then id (deterministic, no jitter)."""
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+        if proposal is None:
+            raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}")
+        attestations = _proposal_attestations(proposal_id, session=session)
+        events = list(
+            session.exec(
+                select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)
+            ).all()
+        )
+    entries = [
+        TimelineEntry(
+            source_type="attestation",
+            id=att.attestation_id,
+            kind=att.decision,
+            created_at_utc=att.created_at_utc,
+            attester=att.attester,
+            reason=att.reason,
+            detail=att.model_dump(mode="json"),
+        )
+        for att in attestations
+    ] + [
+        TimelineEntry(
+            source_type="review_event",
+            id=event.review_event_id,
+            kind=event.kind,
+            created_at_utc=event.created_at_utc,
+            attester=event.attester,
+            reason=event.reason,
+            detail=event.model_dump(mode="json"),
+        )
+        for event in events
+    ]
+    entries.sort(key=lambda e: (e.created_at_utc, e.source_type, e.id), reverse=True)
+    return ProposalTimelineResponse(
+        proposal_id=proposal_id,
+        is_archived=is_archived(proposal_id, engine=engine),
+        entries=entries,
+        execution_allowed=False,
+    )
+
+
+@router.post(
+    "/proposals/{proposal_id}/review-events", response_model=ReviewEventCreateResponse
+)
+async def add_review_event(
+    proposal_id: str,
+    request: ReviewEventCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ReviewEventCreateResponse:
+    try:
+        result = create_governed_review_event(
+            proposal_id=proposal_id,
+            kind=request.kind,
+            attester=request.attester.strip(),
+            reason=request.reason.strip(),
+            text=request.text,
+            attestation_ref=request.attestation_ref,
+            compare_with=request.compare_with,
+            source_refs=list(request.source_refs),
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"proposal not found: {proposal_id}"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StateCoreStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ReviewEventCreateResponse(
+        review_event=result.review_event,
+        receipt_ref=result.receipt_ref,
         execution_allowed=False,
     )
