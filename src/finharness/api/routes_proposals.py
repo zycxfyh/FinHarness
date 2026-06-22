@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.market_data import ROOT
+from finharness.review_read import read_proposal_timeline
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposals import (
@@ -20,7 +21,6 @@ from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
     create_governed_review_event,
-    is_archived,
 )
 from finharness.statecore.store import StateCoreStoreError
 
@@ -360,46 +360,26 @@ async def get_proposal_timeline(
 ) -> ProposalTimelineResponse:
     """Read-only merged review timeline: attestations + review events, newest first.
 
-    Attestation stays the decision of record; review events are the interaction ledger.
-    Stable order: created_at_utc then source_type then id (deterministic, no jitter)."""
-    with Session(engine) as session:
-        proposal = session.get(Proposal, proposal_id)
-        if proposal is None:
-            raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}")
-        attestations = _proposal_attestations(proposal_id, session=session)
-        events = list(
-            session.exec(
-                select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)
-            ).all()
-        )
-    entries = [
-        TimelineEntry(
-            source_type="attestation",
-            id=att.attestation_id,
-            kind=att.decision,
-            created_at_utc=att.created_at_utc,
-            attester=att.attester,
-            reason=att.reason,
-            detail=att.model_dump(mode="json"),
-        )
-        for att in attestations
-    ] + [
-        TimelineEntry(
-            source_type="review_event",
-            id=event.review_event_id,
-            kind=event.kind,
-            created_at_utc=event.created_at_utc,
-            attester=event.attester,
-            reason=event.reason,
-            detail=event.model_dump(mode="json"),
-        )
-        for event in events
-    ]
-    entries.sort(key=lambda e: (e.created_at_utc, e.source_type, e.id), reverse=True)
+    Thin adapter over the Review-System read model (review_read). Attestation stays the
+    decision of record; review events are the interaction ledger."""
+    timeline = read_proposal_timeline(engine, proposal_id)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}")
     return ProposalTimelineResponse(
-        proposal_id=proposal_id,
-        is_archived=is_archived(proposal_id, engine=engine),
-        entries=entries,
+        proposal_id=timeline.proposal_id,
+        is_archived=timeline.is_archived,
+        entries=[
+            TimelineEntry(
+                source_type=entry.source_type,
+                id=entry.id,
+                kind=entry.kind,
+                created_at_utc=entry.created_at_utc,
+                attester=entry.attester,
+                reason=entry.reason,
+                detail=entry.detail,
+            )
+            for entry in timeline.entries
+        ],
         execution_allowed=False,
     )
 

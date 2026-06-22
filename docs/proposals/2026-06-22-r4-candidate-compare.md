@@ -12,7 +12,7 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码、不改既有 API 
 归属 **Review System**([system-map](../architecture/system-map.md))。这是该 system 的**第 3 个 read model**
 (timeline=R2、retrospective=R3、compare-marks=R4)→ 命中 G5 原则 3(第 3 次散点 → 抽共享模块)。
 **因此 R4 不只是"再加一个 view/route":先把 Review System 的统一 read model 抽出来,Compare 是它的自然扩展。**
-- 新增 **`statecore/review_read.py`**:把 timeline / retrospective / compare-marks 的读逻辑统一为该 system 的
+- 新增 **`review_read.py`**:把 timeline / retrospective / compare-marks 的读逻辑统一为该 system 的
   read model(纯函数,输入 engine/roots → 只读 DTO),**不改语义**(timeline/retrospective 行为逐字段不变,有快照锁)。
 - `api/routes_review.py` / `routes_proposals.py` 降为**薄 HTTP adapter**,调用 `review_read.*`,不再内联读逻辑。
 - 新增 **shared review test fixtures**(`tests/_review_fixtures.py` 或同等):建 proposal/attestation/review_event 的
@@ -94,7 +94,7 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码、不改既有 API 
 - **债务**:compare 当前限两两(一对一);多候选矩阵比较留作后续。security/dependabot 债独立 track,不入 R4。
 
 ### 任务拆分(设计 gate 过后)
-- **R4a-0 抽统一 read model(G5 试点)**:新增 `statecore/review_read.py`,把 timeline / retrospective 读逻辑**平移**
+- **R4a-0 抽统一 read model(G5 试点)**:新增 `review_read.py`,把 timeline / retrospective 读逻辑**平移**
   进来(语义不变,快照锁);`routes_review`/`routes_proposals` 改调它。建 shared review test fixtures。**纯重构,
   行为不变**——独立验收(既有 review/timeline/retrospective 测试全绿 + 快照相等)。
 - R4a 后端:在 `review_read.py` 加 **compare-marks read model**(canonical 配对去重 latest-wins + missing 标记)+

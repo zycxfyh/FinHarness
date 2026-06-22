@@ -14,9 +14,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from finharness.annual_review import load_latest_annual_review
 from finharness.api.dependencies import ReceiptRootDependency
-from finharness.rule_change_ledger import is_traceable, load_rule_changes
+from finharness.review_read import read_retrospective
 
 router = APIRouter(tags=["review"])
 
@@ -51,31 +50,21 @@ class RetrospectiveResponse(BaseModel):
 async def get_retrospective(receipt_root: ReceiptRootDependency) -> RetrospectiveResponse:
     annual_review_root = receipt_root.parent / "annual-review"
     rule_change_state_root = receipt_root.parent.parent / "state" / "rule-changes"
-
-    retrospective, retrospective_receipt_ref, data_gaps = load_latest_annual_review(
-        annual_review_root
-    )
-
-    rule_changes: list[RuleChangeView] = []
-    try:
-        for change in load_rule_changes(rule_change_state_root):
-            rule_changes.append(
-                RuleChangeView(
-                    rule_change_id=change.rule_change_id,
-                    rule_target=change.rule_target,
-                    change_kind=change.change_kind,
-                    status=change.status,
-                    attester=change.attester,
-                    traceable=is_traceable(change),
-                )
-            )
-    except Exception as exc:  # provenance is best-effort; never break the read
-        data_gaps = [*data_gaps, f"rule-change ledger unreadable: {type(exc).__name__}"]
-
+    model = read_retrospective(annual_review_root, rule_change_state_root)
     return RetrospectiveResponse(
-        retrospective=retrospective,
-        retrospective_receipt_ref=retrospective_receipt_ref,
-        rule_changes=rule_changes,
-        data_gaps=data_gaps,
+        retrospective=model.retrospective,
+        retrospective_receipt_ref=model.retrospective_receipt_ref,
+        rule_changes=[
+            RuleChangeView(
+                rule_change_id=row.rule_change_id,
+                rule_target=row.rule_target,
+                change_kind=row.change_kind,
+                status=row.status,
+                attester=row.attester,
+                traceable=row.traceable,
+            )
+            for row in model.rule_changes
+        ],
+        data_gaps=model.data_gaps,
         execution_allowed=False,
     )

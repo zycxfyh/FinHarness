@@ -96,16 +96,18 @@ class ImportBoundaryProbe(unittest.TestCase):
 
 class ReviewReadOnlyProbe(unittest.TestCase):
     def test_review_routes_never_call_write_or_compute_entrypoints(self) -> None:
-        # The Retrospective cockpit must stay read-only: no annual-review compute/record,
-        # no lesson/rule promotion or persistence.
-        identifiers = _identifiers(_SRC / "api" / "routes_review.py")
-        for banned in (
-            "compute_annual_review",
-            "record_annual_review",
-            "promote_lesson_to_rule_change",
-            "persist_lesson_draft",
-        ):
-            self.assertNotIn(banned, identifiers, f"/review/* must not call {banned}")
+        # The Review-System read surfaces must stay read-only: no annual-review
+        # compute/record, no lesson/rule promotion or persistence — in the route adapter
+        # AND in the read model where the logic now lives.
+        for module in (_SRC / "api" / "routes_review.py", _SRC / "review_read.py"):
+            identifiers = _identifiers(module)
+            for banned in (
+                "compute_annual_review",
+                "record_annual_review",
+                "promote_lesson_to_rule_change",
+                "persist_lesson_draft",
+            ):
+                self.assertNotIn(banned, identifiers, f"{module.name} must not call {banned}")
 
 
 class RedlinePolicyCoverageProbe(unittest.TestCase):

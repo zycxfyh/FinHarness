@@ -31,7 +31,7 @@
 - **domain**:`statecore/proposals.py`(Proposal/Attestation/ReviewEvent + `create_governed_*` commands)、
   `statecore/proposal_revisions.py`、`annual_review.py`、`rule_change_ledger.py`、`lesson_loop.py`。
 - **read model(应统一)**:timeline(attestations+events)、retrospective(最新 annual_review)、compare-marks(配对)。
-  **当前散在 `routes_review.py`/`routes_proposals.py` 内联**——**G5 目标:抽 `statecore/review_read.py`(或 `review/`)
+  **当前散在 `routes_review.py`/`routes_proposals.py` 内联**——**G5 目标:抽 `review_read.py`(或 `review/`)
   统一 read model**,路由仅 HTTP adapter。
 - **write(command)**:`create_governed_proposal` / `create_governed_attestation` / `create_governed_review_event`
   (唯一 id → receipt → DB,失败清理)。
