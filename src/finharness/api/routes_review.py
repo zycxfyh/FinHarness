@@ -34,6 +34,8 @@ class RetrospectiveResponse(BaseModel):
     # The latest annual_review receipt payload, passed through field-for-field (closure
     # status is taken from the receipt, never recomputed here). None when none exists.
     retrospective: dict[str, Any] | None
+    # Provenance: which receipt the retrospective came from, so it is replayable.
+    retrospective_receipt_ref: str | None
     rule_changes: list[RuleChangeView]
     data_gaps: list[str]
     non_claims: tuple[str, ...] = (
@@ -50,7 +52,9 @@ async def get_retrospective(receipt_root: ReceiptRootDependency) -> Retrospectiv
     annual_review_root = receipt_root.parent / "annual-review"
     rule_change_state_root = receipt_root.parent.parent / "state" / "rule-changes"
 
-    retrospective, data_gaps = load_latest_annual_review(annual_review_root)
+    retrospective, retrospective_receipt_ref, data_gaps = load_latest_annual_review(
+        annual_review_root
+    )
 
     rule_changes: list[RuleChangeView] = []
     try:
@@ -70,6 +74,7 @@ async def get_retrospective(receipt_root: ReceiptRootDependency) -> Retrospectiv
 
     return RetrospectiveResponse(
         retrospective=retrospective,
+        retrospective_receipt_ref=retrospective_receipt_ref,
         rule_changes=rule_changes,
         data_gaps=data_gaps,
         execution_allowed=False,

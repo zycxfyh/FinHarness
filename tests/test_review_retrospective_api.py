@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from finharness.api.app import create_app
+from finharness.rule_change_ledger import RuleChange
 from finharness.statecore.store import init_state_core
 from tests.asgi_test_client import AsgiTestClient
 
@@ -43,6 +44,14 @@ class ReviewRetrospectiveApiTest(unittest.TestCase):
         self.annual_root.mkdir(parents=True, exist_ok=True)
         (self.annual_root / name).write_text(json.dumps(payload), encoding="utf-8")
 
+    def _write_rule_change(self, change: RuleChange) -> None:
+        # Canonical ledger lives under data/state/rule-changes (sibling of receipts).
+        state_root = self.root / "state" / "rule-changes"
+        state_root.mkdir(parents=True, exist_ok=True)
+        (state_root / f"{change.rule_change_id}.json").write_text(
+            json.dumps(change.model_dump(mode="json")), encoding="utf-8"
+        )
+
     def test_empty_when_no_annual_review_receipt(self) -> None:
         body = self.client.get("/review/retrospective").json()
         self.assertIsNone(body["retrospective"])
@@ -69,6 +78,43 @@ class ReviewRetrospectiveApiTest(unittest.TestCase):
         self.assertEqual(retro["lessons_closed"], 3)
         self.assertEqual(retro["lessons_open"], ["L1", "L2"])
         self.assertEqual(retro["created_at_utc"], "2026-06-01T00:00:00+00:00")
+        # provenance: which receipt this retrospective came from (replayable)
+        self.assertTrue(body["retrospective_receipt_ref"])
+        self.assertIn("b.json", body["retrospective_receipt_ref"])
+
+    def test_rule_change_drill_down_reflects_status_and_traceability(self) -> None:
+        self._write_rule_change(
+            RuleChange(
+                rule_change_id="rulechg_traceable",
+                created_at_utc="2026-06-01T00:00:00+00:00",
+                rule_target="guard.hard_stop_drawdown_pct",
+                change_kind="threshold",
+                rationale="human reviewed",
+                attester="operator",
+                lesson_draft_id="lesson_1",
+                lesson_doc_ref="docs/lessons/2026-06-18-x.md",
+                receipt_refs=["data/receipts/lessons/l1.json"],
+                status="active",
+            )
+        )
+        self._write_rule_change(
+            RuleChange(
+                rule_change_id="rulechg_untraceable",
+                created_at_utc="2026-06-02T00:00:00+00:00",
+                rule_target="guard.max_position_pct",
+                change_kind="threshold",
+                rationale="hand-fed, no lesson",
+                attester="operator",
+                status="reverted",
+            )
+        )
+        body = self.client.get("/review/retrospective").json()
+        by_id = {rc["rule_change_id"]: rc for rc in body["rule_changes"]}
+        self.assertEqual(set(by_id), {"rulechg_traceable", "rulechg_untraceable"})
+        self.assertEqual(by_id["rulechg_traceable"]["status"], "active")
+        self.assertTrue(by_id["rulechg_traceable"]["traceable"])
+        self.assertEqual(by_id["rulechg_untraceable"]["status"], "reverted")
+        self.assertFalse(by_id["rulechg_untraceable"]["traceable"])
 
     def test_corrupt_receipt_becomes_data_gap_not_crash(self) -> None:
         self._write_annual(
