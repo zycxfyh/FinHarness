@@ -71,6 +71,21 @@ the lightweight **engineering operating system (EOS)** that produced it under ga
 - **EOS G5 (architecture-principles) / G7 (role protocol)**: deferred until a real
   trigger (architecture dispute / multi-agent handoff friction).
 
+## CI security gate cleanup (CI-S1 / CI-S2 — not RE1–RE3 product logic)
+
+Restoring trustworthy, green CI for this checkpoint PR. These are CI/security baseline
+fixes, **not** part of the RE1–RE3 product logic:
+
+- **CI-S1** `78b2035`: `test_okx_live_gate` globbed `*.json` and non-deterministically
+  picked a co-located market-access receipt (CI red / local green). Scoped to the
+  `okxlive_*` order-receipt prefix. Test-only.
+- **CI-S2 (in progress)**: Trivy HIGH `langsmith 0.8.5 → 0.8.18` (uv.lock); Gitleaks
+  `fetch-depth: 0` so it runs a full scan instead of the partial scan that exited 1 with
+  no leaks found. **CodeQL**: 7 `py/path-injection` alerts are pre-existing statecore
+  I/O (`receipt_io.py`, `proposals.py`), surfaced by the large PR diff; IDs are internally
+  generated and sanitized (`_safe_id` neutralizes path separators) — pending an explicit
+  harden-vs-justified-dismiss decision, tracked separately from the milestone.
+
 ## Review guide
 
 - **Core product surface** (serves `/cockpit` + product API): `api/routes_proposals.py`,

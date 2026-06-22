@@ -75,6 +75,10 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # Full history so gitleaks-action runs a complete scan instead of a partial
+          # PR-range scan; the partial path was exiting 1 even when no leaks were found.
+          fetch-depth: 0
 
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
