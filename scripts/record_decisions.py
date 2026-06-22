@@ -11,7 +11,24 @@ import json
 from pathlib import Path
 
 from finharness.allocation import record_allocation_candidates
+from finharness.research_enrichment import NoopResearchEnricher, ResearchEnricher
 from finharness.statecore.store import init_state_core, state_core_db_path
+
+
+def _build_enricher(with_research: bool) -> ResearchEnricher:
+    """Default is no-op (offline, no network). ``--with-research`` opts into the RE2
+    historical risk-profile provider, which may reach the network via market_data."""
+    if not with_research:
+        return NoopResearchEnricher()
+    from finharness.research_enrichment import ProviderResearchEnricher
+    from finharness.research_history_provider import (
+        HistoricalRiskProfileProvider,
+        MarketDataHistorySource,
+    )
+
+    return ProviderResearchEnricher(
+        provider=HistoricalRiskProfileProvider(source=MarketDataHistorySource())
+    )
 
 
 def main() -> int:
@@ -20,13 +37,24 @@ def main() -> int:
     )
     parser.add_argument("--db-path", type=Path, default=None)
     parser.add_argument("--receipt-root", type=Path, default=None)
+    parser.add_argument(
+        "--with-research",
+        action="store_true",
+        help=(
+            "Opt in to historical research enrichment (RE2 provider; may reach the "
+            "network). Off by default: the scan stays offline and deterministic."
+        ),
+    )
     args = parser.parse_args()
+    enricher = _build_enricher(args.with_research)
     engine = init_state_core(state_core_db_path(args.db_path))
     try:
         if args.receipt_root is None:
-            report, writes = record_allocation_candidates(engine)
+            report, writes = record_allocation_candidates(engine, enricher=enricher)
         else:
-            report, writes = record_allocation_candidates(engine, receipt_root=args.receipt_root)
+            report, writes = record_allocation_candidates(
+                engine, receipt_root=args.receipt_root, enricher=enricher
+            )
     finally:
         engine.dispose()
     print(

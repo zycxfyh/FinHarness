@@ -11,6 +11,13 @@ from finharness.allocation import (
     record_allocation_candidates,
 )
 from finharness.exposure import compute_exposure
+from finharness.research_enrichment import ProviderResearchEnricher
+from finharness.research_evidence import (
+    REQUIRED_NON_CLAIMS,
+    ResearchEvidence,
+    ResearchEvidenceRequest,
+    ResearchEvidenceResult,
+)
 from finharness.statecore.models import (
     Account,
     CashflowEvent,
@@ -663,6 +670,84 @@ class AllocationCandidateTest(unittest.TestCase):
             self.engine, receipt_root=receipt_root, as_of_date=date(2026, 6, 20)
         )
         self.assertEqual(len(read_all(Proposal, engine=self.engine)), 2)
+
+    def test_default_path_keeps_pre_re3_research_shape(self) -> None:
+        # RE3 default (no-op enricher) must not change proposal evidence shape: the
+        # research_evidence key stays present and empty (as today), and no gaps key or
+        # extra source_refs appear. Omitting/adding a key would change content hashes.
+        self._seed_triggering()
+        record_allocation_candidates(
+            self.engine, receipt_root=self.root / "receipts", as_of_date=date(2026, 6, 20)
+        )
+        proposals = {p.kind: p for p in read_all(Proposal, engine=self.engine)}
+        for kind in ("cash_buffer_low", "concentration_high"):
+            evidence = proposals[kind].evidence
+            self.assertIn("research_evidence", evidence)
+            self.assertEqual(evidence["research_evidence"], [])
+            self.assertNotIn("research_evidence_gaps", evidence)
+
+    def test_opt_in_enrichment_attaches_research_only_to_concentration(self) -> None:
+        # Capability routing: opt-in enrichment attaches descriptive evidence to the
+        # concentration candidate (using its top_symbol) and leaves unrelated candidates
+        # untouched — the provider is never called for them.
+        self._seed_triggering()
+        provider = _RecordingProvider()
+        enricher = ProviderResearchEnricher(provider=provider)
+        record_allocation_candidates(
+            self.engine,
+            receipt_root=self.root / "receipts",
+            as_of_date=date(2026, 6, 20),
+            enricher=enricher,
+        )
+        proposals = {p.kind: p for p in read_all(Proposal, engine=self.engine)}
+
+        # Only the concentration candidate is routed, with its own top_symbol (SPY).
+        self.assertEqual([req.subject for req in provider.calls], ["SPY"])
+
+        concentration = proposals["concentration_high"].evidence
+        self.assertEqual(len(concentration["research_evidence"]), 1)
+        self.assertEqual(
+            concentration["research_evidence"][0]["kind"], "historical_risk_profile"
+        )
+        # Research source_ref is appended to the proposal-level source_refs.
+        self.assertIn(
+            "data/receipts/market-data/spy.json",
+            proposals["concentration_high"].source_refs,
+        )
+
+        # Unrelated candidate: provider not called, shape unchanged.
+        self.assertEqual(proposals["cash_buffer_low"].evidence["research_evidence"], [])
+        self.assertNotIn(
+            "research_evidence_gaps", proposals["cash_buffer_low"].evidence
+        )
+
+
+class _RecordingProvider:
+    """Fake RE2 provider for the opt-in wiring test; records requests, returns one item."""
+
+    def __init__(self) -> None:
+        self.calls: list[ResearchEvidenceRequest] = []
+
+    def provide(self, request: ResearchEvidenceRequest) -> ResearchEvidenceResult:
+        self.calls.append(request)
+        item = ResearchEvidence(
+            kind="historical_risk_profile",
+            claim=(
+                f"Over the trailing 3 years, {request.subject}'s observed realized "
+                "volatility was 18%."
+            ),
+            evidence_grade="historical_market_data",
+            value={
+                "realized_volatility": 0.18,
+                "max_drawdown": -0.34,
+                "conditional_var": -0.03,
+                "average_volume": 1_000_000.0,
+            },
+            time_window="trailing_3y",
+            source_refs=("data/receipts/market-data/spy.json",),
+            non_claims=REQUIRED_NON_CLAIMS["historical_market_data"],
+        )
+        return ResearchEvidenceResult(items=(item,))
 
 
 if __name__ == "__main__":

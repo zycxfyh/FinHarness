@@ -30,6 +30,7 @@ from sqlalchemy import Engine
 
 from finharness.exposure import ExposureReport, compute_exposure
 from finharness.market_data import ROOT
+from finharness.research_enrichment import NoopResearchEnricher, ResearchEnricher
 from finharness.statecore.observations import ObservationThresholds
 from finharness.statecore.proposals import GovernedProposalWrite, create_governed_proposal
 
@@ -529,21 +530,41 @@ def record_allocation_candidates(
     receipt_root: str | Path | None = None,
     as_of_date: date | None = None,
     thresholds: ObservationThresholds | None = None,
+    enricher: ResearchEnricher | None = None,
 ) -> tuple[ExposureReport, tuple[GovernedProposalWrite, ...]]:
-    """Scan the exposure map and record candidates as governed proposals (idempotent)."""
+    """Scan the exposure map and record candidates as governed proposals (idempotent).
+
+    Research enrichment is off by default: ``enricher`` defaults to a no-op so the
+    proposal evidence shape is byte-for-byte what it was before RE3 (``research_evidence``
+    stays ``[]``, no ``research_evidence_gaps`` key, no extra source_refs). An opt-in
+    ``ProviderResearchEnricher`` attaches descriptive historical evidence; enrichment
+    never decides whether a candidate is recorded.
+    """
     root = receipt_root if receipt_root is not None else DEFAULT_ALLOCATION_RECEIPT_ROOT
+    active_enricher = enricher if enricher is not None else NoopResearchEnricher()
     report = compute_exposure(engine, as_of_date=as_of_date, thresholds=thresholds)
     candidates = compute_allocation_candidates(report, thresholds)
     writes: list[GovernedProposalWrite] = []
     for candidate in candidates:
+        attachment = active_enricher.enrich(candidate)
         evidence = {
             **candidate.evidence,
             "dimension": candidate.dimension,
             "options": [option.model_dump() for option in candidate.options],
             "key_risks": list(candidate.key_risks),
             "reversibility": candidate.reversibility,
-            "research_evidence": list(candidate.research_evidence),
+            # research_evidence key is always present (empty -> []), matching the
+            # pre-RE3 shape so the default no-op path does not change content hashes.
+            "research_evidence": attachment.to_evidence_payload(),
         }
+        # Gaps and research source_refs only appear when there is something to disclose,
+        # so the default no-op path adds neither key nor refs.
+        if attachment.data_gaps:
+            evidence["research_evidence_gaps"] = list(attachment.data_gaps)
+        source_refs = list(candidate.evidence.get("source_refs", []))
+        for ref in attachment.source_refs:
+            if ref not in source_refs:
+                source_refs.append(ref)
         write = create_governed_proposal(
             kind=candidate.detector_kind,
             claim=candidate.claim,
@@ -551,7 +572,7 @@ def record_allocation_candidates(
             assumptions={"items": list(candidate.assumptions)},
             limitations={"items": list(candidate.limitations)},
             non_claims=list(CANDIDATE_NON_CLAIMS),
-            source_refs=list(candidate.evidence.get("source_refs", [])),
+            source_refs=source_refs,
             engine=engine,
             receipt_root=root,
             proposal_id=_stable_proposal_id(candidate.detector_kind, report.as_of_date),

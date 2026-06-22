@@ -323,7 +323,18 @@ const STRUCTURAL_EVIDENCE_KEYS = new Set([
   "reversibility",
   "dimension",
   "research_evidence",
+  "research_evidence_gaps",
 ]);
+
+// Whitelisted descriptive statistics for the research-evidence block. Only these keys
+// render; anything else in value is ignored so the read-only block cannot quietly widen
+// into advice-shaped fields.
+const RESEARCH_VALUE_KEYS = [
+  "realized_volatility",
+  "max_drawdown",
+  "conditional_var",
+  "average_volume",
+];
 
 function renderTextList(parent, title, values) {
   if (!Array.isArray(values) || !values.length) {
@@ -391,6 +402,69 @@ function renderCandidateDetail(parent, proposal) {
   }
   renderTextList(parent, "Assumptions", proposal.assumptions && proposal.assumptions.items);
   renderTextList(parent, "Limitations", proposal.limitations && proposal.limitations.items);
+  renderResearchEvidence(parent, evidence);
+}
+
+// Read-only render of attached historical research evidence. Descriptive only: grade and
+// disclaimers (limitations + non_claims) are always shown next to the claim, value is
+// limited to the whitelisted stats, and the block carries no action affordances.
+function renderResearchEvidence(parent, evidence) {
+  const items = Array.isArray(evidence.research_evidence) ? evidence.research_evidence : [];
+  const gaps = Array.isArray(evidence.research_evidence_gaps)
+    ? evidence.research_evidence_gaps
+    : [];
+  if (!items.length && !gaps.length) {
+    return; // default no-op path attaches nothing to render
+  }
+  parent.append(textElement("h4", "", "Research evidence (historical, descriptive)"));
+  for (const item of items) {
+    const card = document.createElement("div");
+    card.className = "item research-evidence";
+    // Fail-closed: the cockpit is the last anti-misread surface. A risk claim/value must
+    // never render without its mandatory disclosure (grade + non_claims) co-located, so
+    // a malformed/legacy/hand-made item is omitted with a safe notice instead of leaking
+    // an undisclosed claim. The normal RE1/RE2 path always supplies both.
+    const nonClaims = Array.isArray(item.non_claims) ? item.non_claims : [];
+    if (!item.evidence_grade || !nonClaims.length) {
+      card.append(
+        textElement(
+          "p",
+          "item-meta",
+          "Research evidence item omitted because mandatory disclosure is missing.",
+        ),
+      );
+      parent.append(card);
+      continue;
+    }
+    // Grade badge sits with the claim so the descriptive framing cannot be detached.
+    card.append(textElement("span", "data-badge", item.evidence_grade));
+    if (item.claim) {
+      card.append(textElement("p", "item-title", item.claim));
+    }
+    if (item.time_window) {
+      card.append(textElement("span", "item-meta", `Window: ${item.time_window}`));
+    }
+    const value = item.value && typeof item.value === "object" ? item.value : {};
+    for (const key of RESEARCH_VALUE_KEYS) {
+      if (key in value) {
+        const row = document.createElement("div");
+        row.className = "data-row";
+        row.append(textElement("span", "data-key", key));
+        row.append(textElement("span", "data-value", formatValue(value[key])));
+        card.append(row);
+      }
+    }
+    // Disclaimers are mandatory and never collapsed.
+    renderTextList(card, "Limitations", item.limitations);
+    renderTextList(card, "Not claimed", item.non_claims);
+    if (Array.isArray(item.source_refs) && item.source_refs.length) {
+      card.append(textElement("p", "item-meta", `Sources: ${item.source_refs.join(", ")}`));
+    }
+    parent.append(card);
+  }
+  if (gaps.length) {
+    renderTextList(parent, "Data gaps", gaps);
+  }
 }
 
 function shortenValue(value) {

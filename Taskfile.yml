@@ -38,6 +38,7 @@ tasks:
       - task: test
       - task: test:properties
       - task: test:frontend
+      - task: governance:check
       - task: rules:audit
       - task: experiments
       - task: eval:smoke
@@ -93,9 +94,16 @@ tasks:
       - uv run python -m unittest tests/test_property_baseline.py
 
   test:frontend:
-    desc: Run jsdom-based frontend DOM tests (revision history render)
+    desc: Run jsdom-based frontend DOM tests (revision history + research evidence render)
     cmds:
       - node frontend/tests/revision_history.test.cjs
+      - node frontend/tests/research_evidence.test.cjs
+
+  governance:check:
+    desc: Run EOS machine guardrails (import boundaries, redline coverage, no-action-affordance)
+    cmds:
+      - uv run python -m unittest tests.test_governance_invariants
+      - node frontend/tests/research_evidence.test.cjs
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
