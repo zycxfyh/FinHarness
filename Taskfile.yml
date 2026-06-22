@@ -108,13 +108,18 @@ tasks:
       - node frontend/tests/review_compare.test.cjs
 
   governance:check:
-    desc: Run EOS machine guardrails (import boundaries, redline coverage, no-action-affordance)
+    desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
     cmds:
       - uv run python -m unittest tests.test_governance_invariants
       - node frontend/tests/research_evidence.test.cjs
       - node frontend/tests/review_workspace.test.cjs
       - node frontend/tests/review_retrospective.test.cjs
       - node frontend/tests/review_compare.test.cjs
+
+  governance:policies:
+    desc: List the governance policy registry (id / owner / scope / source)
+    cmds:
+      - uv run python tests/_policy_registry.py
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
