@@ -247,7 +247,7 @@ class OkxLiveGateTests(unittest.TestCase):
              self.assertRaises(LiveOrderBlocked):
             execute_live_order(_request(), state_path=self.path)
         run.assert_not_called()
-        receipts = list(receipt_root.glob("*.json"))
+        receipts = list(receipt_root.glob("okxlive_*.json"))
         self.assertEqual(len(receipts), 1)
         payload = json.loads(receipts[0].read_text(encoding="utf-8"))
         self.assertEqual(payload["outcome"], "blocked")
@@ -268,7 +268,12 @@ class OkxLiveGateTests(unittest.TestCase):
             result = execute_live_order(_request(), state_path=self.path)
             run.assert_called_once()
         self.assertIn("receipt_ref", result)
-        payload = json.loads(next(iter(receipt_root.glob("*.json"))).read_text(encoding="utf-8"))
+        # Scope to the live-order receipt prefix: when record_consumption succeeds it
+        # writes a co-located market-access receipt (receipt_mktacc_*) into the same dir
+        # (setUp points FINHARNESS_MARKET_ACCESS_RECEIPT_ROOT at it), so a bare "*.json"
+        # glob non-deterministically picked the wrong file (CI red, local green).
+        receipt = next(iter(receipt_root.glob("okxlive_*.json")))
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
         self.assertEqual(payload["outcome"], "executed")
         # F5: the placed order updated persisted state
         self.assertEqual(load_trading_state(self.path).trades_recorded, 1)
@@ -285,7 +290,8 @@ class OkxLiveGateTests(unittest.TestCase):
             execute_live_order(_request(), state_path=self.path)
 
         run.assert_not_called()
-        payload = json.loads(next(iter(receipt_root.glob("*.json"))).read_text(encoding="utf-8"))
+        receipt = next(iter(receipt_root.glob("okxlive_*.json")))
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
         self.assertEqual(payload["outcome"], "error")
         self.assertIn("before OKX submit", payload["error"])
         self.assertEqual(load_trading_state(self.path).trades_recorded, 0)
@@ -298,7 +304,8 @@ class OkxLiveGateTests(unittest.TestCase):
                  side_effect=OkxCliError("boom"),
              ), self.assertRaises(OkxCliError):
             execute_live_order(_request(), state_path=self.path)
-        payload = json.loads(next(iter(receipt_root.glob("*.json"))).read_text(encoding="utf-8"))
+        receipt = next(iter(receipt_root.glob("okxlive_*.json")))
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
         self.assertEqual(payload["outcome"], "error")
         self.assertEqual(load_trading_state(self.path).trades_recorded, 0)
 
