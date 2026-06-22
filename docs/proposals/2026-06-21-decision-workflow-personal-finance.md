@@ -252,6 +252,63 @@ Testing:每条 task 后 `task check` green;每条 ship 回归测试;落地后 li
   cycle 不崩)。
 - N2 CLI `scripts/record_annual_review.py` + `task review:annual`(`--year` 可选)。
 
+## research_evidence 窄契约设计(Architect 设计稿,2026-06-21;不写实现、不改 API)
+
+阶段 1 那台 ~8,700 行 headless 引擎的**真正复用方式**:不是搬上前端,而是让候选**按需
+拉取带等级、历史描述、非预测的证据**。`AllocationCandidate.research_evidence` 空插槽
+([allocation.py](../../src/finharness/allocation.py))早已留好。本契约把它填满,且严守
+north star 依赖方向:**候选 →(拉)→ 证据 ←(由)← 引擎;引擎绝不驱动候选/界面**。
+
+**Q1 证据请求是什么** — 候选提一个**具体**问题,不是"给我所有数据":
+`ResearchEvidenceRequest { detector_kind, subject(symbol/scope), question(枚举,如
+"historical_risk_profile"), time_window }`。例:concentration_high 对 top symbol 问
+"这个集中持仓是否伴随历史波动/回撤/流动性证据?"。
+
+**Q2 provider 输出什么** — `ResearchEvidenceResult { items, data_gaps,
+execution_allowed=false }`;其中 `items: ResearchEvidence[]`,每条:
+`{ kind, claim, evidence_grade, value(描述性数字), time_window, source_refs, lineage,
+limitations, non_claims }`。复用引擎现成的 IndicatorReceipt/MarketDataQuality/Lineage
+作为 source_refs + grade + lineage,不自造。
+
+**Q3 证据等级**(越靠后,non_claims 越强;由 provider 强制标注):
+`observed_account_state` → `historical_market_data` → `backtest_descriptive` →
+`llm_interpretation`。前两级是事实描述;后两级必须显式声明"历史描述/解释,非预测、
+非建议"。等级决定前端展示强度与必带的 non_claims。
+
+**Q4 绝不输出**(provider 层硬拒 + gate 红线):目标价、下单数量、收益/价格预测、
+买卖建议、confidence-to-profit、任何执行字段、**优化器目标权重**
+(`portfolio_risk.optimize_riskfolio_allocation` 明确排除——它给的是 advice)。
+provider 只允许触达**描述性**能力:`market_data`(OHLCV/volume + receipts)、
+`indicator_layer.compute_ohlcv_risk_return_features`(drawdown/max_drawdown/CVaR)、
+`compute_library_core_indicators`(ATR 波动)、`portfolio_risk.returns_from_close_prices`。
+
+**Q5 接入方式** — **被动 enrichment,引擎不驱动候选**:`compute_allocation_candidates`
+保持纯净、零引擎依赖;另设独立步骤 `enrich_with_research_evidence(candidate, provider)`
+在候选**已生成后**可选填入,`execution_allowed=false` 贯穿。无引擎数据时插槽留空(data
+gap 披露),候选照常存在。**不改现有 `/proposals` 与 attest;不新增端点**(证据随候选
+evidence 一起出)。
+
+**Q6 第一条 slice** — 只接 **concentration_high → top symbol 的历史描述性市场证据**:
+realized volatility、max drawdown / CVaR、平均成交量(流动性代理),
+grade=`historical_market_data`、time_window=尾部 1–3 年、每条带 limitations +
+"描述非预测"non_claims。**不碰**税务/保险/个性化优化/其它探测器。无价格数据时 → data gap。
+
+**Schema / 前端 / gate 影响**(供后续 author/gate):
+- schema:定义 `ResearchEvidence` 模型;`research_evidence` 插槽已在 candidate 与
+  `Proposal.evidence`(line 545)就位,无需改 API 形状。
+- redline:复用已有治理代码的**递归扫描范式**,但采用 reject-mode,不是 redaction;共享
+  `redlines.py` 扫 key + 字符串值,并用 field-policy 覆盖测试把 provider 输出面登记成
+  full/narrow/structured/execution_false,防止新增字段未守而静默通过。
+- 前端:候选详情新增只读 "Research evidence(历史描述)" 区块,按 grade 显示 + 必带 non_claims。
+- gate 红线:provider 永不调用优化器/预测;每条证据必带 grade + non_claims + source_refs;
+  无数据→data gap 不臆造;`execution_allowed=false`。
+
+**后续任务拆分**(gate 过设计后再进 author/gate 循环):
+- RE1 `ResearchEvidenceRequest`/`ResearchEvidence` 模型 + 窄 provider 接口(纯类型,不接引擎)。
+- RE2 concentration_high 历史市场 provider adapter(只读 market_data+indicator_layer 描述性,
+  排除优化器),behind 一个 feature seam;回归测试含"拒绝输出预测/优化权重"红线测试。
+- RE3 `enrich_with_research_evidence` 被动步骤 + 前端只读展示 + jsdom/served-shell 门。
+
 ## Progress Log
 
 - DONE P1 — `src/finharness/allocation.py`:`AllocationCandidate`/`CandidateOption`
