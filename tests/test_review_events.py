@@ -125,6 +125,39 @@ class ReviewEventTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             self._event("annotation", proposal_id="nope")
 
+    def test_db_rejects_unknown_kind_at_persistence(self) -> None:
+        # SQLModel skips the kind field validator on construction; the DB CheckConstraint
+        # must still reject an out-of-set kind written directly.
+        bad = ReviewEvent(
+            review_event_id="rev_bad",
+            proposal_id="alloc_cash_buffer_low_2026-06-20",
+            kind="delete",
+            attester="op",
+            reason="r",
+        )
+        with self.assertRaises(StateCoreStoreError):
+            write_records([bad], engine=self.engine)
+
+    # --- compare_mark requires a valid distinct target --------------------------------
+    def test_compare_mark_requires_compare_with(self) -> None:
+        with self.assertRaises(ValueError):
+            self._event("compare_mark")
+
+    def test_compare_mark_rejects_unknown_target(self) -> None:
+        with self.assertRaises(KeyError):
+            self._event("compare_mark", compare_with="does_not_exist")
+
+    def test_compare_mark_rejects_self(self) -> None:
+        with self.assertRaises(ValueError):
+            self._event("compare_mark", compare_with="alloc_cash_buffer_low_2026-06-20")
+
+    def test_compare_mark_valid_target_succeeds(self) -> None:
+        self._proposal("alloc_concentration_high_2026-06-20")
+        write = self._event(
+            "compare_mark", compare_with="alloc_concentration_high_2026-06-20"
+        )
+        self.assertEqual(write.review_event.compare_with, "alloc_concentration_high_2026-06-20")
+
     def test_execution_allowed_cannot_be_persisted(self) -> None:
         # SQLModel table models skip field validators on construction; the DB
         # CheckConstraint is the real guard against persisting execution authority.

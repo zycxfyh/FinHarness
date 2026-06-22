@@ -385,6 +385,7 @@ def _review_event_content_hash(
     text: str | None,
     attestation_ref: str | None,
     compare_with: str | None,
+    source_refs: list[str],
     created_at_utc: str,
 ) -> str:
     core = {
@@ -395,6 +396,7 @@ def _review_event_content_hash(
         "text": text,
         "attestation_ref": attestation_ref,
         "compare_with": compare_with,
+        "source_refs": source_refs,
         "created_at_utc": created_at_utc,
     }
     return hashlib.sha256(
@@ -449,6 +451,17 @@ def create_governed_review_event(
     if proposal is None:
         raise KeyError(proposal_id)
 
+    if kind == "compare_mark":
+        target = (compare_with or "").strip()
+        if not target:
+            raise ValueError("compare_mark requires a compare_with proposal id")
+        if target == proposal.proposal_id:
+            raise ValueError("compare_mark cannot compare a proposal with itself")
+        with Session(engine) as session:
+            if session.get(Proposal, target) is None:
+                raise KeyError(target)
+        compare_with = target
+
     created_at = _now_utc()
     review_event_id = _safe_id(f"rev_{kind}_{_revision_stamp()}_{uuid4().hex[:8]}")
     content_hash = _review_event_content_hash(
@@ -459,6 +472,7 @@ def create_governed_review_event(
         text=text,
         attestation_ref=attestation_ref,
         compare_with=compare_with,
+        source_refs=list(source_refs or []),
         created_at_utc=created_at,
     )
     receipt_id = f"receipt_{review_event_id}"

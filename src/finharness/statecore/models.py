@@ -281,6 +281,12 @@ class ReviewEvent(StateCoreBase, table=True):
         CheckConstraint(
             "execution_allowed = 0", name="ck_review_events_execution_allowed_false"
         ),
+        # Closed set at the DB level: SQLModel table models skip field validators on
+        # construction, so the kind enum must also be enforced where it is persisted.
+        CheckConstraint(
+            "kind IN (" + ", ".join(f"'{k}'" for k in REVIEW_EVENT_KINDS) + ")",
+            name="ck_review_events_kind_closed",
+        ),
     )
 
     review_event_id: str = Field(primary_key=True)
