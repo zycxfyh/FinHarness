@@ -124,6 +124,7 @@ class SystemDirectoryStandardProbe(unittest.TestCase):
             _SRC / "review_read.py",  # read_model
             _SRC / "api" / "routes_review.py",  # adapters
             _ROOT / "tests" / "_review_fixtures.py",  # fixtures
+            _ROOT / "tests" / "test_governance_invariants.py",  # governance
         ):
             self.assertTrue(role_file.exists(), f"Review System reference missing: {role_file}")
 
