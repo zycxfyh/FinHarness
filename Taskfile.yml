@@ -105,6 +105,7 @@ tasks:
     cmds:
       - uv run python -m unittest tests.test_governance_invariants
       - node frontend/tests/research_evidence.test.cjs
+      - node frontend/tests/review_workspace.test.cjs
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
