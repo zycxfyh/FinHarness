@@ -19,6 +19,7 @@ const selectors = {
     exposure: document.querySelector("#exposure-view"),
     proposals: document.querySelector("#proposals-view"),
     timeline: document.querySelector("#timeline-view"),
+    retrospective: document.querySelector("#retrospective-view"),
   },
   summaryGrid: document.querySelector("#summary-grid"),
   dailyBriefHeadline: document.querySelector("#daily-brief-headline"),
@@ -33,6 +34,7 @@ const selectors = {
   proposalList: document.querySelector("#proposal-list"),
   proposalDetail: document.querySelector("#proposal-detail"),
   timelineList: document.querySelector("#timeline-list"),
+  retrospectiveBlock: document.querySelector("#retrospective-block"),
   emptyTemplate: document.querySelector("#empty-template"),
   boundaryLine: document.querySelector("#boundary-line"),
 };
@@ -315,6 +317,62 @@ function renderAttestationForm(parent, proposalId) {
 
 function decisionLabel(attestation) {
   return attestation.decision === "approved" ? "attested" : attestation.decision;
+}
+
+// Read-only Retrospective panel: latest annual_review summary (closure taken from the
+// receipt) + rule-change drill-down + data gaps. Unclosed lessons are shown as neutral
+// disclosure, never a recommendation; the panel has no action affordances.
+function renderRetrospectivePanel(parent, data) {
+  const retro = data && data.retrospective ? data.retrospective : null;
+  const ruleChanges = data && Array.isArray(data.rule_changes) ? data.rule_changes : [];
+  const gaps = data && Array.isArray(data.data_gaps) ? data.data_gaps : [];
+  if (!retro) {
+    parent.append(
+      textElement("p", "empty-state", "No annual review yet. Run `task review:annual`."),
+    );
+  } else {
+    renderRows(parent, [
+      ["Period", retro.period_label],
+      ["Lessons closed", retro.lessons_closed],
+      ["Lessons open", Array.isArray(retro.lessons_open) ? retro.lessons_open.length : 0],
+      [
+        "Untraceable rule changes",
+        Array.isArray(retro.untraceable_rule_changes) ? retro.untraceable_rule_changes.length : 0,
+      ],
+      ["Source receipt", (data && data.retrospective_receipt_ref) || "—"],
+    ]);
+    if (Array.isArray(retro.lessons_open) && retro.lessons_open.length) {
+      parent.append(textElement("h4", "", "Unclosed lessons (disclosure)"));
+      for (const lesson of retro.lessons_open) {
+        parent.append(textElement("p", "item-meta", String(lesson)));
+      }
+    }
+  }
+  if (ruleChanges.length) {
+    parent.append(textElement("h4", "", "Rule changes"));
+    for (const change of ruleChanges) {
+      parent.append(
+        textElement(
+          "p",
+          "item-meta",
+          `${change.rule_target} [${change.status}] ${
+            change.traceable ? "traceable" : "untraceable"
+          } by ${change.attester}`,
+        ),
+      );
+    }
+  }
+  if (gaps.length) {
+    renderTextList(parent, "Data gaps", gaps);
+  }
+  // Mandatory disclosure (never collapsed).
+  renderNonClaims(parent, data && data.non_claims);
+}
+
+async function renderRetrospective() {
+  clear(selectors.retrospectiveBlock);
+  const data = await apiGet("/review/retrospective");
+  renderRetrospectivePanel(selectors.retrospectiveBlock, data);
 }
 
 // Read-only merged review timeline (attestations + review events). The server already
@@ -761,6 +819,7 @@ const renderers = {
   exposure: renderExposure,
   proposals: renderProposals,
   timeline: renderTimeline,
+  retrospective: renderRetrospective,
 };
 
 const errorTargets = {
@@ -768,6 +827,7 @@ const errorTargets = {
   exposure: () => selectors.exposureGrid,
   proposals: () => selectors.proposalDetail,
   timeline: () => selectors.timelineList,
+  retrospective: () => selectors.retrospectiveBlock,
 };
 
 async function refresh() {

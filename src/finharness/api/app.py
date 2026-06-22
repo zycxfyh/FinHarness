@@ -12,6 +12,7 @@ from sqlalchemy import Engine
 
 from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_proposals import router as proposal_router
+from finharness.api.routes_review import router as review_router
 from finharness.api.routes_state import router as state_router
 from finharness.market_data import ROOT
 from finharness.runtime_log import configure_logging, get_logger
@@ -90,6 +91,7 @@ def create_app(
     api.include_router(cockpit_router)
     api.include_router(state_router)
     api.include_router(proposal_router)
+    api.include_router(review_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():
         api.mount(
