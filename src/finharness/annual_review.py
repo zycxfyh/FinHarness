@@ -355,3 +355,33 @@ def record_annual_review(
     )
     upsert_records([receipt_index], engine=engine)
     return review, receipt_ref
+
+
+def load_latest_annual_review(
+    annual_review_root: str | Path = DEFAULT_ANNUAL_REVIEW_RECEIPT_ROOT,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Read-only: return the latest annual_review receipt payload + disclosed gaps.
+
+    Selection: kind == ANNUAL_REVIEW_KIND, newest by created_at_utc, tie-broken by
+    filename. An unreadable/corrupt receipt becomes a disclosed gap (never a crash); a
+    missing directory or no matching receipt returns (None, gaps). This is a pure read —
+    it never computes or writes an annual review.
+    """
+    root = Path(annual_review_root)
+    gaps: list[str] = []
+    if not root.exists():
+        return None, gaps
+    candidates: list[tuple[str, str, dict[str, Any]]] = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            gaps.append(f"unreadable annual-review receipt: {path.name}")
+            continue
+        if not isinstance(payload, dict) or payload.get("kind") != ANNUAL_REVIEW_KIND:
+            continue
+        candidates.append((str(payload.get("created_at_utc") or ""), path.name, payload))
+    if not candidates:
+        return None, gaps
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[-1][2], gaps
