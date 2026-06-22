@@ -317,6 +317,84 @@ function decisionLabel(attestation) {
   return attestation.decision === "approved" ? "attested" : attestation.decision;
 }
 
+// Read-only merged review timeline (attestations + review events). The server already
+// orders newest-first deterministically; this just renders, with no action affordances.
+function renderReviewTimeline(parent, timeline) {
+  const entries = timeline && Array.isArray(timeline.entries) ? timeline.entries : [];
+  parent.append(textElement("h4", "", "Review timeline"));
+  if (timeline && timeline.is_archived) {
+    parent.append(textElement("span", "data-badge", "archived"));
+  }
+  if (!entries.length) {
+    parent.append(textElement("p", "empty-state", "No review activity recorded."));
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = "item review-timeline-entry";
+    item.append(
+      textElement("span", "item-title", `[${entry.source_type}] ${entry.kind} by ${entry.attester}`),
+    );
+    item.append(textElement("span", "item-meta", entry.created_at_utc));
+    if (entry.reason) {
+      item.append(textElement("p", "item-meta", entry.reason));
+    }
+    parent.append(item);
+  }
+}
+
+// Human write affordance: annotation / archive / reopen. State-changing, so it requires
+// an explicit confirm before any POST — rendering alone never writes.
+function renderReviewEventForm(parent, proposalId) {
+  const form = document.createElement("form");
+  form.className = "review-event-form";
+  form.innerHTML = `
+    <div class="form-row">
+      <label for="review-kind">Action</label>
+      <select id="review-kind" name="kind">
+        <option value="annotation">annotation</option>
+        <option value="archive">archive</option>
+        <option value="reopen">reopen</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label for="review-attester">Reviewer</label>
+      <input id="review-attester" name="attester" autocomplete="name" />
+    </div>
+    <div class="form-row">
+      <label for="review-reason">Reason</label>
+      <textarea id="review-reason" name="reason"></textarea>
+    </div>
+    <div class="form-row">
+      <label for="review-text">Note (optional)</label>
+      <textarea id="review-text" name="text"></textarea>
+    </div>
+    <button class="submit-button" type="submit">Record Review Action</button>
+  `;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const kind = data.get("kind");
+    if (!window.confirm(`Record review action "${kind}"? It is logged with your name and reason.`)) {
+      return; // explicit confirm required; no write on cancel
+    }
+    try {
+      await apiPost(`/proposals/${proposalId}/review-events`, {
+        kind,
+        attester: data.get("attester"),
+        reason: data.get("reason"),
+        text: data.get("text") || null,
+      });
+      setStatus("Synced", "ok");
+      await renderProposals();
+    } catch (error) {
+      setStatus("API error", "error");
+      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
+    }
+  });
+  parent.append(form);
+}
+
 const STRUCTURAL_EVIDENCE_KEYS = new Set([
   "options",
   "key_risks",
@@ -560,9 +638,10 @@ async function renderProposalDetail() {
     selectors.proposalDetail.append(emptyNode());
     return;
   }
-  const [detail, revisionHistory] = await Promise.all([
+  const [detail, revisionHistory, timeline] = await Promise.all([
     apiGet(`/proposals/${state.selectedProposalId}`),
     apiGet(`/proposals/${state.selectedProposalId}/revisions`),
+    apiGet(`/proposals/${state.selectedProposalId}/timeline`),
   ]);
   renderRows(selectors.proposalDetail, [
     ["ID", detail.proposal.proposal_id],
@@ -578,6 +657,8 @@ async function renderProposalDetail() {
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));
   renderAttestations(selectors.proposalDetail, detail.attestations);
   renderAttestationForm(selectors.proposalDetail, detail.proposal.proposal_id);
+  renderReviewTimeline(selectors.proposalDetail, timeline);
+  renderReviewEventForm(selectors.proposalDetail, detail.proposal.proposal_id);
 }
 
 async function renderProposals() {

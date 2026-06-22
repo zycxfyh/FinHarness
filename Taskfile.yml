@@ -98,6 +98,7 @@ tasks:
     cmds:
       - node frontend/tests/revision_history.test.cjs
       - node frontend/tests/research_evidence.test.cjs
+      - node frontend/tests/review_workspace.test.cjs
 
   governance:check:
     desc: Run EOS machine guardrails (import boundaries, redline coverage, no-action-affordance)

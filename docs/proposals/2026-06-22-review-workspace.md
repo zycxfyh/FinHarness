@@ -30,7 +30,9 @@ independent gate + governance:check 硬化。
 - **ReviewEvent 失败语义**(沿用 attestation 模式):生成唯一 `review_event_id` → 写 receipt → DB 写入失败则
   **清理刚写的 receipt** 再抛错;`content_hash` 只做**完整性/复盘**,**不做幂等去重**——人工重复批注是**新事件**,不是 no-op
   (archive/reopen 同理:每次都是新留痕事件)。
-- **合并时间线排序**:`created_at_utc desc` + 稳定 tie-breaker(`source_type` 再 `id`),避免同秒事件前端抖动。
+- **合并时间线排序(钉死)**:按 `(created_at_utc, source_type, id)` 三键 **全部降序**(`reverse=True`)——
+  确定性、无抖动。同秒时该规则下 `review_event` 排在 `attestation` 之前(`'review_event' > 'attestation'` 字典序),
+  此即预期顺序(R2b 实现与 jsdom/接口测试以此为准)。
 
 ### PM 点名的 5 个边界(锁定)
 1. **ReviewEvent 是统一事件账本吗** → 是**复核交互**的统一账本(annotation/archive/reopen/compare_mark);
