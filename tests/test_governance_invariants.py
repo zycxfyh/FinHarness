@@ -106,6 +106,9 @@ class ReviewReadOnlyProbe(unittest.TestCase):
                 "record_annual_review",
                 "promote_lesson_to_rule_change",
                 "persist_lesson_draft",
+                "create_governed_proposal",
+                "create_governed_attestation",
+                "create_governed_review_event",
             ):
                 self.assertNotIn(banned, identifiers, f"{module.name} must not call {banned}")
 

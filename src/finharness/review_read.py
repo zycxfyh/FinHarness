@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import desc
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from finharness.annual_review import load_latest_annual_review
 from finharness.rule_change_ledger import is_traceable, load_rule_changes
@@ -59,6 +59,20 @@ class Retrospective:
     retrospective_receipt_ref: str | None
     rule_changes: list[RuleChangeRow]
     data_gaps: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ComparePair:
+    proposal_id: str
+    compare_with: str
+    attester: str
+    reason: str
+    created_at_utc: str
+    review_event_id: str
+    proposal_exists: bool
+    compare_with_exists: bool
+    missing_side: str | None  # "left" | "right" | "both" | None
+    data_gaps: list[str]
 
 
 def read_proposal_timeline(engine: Any, proposal_id: str) -> ProposalTimeline | None:
@@ -141,3 +155,72 @@ def read_retrospective(
         rule_changes=rule_changes,
         data_gaps=data_gaps,
     )
+
+
+def read_compare_marks(engine: Any) -> list[ComparePair]:
+    """Compare-marked proposal pairs (canonical unordered {A,B}, latest event wins).
+
+    A->B and B->A are the same pair; repeated marks collapse to the most recent event by
+    ``(created_at_utc, review_event_id)``, whose direction/attester/reason are shown. A
+    side whose proposal no longer exists is flagged (``missing_side`` + ``data_gaps``), not
+    crashed. Pure read; never writes. List is newest-first by the winning event.
+    """
+    with Session(engine) as session:
+        events = list(
+            session.exec(
+                select(ReviewEvent).where(ReviewEvent.kind == "compare_mark")
+            ).all()
+        )
+        latest: dict[frozenset[str], ReviewEvent] = {}
+        for event in events:
+            if not event.compare_with:
+                continue  # defensive: compare_mark is validated to carry a target
+            key = frozenset({event.proposal_id, event.compare_with})
+            current = latest.get(key)
+            if current is None or (event.created_at_utc, event.review_event_id) > (
+                current.created_at_utc,
+                current.review_event_id,
+            ):
+                latest[key] = event
+        ids = {pid for event in latest.values() for pid in (event.proposal_id, event.compare_with)}
+        existing: set[str] = set()
+        if ids:
+            existing = {
+                proposal.proposal_id
+                for proposal in session.exec(
+                    select(Proposal).where(col(Proposal.proposal_id).in_(ids))
+                ).all()
+            }
+    pairs: list[ComparePair] = []
+    for event in latest.values():
+        left_ok = event.proposal_id in existing
+        right_ok = (event.compare_with or "") in existing
+        if not left_ok and not right_ok:
+            missing_side: str | None = "both"
+        elif not left_ok:
+            missing_side = "left"
+        elif not right_ok:
+            missing_side = "right"
+        else:
+            missing_side = None
+        gaps = (
+            [f"compared proposal no longer exists (missing {missing_side})"]
+            if missing_side
+            else []
+        )
+        pairs.append(
+            ComparePair(
+                proposal_id=event.proposal_id,
+                compare_with=event.compare_with or "",
+                attester=event.attester,
+                reason=event.reason,
+                created_at_utc=event.created_at_utc,
+                review_event_id=event.review_event_id,
+                proposal_exists=left_ok,
+                compare_with_exists=right_ok,
+                missing_side=missing_side,
+                data_gaps=gaps,
+            )
+        )
+    pairs.sort(key=lambda pair: (pair.created_at_utc, pair.review_event_id), reverse=True)
+    return pairs
