@@ -25,7 +25,10 @@ class GovernancePolicyRegistryTest(unittest.TestCase):
     def test_all_policies_hold(self) -> None:
         for policy in POLICIES:
             with self.subTest(policy=policy.id):
-                violations = policy.check()
+                try:
+                    violations = policy.check()
+                except Exception as exc:  # a raising check is itself a violation, by id
+                    violations = [f"check raised {type(exc).__name__}: {exc}"]
                 self.assertEqual(
                     violations, [], f"{policy.id} ({policy.owner}) violated: {violations}"
                 )
