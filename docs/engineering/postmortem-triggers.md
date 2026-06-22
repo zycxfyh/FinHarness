@@ -14,6 +14,8 @@
 - [ ] `task check` 误报(绿了但其实坏,或红了但其实没问题)。
 - [ ] **默认行为被意外改变** / **source_refs 不可重建 claim** / **红线漏一个输出面** /
       **联网或外部依赖进入默认路径**。
+- [ ] **同一 system 第 3 次散点实现**(同类 read-model/renderer/route 第 3 次旁补,未抽共享模块)——
+      触发"是否该深模块"复盘(见 [architecture-principles.md](./architecture-principles.md) G5 原则 3)。
 
 ## 铁律:复盘必须产出**四选一**
 

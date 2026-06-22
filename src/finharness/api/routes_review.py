@@ -1,10 +1,10 @@
-"""Read-only Retrospective cockpit routes (S4-R3).
+"""Read-only Review-System cockpit routes (S4-R3 retrospective, S4-R4 compare marks).
 
-Surfaces existing headless retrospective assets — the latest ``annual_review`` receipt
-(primary; closure fields pass through unchanged, never recomputed) plus the rule-change
-state ledger as drill-down/provenance. Strictly read-only: these routes never call
-``compute_annual_review`` / ``record_annual_review`` / ``promote_lesson_to_rule_change`` /
-``persist_lesson_draft``, never write, and carry no execution authority.
+Thin HTTP adapters over the Review-System read model (``review_read``): the latest
+``annual_review`` retrospective and the compare-marked pairs. Strictly read-only: these
+routes never call ``compute_annual_review`` / ``record_annual_review`` /
+``promote_lesson_to_rule_change`` / ``persist_lesson_draft`` / ``create_governed_*``,
+never write, and carry no execution authority.
 """
 
 from __future__ import annotations
@@ -14,9 +14,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from finharness.annual_review import load_latest_annual_review
-from finharness.api.dependencies import ReceiptRootDependency
-from finharness.rule_change_ledger import is_traceable, load_rule_changes
+from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.review_read import read_compare_marks, read_retrospective
 
 router = APIRouter(tags=["review"])
 
@@ -51,31 +50,68 @@ class RetrospectiveResponse(BaseModel):
 async def get_retrospective(receipt_root: ReceiptRootDependency) -> RetrospectiveResponse:
     annual_review_root = receipt_root.parent / "annual-review"
     rule_change_state_root = receipt_root.parent.parent / "state" / "rule-changes"
-
-    retrospective, retrospective_receipt_ref, data_gaps = load_latest_annual_review(
-        annual_review_root
+    model = read_retrospective(annual_review_root, rule_change_state_root)
+    return RetrospectiveResponse(
+        retrospective=model.retrospective,
+        retrospective_receipt_ref=model.retrospective_receipt_ref,
+        rule_changes=[
+            RuleChangeView(
+                rule_change_id=row.rule_change_id,
+                rule_target=row.rule_target,
+                change_kind=row.change_kind,
+                status=row.status,
+                attester=row.attester,
+                traceable=row.traceable,
+            )
+            for row in model.rule_changes
+        ],
+        data_gaps=model.data_gaps,
+        execution_allowed=False,
     )
 
-    rule_changes: list[RuleChangeView] = []
-    try:
-        for change in load_rule_changes(rule_change_state_root):
-            rule_changes.append(
-                RuleChangeView(
-                    rule_change_id=change.rule_change_id,
-                    rule_target=change.rule_target,
-                    change_kind=change.change_kind,
-                    status=change.status,
-                    attester=change.attester,
-                    traceable=is_traceable(change),
-                )
-            )
-    except Exception as exc:  # provenance is best-effort; never break the read
-        data_gaps = [*data_gaps, f"rule-change ledger unreadable: {type(exc).__name__}"]
 
-    return RetrospectiveResponse(
-        retrospective=retrospective,
-        retrospective_receipt_ref=retrospective_receipt_ref,
-        rule_changes=rule_changes,
-        data_gaps=data_gaps,
+class ComparePairView(BaseModel):
+    proposal_id: str
+    compare_with: str
+    attester: str
+    reason: str
+    created_at_utc: str
+    review_event_id: str
+    proposal_exists: bool
+    compare_with_exists: bool
+    missing_side: str | None
+    data_gaps: list[str]
+
+
+class CompareMarksResponse(BaseModel):
+    pairs: list[ComparePairView]
+    non_claims: tuple[str, ...] = (
+        "Compare marks are descriptive pairings for review, not a recommendation.",
+        "Side-by-side facts do not rank or pick a candidate.",
+        "Not execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+
+
+@router.get("/review/compare-marks", response_model=CompareMarksResponse)
+async def get_compare_marks(engine: EngineDependency) -> CompareMarksResponse:
+    pairs = read_compare_marks(engine)
+    return CompareMarksResponse(
+        pairs=[
+            ComparePairView(
+                proposal_id=pair.proposal_id,
+                compare_with=pair.compare_with,
+                attester=pair.attester,
+                reason=pair.reason,
+                created_at_utc=pair.created_at_utc,
+                review_event_id=pair.review_event_id,
+                proposal_exists=pair.proposal_exists,
+                compare_with_exists=pair.compare_with_exists,
+                missing_side=pair.missing_side,
+                data_gaps=pair.data_gaps,
+            )
+            for pair in pairs
+        ],
         execution_allowed=False,
     )

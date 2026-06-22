@@ -29,6 +29,9 @@ release 收口**。配合 [change-control.md](./change-control.md) 与 [mini-rfc
       缺披露是否 **fail-closed**(宁可 omit,不裸渲 claim)?(RE3 复盘 R3)
 - [ ] **载体自守红线**:新增的证据/输出载体是否在**构造点**自守红线,而不是只信上游?(RE3 复盘 R2)
 - [ ] **架构方向**:是补 if 还是抽稳定接缝?依赖方向对不对(证据被拉取、不反向驱动)?
+- [ ] **系统边界(G5)**:声明了归属哪个 [system](../architecture/system-map.md) 吗?复用既有 read model/command
+      还是新增?是不是同一 system 第 3 次散点(该抽共享模块了)?有没有制造第二套语义?
+- [ ] **cockpit 认知负荷**:新增顶级 tab 是否必要?能否并入既有面?(避免第二个杂乱 dashboard)
 - [ ] **回滚**:出问题能不能干净回退?默认 Noop 是否保证零副作用回退路径?
 
 ## Implementation Gate(开码后,独立 reviewer)

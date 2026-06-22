@@ -20,6 +20,7 @@ const selectors = {
     proposals: document.querySelector("#proposals-view"),
     timeline: document.querySelector("#timeline-view"),
     retrospective: document.querySelector("#retrospective-view"),
+    compare: document.querySelector("#compare-view"),
   },
   summaryGrid: document.querySelector("#summary-grid"),
   dailyBriefHeadline: document.querySelector("#daily-brief-headline"),
@@ -35,6 +36,7 @@ const selectors = {
   proposalDetail: document.querySelector("#proposal-detail"),
   timelineList: document.querySelector("#timeline-list"),
   retrospectiveBlock: document.querySelector("#retrospective-block"),
+  compareBlock: document.querySelector("#compare-block"),
   emptyTemplate: document.querySelector("#empty-template"),
   boundaryLine: document.querySelector("#boundary-line"),
 };
@@ -373,6 +375,97 @@ async function renderRetrospective() {
   clear(selectors.retrospectiveBlock);
   const data = await apiGet("/review/retrospective");
   renderRetrospectivePanel(selectors.retrospectiveBlock, data);
+}
+
+// Read-only compare chrome: a selection control over compare-marked pairs. Selecting a
+// pair only triggers GETs + a re-render (no POST, no form submit). Descriptive only — the
+// chrome carries no winner/recommended/better/should-pick verdict.
+function renderCompareMarksPanel(parent, data, onSelect) {
+  const pairs = data && Array.isArray(data.pairs) ? data.pairs : [];
+  parent.append(textElement("h4", "", "Compare marks"));
+  if (!pairs.length) {
+    parent.append(
+      textElement(
+        "p",
+        "empty-state",
+        "No compare marks. Mark two proposals from a proposal's review timeline.",
+      ),
+    );
+    renderNonClaims(parent, data && data.non_claims);
+    return;
+  }
+  const select = document.createElement("select");
+  select.id = "compare-pair-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a pair…";
+  select.append(placeholder);
+  pairs.forEach((pair, index) => {
+    const option = document.createElement("option");
+    // Index, not a delimited id string: robust even if ids ever contain the delimiter.
+    option.value = String(index);
+    option.textContent = pair.missing_side
+      ? `${pair.proposal_id} vs ${pair.compare_with} (missing ${pair.missing_side})`
+      : `${pair.proposal_id} vs ${pair.compare_with}`;
+    select.append(option);
+  });
+  if (typeof onSelect === "function") {
+    select.addEventListener("change", () => {
+      const pair = select.value === "" ? null : pairs[Number(select.value)];
+      onSelect(pair);
+    });
+  }
+  parent.append(select);
+  const missing = pairs.filter((pair) => pair.missing_side);
+  if (missing.length) {
+    renderTextList(
+      parent,
+      "Unavailable candidates",
+      missing.map((pair) => `${pair.proposal_id} vs ${pair.compare_with}: missing ${pair.missing_side}`),
+    );
+  }
+  renderNonClaims(parent, data && data.non_claims);
+}
+
+// Read-only side-by-side of two candidates' own facts (reuses the candidate-detail
+// renderer). Raw proposal facts are shown as-is; no verdict is synthesized.
+function renderCompareSideBySide(parent, left, right) {
+  const columns = document.createElement("div");
+  columns.className = "compare-columns";
+  for (const side of [left, right]) {
+    const column = document.createElement("div");
+    column.className = "compare-column";
+    if (!side || !side.proposal) {
+      column.append(textElement("p", "empty-state", "Candidate unavailable."));
+    } else {
+      column.append(textElement("h4", "", side.proposal.proposal_id));
+      column.append(textElement("p", "item-title", side.proposal.claim));
+      renderCandidateDetail(column, side.proposal);
+    }
+    columns.append(column);
+  }
+  parent.append(columns);
+}
+
+async function renderCompare() {
+  clear(selectors.compareBlock);
+  const data = await apiGet("/review/compare-marks");
+  const chrome = document.createElement("div");
+  chrome.className = "compare-chrome";
+  const sideBySide = document.createElement("div");
+  renderCompareMarksPanel(chrome, data, async (pair) => {
+    clear(sideBySide);
+    if (!pair) {
+      return;
+    }
+    const [left, right] = await Promise.all([
+      apiGet(`/proposals/${encodeURIComponent(pair.proposal_id)}`).catch(() => null),
+      apiGet(`/proposals/${encodeURIComponent(pair.compare_with)}`).catch(() => null),
+    ]);
+    renderCompareSideBySide(sideBySide, left, right);
+  });
+  selectors.compareBlock.append(chrome);
+  selectors.compareBlock.append(sideBySide);
 }
 
 // Read-only merged review timeline (attestations + review events). The server already
@@ -820,6 +913,7 @@ const renderers = {
   proposals: renderProposals,
   timeline: renderTimeline,
   retrospective: renderRetrospective,
+  compare: renderCompare,
 };
 
 const errorTargets = {
@@ -828,6 +922,7 @@ const errorTargets = {
   proposals: () => selectors.proposalDetail,
   timeline: () => selectors.timelineList,
   retrospective: () => selectors.retrospectiveBlock,
+  compare: () => selectors.compareBlock,
 };
 
 async function refresh() {
