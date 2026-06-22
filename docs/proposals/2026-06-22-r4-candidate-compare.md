@@ -8,6 +8,20 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码、不改既有 API 
 **C2**(只读 UI + 一个只读读端点;用户可见;无写/执行/网络)。无需 threat model;走 mini-RFC + design gate
 + implementation gate。
 
+### 1b. Module Placement / System Boundary  (G5)
+归属 **Review System**([system-map](../architecture/system-map.md))。这是该 system 的**第 3 个 read model**
+(timeline=R2、retrospective=R3、compare-marks=R4)→ 命中 G5 原则 3(第 3 次散点 → 抽共享模块)。
+**因此 R4 不只是"再加一个 view/route":先把 Review System 的统一 read model 抽出来,Compare 是它的自然扩展。**
+- 新增 **`statecore/review_read.py`**:把 timeline / retrospective / compare-marks 的读逻辑统一为该 system 的
+  read model(纯函数,输入 engine/roots → 只读 DTO),**不改语义**(timeline/retrospective 行为逐字段不变,有快照锁)。
+- `api/routes_review.py` / `routes_proposals.py` 降为**薄 HTTP adapter**,调用 `review_read.*`,不再内联读逻辑。
+- 新增 **shared review test fixtures**(`tests/_review_fixtures.py` 或同等):建 proposal/attestation/review_event 的
+  共用 setup,timeline/retrospective/compare/R4 测试复用,不各造一套。
+- frontend:`app.js` 内**review render 分区**(只读 panel renderer / 只读 selection renderer)+ 既有
+  review jsdom 作为 view contract;Compare view 复用该分区。
+不新增第二套语义(compare 复用 ReviewEvent.compare_mark);**新增 1 个顶级 cockpit tab(Compare)**——理由:它是独立的
+并排比较交互面,无法自然并入 proposal 详情或 retrospective;先抽 read model 控制散点,再加这个面。
+
 ### 2. Current behavior(现状事实)
 - `compare_mark` 已在 S4-R2 落地:`ReviewEvent(kind="compare_mark", proposal_id=subject, compare_with=target)`,
   构造时已校验 target 非空/存在/非自身([proposals.py](../../src/finharness/statecore/proposals.py))。
@@ -79,5 +93,10 @@ Architect 设计稿,2026-06-22。**设计 gate 用,不开码、不改既有 API 
 - **债务**:compare 当前限两两(一对一);多候选矩阵比较留作后续。security/dependabot 债独立 track,不入 R4。
 
 ### 任务拆分(设计 gate 过后)
-- R4a 后端:`GET /review/compare-marks` 只读端点(列 compare_mark 配对;缺失一侧 disclosure;不写);单测含上表后端各行 + OpenAPI 契约。
-- R4b 前端:cockpit Compare view(列配对 + 选中并排只读两候选事实)+ jsdom(空/并排/无动作面/无裁决);纳入 `task check`。
+- **R4a-0 抽统一 read model(G5 试点)**:新增 `statecore/review_read.py`,把 timeline / retrospective 读逻辑**平移**
+  进来(语义不变,快照锁);`routes_review`/`routes_proposals` 改调它。建 shared review test fixtures。**纯重构,
+  行为不变**——独立验收(既有 review/timeline/retrospective 测试全绿 + 快照相等)。
+- R4a 后端:在 `review_read.py` 加 **compare-marks read model**(canonical 配对去重 latest-wins + missing 标记)+
+  薄 adapter `GET /review/compare-marks`;单测含上表后端各行(配对去重、missing shape、只读)+ OpenAPI 契约,复用 shared fixtures。
+- R4b 前端:`app.js` review render 分区 + cockpit Compare view(只读 selection 选配对 + 并排只读两候选事实)+
+  jsdom(空/并排/只读 selection 无 POST/无裁决措辞限 compare 层);纳入 `task check`。

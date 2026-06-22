@@ -37,9 +37,9 @@
 
 ## 边界模块优先(把"最小改动"重定义)
 
-详见 [architecture-principles.md](./architecture-principles.md)(G5,后续)。一句话先行:
-**最小不可逆风险 > 最小 diff**。跨边界 slice 宁可抽一个小而完整的子系统(Noop 默认 + opt-in +
-capability routing + typed attachment),也不要在多个现有函数里补 if。
+详见 [architecture-principles.md](./architecture-principles.md)(G5)+ [system-map.md](../architecture/system-map.md)。
+一句话先行:**最小不可逆风险 > 最小 diff**;且 C2/C3 须声明 **Module Placement**(归属哪个 system),同一 system
+第 3 次散点先抽共享模块。跨边界 slice 宁可抽一个小而完整的子系统,也不要在多个现有函数里补 if。
 
 ## 与现有实践的关系
 

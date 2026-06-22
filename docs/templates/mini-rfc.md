@@ -13,6 +13,12 @@
 ### 1. Change Class
 C2 还是 C3?命中了 change-control 的哪些触发器?(一行说清为什么是这个级别。)
 
+### 1b. Module Placement / System Boundary  (G5)
+本改动扩展 [system-map](../architecture/system-map.md) 中的**哪个 system**?(跨多个则说明边界 + 依赖方向。)
+是否复用该 system 既有 **read model / command / adapter**,还是新增?这是该 system 内**第几次**加同类
+route/renderer/read-model——若是第 3 次,先抽共享模块(G5 原则 3)。用户可见面:是否新增顶级 cockpit tab?
+为什么不能并入既有面?
+
 ### 2. Current behavior
 今天系统怎么做的?默认路径产出什么?(可引用文件:line。)
 
