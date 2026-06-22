@@ -62,4 +62,5 @@
 | CI triage S1/S2/S3(okx flake / deps+gitleaks / path-traversal harden) | CI/security baseline | DONE(merged PR #18) |
 | S4-R2 Review Workspace(ReviewEvent/Annotation/Archive) | **C3**(人工写入治理面 + 审计) | DONE(merged PR #21,abf8953;R2a/b/c + gates) |
 | S4-R3 Retrospective Cockpit(annual review + lesson/rule 闭环只读露出) | **C2**(只读视图;加 promote 即升 C3) | DONE(merged PR #22,295b0ad;R3a/b + gates) |
-| S4-R4 Candidate Compare(复用 compare_mark 并排只读比较) | **C2**(只读;无裁决/无写) | mini-RFC 待 design gate |
+| S4-R4 Candidate Compare(复用 compare_mark 并排只读比较) | **C2**(只读;无裁决/无写) | DONE(merged PR #23,24436d5;R4a-0/a/b + 架构 checkpoint) |
+| Golden Path 受 receipt-consumption demo(端到端回放) | **C2**(隔离 tmp 写 + 回放;离线;无执行/PII) | mini-RFC 待 design gate |
