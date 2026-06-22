@@ -33,9 +33,13 @@ from finharness.redlines import (
     reject_text_sequence,
 )
 
-# Closed sets: questions, evidence kinds, and grades are enums, not free text, so the
-# contract surface cannot quietly widen over time.
+# Closed sets: questions, evidence kinds, grades, and the requested time window are
+# enums, not free text, so the contract surface cannot quietly widen over time.
 ResearchQuestion = Literal["historical_risk_profile"]
+
+# RE2 amendment: the requested/answered window is a closed set, not free text, so a
+# caller cannot smuggle a future-looking or prediction-shaped "window" past the gate.
+ResearchTimeWindow = Literal["trailing_1y", "trailing_3y"]
 
 ResearchEvidenceKind = Literal[
     "historical_risk_profile",
@@ -88,7 +92,7 @@ RESEARCH_EVIDENCE_FIELD_POLICIES: dict[str, ResearchEvidenceFieldPolicy] = {
     "claim": "full_text",
     "evidence_grade": "closed_literal",
     "value": "structured_full",
-    "time_window": "full_text",
+    "time_window": "closed_literal",
     "source_refs": "narrow_text",
     "lineage": "structured_full",
     "limitations": "narrow_text",
@@ -111,7 +115,7 @@ class ResearchEvidenceRequest(BaseModel):
     detector_kind: str
     subject: str
     question: ResearchQuestion
-    time_window: str
+    time_window: ResearchTimeWindow
 
 
 class ResearchEvidence(BaseModel):
@@ -123,7 +127,7 @@ class ResearchEvidence(BaseModel):
     claim: str
     evidence_grade: ResearchEvidenceGrade
     value: dict[str, Any] = Field(default_factory=dict)
-    time_window: str
+    time_window: ResearchTimeWindow
     source_refs: tuple[str, ...] = ()
     lineage: dict[str, Any] = Field(default_factory=dict)
     limitations: tuple[str, ...] = ()
@@ -137,12 +141,13 @@ class ResearchEvidence(BaseModel):
             raise ValueError("research evidence never carries execution authority")
         return False
 
-    @field_validator("claim", "time_window")
+    @field_validator("claim")
     @classmethod
     def _prose_has_no_advice(cls, text: str) -> str:
-        # claim and time_window are free-text assertion output, so they get the full
-        # advice/prediction redline. Disclaimers use a narrower validator below because
-        # they MUST be able to say "not a forecast / not advice".
+        # claim is free-text assertion output, so it gets the full advice/prediction
+        # redline. time_window is now a closed literal (cannot carry advice). Disclaimers
+        # use a narrower validator below because they MUST be able to say "not a forecast
+        # / not advice".
         return reject_text(text, FULL_RESEARCH_REDLINE, surface="research evidence")
 
     @field_validator("value", "lineage")

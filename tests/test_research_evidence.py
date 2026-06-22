@@ -104,13 +104,13 @@ class ResearchEvidenceContractTest(unittest.TestCase):
             ResearchEvidenceRequest(
                 detector_kind="concentration_high",
                 subject="SPY",
-                question="please predict the price",  # type: ignore[arg-type]
+                question="please predict the price",
                 time_window="trailing_3y",
             )
 
     def test_evidence_grade_is_a_closed_enum(self) -> None:
         with self.assertRaises(ValidationError):
-            _evidence(evidence_grade="insider_tip")  # type: ignore[arg-type]
+            _evidence(evidence_grade="insider_tip")
 
     def test_request_forbids_unknown_fields(self) -> None:
         with self.assertRaises(ValidationError):
@@ -138,7 +138,7 @@ class ResearchEvidenceContractTest(unittest.TestCase):
 
     def test_kind_is_a_closed_enum(self) -> None:
         with self.assertRaises(ValidationError):
-            _evidence(kind="target_price")  # type: ignore[arg-type]
+            _evidence(kind="target_price")
 
     def test_time_window_advice_language_is_rejected(self) -> None:
         # time_window is also free-text provider output; same redline as claim.
