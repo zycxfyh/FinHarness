@@ -111,6 +111,10 @@ def _imported_modules(module_path: Path) -> set[str]:
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
+            # Also surface `from <pkg> import <leaf>` as `<pkg>.<leaf>` so a forbidden
+            # module written that way (e.g. `from finharness import review_read`) is not a
+            # blind spot for the prefix checks below.
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names)
     return modules
 
 
