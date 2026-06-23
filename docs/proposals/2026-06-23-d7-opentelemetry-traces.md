@@ -1,7 +1,7 @@
 # D7 OpenTelemetry Trace / Receipt Indexing mini-RFC
 
-Status: D7a trace context contract + D7b local-only OTel adapter implemented
-(2026-06-23); D7c exporter remains gated.
+Status: D7a trace context contract + D7b local-only OTel adapter + trace
+consumer implemented (2026-06-23); D7c exporter remains gated.
 
 ## 1. Change Class
 
@@ -159,3 +159,7 @@ Debt:
   provider (`exporter_configured=false`, `network_export_allowed=false`). API
   requests now create bounded local spans with allowlisted attributes; unsafe
   values are redacted and no exporter is configured by default.
+- Trace consumer — added a bounded `observability:trace` CLI over
+  `observability_trace_index` receipts. It reads trace id / run kind / receipt
+  refs / missing refs / data gaps without printing raw domain receipt payloads,
+  and missing referenced receipts disclose as gaps rather than crashing.

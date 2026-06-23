@@ -69,5 +69,5 @@
 | Policy Registry(#3) | **C1**(governance 探针结构化,行为保持) | DONE(merged PR #27,77c92bc;id/owner/scope/source/check) |
 | Graph Rationalization Audit | **C0**(纯架构判断文档,无代码变化) | DONE(merged PR #28,fa91ced;R0/R1/R2/R5 路线,不删图) |
 | Fixture Standardization(#4) | **C1**(测试脚手架标准化,无产品行为变化) | DONE(merged PR #29,5830a56;StateCoreFixture + GOV-ARCH-002) |
-| D7 OpenTelemetry trace/receipt indexing | **C2**(跨 API/task/receipt 的 observability 边界;外部 exporter 仍需 C3 批准) | D7a/D7b implemented(trace contract + trace-index receipt + local-only OTel SDK provider, no exporter); D7c external exporter still gated |
-| D8 Browser Golden Paths(真实浏览器 smoke) | **C2**(测试基础设施;仅 dev/test 依赖,不进产品 runtime;不进默认 check) | design gate PASS w/ amendments;D8a implemented(test:browser + Playwright devDep + cockpit_smoke spec + GOV-EOS-002 + seeded server + CI optional job)。本地可验证部分绿(governance/ruff/mypy/jsdom/seed-serve/故障反例);**浏览器三路 green 待 CI**(本机 Nix 缺 chromium 系统库) |
+| D7 OpenTelemetry trace/receipt indexing | **C2**(跨 API/task/receipt 的 observability 边界;外部 exporter 仍需 C3 批准) | D7a/D7b implemented(trace contract + trace-index receipt + local-only OTel SDK provider, no exporter);trace consumer implemented(`task observability:trace`, bounded summary, no raw payload); D7c external exporter still gated |
+| D8 Browser Golden Paths(真实浏览器 smoke) | **C2**(测试基础设施;仅 dev/test 依赖,不进产品 runtime;不进默认 check) | DONE(merged PR #32,714a3d1;test:browser + Playwright devDep + cockpit_smoke spec + GOV-EOS-002 + seeded server + CI optional job; first CI red caught async render race, fix green) |

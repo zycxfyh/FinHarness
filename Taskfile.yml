@@ -78,6 +78,11 @@ tasks:
     cmds:
       - uv run python scripts/run_governance_dashboard.py
 
+  observability:trace:
+    desc: Read a local observability trace-index receipt (bounded summary, no raw payloads)
+    cmds:
+      - uv run python scripts/read_observability_trace.py {{.CLI_ARGS}}
+
   governance:certify-controls:
     desc: "NOW-3: certify control-owner baseline with a named human owner"
     cmds:

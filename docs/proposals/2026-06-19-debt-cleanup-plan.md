@@ -132,9 +132,15 @@ Each item: implement → add/adjust a regression test → `task check` green →
   input fails soft, Golden Path writes a separate `observability_trace_index`
   receipt linking trace id to proposal/review receipts, API requests create
   bounded local spans, and governance policies lock the no-default-exporter path.
+  A local `task observability:trace -- <trace_id>` consumer reads the trace-index
+  receipt back as a bounded summary and discloses missing referenced receipts
+  without printing raw domain receipt payloads.
   D7c (external exporter / telemetry upload) still needs explicit C3 approval.
-- (gated) D8 — browser E2E / visual regression. Needs approval (new tooling).
+- DONE D8 — Browser Golden Paths shipped as a CI-optional Playwright smoke:
+  `/cockpit/` real-browser load, seeded Proposals detail, and Compare view. It is
+  deliberately not in `task check`; GOV-EOS-002 locks that boundary. First CI run
+  caught an async render race that jsdom missed, then turned green after the wait
+  fix.
 
 All of Tier 1–3 (D1–D6) cleared; D7a/D7b are implemented with no default exporter.
-D7c and D8 still await explicit go-ahead because they add an external export path
-or new browser tooling.
+D7c still awaits explicit go-ahead because it adds an external export path.
