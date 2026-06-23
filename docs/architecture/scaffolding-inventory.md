@@ -22,8 +22,8 @@
 | 资产 | 现状 | 判断 |
 | --- | --- | --- |
 | Change Class / mini-RFC / gate-checklists / postmortem / G5 | `docs/engineering/*`、`docs/templates/mini-rfc.md` | **keep + standardize**(已是平台;借 Backstage 的 metadata 思想,给每 system 加 `catalog-info`-style 元数据,**暂不上 Backstage**) |
-| `governance:check` 探针(6 类) | `tests/test_governance_invariants.py`(ImportBoundary / ReviewReadOnly / RedlinePolicyCoverage / AttachmentRedline / NetworkSmokeExclusion / NoPydanticLeak) | **standardize → policy registry**:每条规则给 id/owner/scope/source/test;**先用 Python,不急 OPA/Conftest** |
-| 测试脚手架(临时库 + init_state_core + helper) | `tests/_review_fixtures.py` + 各 `TemporaryDirectory` 重复 | **standardize**:优先把 State Core / Review System 的 fixture 收进 shared 层;**中期渐进迁 pytest fixtures**,不一次搬完 |
+| `governance:check` policy registry | `tests/_policy_registry.py` + `tests/test_governance_invariants.py` | **standardized**:每条规则有 id/owner/scope/source/check;**先用 Python,不急 OPA/Conftest** |
+| 测试脚手架(临时库 + init_state_core + helper) | `tests/_review_fixtures.py` + `tests/_statecore_fixtures.py` + 各 `TemporaryDirectory` 重复 | **standardize in progress**:State Core / Review System 已有 shared fixture 样板;**中期渐进迁 pytest fixtures**,不一次搬完 |
 
 ## 3. 系统目录标准(新代码按此长,不强制一次搬)
 每个 system 固定形状:`domain` / `commands` / `read_model` / `adapters` / `fixtures` / `governance`。
@@ -56,8 +56,8 @@ Review System 已接近(`proposals.py`=domain+commands、`review_read.py`=read_m
 ## 6. 建议下一步(Program Lead 的 6 步映射)
 1. 本 inventory(✅ 本文件)。
 2. 系统目录标准(§3)——**新代码按此长**,Review System 作模板。
-3. governance:check → policy registry(§2)——给规则加 id/owner/scope。
-4. 测试 fixture 标准化(§2)——先 State Core / Review System。
+3. governance:check → policy registry(§2)——✅ 已有 Python registry。
+4. 测试 fixture 标准化(§2)——State Core / Review System 先行,渐进迁移。
 5. D7 OpenTelemetry——只接 traces→receipt/task/request。
 6. **暂不上** Backstage/Temporal——先借结构思想。
 

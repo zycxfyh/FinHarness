@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,25 +9,21 @@ from finharness.statecore.snapshot_ingest import (
     ingest_portfolio_snapshot_from_payload,
     ingest_portfolio_snapshot_from_receipt,
 )
-from finharness.statecore.store import StateCoreStoreError, init_state_core, read_all
+from finharness.statecore.store import StateCoreStoreError, read_all
+from tests._statecore_fixtures import StateCoreFixture
 
 
 class StateCoreSnapshotIngestTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.db_path = self.root / "state-core.sqlite"
-        self.receipt_root = self.root / "receipts"
-        self.receipt_root.mkdir()
-        self.engine = init_state_core(self.db_path)
-        self.addCleanup(self.engine.dispose)
-        self.addCleanup(self.tmp.cleanup)
+        self.fx = StateCoreFixture()
+        self.root = self.fx.root
+        self.db_path = self.fx.db_path
+        self.receipt_root = self.fx.receipt_root
+        self.engine = self.fx.engine
+        self.addCleanup(self.fx.cleanup)
 
     def _write_receipt(self, relative_path: str, payload: dict[str, object]) -> Path:
-        path = self.receipt_root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        return path
+        return self.fx.write_receipt(relative_path, payload)
 
     def test_index_receipts_records_paths_and_receipt_refs(self) -> None:
         receipt = self._write_receipt(

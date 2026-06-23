@@ -30,6 +30,16 @@
 > 这套形状已被 R2/R3/R4 + Golden Path 反复验证;新 read model(timeline→retrospective→compare)是**在 read_model 层扩展**,
 > 不是在 route 散点——这就是标准要复制的行为。
 
+## Fixture 标准化样板
+
+| System | Fixture | 职责 |
+| --- | --- | --- |
+| Review System | [`tests/_review_fixtures.py`](../../tests/_review_fixtures.py):`ReviewFixture` | 隔离 State Core + proposal/attestation/review_event seed helpers |
+| State Core | [`tests/_statecore_fixtures.py`](../../tests/_statecore_fixtures.py):`StateCoreFixture` | 隔离 sqlite + receipt root + JSON receipt writer |
+
+这些 fixture 是渐进迁移目标,不是一次性大搬家。新 State Core / Review System 测试优先复用它们;
+旧测试只在触碰相关区域时迁移。
+
 ## 扩展一个已有 system(checklist)
 - [ ] 新写 → 进 **commands**(governed,receipt,失败清理),不在 adapter 里直接写。
 - [ ] 新只读 → 进 **read_model**(纯 DTO),adapter 只映射;**第 3 次同类 → 必抽共享**(G5 原则 3)。
@@ -43,8 +53,9 @@
 - [ ] 依赖方向单向(被消费,不反向驱动 cockpit);跨 system 在 mini-RFC 说明边界。
 
 ## 机器约束(标准不只是文档)
-`tests/test_governance_invariants.py::SystemDirectoryStandardProbe` 断言 **Review System 参考实现的 6 角色文件都存在**——
-参考实现若被删/改名,探针 fail,标准不会悄悄烂掉。(承我复盘:架构文档要是"会 fail 的契约"。)
+`tests/_policy_registry.py::GOV-ARCH-001` 断言 **Review System 参考实现的 6 角色文件都存在**——
+参考实现若被删/改名,`governance:check` fail,标准不会悄悄烂掉。(承我复盘:架构文档要是"会 fail 的契约"。)
+`GOV-ARCH-002` 断言 State Core / Review System 的 shared fixture 样板存在。
 
 ## 不是什么
 - 不是一次性大重构:**旧代码渐进对齐,新代码按此长**。
