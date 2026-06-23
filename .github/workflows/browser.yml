@@ -1,0 +1,57 @@
+name: browser-golden-paths
+
+# D8 real-browser cockpit smoke (Playwright + Chromium). This is an OPTIONAL job: it is
+# intentionally NOT part of `task check` and is not a required merge gate (see
+# docs/proposals/2026-06-23-d8-browser-golden-paths.md). "Optional" means non-blocking for
+# merge — it does NOT mean failures are ignored: the job still goes red on failure and that
+# red is a tracked finding, not a silent skip.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    name: Cockpit browser golden paths (optional)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium + system libraries
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run cockpit browser golden-path smoke
+        run: task test:browser
+
+      - name: Upload browser smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cockpit-browser-smoke-artifacts
+          path: frontend/tests/browser/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
