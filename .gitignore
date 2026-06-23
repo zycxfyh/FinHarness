@@ -51,3 +51,6 @@ research/
 # Generated repo-intelligence doc (regenerate via `task repo:intelligence`;
 # its receipt half data/receipts/repo-intelligence/ is already ignored above).
 docs/architecture/generated/
+
+# D8 browser smoke artifacts (screenshots/DOM dumps) — triage only, never committed.
+frontend/tests/browser/artifacts/

@@ -234,6 +234,20 @@ def _check_network_smoke_excluded() -> list[str]:
     return out
 
 
+def _check_browser_smoke_excluded() -> list[str]:
+    tasks = (yaml.safe_load((_ROOT / "Taskfile.yml").read_text(encoding="utf-8")) or {}).get(
+        "tasks", {}
+    )
+    if "test:browser" not in tasks:
+        return ["task 'test:browser' missing"]
+    reachable = _reachable_tasks("check", tasks)
+    if "check" not in reachable:
+        return ["task 'check' not found"]
+    if "test:browser" in reachable:
+        return ["test:browser is reachable from task check (must stay opt-in / CI-only)"]
+    return []
+
+
 def _check_trace_contract() -> list[str]:
     out: list[str] = []
     if TRACE_HEADER != "X-FinHarness-Trace-Id":
@@ -336,6 +350,14 @@ POLICIES: tuple[PolicyRule, ...] = (
         source="research live smoke + golden path mini-RFCs",
         description="Network/manual demo tasks are unreachable from `task check`.",
         check=_check_network_smoke_excluded,
+    ),
+    PolicyRule(
+        id="GOV-EOS-002",
+        owner="eos",
+        scope="Taskfile.yml `check` dependency closure",
+        source="D8 browser golden paths mini-RFC (browser smoke is CI-optional, not in check)",
+        description="Browser smoke (test:browser) exists but is unreachable from task check.",
+        check=_check_browser_smoke_excluded,
     ),
     PolicyRule(
         id="GOV-OBS-001",

@@ -107,6 +107,11 @@ tasks:
       - node frontend/tests/review_retrospective.test.cjs
       - node frontend/tests/review_compare.test.cjs
 
+  test:browser:
+    desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.
+    cmds:
+      - node frontend/tests/browser/cockpit_smoke.test.cjs
+
   governance:check:
     desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
     cmds:
