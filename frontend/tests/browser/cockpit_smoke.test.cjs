@@ -114,7 +114,11 @@ async function run() {
     const listItems = page.locator("#proposal-list button");
     await listItems.first().waitFor({ timeout: 10000 });
     assert.ok(await listItems.count(), "seeded proposal queue must have at least one item");
-    // detail auto-renders the first proposal; review chain we seeded must be present
+    // The detail auto-renders the first proposal ASYNCHRONOUSLY (Promise.all of 3 fetches,
+    // then render). The list being present does NOT mean the detail finished — wait for the
+    // seeded review chain to land before reading #proposal-detail. (This exact race is what
+    // the real browser surfaced that jsdom did not.)
+    await page.waitForSelector("#proposal-detail .review-timeline-entry", { timeout: 15000 });
     const detailText = (await page.locator("#proposal-detail").textContent()) || "";
     assert.ok(detailText.trim().length > 0, "proposal detail must not be blank");
     assert.ok(
@@ -126,6 +130,14 @@ async function run() {
     // --- Golden path 3: Compare read-only view renders -------------------------------
     await page.locator('button.tab[data-view="compare"]').click();
     await page.waitForSelector("#compare-view.view.active");
+    // #compare-block also renders asynchronously (fetch /review/compare-marks then render).
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector("#compare-block");
+        return !!el && el.textContent.trim().length > 0;
+      },
+      { timeout: 15000 },
+    );
     const compareText = (await page.locator("#compare-block").textContent()) || "";
     assert.ok(compareText.trim().length > 0, "compare block must render content (seeded compare_mark)");
     await shot(page, "03-compare");
