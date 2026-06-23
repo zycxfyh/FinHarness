@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from time import perf_counter
-from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,18 +14,12 @@ from finharness.api.routes_proposals import router as proposal_router
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_state import router as state_router
 from finharness.market_data import ROOT
+from finharness.observability import TRACE_HEADER, trace_context_from_headers
 from finharness.runtime_log import configure_logging, get_logger
 from finharness.statecore.store import StateCoreStoreError, ensure_state_core_schema
 
 configure_logging()
 logger = get_logger(__name__)
-
-
-def _trace_id_for_request(request: Request) -> str:
-    supplied = request.headers.get("x-finharness-trace-id")
-    if supplied and supplied.strip():
-        return supplied.strip()
-    return f"trace_{uuid4().hex}"
 
 
 def create_app(
@@ -48,13 +41,15 @@ def create_app(
     @api.middleware("http")
     async def log_request(request: Request, call_next):
         started = perf_counter()
-        trace_id = _trace_id_for_request(request)
+        trace_context = trace_context_from_headers(request.headers)
+        trace_id = trace_context.trace_id
         request.state.trace_id = trace_id
         response = await call_next(request)
-        response.headers["X-FinHarness-Trace-Id"] = trace_id
+        response.headers[TRACE_HEADER] = trace_id
         logger.info(
             "state_api_request",
             trace_id=trace_id,
+            trace_id_supplied=trace_context.accepted_supplied,
             method=request.method,
             path=request.url.path,
             status_code=response.status_code,

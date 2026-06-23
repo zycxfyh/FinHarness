@@ -72,8 +72,9 @@ non-execution). Tighten docs/labels to "read + attest", keeping the non-claims.
 
 ### Tier 4 — larger adopt decisions (gated)
 
-**D7. OpenTelemetry traces/metrics.** Replace the hand-rolled trace header with OTel
-once a dependency is approved. New dependency — needs a go-ahead.
+**D7. OpenTelemetry traces/metrics.** D7a now standardizes the local trace context and
+trace-to-receipt index without adding dependencies. Replacing/adapting it to OTel
+SDK/exporter remains gated on explicit dependency approval.
 
 **D8. Browser E2E / visual regression for the cockpit.** Needs a tooling decision
 (e.g. Playwright). New tooling — needs a go-ahead.
@@ -126,11 +127,14 @@ Each item: implement → add/adjust a regression test → `task check` green →
 - DONE D6 — corrected the "read-only API/cockpit" wording: it is read **plus**
   governed human attestation (no execution), in the README and lifecycle plan;
   non-claims and `execution_allowed=false` kept.
-- (design opened) D7 — OpenTelemetry trace/receipt indexing mini-RFC opened
-  (`2026-06-23-d7-opentelemetry-traces.md`). Implementation still needs approval
-  before adding any dependency/exporter.
+- D7a — trace context contract implemented without new dependencies: API trace
+  header handling uses the shared contract, malformed/secret-like trace input
+  fails soft, Golden Path writes a separate `observability_trace_index` receipt
+  linking trace id to proposal/review receipts, and governance policies lock the
+  no-default-exporter path. D7b (OTel SDK/exporter) still needs approval before
+  adding any dependency/exporter.
 - (gated) D8 — browser E2E / visual regression. Needs approval (new tooling).
 
-All of Tier 1–3 (D1–D6) cleared; each behind a green `task check` with a
-regression test. Tier 4 (D7, D8) awaits an explicit go-ahead because each pulls in
-a new dependency / tool stack.
+All of Tier 1–3 (D1–D6) cleared; D7a is dependency-free and implemented. D7b and
+D8 still await explicit go-ahead because they pull in a new dependency / tool
+stack.

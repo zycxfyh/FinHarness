@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from finharness.observability import TRACE_HEADER, is_safe_trace_id, trace_context_from_value
 from finharness.research_enrichment import ResearchEvidenceAttachment
 from finharness.research_evidence import (
     REQUIRED_NON_CLAIMS,
@@ -50,6 +51,13 @@ _FORBIDDEN_RESEARCH_IDENTIFIERS = (
     "Proposal",
     "APIRouter",
     "FastAPI",
+)
+
+_FORBIDDEN_DEFAULT_EXPORTER_TOKENS = (
+    "OTLPSpanExporter",
+    "opentelemetry.exporter",
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_TRACES_EXPORTER",
 )
 
 _REVIEW_WRITE_ENTRYPOINTS = (
@@ -225,6 +233,38 @@ def _check_network_smoke_excluded() -> list[str]:
     return out
 
 
+def _check_trace_contract() -> list[str]:
+    out: list[str] = []
+    if TRACE_HEADER != "X-FinHarness-Trace-Id":
+        out.append(f"trace header changed: {TRACE_HEADER}")
+    for supplied in ("trace_policy_ok", "Bearer sk-1234567890abcdef", "bad\nheader"):
+        context = trace_context_from_value(supplied)
+        if not is_safe_trace_id(context.trace_id):
+            out.append(f"unsafe trace id produced for {supplied!r}")
+        if supplied != "trace_policy_ok" and context.trace_id == supplied:
+            out.append(f"unsafe supplied trace id echoed: {supplied!r}")
+    return out
+
+
+def _check_no_default_otel_exporter() -> list[str]:
+    out: list[str] = []
+    for module in _SRC.rglob("*.py"):
+        text = module.read_text(encoding="utf-8")
+        for token in _FORBIDDEN_DEFAULT_EXPORTER_TOKENS:
+            if token in text:
+                out.append(f"{module.relative_to(_ROOT)} references default exporter token {token}")
+    tasks = (yaml.safe_load((_ROOT / "Taskfile.yml").read_text(encoding="utf-8")) or {}).get(
+        "tasks", {}
+    )
+    for name in _reachable_tasks("check", tasks):
+        for cmd in (tasks.get(name) or {}).get("cmds") or []:
+            if isinstance(cmd, str):
+                for token in _FORBIDDEN_DEFAULT_EXPORTER_TOKENS:
+                    if token in cmd:
+                        out.append(f"task {name} references default exporter token {token}")
+    return out
+
+
 POLICIES: tuple[PolicyRule, ...] = (
     PolicyRule(
         id="GOV-RESEARCH-001",
@@ -289,6 +329,22 @@ POLICIES: tuple[PolicyRule, ...] = (
         source="research live smoke + golden path mini-RFCs",
         description="Network/manual demo tasks are unreachable from `task check`.",
         check=_check_network_smoke_excluded,
+    ),
+    PolicyRule(
+        id="GOV-OBS-001",
+        owner="observability",
+        scope="Trace id contract",
+        source="D7 trace context contract",
+        description="Trace ids are bounded correlation handles and unsafe headers fail soft.",
+        check=_check_trace_contract,
+    ),
+    PolicyRule(
+        id="GOV-OBS-002",
+        owner="observability",
+        scope="src/finharness/**/*.py and task check closure",
+        source="D7 no-exporter default path",
+        description="Default code/check path contains no OTLP exporter configuration.",
+        check=_check_no_default_otel_exporter,
     ),
 )
 

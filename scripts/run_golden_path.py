@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from finharness.allocation import record_allocation_candidates
+from finharness.observability import new_trace_id, write_trace_index_receipt
 from finharness.review_read import read_compare_marks, read_proposal_timeline
 from finharness.statecore.models import Account, CashflowEvent, Position, Snapshot
 from finharness.statecore.proposals import (
@@ -105,6 +106,7 @@ def _replay_receipt(ref: str, *, kind: str, hash_path: tuple[str, ...]) -> list[
 
 def run_golden_path(root: Path) -> dict[str, Any]:
     """Orchestrate the full loop and replay the receipts. Importable by tests."""
+    trace_id = new_trace_id()
     engine = init_state_core(root / "state-core.sqlite")
     receipt_root = root / "receipts" / "state-core"
     try:
@@ -144,15 +146,24 @@ def run_golden_path(root: Path) -> dict[str, Any]:
         engine.dispose()
 
     replay_gaps = replay_chain(concentration.receipt_ref, annotation.receipt_ref)
+    observability_receipt_ref = write_trace_index_receipt(
+        trace_id=trace_id,
+        run_kind="decisions:golden-path",
+        receipt_refs=(concentration.receipt_ref, annotation.receipt_ref),
+        data_gaps=replay_gaps,
+        receipt_root=root / "receipts" / "observability",
+    )
 
     return {
         "ok": True,
+        "trace_id": trace_id,
         "proposals": len(writes),
         "detector_kinds": sorted(by_kind),
         "compare_pairs": len(compare_pairs),
         "timeline_entries": len(timeline.entries) if timeline else 0,
         "proposal_receipt_ref": concentration.receipt_ref,
         "review_event_receipt_ref": annotation.receipt_ref,
+        "observability_receipt_ref": observability_receipt_ref,
         "replayed": not replay_gaps,
         "replay_gaps": replay_gaps,
         "artifact_root": str(root),

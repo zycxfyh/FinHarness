@@ -1,6 +1,7 @@
 # D7 OpenTelemetry Trace / Receipt Indexing mini-RFC
 
-Status: draft design (2026-06-23)
+Status: D7a trace context contract implemented (2026-06-23); D7b OTel dependency
+remains gated.
 
 ## 1. Change Class
 
@@ -96,7 +97,9 @@ Future implementation must lock:
 - existing domain receipt content hashes do not change unless the slice explicitly
   scopes a new receipt field and updates snapshot tests
 
-This RFC itself is documentation only; it changes no runtime behavior.
+D7a keeps existing response/header semantics while moving trace id handling into a
+shared contract and adding a separate observability trace-index receipt for task
+correlation. It does not add an OTel SDK/exporter or mutate domain receipts.
 
 ## 6. Traceability Matrix
 
@@ -139,6 +142,15 @@ Not claimed:
 
 Debt:
 
-- D7 implementation still needs explicit dependency approval.
+- D7b OpenTelemetry adapter still needs explicit dependency approval before adding
+  an SDK/exporter.
 - D8 Playwright/browser E2E remains separate.
 - If exporter/network telemetry is later requested, it must be a new C3 slice.
+
+## Progress Log
+
+- D7a — implemented dependency-free `observability.py` trace context contract,
+  API middleware propagation, fail-soft malformed header handling, an
+  `observability_trace_index` receipt for task/receipt correlation, Golden Path
+  trace-index coverage, and governance policies for trace contract/no default
+  exporter. No OpenTelemetry dependency or exporter added.
