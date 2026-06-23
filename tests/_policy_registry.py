@@ -49,9 +49,27 @@ class PolicyRule:
 
 _FORBIDDEN_RESEARCH_IDENTIFIERS = (
     "optimize_riskfolio_allocation",
+    "execute_order",
+    "execution_graph",
     "Proposal",
     "APIRouter",
     "FastAPI",
+)
+
+_FORBIDDEN_API_HEADLESS_IMPORT_PREFIXES = (
+    "finharness.okx",
+    "finharness.alpaca",
+    "finharness.execution",
+    "finharness.execution_graph",
+    "finharness.okx_live_gate",
+    "finharness.trading",
+)
+
+_FORBIDDEN_STATECORE_IMPORTS = (
+    "finharness.review_read",
+    "finharness.api",
+    "finharness.research_enrichment",
+    "finharness.research_history_provider",
 )
 
 _FORBIDDEN_DEFAULT_EXPORTER_TOKENS = (
@@ -85,6 +103,21 @@ def _identifiers(module_path: Path) -> set[str]:
     return names
 
 
+def _imported_modules(module_path: Path) -> set[str]:
+    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+            # Also surface `from <pkg> import <leaf>` as `<pkg>.<leaf>` so a forbidden
+            # module written that way (e.g. `from finharness import review_read`) is not a
+            # blind spot for the prefix checks below.
+            modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return modules
+
+
 def _reachable_tasks(name: str, tasks: dict, seen: set[str] | None = None) -> set[str]:
     seen = seen if seen is not None else set()
     if name in seen or name not in tasks:
@@ -116,13 +149,38 @@ def _evidence_item() -> ResearchEvidence:
 
 def _check_research_import_boundary() -> list[str]:
     out: list[str] = []
-    for module in ("research_enrichment.py", "research_history_provider.py"):
+    for module in (
+        "research_evidence.py",
+        "research_enrichment.py",
+        "research_history_provider.py",
+    ):
         identifiers = _identifiers(_SRC / module)
         out += [
             f"{module} references {banned}"
             for banned in _FORBIDDEN_RESEARCH_IDENTIFIERS
             if banned in identifiers
         ]
+    return out
+
+
+def _check_api_does_not_import_headless_engine() -> list[str]:
+    out: list[str] = []
+    for module in (
+        *sorted((_SRC / "api").glob("routes_*.py")),
+        _SRC / "api" / "app.py",
+    ):
+        for imported in _imported_modules(module):
+            if imported.startswith(_FORBIDDEN_API_HEADLESS_IMPORT_PREFIXES):
+                out.append(f"{module.relative_to(_ROOT)} imports headless engine module {imported}")
+    return out
+
+
+def _check_statecore_does_not_depend_on_adapters_or_review_read() -> list[str]:
+    out: list[str] = []
+    for module in sorted((_SRC / "statecore").glob("*.py")):
+        for imported in _imported_modules(module):
+            if imported.startswith(_FORBIDDEN_STATECORE_IMPORTS):
+                out.append(f"{module.relative_to(_ROOT)} imports upper-layer module {imported}")
     return out
 
 
@@ -290,10 +348,29 @@ POLICIES: tuple[PolicyRule, ...] = (
     PolicyRule(
         id="GOV-RESEARCH-001",
         owner="research-evidence",
-        scope="research_enrichment.py, research_history_provider.py",
+        scope="research_evidence.py, research_enrichment.py, research_history_provider.py",
         source="RE2 design gate (read-only evidence, no optimizer/route)",
         description="Research surfaces never reference optimizer/proposal/route write surfaces.",
         check=_check_research_import_boundary,
+    ),
+    PolicyRule(
+        id="GOV-ARCH-003",
+        owner="architecture",
+        scope="api/routes_*.py, api/app.py",
+        source="System Map / Headless Engine boundary",
+        description="Cockpit/API adapters do not import headless trading or execution modules.",
+        check=_check_api_does_not_import_headless_engine,
+    ),
+    PolicyRule(
+        id="GOV-ARCH-004",
+        owner="architecture",
+        scope="statecore/*.py",
+        source="System Map / State Core layering boundary",
+        description=(
+            "State Core does not depend on upper-layer read models, API adapters, "
+            "or research adapters."
+        ),
+        check=_check_statecore_does_not_depend_on_adapters_or_review_read,
     ),
     PolicyRule(
         id="GOV-REVIEW-001",

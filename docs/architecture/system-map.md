@@ -71,6 +71,14 @@
 - EOS 横切所有 system(平台),不属任何业务流。
 - Headless Engine 自成一支,不进 cockpit 产品面。
 
+## Executable Boundary Probes
+
+部分系统边界已进入 `task governance:check` 的 policy registry,不是只停在本文:
+
+- `GOV-ARCH-003`:Cockpit/API adapters 不导入 headless trading/execution 模块。
+- `GOV-ARCH-004`:State Core 不反向依赖 `review_read`、API adapters 或 Research adapters。
+- `GOV-RESEARCH-001`:Research Evidence 契约/enrichment/provider 不引用 optimizer/route/write surfaces。
+
 ## 用法
 - 新功能/slice 在 mini-RFC 的 **Module Placement** 节声明归属本图中的某个 system;若跨多个,说明边界与依赖方向。
 - 第 3 次在同一 system 散点加 route/renderer/read-model → 先抽该 system 的共享模块(见 G5)。
