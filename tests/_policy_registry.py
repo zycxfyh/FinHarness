@@ -145,6 +145,18 @@ def _check_system_directory_reference() -> list[str]:
     ]
 
 
+def _check_fixture_standard_references() -> list[str]:
+    fixtures = {
+        "review-system": _ROOT / "tests" / "_review_fixtures.py",
+        "state-core": _ROOT / "tests" / "_statecore_fixtures.py",
+    }
+    return [
+        f"{system} fixture reference missing: {path}"
+        for system, path in fixtures.items()
+        if not path.exists()
+    ]
+
+
 def _check_redline_policy_coverage() -> list[str]:
     out: list[str] = []
     if set(ResearchEvidence.model_fields) != set(RESEARCH_EVIDENCE_FIELD_POLICIES):
@@ -237,6 +249,14 @@ POLICIES: tuple[PolicyRule, ...] = (
         source="system-directory-standard.md (#2)",
         description="Review System reference files exist (the standard can't silently rot).",
         check=_check_system_directory_reference,
+    ),
+    PolicyRule(
+        id="GOV-ARCH-002",
+        owner="eos",
+        scope="State Core / Review System fixture reference files",
+        source="fixture standardization (#4)",
+        description="Shared system fixtures exist for the first standardized systems.",
+        check=_check_fixture_standard_references,
     ),
     PolicyRule(
         id="GOV-RESEARCH-002",
