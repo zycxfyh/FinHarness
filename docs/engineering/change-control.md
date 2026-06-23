@@ -63,4 +63,10 @@
 | S4-R2 Review Workspace(ReviewEvent/Annotation/Archive) | **C3**(人工写入治理面 + 审计) | DONE(merged PR #21,abf8953;R2a/b/c + gates) |
 | S4-R3 Retrospective Cockpit(annual review + lesson/rule 闭环只读露出) | **C2**(只读视图;加 promote 即升 C3) | DONE(merged PR #22,295b0ad;R3a/b + gates) |
 | S4-R4 Candidate Compare(复用 compare_mark 并排只读比较) | **C2**(只读;无裁决/无写) | DONE(merged PR #23,24436d5;R4a-0/a/b + 架构 checkpoint) |
-| Golden Path 受 receipt-consumption demo(端到端回放) | **C2**(隔离 tmp 写 + 回放;离线;无执行/PII) | mini-RFC 待 design gate |
+| Golden Path 受 receipt-consumption demo(端到端回放) | **C2**(隔离 tmp 写 + 回放;离线;无执行/PII) | DONE(merged PR #24,e863cd9;端到端 receipt-consumption CI 锚) |
+| System Directory Standard(#2) | **C1**(架构/测试治理标准,无产品行为变化) | DONE(merged PR #25,36da01b;6 角色形状 + Review System 参考实现探针) |
+| Repo intelligence 性能 + 测试分层 | **C1**(性能/测试结构,输出等价) | DONE(merged PR #26,0142714;walk 剪枝 + integration 分层) |
+| Policy Registry(#3) | **C1**(governance 探针结构化,行为保持) | DONE(merged PR #27,77c92bc;id/owner/scope/source/check) |
+| Graph Rationalization Audit | **C0**(纯架构判断文档,无代码变化) | DONE(merged PR #28,fa91ced;R0/R1/R2/R5 路线,不删图) |
+| Fixture Standardization(#4) | **C1**(测试脚手架标准化,无产品行为变化) | DONE(merged PR #29,5830a56;StateCoreFixture + GOV-ARCH-002) |
+| D7 OpenTelemetry trace/receipt indexing | **C2**(跨 API/task/receipt 的 observability 边界;implementation 新依赖仍需批准) | mini-RFC opened(2026-06-23;design only,不加依赖) |

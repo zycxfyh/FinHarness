@@ -126,7 +126,9 @@ Each item: implement → add/adjust a regression test → `task check` green →
 - DONE D6 — corrected the "read-only API/cockpit" wording: it is read **plus**
   governed human attestation (no execution), in the README and lifecycle plan;
   non-claims and `execution_allowed=false` kept.
-- (gated) D7 — OpenTelemetry. Needs approval (new dependency).
+- (design opened) D7 — OpenTelemetry trace/receipt indexing mini-RFC opened
+  (`2026-06-23-d7-opentelemetry-traces.md`). Implementation still needs approval
+  before adding any dependency/exporter.
 - (gated) D8 — browser E2E / visual regression. Needs approval (new tooling).
 
 All of Tier 1–3 (D1–D6) cleared; each behind a green `task check` with a
