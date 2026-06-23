@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from finharness.api.app import create_app
+from finharness.observability import TRACE_HEADER, is_safe_trace_id
 from finharness.statecore.models import (
     Account,
     Attestation,
@@ -322,15 +323,23 @@ class StateCoreApiTest(unittest.TestCase):
     def test_health_and_trace_header_are_non_authority_observability(self) -> None:
         response = self.client.get(
             "/health",
-            headers={"X-FinHarness-Trace-Id": "trace_test_state_api"},
+            headers={TRACE_HEADER: "trace_test_state_api"},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["X-FinHarness-Trace-Id"], "trace_test_state_api")
+        self.assertEqual(response.headers[TRACE_HEADER], "trace_test_state_api")
         body = response.json()
         self.assertEqual(body["status"], "ok")
         self.assertFalse(body["execution_allowed"])
         self.assertIn("Not execution authorization.", body["non_claims"])
+
+    def test_malformed_trace_header_is_not_echoed(self) -> None:
+        malicious = "Bearer sk-1234567890abcdef\nInjected: yes"
+        response = self.client.get("/health", headers={TRACE_HEADER: malicious})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(is_safe_trace_id(response.headers[TRACE_HEADER]))
+        self.assertNotEqual(response.headers[TRACE_HEADER], malicious)
 
     def test_cockpit_static_frontend_is_served_by_api_origin(self) -> None:
         frontend_index = Path(__file__).resolve().parents[1] / "frontend" / "index.html"

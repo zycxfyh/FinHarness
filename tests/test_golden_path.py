@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from scripts.run_golden_path import replay_chain, run_golden_path
+
+from finharness.observability import OBSERVABILITY_RECEIPT_KIND, is_safe_trace_id
 
 
 class GoldenPathHappyTest(unittest.TestCase):
@@ -36,9 +39,10 @@ class GoldenPathHappyTest(unittest.TestCase):
         # Structural bound: only an allowlisted, shallow set of counts / refs / flags — no
         # nested dicts and no raw numeric ledger values (which would carry amounts/PII).
         allowed = {
-            "ok", "proposals", "detector_kinds", "compare_pairs", "timeline_entries",
-            "proposal_receipt_ref", "review_event_receipt_ref", "replayed", "replay_gaps",
-            "artifact_root", "cleanup_hint", "execution_allowed",
+            "ok", "trace_id", "proposals", "detector_kinds", "compare_pairs",
+            "timeline_entries", "proposal_receipt_ref", "review_event_receipt_ref",
+            "observability_receipt_ref", "replayed", "replay_gaps", "artifact_root",
+            "cleanup_hint", "execution_allowed",
         }
         self.assertEqual(set(self.summary), allowed)
         for value in self.summary.values():
@@ -46,6 +50,22 @@ class GoldenPathHappyTest(unittest.TestCase):
             self.assertNotIsInstance(value, float)  # counts are ints; no money floats
             if isinstance(value, list):
                 self.assertTrue(all(isinstance(item, str) for item in value))
+
+    def test_trace_index_receipt_correlates_task_to_receipts(self) -> None:
+        self.assertTrue(is_safe_trace_id(self.summary["trace_id"]))
+        trace_receipt = Path(self.summary["observability_receipt_ref"])
+        payload = json.loads(trace_receipt.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["kind"], OBSERVABILITY_RECEIPT_KIND)
+        self.assertEqual(payload["trace"]["trace_id"], self.summary["trace_id"])
+        self.assertEqual(
+            set(payload["trace"]["receipt_refs"]),
+            {
+                self.summary["proposal_receipt_ref"],
+                self.summary["review_event_receipt_ref"],
+            },
+        )
+        self.assertFalse(payload["governance"]["execution_allowed"])
 
 
 class GoldenPathFaultInjectionTest(unittest.TestCase):
