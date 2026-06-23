@@ -63,6 +63,47 @@ class LocalTracingConfig:
     network_export_allowed: bool = False
 
 
+@dataclass(frozen=True)
+class TraceReceiptSummary:
+    """Bounded read model for a trace-index receipt.
+
+    This intentionally summarizes receipt refs and gaps; it does not expose raw
+    domain receipt payloads. Receipts remain the authority, the trace is only a
+    correlation index.
+    """
+
+    trace_id: str
+    run_kind: str
+    trace_receipt_ref: str | None
+    receipt_refs: tuple[str, ...]
+    existing_receipt_refs: tuple[str, ...]
+    missing_receipt_refs: tuple[str, ...]
+    data_gaps: tuple[str, ...]
+    created_at_utc: str | None
+    content_hash: str | None
+    execution_allowed: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "trace_id": self.trace_id,
+            "run_kind": self.run_kind,
+            "trace_receipt_ref": self.trace_receipt_ref,
+            "receipt_ref_count": len(self.receipt_refs),
+            "receipt_refs": list(self.receipt_refs),
+            "existing_receipt_refs": list(self.existing_receipt_refs),
+            "missing_receipt_refs": list(self.missing_receipt_refs),
+            "data_gaps": list(self.data_gaps),
+            "created_at_utc": self.created_at_utc,
+            "content_hash": self.content_hash,
+            "execution_allowed": self.execution_allowed,
+            "non_claims": [
+                "Trace id is a correlation handle only.",
+                "This summary does not include raw receipt payloads.",
+                "Not execution authorization.",
+            ],
+        }
+
+
 def new_trace_id() -> str:
     """Create a local FinHarness trace id."""
 
@@ -200,6 +241,131 @@ def _display_path(path: Path) -> str:
         return resolved.relative_to(ROOT).as_posix()
     except ValueError:
         return str(resolved)
+
+
+def _path_from_ref(ref: str, *, receipt_root: Path) -> Path | None:
+    """Resolve a path-like receipt ref for existence checks only."""
+
+    text = ref.strip()
+    if not text or text.startswith(("http://", "https://")):
+        return None
+    path = Path(text)
+    if path.is_absolute():
+        return path
+    if text.startswith("data/receipts/"):
+        return ROOT / text
+    if "/" in text or text.endswith(".json"):
+        return receipt_root / text
+    return None
+
+
+def _iter_trace_receipts(receipt_root: Path) -> Iterator[Path]:
+    if not receipt_root.exists():
+        return
+    yield from sorted(receipt_root.glob("*.json"))
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _trace_receipt_matches(payload: Mapping[str, Any], trace_id: str) -> bool:
+    trace = payload.get("trace")
+    return (
+        payload.get("kind") == OBSERVABILITY_RECEIPT_KIND
+        and isinstance(trace, Mapping)
+        and trace.get("trace_id") == trace_id
+    )
+
+
+def summarize_trace_receipt(
+    trace_id: str,
+    *,
+    receipt_root: str | Path = DEFAULT_OBSERVABILITY_RECEIPT_ROOT,
+) -> TraceReceiptSummary:
+    """Read the latest trace-index receipt for ``trace_id`` as a bounded summary."""
+
+    context = trace_context_from_value(trace_id)
+    root = Path(receipt_root)
+    data_gaps: list[str] = []
+    matches: list[tuple[str, str, Path, dict[str, Any]]] = []
+    for receipt_file in _iter_trace_receipts(root):
+        payload = _load_json(receipt_file)
+        if payload is None:
+            data_gaps.append(f"unreadable observability receipt: {receipt_file.name}")
+            continue
+        if not _trace_receipt_matches(payload, context.trace_id):
+            continue
+        created = str(payload.get("created_at_utc") or "")
+        matches.append((created, receipt_file.name, receipt_file, payload))
+
+    if not matches:
+        return TraceReceiptSummary(
+            trace_id=context.trace_id,
+            run_kind="unknown",
+            trace_receipt_ref=None,
+            receipt_refs=(),
+            existing_receipt_refs=(),
+            missing_receipt_refs=(),
+            data_gaps=(
+                *data_gaps,
+                f"no trace index receipt found for {context.trace_id}",
+            ),
+            created_at_utc=None,
+            content_hash=None,
+        )
+
+    _created, _name, receipt_path, payload = sorted(
+        matches,
+        key=lambda item: (item[0], item[1]),
+    )[-1]
+    trace_value = payload.get("trace")
+    trace = trace_value if isinstance(trace_value, Mapping) else {}
+    receipt_refs = tuple(
+        str(ref)
+        for ref in (trace.get("receipt_refs") or [])
+        if str(ref).strip()
+    )
+    existing: list[str] = []
+    missing: list[str] = []
+    for ref in receipt_refs:
+        ref_path = _path_from_ref(ref, receipt_root=root)
+        if ref_path is None or ref_path.exists():
+            existing.append(ref)
+        else:
+            missing.append(ref)
+
+    gaps = [
+        _bounded_note(str(gap))
+        for gap in (trace.get("data_gaps") or [])
+        if str(gap).strip()
+    ]
+    gaps.extend(data_gaps)
+    gaps.extend(f"receipt ref missing: {Path(ref).name}" for ref in missing)
+
+    return TraceReceiptSummary(
+        trace_id=context.trace_id,
+        run_kind=str(trace.get("run_kind") or "unknown"),
+        trace_receipt_ref=_display_path(receipt_path),
+        receipt_refs=receipt_refs,
+        existing_receipt_refs=tuple(existing),
+        missing_receipt_refs=tuple(missing),
+        data_gaps=tuple(gaps),
+        created_at_utc=(
+            str(payload.get("created_at_utc"))
+            if payload.get("created_at_utc")
+            else None
+        ),
+        content_hash=(
+            str(payload.get("content_hash"))
+            if payload.get("content_hash")
+            else None
+        ),
+    )
 
 
 def _unique(values: Iterable[str]) -> tuple[str, ...]:
