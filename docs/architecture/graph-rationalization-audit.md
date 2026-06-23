@@ -164,6 +164,26 @@ review_due
 
 This turns the audit from prose into a reviewable artifact.
 
+#### R1 Graph Registry — implemented
+
+The registry now lives at `tests/_graph_registry.py` (one `GraphAsset` per graph:
+`id / module / task / consumer_class / graph_needed_reason / status / owner / review_due /
+evidence`), discoverable via `task governance:graphs`, and guarded by
+`tests/test_graph_registry.py`.
+
+**The registry is a judgment artifact, not a deletion authorization.** A
+`downgrade_candidate` / `archive_candidate` / `delete_candidate` status records a decision
+to make *later*, after a usage audit (R0/R5). R1 changes no graph behavior, deletes
+nothing, and downgrades nothing. The guard tests enforce that the three pilot support
+graphs (`repo_intelligence`, `quality_governance`, `release_preflight`) stay
+`downgrade_candidate`, and that every source `*_graph.py` is registered (no graph can enter
+unclassified).
+
+**Correction to "Already Archived" above:** `finance_graph` / `trade_graph` are recorded
+as `historical` / `archived`, but there is **no** `docs/archive/legacy-graphs/` directory —
+those files were deleted in the repo prune (commit `2166bba`), not archived to disk. The
+registry records the true state (no module file); the audit's earlier path claim is stale.
+
 ### R2: Downgrade One Low-Risk Support Graph
 
 Use `repo_intelligence_graph.py` as the pilot. It recently caused real runtime

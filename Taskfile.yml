@@ -131,6 +131,11 @@ tasks:
     cmds:
       - uv run python tests/_policy_registry.py
 
+  governance:graphs:
+    desc: List the Graph Registry (R1) — graph assets by status/consumer/owner (judgment artifact, not a deletion authorization)
+    cmds:
+      - uv run python tests/_graph_registry.py
+
   hardening:redteam:
     desc: Run local adversarial boundary checks
     cmds:
