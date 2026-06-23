@@ -14,7 +14,7 @@ from finharness.api.routes_proposals import router as proposal_router
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_state import router as state_router
 from finharness.market_data import ROOT
-from finharness.observability import TRACE_HEADER, trace_context_from_headers
+from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
 from finharness.runtime_log import configure_logging, get_logger
 from finharness.statecore.store import StateCoreStoreError, ensure_state_core_schema
 
@@ -44,7 +44,17 @@ def create_app(
         trace_context = trace_context_from_headers(request.headers)
         trace_id = trace_context.trace_id
         request.state.trace_id = trace_id
-        response = await call_next(request)
+        with start_local_span(
+            "finharness.api.request",
+            trace_id=trace_id,
+            attributes={
+                "http.request.method": request.method,
+                "url.path": request.url.path,
+                "finharness.trace_id_supplied": trace_context.accepted_supplied,
+            },
+        ) as span:
+            response = await call_next(request)
+            span.set_attribute("http.response.status_code", response.status_code)
         response.headers[TRACE_HEADER] = trace_id
         logger.info(
             "state_api_request",

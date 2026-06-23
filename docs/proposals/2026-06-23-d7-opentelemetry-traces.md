@@ -1,7 +1,7 @@
 # D7 OpenTelemetry Trace / Receipt Indexing mini-RFC
 
-Status: D7a trace context contract implemented (2026-06-23); D7b OTel dependency
-remains gated.
+Status: D7a trace context contract + D7b local-only OTel adapter implemented
+(2026-06-23); D7c exporter remains gated.
 
 ## 1. Change Class
 
@@ -99,7 +99,8 @@ Future implementation must lock:
 
 D7a keeps existing response/header semantics while moving trace id handling into a
 shared contract and adding a separate observability trace-index receipt for task
-correlation. It does not add an OTel SDK/exporter or mutate domain receipts.
+correlation. D7b adds an explicit OpenTelemetry API/SDK dependency and a local-only
+SDK provider with no exporter. Neither slice mutates domain receipts.
 
 ## 6. Traceability Matrix
 
@@ -142,8 +143,8 @@ Not claimed:
 
 Debt:
 
-- D7b OpenTelemetry adapter still needs explicit dependency approval before adding
-  an SDK/exporter.
+- D7c exporter still needs explicit approval before adding any external telemetry
+  export path.
 - D8 Playwright/browser E2E remains separate.
 - If exporter/network telemetry is later requested, it must be a new C3 slice.
 
@@ -154,3 +155,7 @@ Debt:
   `observability_trace_index` receipt for task/receipt correlation, Golden Path
   trace-index coverage, and governance policies for trace contract/no default
   exporter. No OpenTelemetry dependency or exporter added.
+- D7b — added explicit OpenTelemetry API/SDK dependency and a local-only SDK
+  provider (`exporter_configured=false`, `network_export_allowed=false`). API
+  requests now create bounded local spans with allowlisted attributes; unsafe
+  values are redacted and no exporter is configured by default.

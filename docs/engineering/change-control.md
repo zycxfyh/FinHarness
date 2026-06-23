@@ -69,4 +69,4 @@
 | Policy Registry(#3) | **C1**(governance 探针结构化,行为保持) | DONE(merged PR #27,77c92bc;id/owner/scope/source/check) |
 | Graph Rationalization Audit | **C0**(纯架构判断文档,无代码变化) | DONE(merged PR #28,fa91ced;R0/R1/R2/R5 路线,不删图) |
 | Fixture Standardization(#4) | **C1**(测试脚手架标准化,无产品行为变化) | DONE(merged PR #29,5830a56;StateCoreFixture + GOV-ARCH-002) |
-| D7 OpenTelemetry trace/receipt indexing | **C2**(跨 API/task/receipt 的 observability 边界;implementation 新依赖仍需批准) | D7a implemented(trace contract + observability trace-index receipt, no OTel dependency/exporter); D7b still gated |
+| D7 OpenTelemetry trace/receipt indexing | **C2**(跨 API/task/receipt 的 observability 边界;外部 exporter 仍需 C3 批准) | D7a/D7b implemented(trace contract + trace-index receipt + local-only OTel SDK provider, no exporter); D7c external exporter still gated |

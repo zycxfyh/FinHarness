@@ -10,7 +10,9 @@ from finharness.observability import (
     TRACE_HEADER,
     build_trace_index_receipt,
     is_safe_trace_id,
+    local_tracing_config,
     new_trace_id,
+    start_local_span,
     trace_context_from_value,
     trace_metadata,
     write_trace_index_receipt,
@@ -100,6 +102,39 @@ class TraceReceiptIndexTest(unittest.TestCase):
         self.assertEqual(payload["kind"], OBSERVABILITY_RECEIPT_KIND)
         self.assertEqual(payload["trace"]["trace_id"], "trace_write_test")
         self.assertEqual(payload["trace"]["receipt_refs"], ["data/receipts/a.json"])
+
+
+class LocalOpenTelemetryAdapterTest(unittest.TestCase):
+    def test_local_tracing_config_has_no_exporter_or_network(self) -> None:
+        config = local_tracing_config()
+
+        self.assertEqual(config["provider"], "opentelemetry-sdk-local")
+        self.assertFalse(config["exporter_configured"])
+        self.assertFalse(config["network_export_allowed"])
+        self.assertFalse(config["execution_allowed"])
+
+    def test_local_span_uses_bounded_finharness_attributes(self) -> None:
+        with start_local_span(
+            "finharness.test",
+            trace_id="trace_span_test",
+            attributes={
+                "http.request.method": "GET",
+                "url.path": "/health",
+                "payload": {"raw": "ignored"},
+                "finharness.note": "Bearer sk-1234567890abcdef",
+            },
+        ) as span:
+            attributes = dict(span.attributes or {})
+            self.assertTrue(span.is_recording())
+
+        self.assertEqual(attributes["finharness.trace_id"], "trace_span_test")
+        self.assertEqual(attributes["http.request.method"], "GET")
+        self.assertEqual(attributes["url.path"], "/health")
+        self.assertNotIn("payload", attributes)
+        self.assertEqual(
+            attributes["finharness.note"],
+            "sensitive-looking attribute redacted",
+        )
 
 
 class TraceHeaderConstantTest(unittest.TestCase):

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -248,6 +249,12 @@ def _check_trace_contract() -> list[str]:
 
 def _check_no_default_otel_exporter() -> list[str]:
     out: list[str] = []
+    project = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    direct_dependencies = project.get("project", {}).get("dependencies", [])
+    for dependency in direct_dependencies:
+        normalized = str(dependency).lower().replace("_", "-")
+        if normalized.startswith("opentelemetry-exporter"):
+            out.append(f"pyproject direct dependency configures exporter: {dependency}")
     for module in _SRC.rglob("*.py"):
         text = module.read_text(encoding="utf-8")
         for token in _FORBIDDEN_DEFAULT_EXPORTER_TOKENS:

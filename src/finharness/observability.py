@@ -1,8 +1,9 @@
 """Local observability contract for trace ids and receipt indexing.
 
-D7a deliberately stays dependency-free: no OpenTelemetry SDK, no exporter, and no
-network path. The trace id is only a bounded correlation handle. Receipts remain
-the authority.
+D7 keeps the default path local-only: no exporter and no network path. The
+FinHarness trace id is a bounded correlation handle; receipts remain the
+authority. OpenTelemetry spans are an adapter around that handle, not a
+replacement for receipts.
 """
 
 from __future__ import annotations
@@ -10,12 +11,16 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
+
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer
 
 from finharness.market_data import ROOT
 from finharness.statecore.receipt_io import atomic_write_json, resolve_under
@@ -31,6 +36,10 @@ _SECRET_LIKE_RE = re.compile(
     r"(?i)(api[_-]?key|bearer|password|secret|token|sk-[a-z0-9_-]{8,})"
 )
 _MAX_NOTE_LENGTH = 160
+_MAX_ATTRIBUTE_LENGTH = 200
+_LOCAL_TRACER_NAME = "finharness.local"
+
+_LOCAL_PROVIDER: TracerProvider | None = None
 
 
 @dataclass(frozen=True)
@@ -44,10 +53,53 @@ class TraceContext:
     accepted_supplied: bool = False
 
 
+@dataclass(frozen=True)
+class LocalTracingConfig:
+    """D7b local-only tracing configuration."""
+
+    service_name: str = "finharness"
+    provider: Literal["opentelemetry-sdk-local"] = "opentelemetry-sdk-local"
+    exporter_configured: bool = False
+    network_export_allowed: bool = False
+
+
 def new_trace_id() -> str:
     """Create a local FinHarness trace id."""
 
     return f"{TRACE_ID_PREFIX}{uuid4().hex}"
+
+
+def configure_local_tracer_provider(service_name: str = "finharness") -> LocalTracingConfig:
+    """Initialise a local OpenTelemetry SDK provider with no exporters.
+
+    The provider is intentionally module-local rather than a process-global OTel
+    install. That keeps D7b from changing unrelated libraries' tracing behavior.
+    """
+
+    global _LOCAL_PROVIDER
+    if _LOCAL_PROVIDER is None:
+        _LOCAL_PROVIDER = TracerProvider()
+    return LocalTracingConfig(service_name=service_name)
+
+
+def local_tracing_config() -> dict[str, object]:
+    """JSON-safe summary of the default local tracing posture."""
+
+    config = configure_local_tracer_provider()
+    return {
+        "service_name": config.service_name,
+        "provider": config.provider,
+        "exporter_configured": config.exporter_configured,
+        "network_export_allowed": config.network_export_allowed,
+        "execution_allowed": False,
+    }
+
+
+def _local_tracer() -> Tracer:
+    configure_local_tracer_provider()
+    if _LOCAL_PROVIDER is None:
+        raise RuntimeError("local tracer provider was not configured")
+    return _LOCAL_PROVIDER.get_tracer(_LOCAL_TRACER_NAME)
 
 
 def is_safe_trace_id(value: str) -> bool:
@@ -89,6 +141,57 @@ def trace_metadata(trace_id: str) -> dict[str, object]:
             "Not execution authorization.",
         ],
     }
+
+
+def _safe_attribute_value(value: object) -> bool | int | float | str:
+    if isinstance(value, bool | int | float):
+        return value
+    text = str(value).strip()
+    if _SECRET_LIKE_RE.search(text):
+        return "sensitive-looking attribute redacted"
+    if len(text) > _MAX_ATTRIBUTE_LENGTH:
+        return f"{text[:_MAX_ATTRIBUTE_LENGTH]}..."
+    return text
+
+
+def _span_attributes(
+    *,
+    trace_id: str,
+    attributes: Mapping[str, object] | None,
+) -> dict[str, bool | int | float | str]:
+    context = trace_context_from_value(trace_id)
+    safe: dict[str, bool | int | float | str] = {
+        "finharness.trace_id": context.trace_id,
+        "finharness.execution_allowed": False,
+    }
+    for key, value in (attributes or {}).items():
+        if not key.startswith(("finharness.", "http.", "url.", "task.")):
+            continue
+        safe[key] = _safe_attribute_value(value)
+    return safe
+
+
+@contextmanager
+def start_local_span(
+    name: str,
+    *,
+    trace_id: str,
+    attributes: Mapping[str, object] | None = None,
+) -> Iterator[Span]:
+    """Start a local-only OTel span with a FinHarness trace id attribute."""
+
+    tracer = _local_tracer()
+    with tracer.start_as_current_span(
+        name,
+        kind=SpanKind.INTERNAL,
+        attributes=_span_attributes(trace_id=trace_id, attributes=attributes),
+    ) as span:
+        try:
+            yield span
+            span.set_status(Status(StatusCode.OK))
+        except Exception:
+            span.set_status(Status(StatusCode.ERROR))
+            raise
 
 
 def _display_path(path: Path) -> str:
