@@ -113,6 +113,21 @@ class DailyBriefTest(unittest.TestCase):
         for section in brief.sections:
             self.assertTrue(section.lines, f"slot {section.title!r} must not be empty")
 
+    def test_empty_state_emits_no_false_reassurance(self) -> None:
+        """Gate condition 2 (semantic): absence of data must not read as 'safe'."""
+        brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
+        slots = {s.title: " ".join(s.lines) for s in brief.sections}
+
+        # Cash: unverified total must not render as a concrete 0.00.
+        self.assertNotIn("Cash on record 0.00", slots["Cash & liquidity status"])
+        self.assertIn("not verified", slots["Cash & liquidity status"])
+        # Concentration: no holdings is "cannot assess", not "within threshold".
+        self.assertNotIn("within the", slots["Concentration risks"])
+        self.assertIn("no holdings on record", slots["Concentration risks"])
+        # Do-nothing: must not claim inaction carries "no new risk" outright.
+        self.assertIn("existing exposures", slots["Do-nothing option"])
+        self.assertNotIn("no transaction cost or new risk", slots["Do-nothing option"])
+
     def test_preserves_prior_section_data(self) -> None:
         """Gate condition 3: original four-section data is preserved across the restructure."""
         self._seed()

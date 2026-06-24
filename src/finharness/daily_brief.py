@@ -69,9 +69,10 @@ MARKET_CONTEXT_OFFLINE_PLACEHOLDER = (
 )
 
 # Slot 8 is a fixed, always-present line: not acting is itself a reviewable option.
+# It must not imply inaction is risk-free — existing exposures and costs remain.
 DO_NOTHING_LINE = (
-    "Doing nothing is a valid option: holding the current state carries no transaction "
-    "cost or new risk. Weigh it against each candidate decision above before acting."
+    "Doing nothing is a valid option: it creates no new transaction or execution risk, "
+    "but existing exposures, opportunity costs, and unresolved data gaps remain."
 )
 
 
@@ -216,7 +217,14 @@ def compute_daily_brief(
     cash_lines: list[str] = []
     if exposure.cash_runway_months is not None:
         cash_lines.append(f"Cash runway {exposure.cash_runway_months:.1f} months")
-    cash_lines.append(f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}")
+    # Only render an amount when the cash total is verified; an unverified 0.00 would
+    # read as "you have no cash" rather than "no snapshot to read cash from".
+    if exposure.cash_total_verified:
+        cash_lines.append(
+            f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}"
+        )
+    else:
+        cash_lines.append("Cash total not verified; no portfolio snapshot on record.")
     cash_lines += [
         f"Upcoming: {item.due_date} · {item.label}"
         + (f" · {_money(item.amount, item.currency)}" if item.amount is not None else "")
@@ -230,17 +238,19 @@ def compute_daily_brief(
         f"(HHI {exposure.concentration_hhi:.3f})"
     ]
 
-    # Slot 4: Concentration risks.
-    concentration_lines = (
-        [
+    # Slot 4: Concentration risks. No holdings means "cannot assess", not "low risk" —
+    # do not render absence of data as reassurance.
+    if exposure.holding_count == 0:
+        concentration_lines = ["Concentration not assessed: no holdings on record."]
+    elif exposure.concentration_flagged:
+        concentration_lines = [
             f"Concentration flag: top holding over "
             f"{exposure.concentration_threshold * 100:.0f}%"
         ]
-        if exposure.concentration_flagged
-        else [
+    else:
+        concentration_lines = [
             f"Top holding within the {exposure.concentration_threshold * 100:.0f}% threshold."
         ]
-    )
 
     # Slot 5: Leverage & liquidation warnings (qualitative in v1; no liquidation price).
     if exposure.interest_bearing_debt_total > 0:
