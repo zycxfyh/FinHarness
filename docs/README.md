@@ -9,6 +9,7 @@ unsafe path visibly blocked.
 
 ## Start Here
 
+- Understand the product direction and category: [Product Thesis](product/product-thesis.md), [Product Roadmap](product/product-roadmap.md), [North Star](product-north-star.md)
 - New to the project: [Golden Path Tutorial](tutorials/golden-path.md)
 - Need to perform one task: [How-to Guides](how-to/README.md)
 - Need exact facts, commands, or schemas: [Reference](reference/README.md)
