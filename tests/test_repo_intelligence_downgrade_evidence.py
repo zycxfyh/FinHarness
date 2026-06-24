@@ -1,20 +1,16 @@
-"""Graph R2 evidence pilot: repo_intelligence linear-equivalence check.
+"""repo_intelligence linear-contract regression (post R2 downgrade).
 
-Usage evidence for the ``repo_intelligence`` downgrade *candidate*. It proves that
-the current graph-shaped path (`run_repo_intelligence_graph`, a compiled LangGraph
-`StateGraph`) produces output that is reproducible by a plain linear composition of
-the same node functions — i.e. the graph orchestration adds nothing here.
+Originally the R2 *evidence* pilot (PR #44) that proved the graph-shaped path was
+reproducible by a plain linear composition. After the downgrade shipped (#46),
+``run_repo_intelligence_graph`` *is* that linear composition, so this file now serves
+as the contract regression: it pins the public runner to the canonical node order /
+state threading and to the full output contract, guarding against a future change
+that silently reorders, drops, or mis-threads a stage.
 
-This file is evidence only. It does NOT:
-- downgrade ``repo_intelligence_graph`` or remove the `StateGraph`;
-- change the Graph Registry status or add a ``downgraded`` enum value;
-- modify Taskfile tasks or any runtime/production path;
-- touch ``test_pilot_support_graphs_stay_downgrade_candidates``;
-- authorize a future deletion/downgrade.
-
-The registry explicitly states that ``downgrade_candidate`` is not a downgrade
-authorization; the real downgrade is a later, separately-gated decision. This test
-only produces the usage evidence that decision will need.
+It compares the public runner against an independent reference composition of the same
+node functions (kept here on purpose, not imported from the module, so the test is a
+genuine independent check). Only ``generated_at`` and the per-root path prefix are
+normalized away; every semantic contract field must match.
 """
 
 from __future__ import annotations
