@@ -17,6 +17,7 @@ from finharness.api.app import create_app
 from finharness.daily_change_brief import _change_scaffold
 from finharness.statecore.decision_scaffold import (
     REQUIRED_FIELDS,
+    DecisionScaffold,
     DecisionScaffoldError,
     ensure_forcing,
     is_complete,
@@ -54,6 +55,40 @@ class DecisionScaffoldModuleTest(unittest.TestCase):
         message = str(ctx.exception)
         self.assertIn("do_nothing_case", message)
         self.assertIn("risk_if_wrong", message)
+
+
+class DecisionScaffoldModelTest(unittest.TestCase):
+    """The typed Pydantic model that backs ``ensure_forcing``."""
+
+    def test_required_missing_raises(self) -> None:
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
+            DecisionScaffold.model_validate({"decision_intent": "x", "thesis": "y"})
+
+    def test_blank_required_raises(self) -> None:
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
+            DecisionScaffold.model_validate({**VALID_SCAFFOLD, "risk_if_wrong": "   "})
+
+    def test_optional_blank_or_none_excluded_from_dict(self) -> None:
+        model = DecisionScaffold.model_validate(
+            {**VALID_SCAFFOLD, "emotion": "  ", "review_date": None}
+        )
+        out = model.to_dict()
+        self.assertNotIn("emotion", out)
+        self.assertNotIn("review_date", out)
+
+    def test_unknown_field_dropped_not_rejected(self) -> None:
+        model = DecisionScaffold.model_validate({**VALID_SCAFFOLD, "unknown": "z"})
+        self.assertNotIn("unknown", model.to_dict())
+
+    def test_valid_scaffold_to_dict_equals_legacy_contract(self) -> None:
+        # The model's storage form is equivalent to the old normalize() output.
+        model = DecisionScaffold.model_validate(VALID_SCAFFOLD)
+        self.assertEqual(model.to_dict(), normalize(VALID_SCAFFOLD))
+        self.assertEqual(model.to_dict(), VALID_SCAFFOLD)
 
 
 class CreateGovernedProposalForcingTest(unittest.TestCase):
