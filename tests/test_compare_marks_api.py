@@ -6,6 +6,7 @@ from pathlib import Path
 
 from finharness.api.app import create_app
 from finharness.statecore.store import init_state_core
+from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
 
 
@@ -25,7 +26,13 @@ class CompareMarksApiTest(unittest.TestCase):
 
     def _proposal(self, claim: str) -> str:
         resp = self.client.post(
-            "/proposals", json={"kind": "rebalance_review", "claim": claim, "evidence": {}}
+            "/proposals",
+            json={
+                "kind": "rebalance_review",
+                "claim": claim,
+                "evidence": {},
+                "decision_scaffold": VALID_SCAFFOLD,
+            },
         )
         return resp.json()["proposal"]["proposal_id"]
 

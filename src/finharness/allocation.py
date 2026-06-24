@@ -75,6 +75,35 @@ class AllocationCandidate(BaseModel):
     execution_allowed: bool = False
 
 
+def _candidate_scaffold(candidate: AllocationCandidate) -> dict[str, str]:
+    """Derive the minimal decision scaffold from the candidate's own structured fields.
+
+    Not filler: intent/thesis come from the claim and the proposed action, the
+    do-nothing case from the candidate's explicit ``do_nothing`` option, and the
+    downside from its declared key risks.
+    """
+    do_nothing = next((o for o in candidate.options if o.kind == "do_nothing"), None)
+    actions = [o for o in candidate.options if o.kind != "do_nothing"]
+    thesis = candidate.claim
+    if actions:
+        thesis = f"{candidate.claim} Candidate action: {actions[0].label}."
+    do_nothing_case = (
+        f"{do_nothing.label} (cost: {do_nothing.cost})"
+        if do_nothing
+        else "Leave the allocation unchanged; the surfaced exposure persists."
+    )
+    return {
+        "decision_intent": f"Review the {candidate.dimension} candidate: {candidate.claim}",
+        "thesis": thesis,
+        "do_nothing_case": do_nothing_case,
+        "risk_if_wrong": "; ".join(candidate.key_risks)
+        or "Acting may incur transaction or tax cost, or forgo upside.",
+        "position_impact": (
+            f"dimension={candidate.dimension}; reversibility={candidate.reversibility}"
+        ),
+    }
+
+
 def _cash_buffer_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
@@ -572,6 +601,7 @@ def record_allocation_candidates(
             limitations={"items": list(candidate.limitations)},
             non_claims=list(CANDIDATE_NON_CLAIMS),
             source_refs=source_refs,
+            decision_scaffold=_candidate_scaffold(candidate),
             engine=engine,
             receipt_root=root,
             proposal_id=_stable_proposal_id(candidate.detector_kind, report.as_of_date),

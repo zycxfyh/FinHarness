@@ -87,6 +87,33 @@ def _claim(status: BriefStatus, observations: tuple[Observation, ...]) -> str:
     return f"Observed {len(observations)} threshold-crossing portfolio state changes."
 
 
+def _change_scaffold(
+    status: BriefStatus, observations: tuple[Observation, ...]
+) -> dict[str, str]:
+    """Decision scaffold for the daily-change review candidate.
+
+    The thesis is the real computed claim; the do-nothing/risk fields carry the
+    concrete status and flagged-observation count so the brake is specific, not
+    boilerplate. (This candidate is a generic "should I look at today's change",
+    not an asset-level buy/sell, so the do-nothing/risk wording is templated around
+    those real signals rather than per-instrument.)
+    """
+    count = len(observations)
+    return {
+        "decision_intent": "Review today's portfolio change before it goes unexamined.",
+        "thesis": _claim(status, observations),
+        "do_nothing_case": (
+            f"Skip the review: status is '{status}' with {count} flagged observation(s); "
+            "they go unexamined and any drift, concentration, or data error in them is missed."
+        ),
+        "risk_if_wrong": (
+            f"With status '{status}' and {count} observation(s), reviewing a non-material "
+            "change costs only attention; ignoring a material one risks a missed exposure "
+            "shift or data error."
+        ),
+    }
+
+
 def _render_markdown(
     *,
     status: BriefStatus,
@@ -251,6 +278,7 @@ def run_daily_change_brief(
         },
         non_claims=DESCRIPTIVE_NON_CLAIMS,
         source_refs=source_refs,
+        decision_scaffold=_change_scaffold(status, observations),
         engine=engine,
         receipt_root=state_core_receipt_root,
         proposal_id=proposal_id,

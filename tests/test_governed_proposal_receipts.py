@@ -10,6 +10,7 @@ from finharness.statecore.models import Proposal, ReceiptIndex
 from finharness.statecore.proposals import _safe_id, create_governed_proposal
 from finharness.statecore.receipt_io import ReceiptPathError, resolve_under
 from finharness.statecore.store import init_state_core, read_all
+from tests._scaffold import VALID_SCAFFOLD
 
 
 class GovernedProposalReceiptRevisionTest(unittest.TestCase):
@@ -27,6 +28,7 @@ class GovernedProposalReceiptRevisionTest(unittest.TestCase):
             claim=claim,
             evidence=evidence,
             source_refs=["data/receipts/snap.json"],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id="alloc_cash_buffer_low_2026-06-20",
@@ -129,6 +131,7 @@ class ReceiptPathSafetyTest(unittest.TestCase):
             kind="cash_buffer_low",
             claim="x",
             evidence={"runway": 1.0},
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id="../../evil",
@@ -144,6 +147,7 @@ class ReceiptPathSafetyTest(unittest.TestCase):
             kind="cash_buffer_low",
             claim="Cash covers 1.0 months",
             evidence={"runway": 1.0},
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id="alloc_cash_buffer_low_2026-06-20",
