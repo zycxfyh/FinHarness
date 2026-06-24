@@ -30,12 +30,15 @@ GRAPH_NEEDED_REASONS = frozenset(
 )
 # ``archived`` extends the audit's R1 enum for assets that are already retired (deleted),
 # as opposed to *candidates* for a future archive/delete decision. finance_graph /
-# trade_graph are in this state.
+# trade_graph are in this state. ``downgraded`` marks an asset whose graph shape has been
+# replaced by a plain pipeline after an authorized R2 downgrade (repo_intelligence, R2):
+# it still exists and is still consumed, it is simply no longer graph-orchestrated.
 STATUSES = frozenset(
     {
         "keep",
         "headless_keep",
         "downgrade_candidate",
+        "downgraded",
         "archive_candidate",
         "delete_candidate",
         "archived",
@@ -195,9 +198,9 @@ _HEADLESS_DOMAIN: tuple[GraphAsset, ...] = (
 )
 
 # --- Support / Governance Graphs (audit §Support / Governance Graphs) --------------------
-# Most likely over-structured; useful but may not need to be graphs. R2 will pilot a
-# downgrade on repo_intelligence. NOTE: a downgrade_candidate is a review flag, NOT a
-# deletion/downgrade authorization.
+# Most likely over-structured; useful but may not need to be graphs. R2 piloted (and, for
+# repo_intelligence, executed) a downgrade. NOTE: downgrade_candidate is a review flag, NOT
+# a deletion/downgrade authorization — quality_governance / release_preflight stay frozen.
 _SUPPORT_GOVERNANCE: tuple[GraphAsset, ...] = (
     GraphAsset(
         id="repo_intelligence",
@@ -205,12 +208,13 @@ _SUPPORT_GOVERNANCE: tuple[GraphAsset, ...] = (
         task="repo:intelligence",
         consumer_class="governance",
         graph_needed_reason="none",
-        status="downgrade_candidate",
+        status="downgraded",
         owner="eos",
         review_due="2026-08-15",
-        evidence="audit §Support/Governance + R2 pilot: report/receipt flow, not graph "
-        "semantics. consumers: task repo:intelligence, quality governance, dashboard. "
-        "Downgrade is a later decision after usage evidence; not authorized here.",
+        evidence="R2 downgrade executed: StateGraph replaced by a plain linear pipeline, "
+        "graph semantics removed; output contract, task repo:intelligence, and CLI entry "
+        "unchanged. Linear equivalence proven in PR #44; downgrade authorized and shipped "
+        "in #46. consumers: task repo:intelligence, quality governance, dashboard.",
     ),
     GraphAsset(
         id="quality_governance",

@@ -78,19 +78,30 @@ class GraphRegistryTest(unittest.TestCase):
                 with self.subTest(graph=g.id):
                     self.assertIsNone(g.task, f"{g.id}: archived/historical must have no task")
 
-    def test_pilot_support_graphs_stay_downgrade_candidates(self) -> None:
-        # Guard the gate's explicit concern: these must NOT be silently relabelled `keep`.
-        expected = {"repo_intelligence", "quality_governance", "release_preflight"}
+    def test_pilot_support_graphs_are_not_silently_promoted_or_deleted(self) -> None:
+        # Guardrail (R2): the registry is not a promotion/deletion authorization. These
+        # pilot assets must never be silently relabelled keep/headless_keep or scheduled
+        # for deletion/archival. The only sanctioned movement is along the authorized
+        # downgrade path: downgrade_candidate -> downgraded (repo_intelligence, evidence
+        # PR #44, shipped #46). quality_governance / release_preflight have no authorized
+        # downgrade yet and stay frozen as downgrade_candidate.
         by_id = {g.id: g for g in GRAPHS}
-        for graph_id in expected:
+        forbidden = {"keep", "headless_keep", "delete_candidate", "archived"}
+        for graph_id in ("repo_intelligence", "quality_governance", "release_preflight"):
             with self.subTest(graph=graph_id):
                 self.assertIn(graph_id, by_id, f"{graph_id} missing from registry")
-                self.assertEqual(
+                self.assertNotIn(
                     by_id[graph_id].status,
-                    "downgrade_candidate",
-                    f"{graph_id} must remain downgrade_candidate (registry is not a "
-                    "promotion/deletion authorization)",
+                    forbidden,
+                    f"{graph_id} must not be silently promoted or deleted",
                 )
+        self.assertEqual(by_id["quality_governance"].status, "downgrade_candidate")
+        self.assertEqual(by_id["release_preflight"].status, "downgrade_candidate")
+        self.assertIn(
+            by_id["repo_intelligence"].status,
+            {"downgrade_candidate", "downgraded"},
+            "repo_intelligence may only move along the authorized downgrade path",
+        )
 
     def test_registry_covers_every_source_graph_module(self) -> None:
         # Forcing function for audit-completeness: every src graph module must be registered,
