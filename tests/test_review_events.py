@@ -16,6 +16,7 @@ from finharness.statecore.proposals import (
     is_archived,
 )
 from finharness.statecore.store import StateCoreStoreError, init_state_core, write_records
+from tests._scaffold import VALID_SCAFFOLD
 
 
 class ReviewEventTest(unittest.TestCase):
@@ -33,6 +34,7 @@ class ReviewEventTest(unittest.TestCase):
             kind="cash_buffer_low",
             claim="Cash covers 1.0 months",
             evidence={"runway": 1.0},
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,

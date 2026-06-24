@@ -230,6 +230,12 @@ class Proposal(StateCoreBase, table=True):
     limitations: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    # Minimal decision forcing gate (P4). Empty for ungoverned/legacy rows; governed
+    # proposals created via create_governed_proposal must carry the four required fields
+    # (see finharness.statecore.decision_scaffold).
+    decision_scaffold: dict[str, Any] = Field(
+        default_factory=dict, sa_column=json_dict_column()
+    )
     authority_level: AuthorityLevel = "needs_human_confirm"
     execution_allowed: bool = False
     receipt_ref: str | None = None

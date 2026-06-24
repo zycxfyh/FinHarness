@@ -13,6 +13,7 @@ from finharness.statecore.proposals import (
     create_governed_proposal,
 )
 from finharness.statecore.store import init_state_core, read_all
+from tests._scaffold import VALID_SCAFFOLD
 
 
 class AnnualReviewTest(unittest.TestCase):
@@ -38,6 +39,7 @@ class AnnualReviewTest(unittest.TestCase):
             claim=claim,
             evidence=evidence or {},
             source_refs=[],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,

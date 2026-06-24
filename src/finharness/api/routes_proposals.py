@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.market_data import ROOT
 from finharness.review_read import read_proposal_timeline
+from finharness.statecore.decision_scaffold import DecisionScaffoldError
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposals import (
@@ -39,6 +40,7 @@ class ProposalCreateRequest(BaseModel):
     limitations: dict[str, Any] = Field(default_factory=dict)
     non_claims: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
+    decision_scaffold: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("kind", "claim")
     @classmethod
@@ -262,9 +264,12 @@ async def create_proposal(
             limitations=request.limitations,
             non_claims=request.non_claims,
             source_refs=list(request.source_refs),
+            decision_scaffold=request.decision_scaffold,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except DecisionScaffoldError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StateCoreStoreError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ProposalCreateResponse(

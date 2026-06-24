@@ -6,6 +6,7 @@ from pathlib import Path
 
 from finharness.api.app import create_app
 from finharness.statecore.store import init_state_core
+from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
 
 # Field set of a /proposals list item before R2b — the default response must keep exactly
@@ -36,7 +37,12 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
     def _create_proposal(self, claim: str) -> str:
         resp = self.client.post(
             "/proposals",
-            json={"kind": "rebalance_review", "claim": claim, "evidence": {"k": 1}},
+            json={
+                "kind": "rebalance_review",
+                "claim": claim,
+                "evidence": {"k": 1},
+                "decision_scaffold": VALID_SCAFFOLD,
+            },
         )
         self.assertEqual(resp.status_code, 200)
         return resp.json()["proposal"]["proposal_id"]

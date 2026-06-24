@@ -17,6 +17,7 @@ from finharness.statecore.models import (
     Snapshot,
 )
 from finharness.statecore.store import (
+    CURRENT_STATE_CORE_USER_VERSION,
     StateCoreStoreError,
     get_account,
     get_snapshot,
@@ -235,7 +236,8 @@ class StateCoreStoreTest(unittest.TestCase):
 
         with engine.connect() as connection:
             self.assertEqual(
-                int(connection.execute(text("PRAGMA user_version")).scalar_one()), 2
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()),
+                CURRENT_STATE_CORE_USER_VERSION,
             )
             self.assertEqual(
                 connection.execute(text("SELECT typeof(market_value) FROM positions")).scalar_one(),
@@ -248,6 +250,46 @@ class StateCoreStoreTest(unittest.TestCase):
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
         self.assertEqual(len(read_all(Position, engine=engine)), 1)
+
+    def test_migration_adds_decision_scaffold_to_legacy_proposals(self) -> None:
+        engine = init_state_core(self.db_path)
+        write_records(
+            [Proposal(proposal_id="p_old", kind="cash_buffer_low", claim="legacy")],
+            engine=engine,
+        )
+        # Simulate a pre-P4 database: proposals without decision_scaffold, version reset.
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE proposals DROP COLUMN decision_scaffold"))
+            connection.exec_driver_sql("PRAGMA user_version = 2")
+        with engine.connect() as connection:
+            columns = {
+                row[1]
+                for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
+            }
+            self.assertNotIn("decision_scaffold", columns)  # legacy state confirmed
+
+        migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()), 3
+            )
+            columns = {
+                row[1]
+                for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
+            }
+            self.assertIn("decision_scaffold", columns)
+            self.assertEqual(
+                connection.execute(
+                    text("SELECT decision_scaffold FROM proposals WHERE proposal_id='p_old'")
+                ).scalar_one(),
+                "{}",
+            )
+        # The legacy row loads through the ORM with an empty scaffold dict.
+        loaded = read_all(Proposal, engine=engine)
+        self.assertEqual(loaded[0].decision_scaffold, {})
+        # Idempotent: a second run is a no-op.
+        migrate_state_core(engine)
 
     def test_write_records_is_atomic(self) -> None:
         engine = init_state_core(self.db_path)

@@ -18,6 +18,7 @@ from finharness.statecore.models import (
     Snapshot,
 )
 from finharness.statecore.store import init_state_core, open_state_core, write_records
+from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
 
 
@@ -116,6 +117,7 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
                     "total_market_value_delta": mv_delta,
                 },
                 "source_refs": ["data/receipts/before.json", "data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         self.assertEqual(create.status_code, 200)

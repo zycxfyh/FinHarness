@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from finharness.market_data import ROOT
+from finharness.statecore.decision_scaffold import ensure_forcing
 from finharness.statecore.models import (
     REVIEW_EVENT_KINDS,
     Attestation,
@@ -112,11 +113,14 @@ def _content_hash(
     limitations: dict[str, Any],
     non_claims: list[str],
     source_refs: list[str],
+    decision_scaffold: dict[str, Any] | None = None,
 ) -> str:
     """Stable hash of a proposal's substantive content (excludes timestamps/ids).
 
     Two writes with identical content hash to the same value, so an idempotent
-    re-scan that sees no change does not append a redundant receipt revision.
+    re-scan that sees no change does not append a redundant receipt revision. The
+    decision scaffold is substantive content, so a changed scaffold writes a new
+    revision.
     """
     canonical = json.dumps(
         {
@@ -127,6 +131,7 @@ def _content_hash(
             "limitations": limitations,
             "non_claims": non_claims,
             "source_refs": source_refs,
+            "decision_scaffold": decision_scaffold or {},
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -144,6 +149,7 @@ def _content_hash_of_row(proposal: Proposal) -> str:
         limitations=proposal.limitations,
         non_claims=proposal.non_claims,
         source_refs=proposal.source_refs,
+        decision_scaffold=proposal.decision_scaffold,
     )
 
 
@@ -205,6 +211,7 @@ def create_governed_proposal(
     limitations: dict[str, Any] | None = None,
     non_claims: list[str] | None = None,
     source_refs: list[str] | None = None,
+    decision_scaffold: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
     proposal_id: str | None = None,
@@ -233,6 +240,9 @@ def create_governed_proposal(
     final_assumptions = assumptions or {}
     final_limitations = limitations or {}
     final_source_refs = list(source_refs or [])
+    # Forcing gate: a governed (needs_human_confirm) proposal must carry the four
+    # required decision-scaffold fields. Fail-closed if any are missing/blank.
+    final_scaffold = ensure_forcing(decision_scaffold)
     content_hash = _content_hash(
         kind=kind.strip(),
         claim=claim.strip(),
@@ -241,6 +251,7 @@ def create_governed_proposal(
         limitations=final_limitations,
         non_claims=final_non_claims,
         source_refs=final_source_refs,
+        decision_scaffold=final_scaffold,
     )
 
     supersedes: str | None = None
@@ -269,6 +280,7 @@ def create_governed_proposal(
         limitations=final_limitations,
         non_claims=final_non_claims,
         source_refs=final_source_refs,
+        decision_scaffold=final_scaffold,
         execution_allowed=False,
         receipt_ref=receipt_ref,
         created_at_utc=created_at,

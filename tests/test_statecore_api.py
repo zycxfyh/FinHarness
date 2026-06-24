@@ -29,6 +29,7 @@ from finharness.statecore.store import (
     read_all,
     write_records,
 )
+from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
 
 
@@ -467,6 +468,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "limitations": {"data_scope": "sample"},
                 "non_claims": ["No profitability claim."],
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
 
@@ -515,6 +517,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_id = created.json()["proposal"]["proposal_id"]
@@ -569,6 +572,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_id = created.json()["proposal"]["proposal_id"]
@@ -613,6 +617,7 @@ class StateCoreApiTest(unittest.TestCase):
             claim="Cash covers 1.0 months.",
             evidence={"runway": 1.0},
             source_refs=["data/receipts/snap.json"],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,
@@ -623,6 +628,7 @@ class StateCoreApiTest(unittest.TestCase):
             claim="Cash covers 0.5 months.",
             evidence={"runway": 0.5},
             source_refs=["data/receipts/snap.json"],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,
@@ -654,6 +660,7 @@ class StateCoreApiTest(unittest.TestCase):
                 json={
                     "kind": "rebalance_review",
                     "claim": "Review concentration before any human decision.",
+                    "decision_scaffold": VALID_SCAFFOLD,
                 },
             )
 
@@ -667,6 +674,7 @@ class StateCoreApiTest(unittest.TestCase):
             json={
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_receipt_ref = Path(created.json()["receipt_ref"])

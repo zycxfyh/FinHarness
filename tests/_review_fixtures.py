@@ -36,6 +36,12 @@ class ReviewFixture:
             kind=kind,
             claim=f"{proposal_id} claim",
             evidence={"k": 1},
+            decision_scaffold={
+                "decision_intent": f"Review {proposal_id}",
+                "thesis": f"{proposal_id} surfaced by the {kind} detector",
+                "do_nothing_case": "Leave it; the surfaced condition persists.",
+                "risk_if_wrong": "Acting may incur cost or forgo upside.",
+            },
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,
