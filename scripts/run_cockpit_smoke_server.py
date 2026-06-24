@@ -94,9 +94,18 @@ def build_seeded_app():
     cash_buffer = by_kind["cash_buffer_low"]
 
     # Give the Proposals detail real revision/review content to render (not an empty state).
+    # P5: the high-risk concentration proposal has no counter-evidence, so it cannot be
+    # approved (fail-closed). The human declines to confirm it blind; a rejection is not gated.
     create_governed_attestation(
-        proposal_id=concentration.proposal.proposal_id, decision="approved",
-        attester="operator", reason="seed smoke", engine=engine, receipt_root=receipt_root,
+        proposal_id=concentration.proposal.proposal_id, decision="rejected",
+        attester="operator", reason="high-risk; not confirming without counter-evidence",
+        engine=engine, receipt_root=receipt_root,
+    )
+    # The low-risk cash-buffer proposal is the one the human confirms (non-execution).
+    create_governed_attestation(
+        proposal_id=cash_buffer.proposal.proposal_id, decision="approved",
+        attester="operator", reason="reviewed cash buffer",
+        engine=engine, receipt_root=receipt_root,
     )
     create_governed_review_event(
         proposal_id=concentration.proposal.proposal_id, kind="annotation",
