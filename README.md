@@ -1,17 +1,29 @@
 # FinHarness Lab
 
-AI finance decision and research harness for evidence-bound financial judgment.
+FinHarness is an **AI-native personal financial judgment layer**: it helps an
+individual see their financial state, risk exposure, and decision rationale —
+and review what actually happened afterward — instead of telling them what to buy.
 
-> **New here? Start with the [docs task map](docs/README.md), then run the
-> [Golden Path Tutorial](docs/tutorials/golden-path.md).** It walks you through a
+It is **not** a trading bot, **not** an AI stock picker or robo-advisor, and
+**not** an execution authority. The research / evidence / risk **harness**
+underneath is the engine room, not the product surface: every suggestion carries
+claims with evidence, assumptions, limitations, and non-claims, goes through human
+review, and produces a receipt. `execution_allowed=false` unless a layer
+explicitly proves otherwise. FinHarness is allowed to advise; it is not allowed to
+pretend its advice is a guaranteed edge or an execution authorization.
+
+> **Product direction:** [Product Thesis](docs/product/product-thesis.md) ·
+> [Product Roadmap](docs/product/product-roadmap.md) ·
+> [North Star](docs/product-north-star.md).
+>
+> **New here?** Start with the [docs task map](docs/README.md), then run the
+> [Golden Path Tutorial](docs/tutorials/golden-path.md). It walks you through a
 > safe end-to-end flow and shows the brakes: human review, receipts, and
 > `execution_allowed=false`.
 
-The goal is to learn by assembling top open-source wheels instead of rebuilding mature tools,
-then use them to produce governed financial suggestions: claims with evidence,
-assumptions, rejected alternatives, risk notes, receipts, and human authority
-boundaries. FinHarness is allowed to advise; it is not allowed to pretend its
-advice is a guaranteed edge or an execution authorization.
+The engineering approach is to learn by assembling top open-source wheels instead
+of rebuilding mature tools, then use them to produce governed financial
+suggestions.
 
 - finance data and research
 - backtesting and risk metrics
