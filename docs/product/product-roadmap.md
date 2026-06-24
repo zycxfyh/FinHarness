@@ -12,13 +12,18 @@
   决策工作流 → 人机 cockpit → 有限自动化)。
 - 本产品路线 = **用户每天打开看到什么**怎么长。
 
-| 产品阶段 | 北极星能力阶段映射 | 用户感知 |
-| --- | --- | --- |
-| P1 Product Thesis | 阶段 1(地基,文档先行) | 方向钉进仓库 |
-| P2 Daily Financial Brief v1 | 阶段 2(只读驾驶舱) | 每天看清状态/风险 |
-| P3 Decision Journal / Proposal Scaffold | 阶段 3(决策工作流) | 决策前写 thesis |
-| P4 Post-Loss Attribution v0 | 阶段 3–4(工作流 + 复核) | 亏损后结构化归因 |
-| P5 Leverage Warning Gate v0 | 阶段 2/3 的 risk 属性 | 高风险动作前强解释 |
+| 产品阶段 | 北极星能力阶段映射 | 用户感知 | 交付状态 |
+| --- | --- | --- | --- |
+| P1 Product Thesis | 阶段 1(地基,文档先行) | 方向钉进仓库 | shipped |
+| P2 Daily Financial Brief v1 | 阶段 2(只读驾驶舱) | 每天看清状态/风险 | shipped(#43) |
+| P3 Decision Journal / Proposal Scaffold | 阶段 3(决策工作流) | 决策前写 thesis | shipped(#47;forcing gate)|
+| P4 Post-Loss Attribution v0 | 阶段 3–4(工作流 + 复核) | 亏损后结构化归因 | 未开始 |
+| P5 Leverage Warning Gate v0 | 阶段 2/3 的 risk 属性 | 高风险动作前强解释 | 未开始 |
+
+> 交付状态按**产品轴**编号(P2=Daily Brief、P3=Decision Scaffold)。注意它与
+> 工程 slice 编号错位:工程线把 Daily Brief 记为 P3(#43)、Decision Scaffold
+> 记为 P4(#47)。本表只在能诚实声明时标 shipped,P4 Post-Loss Attribution
+> 尚未动工,不标 done。
 
 ## P1 — Product Thesis(本轮)
 
