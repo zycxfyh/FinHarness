@@ -27,6 +27,7 @@ from finharness.statecore.receipt_io import (
     remove_file_best_effort,
     resolve_under,
 )
+from finharness.statecore.risk_classification import ensure_confirmable
 from finharness.statecore.store import StateCoreStoreError, upsert_records, write_records
 
 DecisionInput = Literal["approved", "rejected"]
@@ -331,6 +332,16 @@ def create_governed_attestation(
         proposal = session.get(Proposal, proposal_id)
     if proposal is None:
         raise KeyError(proposal_id)
+
+    # P5 forcing gate (approval-time): a high-risk proposal may be recorded and
+    # reviewed, but it cannot be *approved* without counter-evidence. Fail-closed
+    # before any write so no half-written attestation row/receipt can exist.
+    if decision == "approved":
+        ensure_confirmable(
+            kind=proposal.kind,
+            evidence=proposal.evidence,
+            decision_scaffold=proposal.decision_scaffold,
+        )
 
     created_at = _now_utc()
     attestation_id = _safe_id(f"att_{_stamp()}_{uuid4().hex[:8]}")
