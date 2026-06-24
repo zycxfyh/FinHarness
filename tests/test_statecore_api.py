@@ -448,10 +448,13 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertFalse(body["execution_allowed"])
         self.assertIn("Not execution authorization.", body["non_claims"])
         self.assertTrue(body["headline"])
-        section_titles = {section["title"] for section in body["sections"]}
-        self.assertIn("Change since last", section_titles)
-        self.assertIn("Exposure & concentration", section_titles)
-        self.assertIn("Needs review", section_titles)
+        # P3 v1: ten fixed slots.
+        section_titles = [section["title"] for section in body["sections"]]
+        self.assertEqual(len(section_titles), 10)
+        self.assertIn("Net worth snapshot", section_titles)
+        self.assertIn("Concentration risks", section_titles)
+        self.assertIn("Do-nothing option", section_titles)
+        self.assertIn("Review prompts", section_titles)
 
     def test_create_proposal_writes_db_receipt_and_index_without_authority(self) -> None:
         response = self.client.post(

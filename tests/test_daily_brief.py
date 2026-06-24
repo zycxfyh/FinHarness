@@ -7,7 +7,13 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from finharness.daily_brief import compute_daily_brief, record_daily_brief
+from finharness.daily_brief import (
+    DO_NOTHING_LINE,
+    MARKET_CONTEXT_OFFLINE_PLACEHOLDER,
+    SLOT_TITLES,
+    compute_daily_brief,
+    record_daily_brief,
+)
 from finharness.statecore.models import (
     Account,
     Position,
@@ -76,16 +82,57 @@ class DailyBriefTest(unittest.TestCase):
         # Two portfolio snapshots -> a holdings change is computed (1000 -> 2000).
         self.assertEqual(brief.holdings_change, 1000.0)
         self.assertEqual(brief.net_worth, 2000.0)
-        titles = {section.title for section in brief.sections}
-        self.assertEqual(
-            titles,
-            {
-                "Change since last",
-                "Exposure & concentration",
-                "Upcoming obligations",
-                "Needs review",
-            },
-        )
+        # P3 v1: exactly the ten fixed slots, in the fixed order.
+        titles = [section.title for section in brief.sections]
+        self.assertEqual(list(titles), list(SLOT_TITLES))
+
+    def test_ten_slots_fixed_and_never_empty(self) -> None:
+        """Gate conditions 1, 2, 7: ten slots, order fixed, no slot ever disappears."""
+        self._seed()
+
+        brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertEqual(len(brief.sections), 10)
+        self.assertEqual(tuple(s.title for s in brief.sections), SLOT_TITLES)
+        for section in brief.sections:
+            self.assertTrue(section.lines, f"slot {section.title!r} must not be empty")
+        slots = {s.title: s.lines for s in brief.sections}
+        # Do-nothing (slot 8) is always present.
+        self.assertEqual(slots["Do-nothing option"], (DO_NOTHING_LINE,))
+        # Market context (slot 6) is the offline placeholder in v1 — no live data, no network.
+        self.assertEqual(slots["Market context"], (MARKET_CONTEXT_OFFLINE_PLACEHOLDER,))
+        # Candidate decisions read from governed proposals (seed has one).
+        candidates = slots["Candidate decisions"]
+        self.assertTrue(any("Review concentration" in line for line in candidates))
+
+    def test_empty_state_still_emits_all_ten_slots(self) -> None:
+        """Gate condition 2: with no data, slots use explicit placeholders, none vanish."""
+        brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertEqual(tuple(s.title for s in brief.sections), SLOT_TITLES)
+        for section in brief.sections:
+            self.assertTrue(section.lines, f"slot {section.title!r} must not be empty")
+
+    def test_preserves_prior_section_data(self) -> None:
+        """Gate condition 3: original four-section data is preserved across the restructure."""
+        self._seed()
+
+        brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
+        slots = {s.title: " ".join(s.lines) for s in brief.sections}
+
+        # net_worth preserved (top-level field + slot 1).
+        self.assertEqual(brief.net_worth, 2000.0)
+        self.assertIn("Net worth", slots["Net worth snapshot"])
+        # concentration preserved (slot 4).
+        self.assertTrue(slots["Concentration risks"])
+        # obligations preserved (folded into slot 2).
+        self.assertTrue(slots["Cash & liquidity status"])
+        # open_review_count preserved (top-level field + slot 10).
+        self.assertEqual(brief.open_review_count, 1)
+        self.assertIn("1 open proposal", slots["Review prompts"])
+        # source_refs / data_gaps remain top-level fields.
+        self.assertIsInstance(brief.source_refs, tuple)
+        self.assertIsInstance(brief.data_gaps, tuple)
 
     def test_record_daily_brief_writes_a_dated_receipt(self) -> None:
         self._seed()

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
-from finharness.exposure import compute_exposure
+from finharness.exposure import ExposureReport, compute_exposure
 from finharness.market_data import ROOT
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import (
@@ -43,6 +43,72 @@ NON_CLAIMS = (
     "Not investment, tax, or accounting advice.",
     "Not execution authorization.",
 )
+
+# P3 Daily Financial Brief v1: ten fixed slots, fixed order. ``compute_daily_brief``
+# always emits exactly these ten sections, in this order. A slot with no data emits an
+# explicit placeholder line rather than disappearing (see RFC
+# docs/proposals/2026-06-24-p3-daily-financial-brief-v1.md, gate conditions 1, 2, 7).
+SLOT_TITLES: tuple[str, ...] = (
+    "Net worth snapshot",
+    "Cash & liquidity status",
+    "Exposure map",
+    "Concentration risks",
+    "Leverage & liquidation warnings",
+    "Market context",
+    "Candidate decisions",
+    "Do-nothing option",
+    "Behavioral warnings",
+    "Review prompts",
+)
+
+# Slot 6 is offline-only in v1. Live / networked market context is a separate gated
+# capability (C3), explicitly excluded here — this slot never makes a network call.
+MARKET_CONTEXT_OFFLINE_PLACEHOLDER = (
+    "No offline market context on record. v1 market context is offline / historical / "
+    "source-graded only; live context is a separate gated capability, not part of this brief."
+)
+
+# Slot 8 is a fixed, always-present line: not acting is itself a reviewable option.
+DO_NOTHING_LINE = (
+    "Doing nothing is a valid option: holding the current state carries no transaction "
+    "cost or new risk. Weigh it against each candidate decision above before acting."
+)
+
+
+def _behavioral_warnings(exposure: ExposureReport) -> list[str]:
+    """Deterministic, offline behavioral flags derived from existing exposure signals.
+
+    v1 is simple rules over signals the exposure map already computes — no model, no
+    network, no prediction. Surfaces patterns worth a second look (over-concentration,
+    thin liquidity, leverage, ignored tax/insurance), not advice on what to do.
+    """
+    warnings: list[str] = []
+    if exposure.concentration_flagged:
+        warnings.append(
+            f"Concentration: top holding is {exposure.top_holding_weight * 100:.1f}% "
+            f"(over the {exposure.concentration_threshold * 100:.0f}% threshold). Watch for "
+            "adding to an already-crowded position."
+        )
+    if exposure.cash_runway_months is not None and exposure.cash_runway_months < 3:
+        warnings.append(
+            f"Liquidity: cash runway is {exposure.cash_runway_months:.1f} months. Thin "
+            "buffers make forced selling more likely under stress."
+        )
+    if exposure.interest_bearing_debt_total > 0:
+        warnings.append(
+            "Leverage: interest-bearing debt is on the books. Confirm new risk is not "
+            "being taken on borrowed money without a written rationale."
+        )
+    if exposure.tax_review_gaps:
+        warnings.append(
+            f"Tax: {len(exposure.tax_review_gaps)} tax review gap(s) outstanding — easy to "
+            "ignore until a deadline forces a worse decision."
+        )
+    if exposure.insurance_review_gaps:
+        warnings.append(
+            f"Insurance: {len(exposure.insurance_review_gaps)} coverage gap(s) outstanding."
+        )
+    return warnings
 
 
 class BriefSection(BaseModel):
@@ -134,38 +200,95 @@ def compute_daily_brief(
     )
     open_reviews = _open_reviews(engine)
 
-    exposure_lines = [
-        f"Net worth {_money(exposure.net_worth, exposure.base_currency)}",
-        f"Top holding {exposure.top_holding_weight * 100:.1f}% "
-        f"(HHI {exposure.concentration_hhi:.3f})",
-    ]
-    if exposure.concentration_flagged:
-        exposure_lines.append(
-            f"Concentration flag: top holding over "
-            f"{exposure.concentration_threshold * 100:.0f}%"
-        )
-    if exposure.cash_runway_months is not None:
-        exposure_lines.append(f"Cash runway {exposure.cash_runway_months:.1f} months")
-    if exposure.interest_bearing_debt_total > 0:
-        exposure_lines.append(
-            f"Interest-bearing debt {exposure.interest_bearing_debt_total:,.2f}; "
-            f"annual interest ~{exposure.annual_interest_estimate:,.2f}"
-        )
+    # --- Ten fixed slots, fixed order. Every slot is always emitted; an empty slot
+    # gets an explicit placeholder line. Data from the prior four sections is preserved,
+    # mapped into slots 1-5/7/10; slots 6/8/9 are additive. ---
 
-    obligation_lines = [
-        f"{item.due_date} · {item.label}"
+    # Slot 1: Net worth snapshot (+ change-since-last, folded in here).
+    net_worth_lines = [
+        f"Net worth {_money(exposure.net_worth, exposure.base_currency)}",
+        f"Assets {_money(exposure.total_assets, exposure.base_currency)}; "
+        f"liabilities {_money(exposure.total_liabilities, exposure.base_currency)}",
+    ]
+    net_worth_lines += list(change_section.lines)
+
+    # Slot 2: Cash & liquidity status (+ upcoming obligations).
+    cash_lines: list[str] = []
+    if exposure.cash_runway_months is not None:
+        cash_lines.append(f"Cash runway {exposure.cash_runway_months:.1f} months")
+    cash_lines.append(f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}")
+    cash_lines += [
+        f"Upcoming: {item.due_date} · {item.label}"
         + (f" · {_money(item.amount, item.currency)}" if item.amount is not None else "")
         for item in exposure.upcoming_obligations
     ] or ["Nothing due in the horizon."]
 
-    review_lines = [f"{len(open_reviews)} open proposal(s) awaiting human attestation."]
-    review_lines += [f"- {proposal.claim}" for proposal in open_reviews[:5]]
+    # Slot 3: Exposure map (holdings-level in v1; factor-level is deferred debt).
+    exposure_map_lines = [
+        f"{exposure.holding_count} holding(s); "
+        f"top holding {exposure.top_holding_weight * 100:.1f}% "
+        f"(HHI {exposure.concentration_hhi:.3f})"
+    ]
 
-    sections = (
-        change_section,
-        BriefSection(title="Exposure & concentration", lines=tuple(exposure_lines)),
-        BriefSection(title="Upcoming obligations", lines=tuple(obligation_lines)),
-        BriefSection(title="Needs review", lines=tuple(review_lines)),
+    # Slot 4: Concentration risks.
+    concentration_lines = (
+        [
+            f"Concentration flag: top holding over "
+            f"{exposure.concentration_threshold * 100:.0f}%"
+        ]
+        if exposure.concentration_flagged
+        else [
+            f"Top holding within the {exposure.concentration_threshold * 100:.0f}% threshold."
+        ]
+    )
+
+    # Slot 5: Leverage & liquidation warnings (qualitative in v1; no liquidation price).
+    if exposure.interest_bearing_debt_total > 0:
+        leverage_lines = [
+            f"Interest-bearing debt {exposure.interest_bearing_debt_total:,.2f}; "
+            f"annual interest ~{exposure.annual_interest_estimate:,.2f}",
+            "No liquidation-price estimate in v1 (leverage/liquidation math is deferred).",
+        ]
+    else:
+        leverage_lines = ["No interest-bearing debt on record."]
+
+    # Slot 6: Market context (offline-only in v1; never a network call).
+    market_context_lines = [MARKET_CONTEXT_OFFLINE_PLACEHOLDER]
+
+    # Slot 7: Candidate decisions — read only from governed proposals (decisions:scan).
+    candidate_lines = [
+        f"- {proposal.claim} ({proposal.kind})" for proposal in open_reviews[:5]
+    ] or ["No open candidate decisions on record."]
+
+    # Slot 8: Do-nothing option — always present.
+    do_nothing_lines = [DO_NOTHING_LINE]
+
+    # Slot 9: Behavioral warnings — deterministic rules over existing signals.
+    behavioral_lines = _behavioral_warnings(exposure) or [
+        "No behavioral flags from the current state."
+    ]
+
+    # Slot 10: Review prompts.
+    review_lines = [
+        f"{len(open_reviews)} open proposal(s) awaiting human attestation.",
+        "Which candidates did you act on, and is the rationale recorded?",
+    ]
+
+    slot_lines = (
+        net_worth_lines,
+        cash_lines,
+        exposure_map_lines,
+        concentration_lines,
+        leverage_lines,
+        market_context_lines,
+        candidate_lines,
+        do_nothing_lines,
+        behavioral_lines,
+        review_lines,
+    )
+    sections = tuple(
+        BriefSection(title=title, lines=tuple(lines))
+        for title, lines in zip(SLOT_TITLES, slot_lines, strict=True)
     )
 
     headline = (
