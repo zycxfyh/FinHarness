@@ -123,9 +123,20 @@ def run_golden_path(root: Path) -> dict[str, Any]:
         concentration = by_kind["concentration_high"]
         cash_buffer = by_kind["cash_buffer_low"]
 
+        # P5: the high-risk concentration proposal carries no counter-evidence, so it
+        # cannot be *approved* (fail-closed). The honest human action is to record a
+        # review and decline to confirm it blind — a rejection is not gated.
         create_governed_attestation(
-            proposal_id=concentration.proposal.proposal_id, decision="approved",
-            attester="operator", reason="reviewed concentration", engine=engine,
+            proposal_id=concentration.proposal.proposal_id, decision="rejected",
+            attester="operator",
+            reason="high-risk; not confirming without counter-evidence", engine=engine,
+            receipt_root=receipt_root,
+        )
+        # The low-risk cash-buffer proposal is the one the human confirms — the happy
+        # approval leg of the loop, still non-execution authorization.
+        create_governed_attestation(
+            proposal_id=cash_buffer.proposal.proposal_id, decision="approved",
+            attester="operator", reason="reviewed cash buffer", engine=engine,
             receipt_root=receipt_root,
         )
         annotation = create_governed_review_event(

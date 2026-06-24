@@ -23,6 +23,7 @@ from finharness.statecore.proposals import (
     create_governed_proposal,
     create_governed_review_event,
 )
+from finharness.statecore.risk_classification import HighRiskConfirmationError
 from finharness.statecore.store import StateCoreStoreError
 
 router = APIRouter(tags=["proposals"])
@@ -301,6 +302,8 @@ async def attest_proposal(
             status_code=404,
             detail=f"proposal not found: {proposal_id}",
         ) from exc
+    except HighRiskConfirmationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StateCoreStoreError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return AttestationCreateResponse(
