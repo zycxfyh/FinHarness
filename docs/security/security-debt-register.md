@@ -1,8 +1,28 @@
 # Security Debt Register — Dependabot
 
-Status: v0 (2026-06-23). Owner: security-track (xzh). **Triage artifact only — this PR
-performs no dependency upgrades.** Each remediation is its own follow-up slice, kept off
-the product / observability / graph tracks.
+Status: **v1 — CLOSED OUT (2026-06-24).** Owner: security-track (xzh). v0 (2026-06-23) was a
+triage artifact only. v1 records the remediation outcome: all 15 open alerts have been
+cleared and the live open count is **0**.
+
+## Closeout (2026-06-24)
+
+The two remediation slices in the original "Recommended remediation order" both merged:
+
+| Slice | What | Clears | Merged |
+| --- | --- | --- | --- |
+| Sec-debt R1 | `pydantic-settings 2.14.1 → 2.14.2` (runtime, `uv.lock`) | 1 runtime alert (#45) | PR #37 `c3503d1` |
+| Sec-debt R2 | pnpm transitive pins via `pnpm.overrides` (`undici 7.28.0`, `hono 4.12.25`, `form-data 4.0.6`, `js-yaml 4.2.0`, `esbuild 0.28.1`) | 14 dev alerts | PR #38 `28ae669` |
+
+**Verification (live, post-merge):**
+
+```
+gh api "/repos/zycxfyh/FinHarness/dependabot/alerts?state=open&per_page=100" --jq 'length'
+# => 0
+```
+
+The 15 alerts auto-dismissed as Dependabot detected the patched versions on the default
+branch. **Open, actionable Dependabot debt is now 0.** Re-run the generator before assuming
+this still holds; new transitive advisories appear over time.
 
 ## How this was generated (reproducible)
 
@@ -12,20 +32,24 @@ gh api "/repos/zycxfyh/FinHarness/dependabot/alerts?state=open&per_page=100"
 
 Regenerate before acting; alert numbers and patched versions move.
 
-## Headline vs actionable (reconciliation)
+## Headline vs actionable (reconciliation) — pre-remediation snapshot (2026-06-23)
 
-The GitHub push banner reports **"34 vulnerabilities (9 high, 15 moderate, 10 low)"** on the
-default branch. That headline includes dismissed / auto-dismissed / already-fixed history.
-The **open, actionable** set via the Dependabot alerts API is **15**:
+> Historical: this is the triage snapshot that defined the work queue. As of the
+> [Closeout](#closeout-2026-06-24) above, all of these are remediated and live open = 0.
 
-| Severity | Open alerts |
+The GitHub push banner reported **"34 vulnerabilities (9 high, 15 moderate, 10 low)"** on the
+default branch. That headline included dismissed / auto-dismissed / already-fixed history.
+The **open, actionable** set via the Dependabot alerts API was **15**:
+
+| Severity | Open alerts (2026-06-23) |
 | --- | --- |
 | High | 4 |
 | Medium | 8 |
 | Low | 3 |
-| **Total open** | **15** |
+| **Total open** | **15 → now 0** |
 
-> Use **15 open** as the work queue. The 34 headline is not 34 distinct open items.
+> At triage time, **15 open** was the work queue. The 34 headline was not 34 distinct open
+> items.
 
 ## Risk context (why this is debt, not a fire)
 
@@ -73,14 +97,16 @@ The **open, actionable** set via the Dependabot alerts API is **15**:
 | 39 | undici | low | dev | 7.28.0 | direct-upgrade | covered by `undici ≥ 7.28.0` |
 | 43 | undici | low | dev | 7.28.0 | direct-upgrade | covered by `undici ≥ 7.28.0` |
 
-## Recommended remediation order (separate slices, not this PR)
+## Recommended remediation order (separate slices) — all done
 
-1. **`pydantic-settings ≥ 2.14.2`** (runtime, `uv.lock`) — `needs-compat-test`, run `task check`. C1.
-2. **pnpm transitive refresh** — `undici ≥ 7.28.0` + `hono ≥ 4.12.25` + `form-data ≥ 4.0.6`
-   + `js-yaml ≥ 4.2.0` + `esbuild ≥ 0.28.1`. These are transitive under `promptfoo`; if
-   `pnpm update` does not pull them, use `pnpm.overrides` in `package.json`. Clears the
-   remaining 14 dev alerts. C1.
-3. Re-run the generator command; confirm the open count drops; update this register.
+1. ✅ **`pydantic-settings ≥ 2.14.2`** (runtime, `uv.lock`) — `needs-compat-test`, `task check`
+   green. C1. **Done: PR #37 `c3503d1`.**
+2. ✅ **pnpm transitive refresh** — `undici ≥ 7.28.0` + `hono ≥ 4.12.25` + `form-data ≥ 4.0.6`
+   + `js-yaml ≥ 4.2.0` + `esbuild ≥ 0.28.1`, pinned via `pnpm.overrides` in `package.json`
+   (transitive under `promptfoo`). Cleared the remaining 14 dev alerts. C1.
+   **Done: PR #38 `28ae669`.**
+3. ✅ Re-ran the generator command; live open count dropped **15 → 0**; this register updated.
+   **Done: this slice (C0 closeout).**
 
 ## Not claimed / scope
 
