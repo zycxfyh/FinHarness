@@ -14,8 +14,6 @@ Start with the tutorial first: [Golden Path Tutorial](../tutorials/golden-path.m
 
 | How-to | Use it when | Current entry point |
 | --- | --- | --- |
-| [Run a feature snapshot](run-feature-snapshot.md) | You need indicator evidence without trading authority. | `task feature:macd`, `task feature:squeeze` |
-| [Run the ten-layer flow safely](run-ten-layer-flow.md) | You want to exercise the whole chain and see where promotion stops. | `task ten-layer:graph` |
 | [Do a safe paper-trade review](safe-paper-trade-review.md) | You need broker workflow evidence without live authority. | `task alpaca:paper-strategy-order` |
 | [Add a mature-wheel adapter](add-mature-wheel-adapter.md) | You are replacing local heavy logic with a mature library. | [Mature Wheel Control Plane](../architecture/mature-wheel-control-plane.md) |
 | [Import a personal-finance export](import-personal-finance-export.md) | You have a Beancount ledger or a FinHarness-contract CSV to mirror into state core. | `task beancount:import` / `task personal-finance:import` |
