@@ -19,6 +19,7 @@ from finharness.statecore.models import (
     DocumentRef,
     FinancialGoal,
     InsurancePolicy,
+    InvestmentPolicyStatement,
     Liability,
     Position,
     Proposal,
@@ -45,6 +46,7 @@ StateCoreRecord = (
     | Proposal
     | Attestation
     | ReviewEvent
+    | InvestmentPolicyStatement
 )
 
 

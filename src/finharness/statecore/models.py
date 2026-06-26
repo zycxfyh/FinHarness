@@ -329,3 +329,50 @@ class ReviewEvent(StateCoreBase, table=True):
         if value:
             raise ValueError("review events never carry execution authority")
         return False
+
+
+class InvestmentPolicyStatement(StateCoreBase, table=True):
+    """Personal Investment Policy Statement (north star L3 / 投资政策声明).
+
+    The IPS turns the user's goals, constraints, and risk boundaries into a
+    readable, versioned policy object. The numeric policy thresholds personalize
+    the L4 allocation detectors (they override the default ``ObservationThresholds``
+    via ``finharness.ips.thresholds_from_ips``); the declarative fields
+    (allowed asset classes, restricted actions) are carried for review and agent
+    context. An IPS is policy, never execution authority.
+
+    Percent fields are stored as exact decimal fractions (``0.40`` == 40%);
+    ``liquidity_floor_months`` is a decimal number of months of cash runway.
+    """
+
+    __tablename__ = "investment_policy_statements"
+    __table_args__ = (
+        CheckConstraint("execution_allowed = 0", name="ck_ips_execution_allowed_false"),
+    )
+
+    ips_id: str = Field(primary_key=True)
+    status: str = "active"  # active | superseded
+    base_currency: str = "USD"
+    # Numeric policy thresholds consumed by the L4 detectors.
+    liquidity_floor_months: Decimal = Field(sa_column=money_column())
+    max_single_holding_pct: Decimal = Field(sa_column=money_column())
+    cash_overweight_pct: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    high_interest_rate_pct: Decimal | None = Field(
+        default=None, sa_column=money_column(nullable=True)
+    )
+    # Declarative policy carried for review / agent context (not yet auto-enforced).
+    allowed_asset_classes: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    restricted_actions: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    review_cadence: str = ""
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "read_only"
+    execution_allowed: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("an investment policy statement never carries execution authority")
+        return False

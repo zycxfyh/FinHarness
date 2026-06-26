@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine
 
 from finharness.exposure import ExposureReport, compute_exposure
+from finharness.ips import current_ips, thresholds_from_ips
 from finharness.market_data import ROOT
 from finharness.research_enrichment import NoopResearchEnricher, ResearchEnricher
 from finharness.statecore.observations import ObservationThresholds
@@ -552,6 +553,12 @@ def _stable_proposal_id(detector_kind: str, as_of_date: str) -> str:
     return f"alloc_{detector_kind}_{as_of_date}"
 
 
+def _ips_thresholds(engine: Engine) -> ObservationThresholds | None:
+    """Derive detector thresholds from the active IPS, or ``None`` to use defaults."""
+    ips = current_ips(engine)
+    return thresholds_from_ips(ips) if ips is not None else None
+
+
 def record_allocation_candidates(
     engine: Engine,
     *,
@@ -570,8 +577,11 @@ def record_allocation_candidates(
     """
     root = receipt_root if receipt_root is not None else DEFAULT_ALLOCATION_RECEIPT_ROOT
     active_enricher = enricher if enricher is not None else NoopResearchEnricher()
-    report = compute_exposure(engine, as_of_date=as_of_date, thresholds=thresholds)
-    candidates = compute_allocation_candidates(report, thresholds)
+    # When the caller does not pin thresholds explicitly, personalize them from the
+    # user's active IPS (L3); fall back to defaults when no IPS has been set.
+    active_thresholds = thresholds if thresholds is not None else _ips_thresholds(engine)
+    report = compute_exposure(engine, as_of_date=as_of_date, thresholds=active_thresholds)
+    candidates = compute_allocation_candidates(report, active_thresholds)
     writes: list[GovernedProposalWrite] = []
     for candidate in candidates:
         attachment = active_enricher.enrich(candidate)
