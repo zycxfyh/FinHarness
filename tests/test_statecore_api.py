@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from finharness.api.app import create_app
+from finharness.observability import TRACE_HEADER, is_safe_trace_id
 from finharness.statecore.models import (
     Account,
     Attestation,
@@ -28,6 +29,7 @@ from finharness.statecore.store import (
     read_all,
     write_records,
 )
+from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
 
 
@@ -290,6 +292,10 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}": {"get"},
             "/proposals/{proposal_id}/revisions": {"get"},
             "/proposals/{proposal_id}/attest": {"post"},
+            "/proposals/{proposal_id}/timeline": {"get"},
+            "/proposals/{proposal_id}/review-events": {"post"},
+            "/review/retrospective": {"get"},
+            "/review/compare-marks": {"get"},
         }
         self.assertEqual(set(paths), set(allowed_methods))
         for path, methods in paths.items():
@@ -318,15 +324,23 @@ class StateCoreApiTest(unittest.TestCase):
     def test_health_and_trace_header_are_non_authority_observability(self) -> None:
         response = self.client.get(
             "/health",
-            headers={"X-FinHarness-Trace-Id": "trace_test_state_api"},
+            headers={TRACE_HEADER: "trace_test_state_api"},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["X-FinHarness-Trace-Id"], "trace_test_state_api")
+        self.assertEqual(response.headers[TRACE_HEADER], "trace_test_state_api")
         body = response.json()
         self.assertEqual(body["status"], "ok")
         self.assertFalse(body["execution_allowed"])
         self.assertIn("Not execution authorization.", body["non_claims"])
+
+    def test_malformed_trace_header_is_not_echoed(self) -> None:
+        malicious = "Bearer sk-1234567890abcdef\nInjected: yes"
+        response = self.client.get("/health", headers={TRACE_HEADER: malicious})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(is_safe_trace_id(response.headers[TRACE_HEADER]))
+        self.assertNotEqual(response.headers[TRACE_HEADER], malicious)
 
     def test_cockpit_static_frontend_is_served_by_api_origin(self) -> None:
         frontend_index = Path(__file__).resolve().parents[1] / "frontend" / "index.html"
@@ -435,10 +449,13 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertFalse(body["execution_allowed"])
         self.assertIn("Not execution authorization.", body["non_claims"])
         self.assertTrue(body["headline"])
-        section_titles = {section["title"] for section in body["sections"]}
-        self.assertIn("Change since last", section_titles)
-        self.assertIn("Exposure & concentration", section_titles)
-        self.assertIn("Needs review", section_titles)
+        # P3 v1: ten fixed slots.
+        section_titles = [section["title"] for section in body["sections"]]
+        self.assertEqual(len(section_titles), 10)
+        self.assertIn("Net worth snapshot", section_titles)
+        self.assertIn("Concentration risks", section_titles)
+        self.assertIn("Do-nothing option", section_titles)
+        self.assertIn("Review prompts", section_titles)
 
     def test_create_proposal_writes_db_receipt_and_index_without_authority(self) -> None:
         response = self.client.post(
@@ -451,6 +468,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "limitations": {"data_scope": "sample"},
                 "non_claims": ["No profitability claim."],
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
 
@@ -499,6 +517,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_id = created.json()["proposal"]["proposal_id"]
@@ -553,6 +572,7 @@ class StateCoreApiTest(unittest.TestCase):
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
                 "source_refs": ["data/receipts/after.json"],
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_id = created.json()["proposal"]["proposal_id"]
@@ -597,6 +617,7 @@ class StateCoreApiTest(unittest.TestCase):
             claim="Cash covers 1.0 months.",
             evidence={"runway": 1.0},
             source_refs=["data/receipts/snap.json"],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,
@@ -607,6 +628,7 @@ class StateCoreApiTest(unittest.TestCase):
             claim="Cash covers 0.5 months.",
             evidence={"runway": 0.5},
             source_refs=["data/receipts/snap.json"],
+            decision_scaffold=VALID_SCAFFOLD,
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,
@@ -638,6 +660,7 @@ class StateCoreApiTest(unittest.TestCase):
                 json={
                     "kind": "rebalance_review",
                     "claim": "Review concentration before any human decision.",
+                    "decision_scaffold": VALID_SCAFFOLD,
                 },
             )
 
@@ -651,6 +674,7 @@ class StateCoreApiTest(unittest.TestCase):
             json={
                 "kind": "rebalance_review",
                 "claim": "Review concentration before any human decision.",
+                "decision_scaffold": VALID_SCAFFOLD,
             },
         )
         proposal_receipt_ref = Path(created.json()["receipt_ref"])

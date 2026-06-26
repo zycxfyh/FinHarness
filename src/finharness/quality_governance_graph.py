@@ -78,6 +78,8 @@ def source_node(state: QualityGovernanceGraphState) -> QualityGovernanceGraphSta
 def repo_intelligence_node(
     state: QualityGovernanceGraphState,
 ) -> QualityGovernanceGraphState:
+    if "repo_intelligence" in state:
+        return {"repo_intelligence": state["repo_intelligence"]}
     result = run_repo_intelligence_graph(root=str(_root(state)))
     return {"repo_intelligence": result["final"]}
 
@@ -278,10 +280,13 @@ def run_quality_governance_graph(
     root: str | None = None,
     run_checks: bool = False,
     checks: list[dict[str, Any]] | None = None,
+    repo_intelligence: dict[str, Any] | None = None,
 ) -> QualityGovernanceGraphState:
     initial: QualityGovernanceGraphState = {"run_checks": run_checks}
     if root:
         initial["root"] = root
     if checks is not None:
         initial["checks"] = checks
+    if repo_intelligence is not None:
+        initial["repo_intelligence"] = repo_intelligence
     return build_quality_governance_graph().invoke(initial)

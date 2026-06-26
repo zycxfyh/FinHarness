@@ -23,6 +23,7 @@ from finharness.statecore.models import (
     Position,
     Proposal,
     ReceiptIndex,
+    ReviewEvent,
     Snapshot,
     TaxEvent,
 )
@@ -43,6 +44,7 @@ StateCoreRecord = (
     | ReceiptIndex
     | Proposal
     | Attestation
+    | ReviewEvent
 )
 
 
@@ -135,7 +137,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 2
+CURRENT_STATE_CORE_USER_VERSION = 3
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -221,11 +223,31 @@ def _migrate_add_source_columns(connection: Connection) -> None:
         connection.exec_driver_sql(alter_sql)
 
 
+def _migrate_add_decision_scaffold_column(connection: Connection) -> None:
+    """Add the ``decision_scaffold`` column to ``proposals`` (P4 forcing gate).
+
+    SQLite ``ALTER TABLE ... ADD COLUMN`` with a constant default backfills existing
+    rows, so a legacy database's proposals get ``'{}'``. Idempotent: skipped when
+    ``proposals`` is absent (a fresh ``create_all`` already made it with the column)
+    or when the column is already present.
+    """
+    inspector = inspect(connection)
+    if "proposals" not in set(inspector.get_table_names()):
+        return
+    columns = {column["name"] for column in inspector.get_columns("proposals")}
+    if "decision_scaffold" in columns:
+        return
+    connection.exec_driver_sql(
+        "ALTER TABLE proposals ADD COLUMN decision_scaffold TEXT NOT NULL DEFAULT '{}'"
+    )
+
+
 def migrate_state_core(engine: Engine) -> None:
     """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
     migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
         (1, _migrate_positions_money_to_text),
         (2, _migrate_add_source_columns),
+        (3, _migrate_add_decision_scaffold_column),
     )
     try:
         with engine.connect() as connection:

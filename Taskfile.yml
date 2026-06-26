@@ -36,7 +36,7 @@ tasks:
       - task: lint
       - task: typecheck
       - task: test
-      - task: test:properties
+      - task: test:integration
       - task: test:frontend
       - task: governance:check
       - task: rules:audit
@@ -78,6 +78,11 @@ tasks:
     cmds:
       - uv run python scripts/run_governance_dashboard.py
 
+  observability:trace:
+    desc: Read a local observability trace-index receipt (bounded summary, no raw payloads)
+    cmds:
+      - uv run python scripts/read_observability_trace.py {{.CLI_ARGS}}
+
   governance:certify-controls:
     desc: "NOW-3: certify control-owner baseline with a named human owner"
     cmds:
@@ -89,21 +94,47 @@ tasks:
       - uv run python scripts/run_project_governance_adapter.py
 
   test:properties:
-    desc: Run property-style governance and boundary tests
+    desc: Run property-style governance and boundary tests (also included in test:integration)
     cmds:
-      - uv run python -m unittest tests/test_property_baseline.py
+      - uv run python -m unittest tests.integration_property_baseline
+
+  test:integration:
+    desc: Run slower graph/property integration tests outside the default unit loop
+    cmds:
+      - uv run python -m unittest tests.integration_quality_governance_graph tests.integration_release_preflight_graph tests.integration_property_baseline
 
   test:frontend:
     desc: Run jsdom-based frontend DOM tests (revision history + research evidence render)
     cmds:
       - node frontend/tests/revision_history.test.cjs
       - node frontend/tests/research_evidence.test.cjs
+      - node frontend/tests/review_workspace.test.cjs
+      - node frontend/tests/review_retrospective.test.cjs
+      - node frontend/tests/review_compare.test.cjs
+
+  test:browser:
+    desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.
+    cmds:
+      - node frontend/tests/browser/cockpit_smoke.test.cjs
 
   governance:check:
-    desc: Run EOS machine guardrails (import boundaries, redline coverage, no-action-affordance)
+    desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
     cmds:
       - uv run python -m unittest tests.test_governance_invariants
       - node frontend/tests/research_evidence.test.cjs
+      - node frontend/tests/review_workspace.test.cjs
+      - node frontend/tests/review_retrospective.test.cjs
+      - node frontend/tests/review_compare.test.cjs
+
+  governance:policies:
+    desc: List the governance policy registry (id / owner / scope / source)
+    cmds:
+      - uv run python tests/_policy_registry.py
+
+  governance:graphs:
+    desc: List the Graph Registry (R1) — graph assets by status/consumer/owner (judgment artifact, not a deletion authorization)
+    cmds:
+      - uv run python tests/_graph_registry.py
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
@@ -156,7 +187,7 @@ tasks:
       - uv run ruff format .
 
   test:
-    desc: Run Python compile and unit tests
+    desc: Run Python compile and fast unit tests
     cmds:
       - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
       - uv run python -m unittest discover -s tests
@@ -196,6 +227,11 @@ tasks:
     cmds:
       - uv run python scripts/run_research_smoke.py
 
+  decisions:golden-path:
+    desc: "MANUAL/DEMO: end-to-end receipt-consumption golden path on an isolated synthetic sample (offline; NOT in task check)"
+    cmds:
+      - uv run python scripts/run_golden_path.py
+
   review:annual:
     desc: Record an annual (period) decision retrospective as a dated receipt (read-only; --year optional)
     cmds:
@@ -214,8 +250,6 @@ tasks:
   experiments:
     desc: Run mature-wheel local backtest experiments
     cmds:
-      - uv run python experiments/backtrader_ma.py
-      - uv run python experiments/vectorbt_ma.py
       - uv run python experiments/riskfolio_allocation.py
 
   wheels:size:
@@ -272,96 +306,6 @@ tasks:
       - uv run python scripts/export_redteam_artifacts.py
       - pnpm exec promptfoo eval -c evals/promptfoo/redteam-boundary.yaml --no-cache
 
-  data:entry:
-    desc: Run OpenBB quote + yfinance history + Backtrader workflow
-    cmds:
-      - uv run python scripts/run_data_entry_workflow.py {{.CLI_ARGS}}
-
-  cockpit:market:
-    desc: Build the read-only market cockpit for a watchlist
-    cmds:
-      - uv run python scripts/run_market_cockpit.py {{.CLI_ARGS}}
-
-  market-data:graph:
-    desc: Run first-layer market data LangGraph workflow
-    cmds:
-      - uv run python scripts/run_market_data_graph.py {{.CLI_ARGS}}
-
-  indicators:graph:
-    desc: Run second-layer indicator LangGraph workflow
-    cmds:
-      - uv run python scripts/run_indicator_graph.py {{.CLI_ARGS}}
-
-  feature:macd:
-    desc: Run MACD feature snapshot
-    cmds:
-      - uv run python scripts/run_macd_snapshot.py {{.CLI_ARGS}}
-
-  feature:squeeze:
-    desc: Run Squeeze Momentum feature snapshot
-    cmds:
-      - uv run python scripts/run_squeeze_snapshot.py {{.CLI_ARGS}}
-
-  feature:smc:
-    desc: Run SMC/MSB-OB feature snapshot
-    cmds:
-      - uv run python scripts/run_smc_snapshot.py {{.CLI_ARGS}}
-
-  feature:snapshot:
-    desc: Run combined MACD, Squeeze, and SMC feature snapshot
-    cmds:
-      - uv run python scripts/run_indicator_snapshot.py {{.CLI_ARGS}}
-
-  events:snapshot:
-    desc: Run third-layer SEC EDGAR event snapshot
-    cmds:
-      - uv run python scripts/run_events_snapshot.py {{.CLI_ARGS}}
-
-  interpretation:graph:
-    desc: Run fourth-layer source-backed interpretation LangGraph workflow
-    cmds:
-      - uv run python scripts/run_interpretation_graph.py {{.CLI_ARGS}}
-
-  hypotheses:graph:
-    desc: Run fifth-layer falsifiable hypotheses LangGraph workflow
-    cmds:
-      - uv run python scripts/run_hypotheses_graph.py {{.CLI_ARGS}}
-
-  validation:graph:
-    desc: Run sixth-layer validation LangGraph workflow
-    cmds:
-      - uv run python scripts/run_validation_graph.py {{.CLI_ARGS}}
-
-  proposal:graph:
-    desc: Run seventh-layer structured proposal LangGraph workflow
-    cmds:
-      - uv run python scripts/run_proposal_graph.py {{.CLI_ARGS}}
-
-  risk-gate:graph:
-    desc: Run eighth-layer independent risk gate LangGraph workflow
-    cmds:
-      - uv run python scripts/run_risk_gate_graph.py {{.CLI_ARGS}}
-
-  execution:graph:
-    desc: Run ninth-layer paper execution LangGraph workflow
-    cmds:
-      - uv run python scripts/run_execution_graph.py {{.CLI_ARGS}}
-
-  post-trade:graph:
-    desc: Run tenth-layer post-trade reconciliation LangGraph workflow
-    cmds:
-      - uv run python scripts/run_post_trade_graph.py {{.CLI_ARGS}}
-
-  ten-layer:graph:
-    desc: Run top-level ten-layer FinHarness LangGraph orchestrator
-    cmds:
-      - uv run python scripts/run_ten_layer_graph.py {{.CLI_ARGS}}
-
-  workflow:daily-evidence:
-    desc: Run first-four-layer daily evidence LangGraph workflow
-    cmds:
-      - uv run python scripts/run_daily_evidence_graph.py {{.CLI_ARGS}}
-
   lessons:draft:
     desc: Draft lesson candidates from recent receipts (Loop 4 v0; human promotes)
     cmds:
@@ -416,11 +360,6 @@ tasks:
     desc: Evaluate the behavioral trading guard against persisted trading-state
     cmds:
       - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
-
-  trading:validation-report:
-    desc: Generate RC0.2 trading validation report v1
-    cmds:
-      - uv run python scripts/generate_trading_validation_report.py
 
   guard:interactive:
     desc: Evaluate the behavioral guard for a what-if drawdown/loss, e.g. -- --drawdown-pct -3 --consecutive-losses 3

@@ -23,7 +23,7 @@ from finharness.control_owner import (
 def baseline_evidence(returncode: int = 0, tests_run: int = 8) -> dict[str, object]:
     return {
         "command": ["python", "-m", "unittest"],
-        "test_modules": ["tests.test_execution"],
+        "test_modules": ["tests.test_governance_invariants"],
         "returncode": returncode,
         "tests_run": tests_run,
         "failures": 0 if returncode == 0 else 1,

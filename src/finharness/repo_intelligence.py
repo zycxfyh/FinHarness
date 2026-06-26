@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -108,9 +110,31 @@ def classify_file(path: str) -> str:
     return "other"
 
 
+def _iter_repo_files(root: Path) -> Iterator[Path]:
+    """Yield files under ``root``, pruning ignored directories at walk time.
+
+    Walk-prune, not walk-then-filter: ``os.walk`` never descends into directories
+    that ``should_include`` would reject later, so dependency and generated-data
+    paths are never enumerated.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = Path(dirpath).relative_to(root)
+        kept: list[str] = []
+        for name in dirnames:
+            if name in IGNORED_PARTS:
+                continue
+            child_rel = (rel / name).as_posix()
+            if f"{child_rel.rstrip('/')}/".startswith(IGNORED_PREFIXES):
+                continue
+            kept.append(name)
+        dirnames[:] = kept
+        for name in filenames:
+            yield Path(dirpath) / name
+
+
 def build_file_inventory(root: Path = ROOT) -> list[dict[str, Any]]:
     items: list[FileInventoryItem] = []
-    for path in sorted(root.rglob("*")):
+    for path in sorted(_iter_repo_files(root)):
         if not should_include(path, root=root):
             continue
         rel = repo_path(path, root=root)

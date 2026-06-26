@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "promptfoo:version": "pnpm exec promptfoo --version",
-    "promptfoo:smoke": "PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache"
+    "promptfoo:smoke": "PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache",
+    "test:browser": "node frontend/tests/browser/cockpit_smoke.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +14,17 @@
   "packageManager": "pnpm@10.33.2",
   "devDependencies": {
     "jsdom": "^29.1.1",
+    "playwright": "^1.60.0",
     "promptfoo": "^0.121.12"
+  },
+  "pnpm": {
+    "comment": "Security overrides: pin transitive dev deps (under promptfoo/jsdom) to the patched floor WITHIN the same major, to clear Dependabot CVEs without an unnecessary major bump. See docs/security/security-debt-register.md.",
+    "overrides": {
+      "undici": "^7.28.0",
+      "hono": "^4.12.25",
+      "form-data": "^4.0.6",
+      "js-yaml": "^4.2.0",
+      "esbuild": "^0.28.1"
+    }
   }
 }

@@ -19,6 +19,8 @@ const selectors = {
     exposure: document.querySelector("#exposure-view"),
     proposals: document.querySelector("#proposals-view"),
     timeline: document.querySelector("#timeline-view"),
+    retrospective: document.querySelector("#retrospective-view"),
+    compare: document.querySelector("#compare-view"),
   },
   summaryGrid: document.querySelector("#summary-grid"),
   dailyBriefHeadline: document.querySelector("#daily-brief-headline"),
@@ -33,6 +35,8 @@ const selectors = {
   proposalList: document.querySelector("#proposal-list"),
   proposalDetail: document.querySelector("#proposal-detail"),
   timelineList: document.querySelector("#timeline-list"),
+  retrospectiveBlock: document.querySelector("#retrospective-block"),
+  compareBlock: document.querySelector("#compare-block"),
   emptyTemplate: document.querySelector("#empty-template"),
   boundaryLine: document.querySelector("#boundary-line"),
 };
@@ -317,6 +321,231 @@ function decisionLabel(attestation) {
   return attestation.decision === "approved" ? "attested" : attestation.decision;
 }
 
+// Read-only Retrospective panel: latest annual_review summary (closure taken from the
+// receipt) + rule-change drill-down + data gaps. Unclosed lessons are shown as neutral
+// disclosure, never a recommendation; the panel has no action affordances.
+function renderRetrospectivePanel(parent, data) {
+  const retro = data && data.retrospective ? data.retrospective : null;
+  const ruleChanges = data && Array.isArray(data.rule_changes) ? data.rule_changes : [];
+  const gaps = data && Array.isArray(data.data_gaps) ? data.data_gaps : [];
+  if (!retro) {
+    parent.append(
+      textElement("p", "empty-state", "No annual review yet. Run `task review:annual`."),
+    );
+  } else {
+    renderRows(parent, [
+      ["Period", retro.period_label],
+      ["Lessons closed", retro.lessons_closed],
+      ["Lessons open", Array.isArray(retro.lessons_open) ? retro.lessons_open.length : 0],
+      [
+        "Untraceable rule changes",
+        Array.isArray(retro.untraceable_rule_changes) ? retro.untraceable_rule_changes.length : 0,
+      ],
+      ["Source receipt", (data && data.retrospective_receipt_ref) || "—"],
+    ]);
+    if (Array.isArray(retro.lessons_open) && retro.lessons_open.length) {
+      parent.append(textElement("h4", "", "Unclosed lessons (disclosure)"));
+      for (const lesson of retro.lessons_open) {
+        parent.append(textElement("p", "item-meta", String(lesson)));
+      }
+    }
+  }
+  if (ruleChanges.length) {
+    parent.append(textElement("h4", "", "Rule changes"));
+    for (const change of ruleChanges) {
+      parent.append(
+        textElement(
+          "p",
+          "item-meta",
+          `${change.rule_target} [${change.status}] ${
+            change.traceable ? "traceable" : "untraceable"
+          } by ${change.attester}`,
+        ),
+      );
+    }
+  }
+  if (gaps.length) {
+    renderTextList(parent, "Data gaps", gaps);
+  }
+  // Mandatory disclosure (never collapsed).
+  renderNonClaims(parent, data && data.non_claims);
+}
+
+async function renderRetrospective() {
+  clear(selectors.retrospectiveBlock);
+  const data = await apiGet("/review/retrospective");
+  renderRetrospectivePanel(selectors.retrospectiveBlock, data);
+}
+
+// Read-only compare chrome: a selection control over compare-marked pairs. Selecting a
+// pair only triggers GETs + a re-render (no POST, no form submit). Descriptive only — the
+// chrome carries no winner/recommended/better/should-pick verdict.
+function renderCompareMarksPanel(parent, data, onSelect) {
+  const pairs = data && Array.isArray(data.pairs) ? data.pairs : [];
+  parent.append(textElement("h4", "", "Compare marks"));
+  if (!pairs.length) {
+    parent.append(
+      textElement(
+        "p",
+        "empty-state",
+        "No compare marks. Mark two proposals from a proposal's review timeline.",
+      ),
+    );
+    renderNonClaims(parent, data && data.non_claims);
+    return;
+  }
+  const select = document.createElement("select");
+  select.id = "compare-pair-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a pair…";
+  select.append(placeholder);
+  pairs.forEach((pair, index) => {
+    const option = document.createElement("option");
+    // Index, not a delimited id string: robust even if ids ever contain the delimiter.
+    option.value = String(index);
+    option.textContent = pair.missing_side
+      ? `${pair.proposal_id} vs ${pair.compare_with} (missing ${pair.missing_side})`
+      : `${pair.proposal_id} vs ${pair.compare_with}`;
+    select.append(option);
+  });
+  if (typeof onSelect === "function") {
+    select.addEventListener("change", () => {
+      const pair = select.value === "" ? null : pairs[Number(select.value)];
+      onSelect(pair);
+    });
+  }
+  parent.append(select);
+  const missing = pairs.filter((pair) => pair.missing_side);
+  if (missing.length) {
+    renderTextList(
+      parent,
+      "Unavailable candidates",
+      missing.map((pair) => `${pair.proposal_id} vs ${pair.compare_with}: missing ${pair.missing_side}`),
+    );
+  }
+  renderNonClaims(parent, data && data.non_claims);
+}
+
+// Read-only side-by-side of two candidates' own facts (reuses the candidate-detail
+// renderer). Raw proposal facts are shown as-is; no verdict is synthesized.
+function renderCompareSideBySide(parent, left, right) {
+  const columns = document.createElement("div");
+  columns.className = "compare-columns";
+  for (const side of [left, right]) {
+    const column = document.createElement("div");
+    column.className = "compare-column";
+    if (!side || !side.proposal) {
+      column.append(textElement("p", "empty-state", "Candidate unavailable."));
+    } else {
+      column.append(textElement("h4", "", side.proposal.proposal_id));
+      column.append(textElement("p", "item-title", side.proposal.claim));
+      renderCandidateDetail(column, side.proposal);
+    }
+    columns.append(column);
+  }
+  parent.append(columns);
+}
+
+async function renderCompare() {
+  clear(selectors.compareBlock);
+  const data = await apiGet("/review/compare-marks");
+  const chrome = document.createElement("div");
+  chrome.className = "compare-chrome";
+  const sideBySide = document.createElement("div");
+  renderCompareMarksPanel(chrome, data, async (pair) => {
+    clear(sideBySide);
+    if (!pair) {
+      return;
+    }
+    const [left, right] = await Promise.all([
+      apiGet(`/proposals/${encodeURIComponent(pair.proposal_id)}`).catch(() => null),
+      apiGet(`/proposals/${encodeURIComponent(pair.compare_with)}`).catch(() => null),
+    ]);
+    renderCompareSideBySide(sideBySide, left, right);
+  });
+  selectors.compareBlock.append(chrome);
+  selectors.compareBlock.append(sideBySide);
+}
+
+// Read-only merged review timeline (attestations + review events). The server already
+// orders newest-first deterministically; this just renders, with no action affordances.
+function renderReviewTimeline(parent, timeline) {
+  const entries = timeline && Array.isArray(timeline.entries) ? timeline.entries : [];
+  parent.append(textElement("h4", "", "Review timeline"));
+  if (timeline && timeline.is_archived) {
+    parent.append(textElement("span", "data-badge", "archived"));
+  }
+  if (!entries.length) {
+    parent.append(textElement("p", "empty-state", "No review activity recorded."));
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement("div");
+    item.className = "item review-timeline-entry";
+    item.append(
+      textElement("span", "item-title", `[${entry.source_type}] ${entry.kind} by ${entry.attester}`),
+    );
+    item.append(textElement("span", "item-meta", entry.created_at_utc));
+    if (entry.reason) {
+      item.append(textElement("p", "item-meta", entry.reason));
+    }
+    parent.append(item);
+  }
+}
+
+// Human write affordance: annotation / archive / reopen. State-changing, so it requires
+// an explicit confirm before any POST — rendering alone never writes.
+function renderReviewEventForm(parent, proposalId) {
+  const form = document.createElement("form");
+  form.className = "review-event-form";
+  form.innerHTML = `
+    <div class="form-row">
+      <label for="review-kind">Action</label>
+      <select id="review-kind" name="kind">
+        <option value="annotation">annotation</option>
+        <option value="archive">archive</option>
+        <option value="reopen">reopen</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label for="review-attester">Reviewer</label>
+      <input id="review-attester" name="attester" autocomplete="name" />
+    </div>
+    <div class="form-row">
+      <label for="review-reason">Reason</label>
+      <textarea id="review-reason" name="reason"></textarea>
+    </div>
+    <div class="form-row">
+      <label for="review-text">Note (optional)</label>
+      <textarea id="review-text" name="text"></textarea>
+    </div>
+    <button class="submit-button" type="submit">Record Review Action</button>
+  `;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const kind = data.get("kind");
+    if (!window.confirm(`Record review action "${kind}"? It is logged with your name and reason.`)) {
+      return; // explicit confirm required; no write on cancel
+    }
+    try {
+      await apiPost(`/proposals/${proposalId}/review-events`, {
+        kind,
+        attester: data.get("attester"),
+        reason: data.get("reason"),
+        text: data.get("text") || null,
+      });
+      setStatus("Synced", "ok");
+      await renderProposals();
+    } catch (error) {
+      setStatus("API error", "error");
+      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
+    }
+  });
+  parent.append(form);
+}
+
 const STRUCTURAL_EVIDENCE_KEYS = new Set([
   "options",
   "key_risks",
@@ -560,9 +789,10 @@ async function renderProposalDetail() {
     selectors.proposalDetail.append(emptyNode());
     return;
   }
-  const [detail, revisionHistory] = await Promise.all([
+  const [detail, revisionHistory, timeline] = await Promise.all([
     apiGet(`/proposals/${state.selectedProposalId}`),
     apiGet(`/proposals/${state.selectedProposalId}/revisions`),
+    apiGet(`/proposals/${state.selectedProposalId}/timeline`),
   ]);
   renderRows(selectors.proposalDetail, [
     ["ID", detail.proposal.proposal_id],
@@ -578,6 +808,8 @@ async function renderProposalDetail() {
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));
   renderAttestations(selectors.proposalDetail, detail.attestations);
   renderAttestationForm(selectors.proposalDetail, detail.proposal.proposal_id);
+  renderReviewTimeline(selectors.proposalDetail, timeline);
+  renderReviewEventForm(selectors.proposalDetail, detail.proposal.proposal_id);
 }
 
 async function renderProposals() {
@@ -680,6 +912,8 @@ const renderers = {
   exposure: renderExposure,
   proposals: renderProposals,
   timeline: renderTimeline,
+  retrospective: renderRetrospective,
+  compare: renderCompare,
 };
 
 const errorTargets = {
@@ -687,6 +921,8 @@ const errorTargets = {
   exposure: () => selectors.exposureGrid,
   proposals: () => selectors.proposalDetail,
   timeline: () => selectors.timelineList,
+  retrospective: () => selectors.retrospectiveBlock,
+  compare: () => selectors.compareBlock,
 };
 
 async function refresh() {

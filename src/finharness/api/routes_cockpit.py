@@ -35,7 +35,7 @@ PRODUCT_NON_CLAIMS = (
     "Not investment advice.",
     "Not execution authorization.",
 )
-BRIEF_KINDS = {"daily_change_brief", "market_cockpit"}
+BRIEF_KINDS = {"daily_change_brief"}
 
 
 class DashboardSummaryResponse(BaseModel):

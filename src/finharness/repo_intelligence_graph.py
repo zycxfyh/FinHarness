@@ -1,12 +1,18 @@
-"""LangGraph workflow for local FinHarness repository intelligence."""
+"""Linear pipeline for local FinHarness repository intelligence.
+
+Downgraded from a LangGraph ``StateGraph`` in R2: the eight stages form a pure
+linear chain with no branching, conditionals, parallelism, or cycles, so graph
+orchestration added nothing here (proved by the linear-equivalence evidence,
+PR #44 / ``test_repo_intelligence_downgrade_evidence``). The public API
+``run_repo_intelligence_graph`` keeps its name, signature, and return shape so
+consumers and the output contract are unchanged.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
-
-from langgraph.graph import END, START, StateGraph
 
 from finharness.repo_intelligence import (
     ROOT,
@@ -21,6 +27,9 @@ from finharness.repo_intelligence import (
     write_repo_intelligence_outputs,
 )
 
+# Retained verbatim for output-contract stability across the R2 downgrade: the
+# receipt/report carries this string and consumers read it. Renaming would change the
+# output contract and is deliberately out of scope here.
 WORKFLOW_VERSION = "langgraph_repo_intelligence_v1"
 
 
@@ -133,26 +142,18 @@ def output_node(state: RepoIntelligenceGraphState) -> RepoIntelligenceGraphState
     return {"outputs": outputs, "final": {**final, "outputs": outputs}}
 
 
-def build_repo_intelligence_graph():
-    graph = StateGraph(RepoIntelligenceGraphState)
-    graph.add_node("source", source_node)
-    graph.add_node("inventory", inventory_node)
-    graph.add_node("import_graph", import_graph_node)
-    graph.add_node("task_graph", task_graph_node)
-    graph.add_node("test_map", test_map_node)
-    graph.add_node("blast_radius", blast_radius_node)
-    graph.add_node("security_surface", security_surface_node)
-    graph.add_node("output", output_node)
-    graph.add_edge(START, "source")
-    graph.add_edge("source", "inventory")
-    graph.add_edge("inventory", "import_graph")
-    graph.add_edge("import_graph", "task_graph")
-    graph.add_edge("task_graph", "test_map")
-    graph.add_edge("test_map", "blast_radius")
-    graph.add_edge("blast_radius", "security_surface")
-    graph.add_edge("security_surface", "output")
-    graph.add_edge("output", END)
-    return graph.compile()
+# The stages in execution order. Each node returns a partial state update that is
+# merged last-writer-wins — exactly what LangGraph did for this plain TypedDict state.
+_PIPELINE = (
+    source_node,
+    inventory_node,
+    import_graph_node,
+    task_graph_node,
+    test_map_node,
+    blast_radius_node,
+    security_surface_node,
+    output_node,
+)
 
 
 def run_repo_intelligence_graph(
@@ -160,9 +161,11 @@ def run_repo_intelligence_graph(
     root: str | None = None,
     changed_files: list[str] | None = None,
 ) -> RepoIntelligenceGraphState:
-    initial: RepoIntelligenceGraphState = {}
+    state: RepoIntelligenceGraphState = {}
     if root:
-        initial["root"] = root
+        state["root"] = root
     if changed_files is not None:
-        initial["changed_files"] = changed_files
-    return build_repo_intelligence_graph().invoke(initial)
+        state["changed_files"] = changed_files
+    for stage in _PIPELINE:
+        state.update(stage(state))
+    return state
