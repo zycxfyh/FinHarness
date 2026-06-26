@@ -20,8 +20,6 @@ unsafe path visibly blocked.
 | Goal | Use this |
 | --- | --- |
 | Run the first safe end-to-end flow | [Golden Path Tutorial](tutorials/golden-path.md) |
-| Run one indicator snapshot | [Run A Feature Snapshot](how-to/run-feature-snapshot.md) |
-| Run the full layer chain safely | [Run The Ten-Layer Flow Safely](how-to/run-ten-layer-flow.md) |
 | Review a paper broker workflow | [Safe Paper-Trade Review](how-to/safe-paper-trade-review.md) |
 | Add a mature-wheel adapter | [Add A Mature-Wheel Adapter](how-to/add-mature-wheel-adapter.md) |
 | Promote a lesson into a rule | [Promote Lesson To Rule](how-to/promote-lesson-to-rule.md) |
@@ -32,8 +30,7 @@ unsafe path visibly blocked.
 | Look up interfaces | [Interface Reference](reference/interfaces.md) |
 | Look up receipt fields and locations | [Receipt Reference](reference/receipts.md) |
 | Look up config/env vars | [Config And Environment Reference](reference/config-env.md) |
-| Inspect the ten-layer system shape | [Ten Layer LangGraph Map](architecture/ten-layer-langgraph-map.md) |
-| Read module responsibilities | [Module Docs](modules/README.md) |
+| Understand the system layering (L0–L8) | [Capital OS Layering](architecture/capital-os-layering.md) |
 | Read runtime operations reports | [Operations](operations/) |
 | Read reviews and lessons | [Reviews](reviews/README.md), [Lessons](lessons/README.md) |
 | Contribute without letting docs rot | [Contributing](../CONTRIBUTING.md) |

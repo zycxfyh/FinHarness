@@ -4,11 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from finharness.proposal import build_proposal_bundle_from_validation_snapshot
 from finharness.quality_governance_graph import run_quality_governance_graph
 from finharness.repo_intelligence import build_file_inventory, classify_security_surface
-from finharness.risk_gate import build_risk_gate_bundle_from_proposal_snapshot
-from tests.test_proposal import build_sample_validation_bundle
 
 
 class PropertyBaselineTest(unittest.TestCase):
@@ -74,25 +71,6 @@ class PropertyBaselineTest(unittest.TestCase):
             self.assertFalse(surface["execution_allowed"])
             if changed_files[0] != "docs/ordinary.md":
                 self.assertTrue(surface["requires_human_review"])
-
-    def test_risk_gate_live_boundary_never_defaults_to_allowed(self) -> None:
-        validation_bundle = build_sample_validation_bundle()
-        proposal_bundle = build_proposal_bundle_from_validation_snapshot(validation_bundle.snapshot)
-        contexts = [
-            {"requested_execution_mode": "live"},
-            {"live_execution_allowed": True},
-            {"requested_execution_mode": "paper"},
-        ]
-        for context in contexts:
-            bundle = build_risk_gate_bundle_from_proposal_snapshot(
-                proposal_bundle.snapshot,
-                context=context,
-            )
-            self.assertFalse(bundle.snapshot.execution_allowed)
-            self.assertTrue(
-                all(not decision.live_execution_allowed for decision in bundle.decisions)
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

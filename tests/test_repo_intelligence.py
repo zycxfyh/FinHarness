@@ -18,10 +18,10 @@ class RepoIntelligenceTest(unittest.TestCase):
     def test_import_graph_maps_core_modules(self) -> None:
         graph = build_import_graph()
         node_paths = {node["path"] for node in graph["nodes"]}
-        self.assertIn("src/finharness/ten_layer_graph.py", node_paths)
-        self.assertIn("src/finharness/risk_gate/__init__.py", node_paths)
+        self.assertIn("src/finharness/allocation.py", node_paths)
+        self.assertIn("src/finharness/exposure.py", node_paths)
         self.assertTrue(
-            any(edge["source"] == "src/finharness/ten_layer_graph.py" for edge in graph["edges"])
+            any(edge["source"] == "src/finharness/allocation.py" for edge in graph["edges"])
         )
 
     def test_inventory_excludes_secrets_and_runtime_receipts(self) -> None:
@@ -34,7 +34,7 @@ class RepoIntelligenceTest(unittest.TestCase):
         task_graph = parse_taskfile()
         names = {task["name"] for task in task_graph["tasks"]}
         self.assertIn("check", names)
-        self.assertIn("ten-layer:graph", names)
+        self.assertIn("decisions:scan", names)
         self.assertIn("hardening:gate", names)
 
     def test_blast_radius_recommends_risk_checks(self) -> None:

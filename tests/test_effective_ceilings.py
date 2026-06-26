@@ -37,7 +37,7 @@ def _draft() -> LessonDraft:
 def _baseline_evidence() -> dict[str, object]:
     return {
         "command": ["python", "-m", "unittest"],
-        "test_modules": ["tests.test_execution"],
+        "test_modules": ["tests.test_governance_invariants"],
         "returncode": 0,
         "tests_run": 8,
         "failures": 0,

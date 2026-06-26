@@ -29,10 +29,10 @@ GRAPH_NEEDED_REASONS = frozenset(
     {"branching", "interrupt", "orchestration", "lineage", "provider_boundary", "none"}
 )
 # ``archived`` extends the audit's R1 enum for assets that are already retired (deleted),
-# as opposed to *candidates* for a future archive/delete decision. finance_graph /
-# trade_graph are in this state. ``downgraded`` marks an asset whose graph shape has been
-# replaced by a plain pipeline after an authorized R2 downgrade (repo_intelligence, R2):
-# it still exists and is still consumed, it is simply no longer graph-orchestrated.
+# as opposed to *candidates* for a future archive/delete decision. ``downgraded`` marks an
+# asset whose graph shape has been replaced by a plain pipeline after an authorized R2
+# downgrade (repo_intelligence, R2): it still exists and is still consumed, it is simply no
+# longer graph-orchestrated.
 STATUSES = frozenset(
     {
         "keep",
@@ -59,143 +59,15 @@ class GraphAsset:
     evidence: str
 
 
-# --- Headless Domain Graphs (audit §Headless Domain Graphs) ------------------------------
-# Keep headless and opt-in; they encode the institutional research/trading chain and must
-# not be promoted into the personal cockpit.
-_HEADLESS_DOMAIN: tuple[GraphAsset, ...] = (
-    GraphAsset(
-        id="market_data",
-        module="src/finharness/market_data_graph.py",
-        task="market-data:graph",
-        consumer_class="headless",
-        graph_needed_reason="provider_boundary",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: real adapter/provider boundary; "
-        "consumers: task market-data:graph, indicator graph, market cockpit.",
-    ),
-    GraphAsset(
-        id="indicator",
-        module="src/finharness/indicator_graph.py",
-        task="indicators:graph",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: derived evidence layer; may later become a "
-        "plain feature command if too linear. consumers: task indicators:graph, daily evidence.",
-    ),
-    GraphAsset(
-        id="events",
-        module="src/finharness/events_graph.py",
-        task="events:snapshot",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: event evidence layer; consumers: task "
-        "events:snapshot, interpretation, daily evidence.",
-    ),
-    GraphAsset(
-        id="interpretation",
-        module="src/finharness/interpretation_graph.py",
-        task="interpretation:graph",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: source-backed interpretation layer; "
-        "consumers: task interpretation:graph, hypotheses, daily evidence.",
-    ),
-    GraphAsset(
-        id="hypotheses",
-        module="src/finharness/hypotheses_graph.py",
-        task="hypotheses:graph",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: candidate hypothesis layer; consumers: "
-        "task hypotheses:graph, validation.",
-    ),
-    GraphAsset(
-        id="validation",
-        module="src/finharness/validation_graph.py",
-        task="validation:graph",
-        consumer_class="headless",
-        graph_needed_reason="provider_boundary",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: research validation boundary; important "
-        "non-claim discipline. consumers: task validation:graph, proposal.",
-    ),
-    GraphAsset(
-        id="proposal",
-        module="src/finharness/proposal_graph.py",
-        task="proposal:graph",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: trading/research proposal path, separate "
-        "from personal-finance proposals. consumers: task proposal:graph, risk gate.",
-    ),
-    GraphAsset(
-        id="risk_gate",
-        module="src/finharness/risk_gate_graph.py",
-        task="risk-gate:graph",
-        consumer_class="headless",
-        graph_needed_reason="interrupt",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Deletion Test Findings: earns graph shape — explicit gates, "
-        "interactive/interrupt path, safety semantics. consumers: task risk-gate:graph, execution.",
-    ),
-    GraphAsset(
-        id="execution",
-        module="src/finharness/execution_graph.py",
-        task="execution:graph",
-        consumer_class="headless",
-        graph_needed_reason="interrupt",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: safety-critical; keep isolated from "
-        "cockpit. consumers: task execution:graph, post-trade.",
-    ),
-    GraphAsset(
-        id="post_trade",
-        module="src/finharness/post_trade_graph.py",
-        task="post-trade:graph",
-        consumer_class="headless",
-        graph_needed_reason="lineage",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Headless Domain Graphs: review/reconciliation layer; candidate for "
-        "later simplification if linear. consumers: task post-trade:graph.",
-    ),
-    GraphAsset(
-        id="ten_layer",
-        module="src/finharness/ten_layer_graph.py",
-        task="ten-layer:graph",
-        consumer_class="headless",
-        graph_needed_reason="orchestration",
-        status="headless_keep",
-        owner="headless-engine",
-        review_due="2026-12-31",
-        evidence="audit §Deletion Test Findings: coordinates freshness/reuse across ten "
-        "evidence layers — orchestration earns the shape. consumer: task ten-layer:graph.",
-    ),
-)
+# --- Headless Domain Graphs --------------------------------------------------------------
+# Retired 2026-06-26: the old ten-layer trading/research signal chain
+# (market_data -> indicators -> events -> interpretation -> hypotheses -> validation ->
+# proposal -> risk_gate -> execution -> post_trade, plus the ten_layer orchestrator) was
+# removed wholesale. It made a trading pipeline the system's spine, which conflicts with
+# the product north star ("trading can be subsumed, but is never the centre"). The new
+# spine is the eight-layer Capital OS (docs/architecture/capital-os-layering.md). These
+# assets now live in ``_ARCHIVED`` below.
+_HEADLESS_DOMAIN: tuple[GraphAsset, ...] = ()
 
 # --- Support / Governance Graphs (audit §Support / Governance Graphs) --------------------
 # Most likely over-structured; useful but may not need to be graphs. R2 piloted (and, for
@@ -280,51 +152,67 @@ _SUPPORT_GOVERNANCE: tuple[GraphAsset, ...] = (
         "history but likely not needed in the core engineering path; prove by use. "
         "consumers: task workflow:cognitive, docs.",
     ),
-    GraphAsset(
-        id="daily_evidence",
-        module="src/finharness/daily_evidence_graph.py",
-        task="workflow:daily-evidence",
-        consumer_class="governance",
-        graph_needed_reason="orchestration",
-        status="downgrade_candidate",
-        owner="eos",
-        review_due="2026-08-15",
-        evidence="audit §Support/Governance: bundles multiple evidence layers; 'keep or "
-        "downgrade after review' — may earn orchestration shape if used operationally. "
-        "consumers: task workflow:daily-evidence, tests.",
-    ),
 )
 
-# --- Already Archived / Do Not Resurrect (audit §Already Archived) -----------------------
-# REGISTRY CORRECTION: the audit says these live at docs/archive/legacy-graphs/, but that
-# path does not exist — the files were deleted in the repo prune (commit 2166bba), not
-# archived to disk. The registry records the true state: deleted, no module file.
+# --- Already Archived / Do Not Resurrect ------------------------------------------------
+# finance_graph / trade_graph were deleted in an earlier repo prune (commit 2166bba). The
+# ten-layer trading chain + daily_evidence bundler were retired 2026-06-26 (see the
+# Headless Domain note above and docs/archive/ten-layer-trading-chain/). All record the
+# true state: deleted, no module file, no active task — design history only.
+def _archived(graph_id: str, evidence: str) -> GraphAsset:
+    return GraphAsset(
+        id=graph_id,
+        module=None,
+        task=None,
+        consumer_class="historical",
+        graph_needed_reason="none",
+        status="archived",
+        owner="archive",
+        review_due="n/a",
+        evidence=evidence,
+    )
+
+
+_CHAIN_RETIRED_NOTE = (
+    "Retired 2026-06-26 with the ten-layer trading chain "
+    "(docs/architecture/capital-os-layering.md). Deleted module + task; design history "
+    "only — do not resurrect via Taskfile, scripts, tests, or cockpit."
+)
+
 _ARCHIVED: tuple[GraphAsset, ...] = (
-    GraphAsset(
-        id="finance_graph",
-        module=None,
-        task=None,
-        consumer_class="historical",
-        graph_needed_reason="none",
-        status="archived",
-        owner="archive",
-        review_due="n/a",
-        evidence="audit §Already Archived. CORRECTION: no docs/archive/legacy-graphs/ "
-        "file exists; deleted in repo prune (commit 2166bba). Design history only — do "
-        "not resurrect via Taskfile, scripts, tests, or cockpit.",
+    _archived(
+        "finance_graph",
+        "audit §Already Archived. No docs/archive/legacy-graphs/ file exists; deleted in "
+        "repo prune (commit 2166bba). Design history only — do not resurrect.",
     ),
-    GraphAsset(
-        id="trade_graph",
-        module=None,
-        task=None,
-        consumer_class="historical",
-        graph_needed_reason="none",
-        status="archived",
-        owner="archive",
-        review_due="n/a",
-        evidence="audit §Already Archived. CORRECTION: no docs/archive/legacy-graphs/ "
-        "file exists; deleted in repo prune (commit 2166bba). Design history only — do "
-        "not resurrect.",
+    _archived(
+        "trade_graph",
+        "audit §Already Archived. No docs/archive/legacy-graphs/ file exists; deleted in "
+        "repo prune (commit 2166bba). Design history only — do not resurrect.",
+    ),
+    _archived(
+        "market_data",
+        _CHAIN_RETIRED_NOTE
+        + " The shared market_data.py types module (MarketDataSnapshot etc.) is NOT this "
+        "graph and stays.",
+    ),
+    _archived("indicator", _CHAIN_RETIRED_NOTE),
+    _archived("events", _CHAIN_RETIRED_NOTE),
+    _archived("interpretation", _CHAIN_RETIRED_NOTE),
+    _archived("hypotheses", _CHAIN_RETIRED_NOTE),
+    _archived("validation", _CHAIN_RETIRED_NOTE),
+    _archived(
+        "proposal",
+        _CHAIN_RETIRED_NOTE
+        + " (signal-proposal layer, distinct from statecore governed proposals, which stay.)",
+    ),
+    _archived("risk_gate", _CHAIN_RETIRED_NOTE),
+    _archived("execution", _CHAIN_RETIRED_NOTE),
+    _archived("post_trade", _CHAIN_RETIRED_NOTE),
+    _archived("ten_layer", _CHAIN_RETIRED_NOTE),
+    _archived(
+        "daily_evidence",
+        _CHAIN_RETIRED_NOTE + " (it bundled the first evidence layers.)",
     ),
 )
 
