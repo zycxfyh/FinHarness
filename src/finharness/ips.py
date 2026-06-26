@@ -31,9 +31,8 @@ from sqlmodel import Session, col, select
 
 from finharness.exposure import ExposureReport
 from finharness.market_data import ROOT
-from finharness.statecore.models import InvestmentPolicyStatement
+from finharness.statecore.models import InvestmentPolicyStatement, ReceiptIndex
 from finharness.statecore.observations import ObservationThresholds
-from finharness.statecore.receipt_index import receipt_index_record_from_path
 from finharness.statecore.receipt_io import (
     atomic_write_json,
     remove_file_best_effort,
@@ -265,7 +264,9 @@ def record_ips(
     source of truth; the row is the queryable mirror.
     """
     created_at = created_at_utc or _now_utc()
-    resolved_id = ips_id or f"ips_{_stamp()}_{uuid4().hex[:8]}"
+    # Sanitize the id before it touches a path: no character can carry a ".."
+    # traversal segment even before resolve_under guards the final path.
+    resolved_id = _safe_id(ips_id) if ips_id else f"ips_{_stamp()}_{uuid4().hex[:8]}"
     receipt_id = f"receipt_{resolved_id}"
     receipt_path = resolve_under(receipt_root, "ips", f"{receipt_id}.json")
     ips = InvestmentPolicyStatement(
@@ -280,14 +281,25 @@ def record_ips(
         restricted_actions=list(restricted_actions or []),
         review_cadence=review_cadence,
         source_refs=list(source_refs or []),
-        receipt_ref=_display_ref(receipt_path),
+        receipt_ref=_display_path(receipt_path),
         execution_allowed=False,
         created_at_utc=created_at,
         as_of_utc=created_at,
     )
     receipt_existed = receipt_path.exists()
     atomic_write_json(receipt_path, _ips_receipt_payload(ips, receipt_id))
-    index = receipt_index_record_from_path(receipt_path, receipt_root=receipt_root)
+    # Build the index record directly from known fields rather than re-reading the
+    # path we just constructed (which would route a derived path back into the
+    # receipt-reading code); the row is the queryable mirror of the receipt file.
+    display = _display_path(receipt_path)
+    index = ReceiptIndex(
+        receipt_id=receipt_id,
+        kind="state_core_ips",
+        path=display,
+        created_at_utc=created_at,
+        source_refs=[display],
+        refs=[resolved_id, *ips.source_refs],
+    )
     superseded = _supersede_active(engine, keep=resolved_id)
     try:
         upsert_records([*superseded, ips, index], engine=engine)
@@ -312,11 +324,18 @@ def _supersede_active(engine: Engine, *, keep: str) -> list[InvestmentPolicyStat
     return superseded
 
 
-def _display_ref(path: Path) -> str:
+def _safe_id(value: str) -> str:
+    # Map every path-significant character (including ".") to "_", so an id can
+    # never carry a ".." traversal segment even before resolve_under guards it.
+    return "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in value)
+
+
+def _display_path(path: Path) -> str:
+    resolved = path.resolve()
     try:
-        return str(path.relative_to(ROOT))
+        return resolved.relative_to(ROOT).as_posix()
     except ValueError:
-        return str(path)
+        return str(resolved)
 
 
 def _decimal(value: Any):
