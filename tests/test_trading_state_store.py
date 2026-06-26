@@ -122,20 +122,6 @@ class TradingStateStoreTests(unittest.TestCase):
         self.assertEqual(merged["consecutive_losses"], 5)
         self.assertTrue(merged["behavior_reset_required"])
 
-    def test_persisted_hard_stop_state_blocks_next_risk_gate_run(self) -> None:
-        from finharness.risk_gate import RiskGateContext
-
-        save_trading_state(
-            TradingStateRecord(drawdown_pct=-5.0, consecutive_losses=4),
-            self.path,
-        )
-        merged = merge_into_risk_context(None, path=self.path)
-        context = RiskGateContext.model_validate(merged)
-        self.assertLessEqual(context.drawdown_pct, context.hard_stop_drawdown_pct)
-        self.assertGreaterEqual(
-            context.consecutive_losses, context.hard_stop_consecutive_losses
-        )
-
     def test_saved_file_is_valid_json_with_schema_version(self) -> None:
         save_trading_state(TradingStateRecord(), self.path)
         payload = json.loads(self.path.read_text(encoding="utf-8"))

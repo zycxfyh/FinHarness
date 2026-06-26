@@ -72,8 +72,9 @@ non-execution). Tighten docs/labels to "read + attest", keeping the non-claims.
 
 ### Tier 4 — larger adopt decisions (gated)
 
-**D7. OpenTelemetry traces/metrics.** Replace the hand-rolled trace header with OTel
-once a dependency is approved. New dependency — needs a go-ahead.
+**D7. OpenTelemetry traces/metrics.** D7a standardizes the local trace context and
+trace-to-receipt index; D7b adds a local-only OTel SDK provider. External exporter
+or telemetry upload remains gated on explicit C3 approval.
 
 **D8. Browser E2E / visual regression for the cockpit.** Needs a tooling decision
 (e.g. Playwright). New tooling — needs a go-ahead.
@@ -126,9 +127,20 @@ Each item: implement → add/adjust a regression test → `task check` green →
 - DONE D6 — corrected the "read-only API/cockpit" wording: it is read **plus**
   governed human attestation (no execution), in the README and lifecycle plan;
   non-claims and `execution_allowed=false` kept.
-- (gated) D7 — OpenTelemetry. Needs approval (new dependency).
-- (gated) D8 — browser E2E / visual regression. Needs approval (new tooling).
+- D7a/D7b — trace context contract + local-only OpenTelemetry adapter implemented:
+  API trace header handling uses the shared contract, malformed/secret-like trace
+  input fails soft, Golden Path writes a separate `observability_trace_index`
+  receipt linking trace id to proposal/review receipts, API requests create
+  bounded local spans, and governance policies lock the no-default-exporter path.
+  A local `task observability:trace -- <trace_id>` consumer reads the trace-index
+  receipt back as a bounded summary and discloses missing referenced receipts
+  without printing raw domain receipt payloads.
+  D7c (external exporter / telemetry upload) still needs explicit C3 approval.
+- DONE D8 — Browser Golden Paths shipped as a CI-optional Playwright smoke:
+  `/cockpit/` real-browser load, seeded Proposals detail, and Compare view. It is
+  deliberately not in `task check`; GOV-EOS-002 locks that boundary. First CI run
+  caught an async render race that jsdom missed, then turned green after the wait
+  fix.
 
-All of Tier 1–3 (D1–D6) cleared; each behind a green `task check` with a
-regression test. Tier 4 (D7, D8) awaits an explicit go-ahead because each pulls in
-a new dependency / tool stack.
+All of Tier 1–3 (D1–D6) cleared; D7a/D7b are implemented with no default exporter.
+D7c still awaits explicit go-ahead because it adds an external export path.

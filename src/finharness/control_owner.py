@@ -24,7 +24,7 @@ CONTROL_BASELINE_INVARIANTS = [
     "INV-1: AI never places orders directly; non-live is the default.",
     "INV-2: Live execution is blocked before submit.",
     "INV-3: Human attestation is fail-closed.",
-    "INV-4: risk_gate retains mandate, permission, cap, and no-live authority.",
+    "INV-4: Governed proposals carry no execution authority (execution_allowed=false).",
     "INV-5: Behavior stops still trip.",
     "INV-6: Lesson-to-rule changes are refused without lineage.",
     "INV-7: Receipts separate claim, evidence, and non-claim.",
@@ -32,11 +32,10 @@ CONTROL_BASELINE_INVARIANTS = [
 ]
 
 CONTROL_BASELINE_TEST_MODULES = [
-    "tests.test_execution",
-    "tests.test_risk_gate",
-    "tests.test_risk_gate_interrupt",
+    "tests.test_governance_invariants",
+    "tests.test_governed_proposal_receipts",
     "tests.test_hardening_gate",
-    "tests.test_post_trade",
+    "tests.test_trading_guard",
 ]
 
 NON_CERTIFICATION_STATEMENT = (

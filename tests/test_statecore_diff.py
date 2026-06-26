@@ -1,26 +1,22 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import Account, Position, Proposal, ReceiptIndex, Snapshot
 from finharness.statecore.store import (
     StateCoreStoreError,
-    init_state_core,
     read_all,
     write_records,
 )
+from tests._statecore_fixtures import StateCoreFixture
 
 
 class StateCoreDiffTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.tmp.name) / "state-core.sqlite"
-        self.engine = init_state_core(self.db_path)
-        self.addCleanup(self.engine.dispose)
-        self.addCleanup(self.tmp.cleanup)
+        self.fx = StateCoreFixture()
+        self.engine = self.fx.engine
+        self.addCleanup(self.fx.cleanup)
 
     def _seed_portfolio_snapshots(self) -> None:
         account = Account(

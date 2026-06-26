@@ -33,7 +33,7 @@ SourceType = Literal[
 
 
 class StrategySpec(BaseModel):
-    """Reusable strategy contract for ten-layer research handoff."""
+    """Reusable strategy contract for research handoff."""
 
     model_config = ConfigDict(frozen=True)
 

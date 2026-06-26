@@ -230,6 +230,12 @@ class Proposal(StateCoreBase, table=True):
     limitations: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    # Minimal decision forcing gate (P4). Empty for ungoverned/legacy rows; governed
+    # proposals created via create_governed_proposal must carry the four required fields
+    # (see finharness.statecore.decision_scaffold).
+    decision_scaffold: dict[str, Any] = Field(
+        default_factory=dict, sa_column=json_dict_column()
+    )
     authority_level: AuthorityLevel = "needs_human_confirm"
     execution_allowed: bool = False
     receipt_ref: str | None = None
@@ -261,3 +267,65 @@ class Attestation(StateCoreBase, table=True):
         if not value.strip():
             raise ValueError("attestation requires a named human and written reason")
         return value
+
+
+REVIEW_EVENT_KINDS: tuple[str, ...] = ("annotation", "archive", "reopen", "compare_mark")
+
+
+class ReviewEvent(StateCoreBase, table=True):
+    """Append-only ledger of human review interactions on a governed proposal.
+
+    Additive to (not a replacement for) Attestation: attestation stays the decision of
+    record (approve/reject); ReviewEvent records annotation / archive / reopen /
+    compare_mark. Never carries execution authority. ``content_hash`` is for
+    integrity/replay only — it is NOT an idempotency key, so a repeated human annotation
+    is a new event, not a no-op.
+    """
+
+    __tablename__ = "review_events"
+    __table_args__ = (
+        CheckConstraint(
+            "execution_allowed = 0", name="ck_review_events_execution_allowed_false"
+        ),
+        # Closed set at the DB level: SQLModel table models skip field validators on
+        # construction, so the kind enum must also be enforced where it is persisted.
+        CheckConstraint(
+            "kind IN (" + ", ".join(f"'{k}'" for k in REVIEW_EVENT_KINDS) + ")",
+            name="ck_review_events_kind_closed",
+        ),
+    )
+
+    review_event_id: str = Field(primary_key=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id")
+    kind: str
+    attester: str
+    reason: str
+    text: str | None = None
+    attestation_ref: str | None = None
+    compare_with: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    content_hash: str = ""
+    authority_level: AuthorityLevel = "needs_human_confirm"
+    execution_allowed: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("kind")
+    @classmethod
+    def require_known_kind(cls, value: str) -> str:
+        if value not in REVIEW_EVENT_KINDS:
+            raise ValueError(f"review event kind must be one of {REVIEW_EVENT_KINDS}")
+        return value
+
+    @field_validator("attester", "reason")
+    @classmethod
+    def require_written_human_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("review event requires a named human and written reason")
+        return value
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("review events never carry execution authority")
+        return False
