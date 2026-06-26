@@ -264,10 +264,11 @@ def record_ips(
     source of truth; the row is the queryable mirror.
     """
     created_at = created_at_utc or _now_utc()
-    # Sanitize the id before it touches a path: no character can carry a ".."
-    # traversal segment even before resolve_under guards the final path.
+    # The DB primary key may come from a caller-supplied id, so sanitize it; but the
+    # receipt *filename* is server-generated (stamp + uuid) and never derived from
+    # caller input, so the path can never depend on a user-controlled value.
     resolved_id = _safe_id(ips_id) if ips_id else f"ips_{_stamp()}_{uuid4().hex[:8]}"
-    receipt_id = f"receipt_{resolved_id}"
+    receipt_id = f"receipt_ips_{_stamp()}_{uuid4().hex[:8]}"
     receipt_path = resolve_under(receipt_root, "ips", f"{receipt_id}.json")
     ips = InvestmentPolicyStatement(
         ips_id=resolved_id,
