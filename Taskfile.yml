@@ -83,11 +83,6 @@ tasks:
     cmds:
       - uv run python scripts/read_observability_trace.py {{.CLI_ARGS}}
 
-  governance:certify-controls:
-    desc: "NOW-3: certify control-owner baseline with a named human owner"
-    cmds:
-      - uv run python scripts/run_control_certification.py {{.CLI_ARGS}}
-
   project:governance-adapter:
     desc: Adapt workstation Project Governance Loop receipt into FinHarness compatibility receipt
     cmds:
@@ -321,50 +316,10 @@ tasks:
     cmds:
       - uv run python scripts/audit_rule_lineage.py
 
-  trading-state:show:
-    desc: Show the persisted behavioral trading state (Loop 3 feedback edge)
-    cmds:
-      - uv run python -c "from finharness.trading_state_store import load_trading_state; import json; print(json.dumps(load_trading_state().model_dump(mode='json'), indent=2))"
-
   eval:risk:
     desc: Evaluate generated finance risk note
     cmds:
       - pnpm exec promptfoo eval -c evals/promptfoo/risk-note.yaml --no-cache
-
-  okx:market:
-    desc: Fetch read-only OKX public market snapshots
-    cmds:
-      - uv run python scripts/okx_market_snapshot.py --watchlist --limit 10
-
-  okx:live-status:
-    desc: Read live OKX account, configuration, positions, and open orders
-    cmds:
-      - uv run python scripts/okx_live_status.py
-
-  okx:live-read:
-    desc: Run an allowlisted live read-only OKX command, e.g. task okx:live-read -- account balance
-    cmds:
-      - uv run python scripts/run_okx_read.py {{.CLI_ARGS}}
-
-  okx:demo:
-    desc: Run an allowlisted OKX demo command
-    cmds:
-      - uv run python scripts/run_okx_read.py --demo {{.CLI_ARGS}}
-
-  okx:live-write:
-    desc: Place a live OKX order through the fail-closed gate (guard + notional cap + receipt + attestation)
-    cmds:
-      - uv run python scripts/okx_live_order.py {{.CLI_ARGS}}
-
-  trading:reset-check:
-    desc: Evaluate the behavioral trading guard against persisted trading-state
-    cmds:
-      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
-
-  guard:interactive:
-    desc: Evaluate the behavioral guard for a what-if drawdown/loss, e.g. -- --drawdown-pct -3 --consecutive-losses 3
-    cmds:
-      - uv run python scripts/run_trading_guard.py {{.CLI_ARGS}}
 
   workflow:cognitive:
     desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."
@@ -376,52 +331,3 @@ tasks:
     cmds:
       - uv run python scripts/run_engineering_delivery_graph.py {{.CLI_ARGS}}
 
-  alpaca:paper-check:
-    desc: Check Alpaca paper account, positions, and open orders
-    cmds:
-      - uv run python scripts/check_alpaca_paper.py
-
-  alpaca:paper-capabilities:
-    desc: Inspect Alpaca paper account configuration, orders, positions, and activities
-    cmds:
-      - uv run python scripts/alpaca_paper_capabilities.py
-
-  alpaca:paper-config-dry-run:
-    desc: Show the broad Alpaca paper experiment configuration payload
-    cmds:
-      - uv run python scripts/alpaca_paper_configure.py
-
-  alpaca:paper-config-experiment:
-    desc: Apply broad Alpaca paper experiment settings
-    cmds:
-      - uv run python scripts/alpaca_paper_configure.py --apply
-
-  alpaca:paper-assets:
-    desc: List active Alpaca paper US equity assets
-    cmds:
-      - uv run python scripts/alpaca_paper_assets.py --asset-class us_equity --limit 20
-
-  alpaca:paper-crypto-assets:
-    desc: List active Alpaca paper crypto assets
-    cmds:
-      - uv run python scripts/alpaca_paper_assets.py --asset-class crypto --limit 20
-
-  alpaca:paper-option-contracts:
-    desc: List Alpaca paper option contracts for SPY
-    cmds:
-      - uv run python scripts/alpaca_paper_options.py --underlying SPY --limit 20
-
-  alpaca:paper-order-cycle:
-    desc: Place and cancel a tiny Alpaca paper limit order
-    cmds:
-      - uv run python scripts/alpaca_paper_order_cycle.py
-
-  alpaca:paper-strategy-order:
-    desc: Run a paper order with written thesis, risk gate, cancel, and receipt
-    cmds:
-      - uv run python scripts/alpaca_paper_strategy_order.py --execute
-
-  alpaca:paper-dca:
-    desc: "Paper DCA accumulation buy (dry-run; add -- --execute to fill). e.g. task alpaca:paper-dca -- --symbols SPY,QQQ --execute"
-    cmds:
-      - uv run python scripts/alpaca_paper_dca_buy.py {{.CLI_ARGS}}

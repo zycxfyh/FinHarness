@@ -50,6 +50,8 @@ package = false
 line-length = 100
 src = ["src", "tests", "scripts", "experiments"]
 target-version = "py312"
+# Archived legacy live-trading experiments are frozen, non-mainline, and not linted.
+extend-exclude = ["experiments/archive"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "S", "RUF", "PTH", "TID", "C901"]
