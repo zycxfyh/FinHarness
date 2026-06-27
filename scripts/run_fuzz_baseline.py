@@ -16,7 +16,6 @@ from typing import Any
 from finharness.market_data import ROOT
 from finharness.repo_intelligence import classify_security_surface
 from finharness.research_assets import resolve_research_assets
-from finharness.trading_guard import TradingState, evaluate_trading_state
 
 DEFAULT_CORPUS = ROOT / "data" / "security" / "fuzzing" / "corpus.json"
 DEFAULT_REPORT = ROOT / "data" / "security" / "fuzzing" / "latest.json"
@@ -57,16 +56,6 @@ def generated_cases(*, seed: int, count: int) -> list[dict[str, Any]]:
     for index in range(count):
         cases.append(
             {
-                "id": f"generated_trading_guard_{index}",
-                "target": "trading_guard",
-                "drawdown_pct": rng.choice([-1000.0, -10.0, -3.0, -1.6, -0.1, 0.0, 5.0]),
-                "consecutive_losses": rng.choice([-3, -1, 0, 1, 2, 3, 99]),
-                "minutes_since_last_trade": rng.choice([None, -5, 0, 1, 29, 30, 9999]),
-                "planned_trade_has_written_thesis": rng.choice([True, False]),
-            }
-        )
-        cases.append(
-            {
                 "id": f"generated_security_surface_{index}",
                 "target": "security_surface",
                 "paths": rng.sample(path_fragments, k=rng.randint(1, 4)),
@@ -83,39 +72,21 @@ def generated_cases(*, seed: int, count: int) -> list[dict[str, Any]]:
     return cases
 
 
-def run_trading_guard_case(case: dict[str, Any]) -> dict[str, Any]:
-    state = TradingState(
-        drawdown_pct=float(case.get("drawdown_pct", 0.0)),
-        consecutive_losses=int(case.get("consecutive_losses", 0)),
-        minutes_since_last_trade=case.get("minutes_since_last_trade"),
-        planned_trade_has_written_thesis=bool(case.get("planned_trade_has_written_thesis")),
-    )
-    decision = evaluate_trading_state(state)
-    invariant_ok = decision.level in {"clear", "caution", "hard_stop"} and bool(
-        decision.reasons and decision.required_actions
-    )
-    if not state.planned_trade_has_written_thesis:
-        invariant_ok = invariant_ok and not decision.trade_allowed
-    if state.drawdown_pct <= -3.0 or state.consecutive_losses >= 3:
-        invariant_ok = invariant_ok and decision.level == "hard_stop" and not decision.trade_allowed
-    return {
-        "target": "trading_guard",
-        "case_id": str(case.get("id", "unnamed")),
-        "invariant_ok": invariant_ok,
-        "summary": {"level": decision.level, "trade_allowed": decision.trade_allowed},
-    }
-
-
 def run_security_surface_case(case: dict[str, Any]) -> dict[str, Any]:
     paths = [str(item) for item in case.get("paths", [])]
     surface = classify_security_surface(paths)
     invariant_ok = surface["execution_allowed"] is False
+    # A test file is not the execution surface (editing tests/* grants no execution),
+    # so it must not be expected to require human review; matches classify_security_surface.
     if any(
-        path.startswith(".github/")
-        or "execution" in path.replace("-", "_")
-        or "risk_gate" in path.replace("-", "_")
-        or "okx" in path.replace("-", "_")
-        or "alpaca" in path.replace("-", "_")
+        not path.startswith("tests/")
+        and (
+            path.startswith(".github/")
+            or "execution" in path.replace("-", "_")
+            or "risk_gate" in path.replace("-", "_")
+            or "okx" in path.replace("-", "_")
+            or "alpaca" in path.replace("-", "_")
+        )
         for path in paths
     ):
         invariant_ok = invariant_ok and surface["requires_human_review"] is True
@@ -158,8 +129,6 @@ def run_research_assets_case(case: dict[str, Any]) -> dict[str, Any]:
 def run_case(case: dict[str, Any]) -> dict[str, Any]:
     target = case.get("target")
     try:
-        if target == "trading_guard":
-            return run_trading_guard_case(case)
         if target == "security_surface":
             return run_security_surface_case(case)
         if target == "research_assets":

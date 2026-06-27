@@ -3,30 +3,6 @@
   "description": "Deterministic governance-boundary fuzz cases. No secrets, credentials, live provider calls, or autonomous execution.",
   "cases": [
     {
-      "id": "trading_guard_hard_drawdown_no_thesis",
-      "target": "trading_guard",
-      "drawdown_pct": -99.0,
-      "consecutive_losses": 0,
-      "minutes_since_last_trade": 0,
-      "planned_trade_has_written_thesis": false
-    },
-    {
-      "id": "trading_guard_large_loss_streak",
-      "target": "trading_guard",
-      "drawdown_pct": 0.0,
-      "consecutive_losses": 999,
-      "minutes_since_last_trade": null,
-      "planned_trade_has_written_thesis": true
-    },
-    {
-      "id": "trading_guard_clear_boundary",
-      "target": "trading_guard",
-      "drawdown_pct": 0.0,
-      "consecutive_losses": 0,
-      "minutes_since_last_trade": 999,
-      "planned_trade_has_written_thesis": true
-    },
-    {
       "id": "security_surface_execution_paths",
       "target": "security_surface",
       "paths": [

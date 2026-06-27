@@ -17,7 +17,7 @@ class SecurityFuzzBaselineTest(unittest.TestCase):
         self.assertGreaterEqual(report["case_count"], 12)
         self.assertEqual(
             set(report["targets"]),
-            {"research_assets", "security_surface", "trading_guard"},
+            {"research_assets", "security_surface"},
         )
 
     def test_fuzz_report_is_json_serializable(self) -> None:

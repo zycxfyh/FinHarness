@@ -10,7 +10,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from finharness.market_data import ROOT, display_path
-from finharness.okx_symbols import normalize_usdt_symbol
 
 RESTRICTED_SYMBOLS_ENV_VAR = "FINHARNESS_RESTRICTED_SYMBOLS_PATH"
 DEFAULT_RESTRICTED_SYMBOLS_PATH = ROOT / "data" / "security" / "restricted-symbols.json"
@@ -80,8 +79,23 @@ class TradabilityDecision(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
 
 
+def _normalize_usdt_symbol(symbol: str) -> str:
+    """Normalize compact app-style symbols such as BTCUSDT into BTC-USDT.
+
+    Inlined from the archived ``okx_symbols`` module so this restricted-symbol
+    guardrail (used by the research path) carries no dependency on archived
+    live-trading code.
+    """
+    clean = symbol.strip().upper()
+    if "-" in clean:
+        return clean
+    if clean.endswith("USDT") and len(clean) > 4:
+        return f"{clean[:-4]}-USDT"
+    return clean
+
+
 def normalize_symbol(symbol: str) -> str:
-    return normalize_usdt_symbol(symbol).strip().upper()
+    return _normalize_usdt_symbol(symbol).strip().upper()
 
 
 def restricted_symbols_path(path: str | Path | None = None) -> Path:
@@ -98,15 +112,11 @@ def load_restricted_symbol_list(path: str | Path | None = None) -> RestrictedSym
     try:
         payload = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise RestrictedSymbolsError(
-            f"restricted-symbol list unreadable: {target}: {exc}"
-        ) from exc
+        raise RestrictedSymbolsError(f"restricted-symbol list unreadable: {target}: {exc}") from exc
     try:
         return RestrictedSymbolList.model_validate(payload)
     except ValueError as exc:
-        raise RestrictedSymbolsError(
-            f"restricted-symbol list invalid: {target}: {exc}"
-        ) from exc
+        raise RestrictedSymbolsError(f"restricted-symbol list invalid: {target}: {exc}") from exc
 
 
 def is_restricted(
@@ -130,11 +140,7 @@ def is_restricted(
             evidence_refs=[display_path(target)],
         )
     entry = next(
-        (
-            item
-            for item in active_list.entries
-            if normalize_symbol(item.symbol) == normalized
-        ),
+        (item for item in active_list.entries if normalize_symbol(item.symbol) == normalized),
         None,
     )
     if entry is None:
