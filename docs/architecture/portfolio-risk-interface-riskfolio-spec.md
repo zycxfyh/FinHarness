@@ -1,5 +1,9 @@
 # PortfolioRiskInterface — Riskfolio Evidence Spec (for Codex)
 
+> Historical / superseded reference (2026-06-28): this spec targeted the retired
+> risk-gate integration path. Current proposal/review and exposure facts live in
+> `system-map.md`, `module-map.md`, and the Capital OS layering document.
+
 Executable spec for **Phase 2b**. Goal: let Riskfolio-Lib allocation feed the
 `risk_gate` as a **reviewed suggestion input**, never as authority to widen a cap
 or skip human review. [discipline-layer-baseline.md](discipline-layer-baseline.md)

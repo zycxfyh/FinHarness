@@ -1,0 +1,234 @@
+schema: finharness.system_catalog.v1
+status: current
+updated: "2026-06-28"
+source_docs:
+  framework_index: docs/architecture/framework-index.md
+  system_map: docs/architecture/system-map.md
+  module_map: docs/architecture/module-map.md
+  engineering_leverage_map: docs/architecture/engineering-leverage-map.md
+systems:
+  - id: product_north_star
+    name: Product North Star
+    status: current
+    summary: Product category and non-claims; FinHarness is a personal capital governance framework, not an execution authority.
+    docs:
+      - README.md
+      - docs/product-north-star.md
+      - docs/product/product-thesis.md
+      - docs/product/product-roadmap.md
+    runtime_roots:
+      - README.md
+      - docs/product/
+    mature_posture: Diataxis and product-principle discipline; keep category language explicit.
+    checks:
+      - task docs:current-check
+    upgrade_trigger: Public product surface or multi-user usage needs a formal product handbook.
+
+  - id: state_core
+    name: State Core
+    status: current
+    summary: Receipt-backed query mirror for personal capital state; receipts remain the evidence root.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/architecture/module-map.md
+      - docs/reference/interfaces.md
+    runtime_roots:
+      - src/finharness/statecore/
+      - src/finharness/api/routes_state.py
+    mature_posture: Borrow event/receipt-sourcing ideas without adopting a heavy event platform.
+    checks:
+      - task test
+      - task governance:check
+    upgrade_trigger: Multiple stores or remote writers require a stronger event/log abstraction.
+
+  - id: capital_map
+    name: Capital Map
+    status: current
+    summary: Read-only exposure, daily brief, dashboard summary, and capital-state observations.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/tutorials/golden-path.md
+    runtime_roots:
+      - src/finharness/exposure.py
+      - src/finharness/daily_brief.py
+      - src/finharness/daily_change_brief.py
+    mature_posture: BI/read-model pattern; FinHarness mirrors state and does not replace the ledger.
+    checks:
+      - task brief:daily
+      - task decisions:scan
+    upgrade_trigger: Repeated dashboard-specific calculations should move behind shared read models.
+
+  - id: ips_policy
+    name: IPS / Policy
+    status: current
+    summary: User-owned Investment Policy Statement and descriptive compliance checks.
+    docs:
+      - docs/architecture/capital-os-layering.md
+      - docs/architecture/system-map.md
+    runtime_roots:
+      - src/finharness/ips.py
+      - src/finharness/api/routes_ips.py
+    mature_posture: IPS and policy-as-code ideas; defer OPA/Cedar until rules outgrow Python.
+    checks:
+      - task governance:check
+      - uv run python -m unittest tests.test_ips
+    upgrade_trigger: Policy rules become numerous, cross-language, or need external audit reports.
+
+  - id: decision_workflow
+    name: Decision Workflow
+    status: current
+    summary: Turns exposure and IPS thresholds into governed proposals with no execution authority.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/tutorials/golden-path.md
+    runtime_roots:
+      - src/finharness/allocation.py
+      - src/finharness/statecore/decision_scaffold.py
+      - src/finharness/statecore/risk_classification.py
+    mature_posture: RFC and decision-record style; human review remains authority.
+    checks:
+      - task decisions:scan
+      - task test
+    upgrade_trigger: More proposal generators need a shared candidate intake interface.
+
+  - id: review_system
+    name: Review System
+    status: current
+    summary: Append-only proposal review, attestation, compare marks, annual review, and lesson-to-rule.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/engineering/system-directory-standard.md
+    runtime_roots:
+      - src/finharness/statecore/proposals.py
+      - src/finharness/review_read.py
+      - src/finharness/lesson_loop.py
+      - src/finharness/rule_change_ledger.py
+    mature_posture: Decision log and review discipline; attestation is review evidence, not execution.
+    checks:
+      - task governance:check
+      - task test
+    upgrade_trigger: Review flows become collaborative or need role/permission separation.
+
+  - id: research_evidence
+    name: Research Evidence
+    status: current
+    summary: Cite-only historical/descriptive evidence attached to candidates and proposals.
+    docs:
+      - docs/research/README.md
+      - docs/reference/interfaces.md
+    runtime_roots:
+      - src/finharness/research_evidence.py
+      - src/finharness/research_assets.py
+      - src/finharness/research_enrichment.py
+    mature_posture: Mature finance wheels provide calculations; FinHarness owns claims, redlines, and receipts.
+    checks:
+      - task governance:check
+      - task hardening:redteam
+    upgrade_trigger: Research workflows need repeatable experiment tracking or external lineage export.
+
+  - id: external_data_mature_wheels
+    name: External Data / Mature Wheels
+    status: current
+    summary: Read-only data and mature-tool adapters; external outputs are evidence, not authority.
+    docs:
+      - docs/architecture/mature-wheel-control-plane.md
+      - docs/wheels.md
+    runtime_roots:
+      - src/finharness/data_entry.py
+      - src/finharness/market_data.py
+      - src/finharness/providers/
+      - src/finharness/portfolio_risk.py
+      - src/finharness/data_quality.py
+    mature_posture: Adopt-not-invent; use mature wheels for heavy calculation and scanning.
+    checks:
+      - task wheels:check
+      - task test
+    upgrade_trigger: Provider/data quality becomes a major operational pain or needs freshness SLAs.
+
+  - id: agent_explanation
+    name: Agent Explanation
+    status: thin
+    summary: Tool-mediated explanations over bounded context; Agent does not own source-of-truth.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/reference/interfaces.md
+    runtime_roots:
+      - src/finharness/agent_tools.py
+      - src/finharness/hermes_bridge.py
+    mature_posture: OpenAI Agents/tool calling as an explanation adapter, not a state writer.
+    checks:
+      - uv run python -m unittest tests.test_agent_tools
+    upgrade_trigger: Agent starts reading StateCore/IPS/Proposal summary packs.
+
+  - id: cockpit_api
+    name: Cockpit / API
+    status: current
+    summary: Local read/review product surface for state, proposals, review, IPS, and cockpit views.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/reference/interfaces.md
+    runtime_roots:
+      - src/finharness/api/
+      - frontend/
+    mature_posture: Thin adapter and view-contract discipline; avoid heavy frontend framework until needed.
+    checks:
+      - task test:frontend
+      - task test
+    upgrade_trigger: Product surface complexity exceeds vanilla JS locality.
+
+  - id: eos_governance_quality
+    name: EOS Governance / Quality
+    status: current
+    summary: Change control, policy registry, docs-current guard, repo intelligence, hardening, release checks.
+    docs:
+      - docs/architecture/framework-index.md
+      - docs/architecture/system-catalog.yml
+      - docs/architecture/documentation-fact-governance.md
+      - docs/architecture/scaffolding-inventory.md
+      - docs/engineering/change-control.md
+      - docs/architecture/engineering-leverage-map.md
+    runtime_roots:
+      - tests/_policy_registry.py
+      - src/finharness/hardening.py
+      - src/finharness/repo_intelligence.py
+      - src/finharness/quality_governance_graph.py
+      - src/finharness/release_preflight_graph.py
+    mature_posture: Python registry now; defer OPA, Conftest, Backstage, Temporal until repeated pain.
+    checks:
+      - task docs:current-check
+      - task governance:check
+      - task check
+    upgrade_trigger: Repeated manual coordination or policy drift survives current probes.
+
+  - id: security_supply_chain
+    name: Security / Supply Chain
+    status: current
+    summary: Threat model, SSDF map, CODEOWNERS, fuzz baseline, scanner aggregation, SBOM/provenance baseline.
+    docs:
+      - docs/security/finharness-threat-model.md
+      - docs/security/ssdf-control-map.md
+      - docs/security/security-response-runbook.md
+    runtime_roots:
+      - .github/
+      - src/finharness/hardening.py
+      - data/security/
+    mature_posture: OpenSSF Scorecard, CodeQL, Gitleaks, Trivy, SBOM/SLSA posture.
+    checks:
+      - task security:fuzz
+      - task security:scan
+    upgrade_trigger: Public artifacts or team workflow require signed provenance and formal SBOM.
+
+  - id: archived_live_trading_legacy
+    name: Archived Live-Trading Legacy
+    status: archived
+    summary: Historical OKX, Alpaca, trading guard, and market-access code; no mainline runtime edge.
+    docs:
+      - experiments/archive/live_trading_legacy/README.md
+      - docs/architecture/capital-os-layering.md
+    runtime_roots:
+      - experiments/archive/live_trading_legacy/
+    mature_posture: If revived, redesign as a separately gated capability rather than inheriting mainline authority.
+    checks:
+      - task docs:current-check
+      - task governance:check
+    upgrade_trigger: Any future live-read/live-write capability needs a new C3 design and threat model.

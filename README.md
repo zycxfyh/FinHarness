@@ -21,6 +21,12 @@ pretend its advice is a guaranteed edge or an execution authorization.
 > safe end-to-end flow and shows the brakes: human review, receipts, and
 > `execution_allowed=false`.
 
+> **Need the framework in one screen?** Use the
+> [Framework Index](docs/architecture/framework-index.md). It summarizes each
+> FinHarness system, its runtime roots, mature-solution posture, and the check
+> that protects it. For the engineering layers that prevent future drag, use
+> the [Engineering Leverage Map](docs/architecture/engineering-leverage-map.md).
+
 The engineering approach is to learn by assembling top open-source wheels instead
 of rebuilding mature tools, then use them to produce governed financial
 suggestions.
@@ -86,31 +92,41 @@ Legacy Rust control-plane code is archived under
 2026-06-13 ADR and live-path proposal). The active local control plane is
 Python.
 
-## Loops
+## Current Mainline
 
-The ten layers are organized as four real loops plus deterministic steps.
-Target state B and the topology rationale live in
-[docs/think/2026-06-12-target-state-b-and-loop-topology.md](docs/think/2026-06-12-target-state-b-and-loop-topology.md).
+FinHarness now follows the Capital OS layering:
 
-```bash
-task cockpit:market          # one-screen watchlist: data, indicators, broken paths, reviews
-task workflow:daily-evidence   # Loop 1: observation (also on hermes cron, weekday mornings)
-task hypotheses:graph -- --llm-enabled   # Loop 2 generator seat: hermes drafts, gates check
-task trading-state:show        # Loop 3 feedback edge: persisted behavioral state
-task lessons:draft             # Loop 4 v0: draft lesson candidates; a human promotes
+```text
+import -> state -> policy -> proposal/review -> agent explanation
+-> action simulation -> retrospective/learning -> cockpit
 ```
 
-The cockpit writes `docs/operations/market-cockpit-latest.md` and
-`data/receipts/market-cockpit/latest.json`. It is review evidence only:
-`execution_allowed` stays false and it does not produce orders, position
-changes, or execution authority. It may surface evidence-bound suggestions,
-warnings, and review prompts; those must remain conditional, auditable, and
-separate from any broker action.
+The current executable mainline is personal capital state, IPS policy checks,
+governed proposals, review/attestation, receipts, and the local cockpit. The old
+ten-layer trading-signal chain and live-trading entry points have been retired
+from mainline. Their historical code is archived under
+`experiments/archive/live_trading_legacy/` and must not be imported by product
+runtime, API routes, Agent tools, or Taskfile tasks.
+
+## Framework At A Glance
+
+| Part | What it owns | Start here |
+| --- | --- | --- |
+| State Core + Capital Map | Queryable personal capital state, exposure, daily brief, receipt-backed facts | [Framework Index](docs/architecture/framework-index.md), [Module Map](docs/architecture/module-map.md) |
+| IPS + Decision Workflow | User policy, candidate detection, governed proposals, no execution authority | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Golden Path](docs/tutorials/golden-path.md) |
+| Review System | Human attestation, compare, archive/reopen, annual review, lesson-to-rule | [System Map](docs/architecture/system-map.md) |
+| Research Evidence + Mature Wheels | Cite-only evidence and mature adapters; external tools are inputs, not authority | [Research Assets](docs/research/README.md), [Mature Wheel Control Plane](docs/architecture/mature-wheel-control-plane.md) |
+| Cockpit/API + Agent Explanation | Local read/review product surface and tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md) |
+| EOS Governance + Security | Policy registry, docs-current guard, repo intelligence, hardening, release checks | [Documentation Fact Governance](docs/architecture/documentation-fact-governance.md), [Threat Model](docs/security/finharness-threat-model.md) |
+
+If a change makes this table feel wrong, update the Framework Index, System Map,
+Module Map, and current entry docs in the same PR, then run
+`task docs:current-check`.
 
 The local B0 cockpit is served by the product API. The API is read plus governed
 human attestation: it exposes reads and lets a named human attest a proposal, and
-nothing else — there is no order, transfer, live execution, or ceiling-raise
-endpoint (a test asserts the exact route set).
+nothing else. There is no order, transfer, live execution, or ceiling-raise
+endpoint (tests assert the route boundary).
 
 ```bash
 task api:serve
@@ -142,7 +158,8 @@ There are two read-only adapters:
   ```
 
 After importing state, build the read-only daily brief and capital-allocation
-candidates:
+candidates. If an active Investment Policy Statement exists, the allocation
+detectors read its policy thresholds; otherwise they use conservative defaults.
 
 ```bash
 task brief:daily
@@ -157,14 +174,28 @@ round-trip through float): personal-finance amounts and `Position`
 quantity/market value/cost basis. Snapshot diffs and observations aggregate in
 `Decimal` and present `float` at the receipt/API layer.
 
-Human attestation is fail-closed everywhere: risk-gate and execution runs
-stay at needs_human_review until a human attests with a written reason
-(`scripts/run_risk_gate_graph.py --interactive` pauses at a real LangGraph
-interrupt).
+Human attestation is fail-closed everywhere: an attestation is review evidence,
+not execution authorization. High-risk proposal approval requires
+counter-evidence; rejection remains allowed so the review queue never pressures
+the system into fabricating a rationale.
 
-## First Milestone
+For a safe first run, use the isolated synthetic golden path:
 
-Build a small AI financial research assistant that can:
+```bash
+task decisions:golden-path
+```
+
+For current task names, use:
+
+```bash
+task --list
+task docs:current-check
+```
+
+## Early Research Milestone
+
+The early research milestone was to build a small AI financial research
+assistant that can:
 
 1. Pull market data.
 2. Compute returns, volatility, drawdown, and Sharpe ratio.
@@ -172,90 +203,14 @@ Build a small AI financial research assistant that can:
 4. Ask an agent to produce a cited research note.
 5. Evaluate whether the note overclaims or misses risk.
 
-See [docs/week-01.md](docs/week-01.md).
-
-## Trading Reset
-
-When drawdown or consecutive losses start changing behavior, stop using the
-project as an execution aid and switch it into review mode:
-
-```bash
-task trading:reset-check
-```
-
-See [docs/notes/drawdown-reset-protocol.md](docs/notes/drawdown-reset-protocol.md).
-
-## Alpaca Paper
-
-Alpaca is wired as a paper-first regulated-broker sandbox:
-
-```bash
-task alpaca:paper-check              # account, positions, open orders
-task alpaca:paper-capabilities       # account config, recent orders, activities
-task alpaca:paper-config-dry-run     # show broad paper experiment config
-task alpaca:paper-config-experiment  # apply broad paper experiment config
-task alpaca:paper-assets             # active US equity assets
-task alpaca:paper-crypto-assets      # active crypto assets
-task alpaca:paper-option-contracts   # SPY option contracts
-task alpaca:paper-order-cycle        # tiny paper limit order then cancel
-```
-
-The live Alpaca endpoint is intentionally not wired.
-
-## OKX Live
-
-OKX is wired through the official CLI with explicit read/write gates:
-
-```bash
-task okx:market
-task okx:live-status
-task okx:live-read -- account balance
-task okx:live-read -- account config
-task okx:live-read -- swap positions
-task okx:live-read -- swap orders
-task okx:demo -- swap orders
-```
-
-The OKX read/write gate runs through Python (`finharness.okx_cli` /
-`finharness.okx_live_gate`); the legacy Rust crate is archived under
-docs/archive/legacy-rust-crate (2026-06-13 ADR).
-
-Every live mutation passes through the fail-closed gate
-([scripts/okx_live_order.py](scripts/okx_live_order.py)): the behavioral guard
-evaluated against persisted trading-state, a notional cap (uncomputable notional
-fails closed), attestation, and a receipt for every attempt.
-
-A live write now requires **two** independent, deliberate opt-ins:
-
-- `FINHARNESS_OKX_LIVE_WRITE_ARMED=1` — the hard kill-switch. It defaults to
-  disarmed (fail-closed) and is the compensating control for deployments without
-  an OKX IP allowlist (e.g. a rotating-IP VPN): a leaked key cannot place orders
-  through the harness while it stays disarmed. Reads are never affected.
-- `FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1` — the original env gate.
-
-Authorization is then an interactive confirmation that echoes the order:
-
-```bash
-export FINHARNESS_OKX_LIVE_WRITE_ARMED=1
-export FINHARNESS_OKX_ENABLE_LIVE_MUTATIONS=1
-task okx:live-write -- swap place --instId BTC-USDT-SWAP --side buy --ordType limit \
-  --sz 0.01 --tdMode isolated --px 1 \
-  --attester "you" --reason "written plan ref" --thesis
-```
-
-Leave `FINHARNESS_OKX_LIVE_WRITE_ARMED` unset to keep OKX effectively read-only
-(the intended posture when execution runs on Alpaca paper instead).
-
-Add `--dry-run` to see the gate decision without touching the broker. The gate
-refuses before reaching the okx binary on hard-stop drawdown/loss state, an
-over-cap notional, a missing thesis, or missing attestation. See the 2026-06-13
-red-team review and live-path proposal under docs/. Do not run live write
-commands from emotion or without a written plan.
+See [docs/week-01.md](docs/week-01.md). This remains useful project history,
+but the current mainline is the Capital OS loop above.
 
 ## Top Wheels
 
-Core strategy, backtesting, portfolio, and execution semantics should come from
-mature libraries, not local homemade engines.
+Core strategy, backtesting, portfolio, and any future execution semantics should
+come from mature libraries, not local homemade engines. Mainline execution
+entry points are currently archived out of the product runtime.
 
 See [docs/notes/top-wheel-integration-plan.md](docs/notes/top-wheel-integration-plan.md).
 See [docs/notes/adopt-not-invent-trading-stack.md](docs/notes/adopt-not-invent-trading-stack.md)

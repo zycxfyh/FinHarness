@@ -1,5 +1,10 @@
 # Evidence Inventory
 
+> Historical / superseded reference (2026-06-28): this inventory still records
+> old execution/risk-gate/live-trading evidence surfaces. Current system and
+> module facts live in `system-map.md`, `module-map.md`, and the security threat
+> model.
+
 This document is the Phase 5 EvidenceInterface inventory. It describes what
 FinHarness receipts and lineage already capture, what they do not capture yet,
 and where provenance tools may later help as adapters. Receipts remain the

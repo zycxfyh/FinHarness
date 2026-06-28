@@ -35,14 +35,17 @@ def generated_cases(*, seed: int, count: int) -> list[dict[str, Any]]:
     rng = random.Random(seed)  # noqa: S311 -- deterministic fuzz corpus, not crypto.
     cases: list[dict[str, Any]] = []
     path_fragments = [
-        "src/finharness/execution.py",
-        "src/finharness/risk-gate.py",
+        "src/finharness/authorization.py",
+        "src/finharness/restricted_symbols.py",
+        "src/finharness/providers/ccxt_provider.py",
         "docs/ordinary.md",
+        "docs/security/finharness-threat-model.md",
         ".github/workflows/security.yml",
+        "data/security/restricted-symbols.json",
         "data/receipts/generated.json",
         "../outside.env",
-        "src/finharness/okx_cli.py",
-        "tests/test_execution.py",
+        "experiments/archive/live_trading_legacy/okx/okx_cli.py",
+        "tests/test_authorization.py",
     ]
     asset_fragments = [
         "trend_following_v0",
@@ -82,10 +85,12 @@ def run_security_surface_case(case: dict[str, Any]) -> dict[str, Any]:
         not path.startswith("tests/")
         and (
             path.startswith(".github/")
-            or "execution" in path.replace("-", "_")
-            or "risk_gate" in path.replace("-", "_")
-            or "okx" in path.replace("-", "_")
-            or "alpaca" in path.replace("-", "_")
+            or path.startswith("docs/security/")
+            or path.startswith("data/security/")
+            or path.startswith("experiments/archive/live_trading_legacy/")
+            or "authorization" in path.replace("-", "_")
+            or "restricted_symbols" in path.replace("-", "_")
+            or "providers" in path.replace("-", "_")
         )
         for path in paths
     ):

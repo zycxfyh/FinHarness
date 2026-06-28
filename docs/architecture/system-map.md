@@ -1,84 +1,133 @@
 # FinHarness System Map
 
-状态:v0(2026-06-22)。目的:把 FinHarness 从"很多安全小块"看成"几个深模块"。每个 system 有固定形状
-(domain model / read model / write(command) model / adapters / invariants),新功能**先选归属 system**,再实现。
-这是 [architecture-principles.md](../engineering/architecture-principles.md) 的"Module Placement"依据。
+状态:current(2026-06-28)。目的:把 FinHarness 从"很多安全小块"看成几个
+deep modules。每个 system 有固定形状:
 
-> modular monolith,不是微服务:边界靠**清晰接口**,不靠进程拆分。
+```text
+domain model / read model / write(command) model / adapters / invariants
+```
 
-## Systems
+新功能先选归属 system,再实现。FinHarness 是 modular monolith,不是微服务:
+边界靠清晰接口和依赖方向,不靠进程拆分。
+
+## Current Systems
 
 ### 1. State Core
-- **职责**:可查询的本地状态 + 持久 receipt(证据根)。
-- **domain**:`statecore/models.py`(Account/Position/.../Proposal/Attestation/ReviewEvent/ReceiptIndex)、不变量
-  (execution_allowed CheckConstraint、closed kind 约束)。
-- **read**:`statecore/store.py`(read_all)、`statecore/diff.py`、`snapshots.py`。
-- **write(command)**:`store.write_records/upsert_records`(单事务);`receipt_io`(`atomic_write_json` + `resolve_under` 路径护栏)。
-- **adapters**:`api/routes_state.py`。
-- **invariants**:写入失败清理 receipt;路径不越 allowed root;table 模型校验靠 DB 约束 + create-fn(SQLModel 跳构造校验)。
 
-### 2. Decision Workflow
-- **职责**:把 exposure 变成**受治理、可拒绝、不执行**的资本分配候选 → governed proposal。
-- **domain**:`allocation.py`(AllocationCandidate + detectors)、`exposure.py`。
-- **read**:`api/routes_cockpit.py` 的 `/exposure`、候选经 proposal 暴露。
-- **write**:`allocation.record_allocation_candidates`(经 Review System 的 `create_governed_proposal`)。
-- **adapters**:`scripts/record_decisions.py` + `task decisions:scan`。
-- **invariants**:候选无执行权;默认离线;research enrichment 默认 Noop(见 Research Evidence)。
+- **职责**:可查询的本地状态 + receipt-backed 证据根。
+- **domain**:`statecore/models.py`、`statecore/store.py`、`statecore/receipt_io.py`。
+- **read**:`statecore/diff.py`、`statecore/snapshots.py`、`statecore/receipt_index.py`。
+- **write(command)**:`write_records` / `upsert_records` / receipt atomic write。
+- **adapters**:`api/routes_state.py`、personal-finance / beancount import scripts。
+- **invariants**:receipt 文件是 source of truth; SQLite row 是 queryable mirror;
+  金额字段以 DecimalText/TEXT 方式持久化;路径必须留在 allowed root 内。
 
-### 3. Review System  ← **首个"深模块"试点(R2/R3/R4 都属于它)**
-- **职责**:人类对 governed proposal 的**复核**:决策(attestation)、交互(ReviewEvent:annotation/archive/reopen/
-  compare_mark)、复盘(annual review / lesson→rule 闭环),全部 receipt-backed、append-only、不执行。
-- **domain**:`statecore/proposals.py`(Proposal/Attestation/ReviewEvent + `create_governed_*` commands)、
-  `statecore/proposal_revisions.py`、`annual_review.py`、`rule_change_ledger.py`、`lesson_loop.py`。
-- **read model(应统一)**:timeline(attestations+events)、retrospective(最新 annual_review)、compare-marks(配对)。
-  **当前散在 `routes_review.py`/`routes_proposals.py` 内联**——**G5 目标:抽 `review_read.py`(或 `review/`)
-  统一 read model**,路由仅 HTTP adapter。
-- **write(command)**:`create_governed_proposal` / `create_governed_attestation` / `create_governed_review_event`
-  (唯一 id → receipt → DB,失败清理)。
-- **adapters**:`api/routes_proposals.py`、`api/routes_review.py`;frontend review renderers(`renderReviewTimeline`/
-  `renderReviewEventForm`/`renderRetrospectivePanel` + 待加 compare)。
-- **invariants**:attestation=决策 of record;ReviewEvent 附加、视图合并/存储分离;archive=事件非状态;
-  content_hash 非幂等;只读面无写/执行(只读 selection 除外)。
+### 2. Capital Map
 
-### 4. Research Evidence
-- **职责**:候选**拉取**历史描述性证据(RE1 契约 / RE2 provider / RE3 enrichment),**绝不**预测/优化/执行。
-- **domain**:`research_evidence.py`(RE1 redline 契约)、`redlines.py`。
-- **read/provider**:`research_history_provider.py`(RE2,注入式、网络隔离)。
-- **command/seam**:`research_enrichment.py`(RE3,Noop 默认 / Provider opt-in / capability routing / typed attachment)。
-- **invariants**:无优化器/预测;默认不联网;载体构造点自守红线;前端披露 fail-closed。
+- **职责**:把 State Core 转成个人资本状态视图:净资产、现金、集中度、现金流、
+  利率/负债、税务/保险 review gaps。
+- **domain**:`exposure.py`、`daily_brief.py`、`daily_change_brief.py`。
+- **read**:`/exposure`、`/brief/daily`、`/dashboard/summary`。
+- **write(command)**:`task brief:daily`、`task cockpit:daily` 写 receipt/Markdown。
+- **invariants**:描述状态,不授权动作;数据缺口必须显式披露,不能编出完整性。
 
-### 5. Cockpit
-- **职责**:**只读**产品面(read-only adapter),把上述 read model 呈现给人。
-- **adapters**:`api/app.py` + `routes_*`;`frontend/app.js` + `index.html`。
-- **invariants**:`execution_allowed=false` 常显;view 只读(只读 selection 除外);披露/grade 强制常显;
-  **不无限加顶级 tab**(加 view 先问信息架构,见 G5)。
+### 3. IPS / Policy
 
-### 6. EOS Governance(平台能力)
-- **职责**:"怎么安全变更" + "可枚举风险机器化"。
-- **assets**:`docs/engineering/{change-control,gate-checklists,postmortem-triggers,architecture-principles}.md`、
-  `docs/templates/mini-rfc.md`、`task governance:check`、`tests/test_governance_invariants.py`。
-- **invariants**:C0–C3 分级 + mini-RFC + gate;重复风险进机器护栏;**新增:mini-RFC 须声明 Module Placement**(G5)。
+- **职责**:用户自己的 Investment Policy Statement,把 L2 状态映射到 L4 detector
+  的个性化阈值与 policy compliance check。
+- **domain**:`ips.py`、`InvestmentPolicyStatement`。
+- **read**:`GET /ips/current`、`GET /ips/check`。
+- **write(command)**:`POST /ips/draft` / `record_ips` 写 receipt-backed policy。
+- **invariants**:IPS 是用户政策,不是投资建议;`execution_allowed=false`;
+  compliance check 是描述性检查,不是交易建议。
 
-### 7. Headless Trading / Research Engine
-- **职责**:OKX/Alpaca/风险门/执行图/市场数据/指标/回测——**headless**,经 task 消费,**不**搬进个人 cockpit 主界面。
-- **modules**:`okx_*`、`trading_*`、`execution_graph`、`market_data*`、`indicator_*`、`portfolio_risk`、`*_runner`、`risk_gate*`。
-- **invariants**:保持 headless;联网/执行边界为 C3;不污染 cockpit。
+### 4. Decision Workflow
 
-## 关系(谁依赖谁)
-- Decision Workflow → State Core(写 proposal)、→ Research Evidence(经 RE3 enrichment 注入,默认 Noop)。
-- Review System → State Core(proposal/attestation/ReviewEvent + receipts);Cockpit → Review/Decision/Research 的 **read model**。
-- Research Evidence 被 Decision Workflow 拉取,**不**反向驱动 cockpit。
-- EOS 横切所有 system(平台),不属任何业务流。
-- Headless Engine 自成一支,不进 cockpit 产品面。
+- **职责**:把 exposure + IPS thresholds 变成受治理、可拒绝、不执行的资本分配
+  candidates,再进入 governed proposal。
+- **domain**:`allocation.py`、`statecore/decision_scaffold.py`、
+  `statecore/risk_classification.py`。
+- **write(command)**:`task decisions:scan`、`create_governed_proposal`。
+- **read**:候选经 `/proposals` 和 cockpit proposal view 暴露。
+- **invariants**:candidate 无执行权;do-nothing option 永远存在;高风险 approval
+  缺 `counter_evidence` 时 fail-closed,但 proposal creation 和 rejection 不被阻断。
+
+### 5. Review System
+
+- **职责**:人类对 governed proposal 的复核:attestation、annotation、archive、
+  reopen、compare mark、annual review、lesson-to-rule。
+- **domain**:`statecore/proposals.py`、`statecore/proposal_revisions.py`、
+  `review_read.py`、`annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py`。
+- **read model**:`read_proposal_timeline`、`read_compare_marks`、review routes。
+- **write(command)**:`create_governed_attestation`、
+  `create_governed_review_event`、`task review:annual`、`task lessons:*`。
+- **invariants**:append-only;attestation 是 decision of record,不是 execution
+  authorization;receipt 写失败必须清理 queryable mirror。
+
+### 6. Research Evidence
+
+- **职责**:为某个 candidate 拉取只读、历史描述性证据;不预测、不优化、不写状态。
+- **domain**:`research_evidence.py`、`research_history_provider.py`、
+  `research_enrichment.py`、`research_rigor.py`、`redlines.py`。
+- **adapters**:`data_entry.py`、`market_data.py`、`providers/ccxt_provider.py`。
+- **invariants**:默认不联网;provider 失败变成 data gap;证据只能挂在 candidate
+  下,不能反向驱动 cockpit 或产生行动指令。
+
+### 7. Agent Explanation
+
+- **职责**:给人解释状态、风险笔记、工具结果。当前仍薄,下一步应接
+  StateCore/IPS/Proposal 摘要包。
+- **domain/adapters**:`agent_tools.py`、`hermes_bridge.py`。
+- **invariants**:Agent 只通过 tool 和最小上下文读数据;不裸读全库;不写核心状态;
+  不计算 source-of-truth;不授权执行。
+
+### 8. Cockpit / Product API
+
+- **职责**:产品表面,让人阅读、比较、复核、拒绝、确认、归档。
+- **adapters**:`api/app.py`、`api/routes_cockpit.py`、`api/routes_proposals.py`、
+  `api/routes_review.py`、`api/routes_ips.py`、`frontend/`。
+- **invariants**:`execution_allowed=false` 常显;前端只能展示和复核边界,不能放松
+  后端边界;不无限加顶级 tab。
+
+### 9. EOS Governance / Quality
+
+- **职责**:怎么安全变更、怎么证明边界、怎么阻止 docs/facts drift。
+- **assets**:`tests/_policy_registry.py`、`tests/test_governance_invariants.py`、
+  `tests/test_docs_current_facts.py`、`hardening.py`、`quality_governance_graph.py`、
+  `release_preflight_graph.py`、`repo_intelligence_graph.py`、
+  `receipt_usage_audit.py`。
+- **invariants**:机器检查只管当前事实和当前入口;历史 notes/reviews 不被改写。
+
+### 10. Archived Live-Trading Legacy
+
+- **职责**:历史参考,非 mainline runtime。
+- **location**:`experiments/archive/live_trading_legacy/`。
+- **invariants**:不得被 production code、CI safety gates、Agent tools、API routes、
+  Taskfile tasks 导入或调用。若未来需要只读 market-data 能力,按 ExternalData
+  adapter 重新设计,不要继承归档执行代码。
+
+## Dependency Direction
+
+```text
+State Core <- Capital Map <- IPS / Decision Workflow <- Review System <- Cockpit
+                           <- Research Evidence
+Agent Explanation reads through tools; it does not own source-of-truth.
+EOS Governance cuts across all systems.
+Archived Live-Trading Legacy has no dependency edge back into mainline.
+```
 
 ## Executable Boundary Probes
 
-部分系统边界已进入 `task governance:check` 的 policy registry,不是只停在本文:
+这些边界不只停在本文:
 
-- `GOV-ARCH-003`:Cockpit/API adapters 不导入 headless trading/execution 模块。
-- `GOV-ARCH-004`:State Core 不反向依赖 `review_read`、API adapters 或 Research adapters。
-- `GOV-RESEARCH-001`:Research Evidence 契约/enrichment/provider 不引用 optimizer/route/write surfaces。
+- `task governance:check` runs policy registry and frontend no-action probes.
+- `task docs:current-check` checks maintained docs against live Taskfile facts.
+- `tests/_graph_registry.py` records graph assets by status, including retired
+  and downgraded paths.
 
-## 用法
-- 新功能/slice 在 mini-RFC 的 **Module Placement** 节声明归属本图中的某个 system;若跨多个,说明边界与依赖方向。
-- 第 3 次在同一 system 散点加 route/renderer/read-model → 先抽该 system 的共享模块(见 G5)。
+## How To Use This Map
+
+- 新 feature/slice 在 mini-RFC 或 PR 描述里声明 Module Placement。
+- 改 Taskfile/API/current architecture 时,同步 README / command reference /
+  Capital OS / module map,然后跑 `task docs:current-check`。
+- 历史 docs 可以保留旧命令和旧模块,但 current navigation docs 不可以。

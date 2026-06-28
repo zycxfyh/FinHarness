@@ -1,5 +1,10 @@
 # How To Do A Safe Paper-Trade Review
 
+> Archived workflow note (2026-06-28): the Alpaca paper/live-trading workflow
+> described here is no longer a current mainline how-to. The related code moved
+> to `experiments/archive/live_trading_legacy/`, and current `Taskfile.yml` does
+> not expose `alpaca:*` tasks.
+
 Use this only for paper-broker workflow validation. The goal is to exercise
 receipt, thesis, guard, order, cancel, and reconciliation shape without live
 capital at risk.

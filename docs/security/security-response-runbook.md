@@ -66,10 +66,11 @@ Block release claims when any of these are true:
 - `task release:preflight` reports `release_ready=false`.
 - `task governance:dashboard` reports `dashboard_status=blocked`.
 - A high or critical report is unresolved.
-- A fix changes `.github/`, `Taskfile.yml`, `src/finharness/*execution*`,
-  `src/finharness/*risk_gate*`, `src/finharness/okx_cli.py`,
-  `src/finharness/alpaca_client.py`, or security scanner configuration without
-  human review.
+- A fix changes `.github/`, `Taskfile.yml`, `src/finharness/authorization.py`,
+  `src/finharness/restricted_symbols.py`, `src/finharness/research_assets.py`,
+  `src/finharness/data_entry.py`, `src/finharness/providers/`,
+  `experiments/archive/live_trading_legacy/`, or security scanner
+  configuration without human review.
 - Any generated evidence claims `execution_allowed=true` for the MVP.
 
 ## Required Evidence

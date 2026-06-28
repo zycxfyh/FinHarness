@@ -19,7 +19,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
+SYSTEM_CATALOG_PATH = Path("docs/architecture/system-catalog.yml")
 
 IGNORED_PARTS = {
     ".git",
@@ -45,8 +48,28 @@ IGNORED_PREFIXES = (
 )
 
 SOURCE_PREFIXES = ("src/", "scripts/", "tests/", "experiments/")
-SECURITY_PREFIXES = (".github/", ".gitleaks.toml", "evals/", "data/redteam/")
-TRADING_BOUNDARY_KEYWORDS = (
+SECURITY_PREFIXES = (
+    ".github/",
+    ".gitleaks.toml",
+    "docs/security/",
+    "data/security/",
+    "evals/",
+    "data/redteam/",
+    "experiments/archive/live_trading_legacy/",
+)
+MAINLINE_SENSITIVE_KEYWORDS = (
+    "authorization",
+    "restricted_symbols",
+    "research_assets",
+    "data_entry",
+    "providers",
+    "hardening",
+    "release_preflight",
+    "governance_dashboard",
+    "quality_governance",
+    "repo_intelligence",
+)
+ARCHIVED_LIVE_BOUNDARY_KEYWORDS = (
     "execution",
     "risk_gate",
     "okx",
@@ -239,6 +262,72 @@ def parse_taskfile(root: Path = ROOT) -> dict[str, Any]:
     return {"tasks": tasks, "task_count": len(tasks)}
 
 
+def load_system_catalog(root: Path = ROOT) -> dict[str, Any]:
+    path = root / SYSTEM_CATALOG_PATH
+    if not path.exists():
+        return {
+            "schema": "missing",
+            "status": "missing",
+            "systems": [],
+            "source_path": SYSTEM_CATALOG_PATH.as_posix(),
+        }
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    systems = payload.get("systems") or []
+    return {
+        "schema": str(payload.get("schema", "")),
+        "status": str(payload.get("status", "")),
+        "updated": str(payload.get("updated", "")),
+        "system_count": len(systems),
+        "systems": systems,
+        "source_path": SYSTEM_CATALOG_PATH.as_posix(),
+    }
+
+
+def _catalog_path_matches(changed_file: str, catalog_path: str) -> bool:
+    normalized = catalog_path.rstrip("/")
+    if not normalized:
+        return False
+    if changed_file == normalized:
+        return True
+    return catalog_path.endswith("/") and changed_file.startswith(catalog_path)
+
+
+def affected_systems_for_files(
+    changed_files: list[str],
+    catalog: dict[str, Any] | None = None,
+    *,
+    root: Path = ROOT,
+) -> list[dict[str, Any]]:
+    catalog = catalog or load_system_catalog(root)
+    affected: list[dict[str, Any]] = []
+    for system in catalog.get("systems", []):
+        matched_roots = [
+            path
+            for path in system.get("runtime_roots", [])
+            if any(_catalog_path_matches(changed, path) for changed in changed_files)
+        ]
+        matched_docs = [
+            path
+            for path in system.get("docs", [])
+            if any(_catalog_path_matches(changed, path) for changed in changed_files)
+        ]
+        if not matched_roots and not matched_docs:
+            continue
+        affected.append(
+            {
+                "id": system["id"],
+                "name": system["name"],
+                "status": system["status"],
+                "summary": system["summary"],
+                "matched_runtime_roots": matched_roots,
+                "matched_docs": matched_docs,
+                "checks": sorted(set(system.get("checks", []))),
+                "upgrade_trigger": system["upgrade_trigger"],
+            }
+        )
+    return sorted(affected, key=lambda item: item["id"])
+
+
 def build_test_map(root: Path = ROOT) -> dict[str, Any]:
     tests: list[dict[str, Any]] = []
     for path in sorted((root / "tests").glob("test_*.py")):
@@ -289,12 +378,22 @@ def classify_security_surface(paths: list[str]) -> dict[str, Any]:
     high_risk = []
     for path in paths:
         normalized = path.replace("-", "_")
-        if path.startswith(SECURITY_PREFIXES):
+        if path.startswith("experiments/archive/live_trading_legacy/"):
+            high_risk.append({"path": path, "reason": "archived live-trading boundary"})
+        elif path.startswith(SECURITY_PREFIXES):
             high_risk.append({"path": path, "reason": "security configuration or eval"})
         elif path.startswith("src/finharness/") and any(
-            keyword in normalized for keyword in TRADING_BOUNDARY_KEYWORDS
+            keyword in normalized for keyword in MAINLINE_SENSITIVE_KEYWORDS
         ):
-            high_risk.append({"path": path, "reason": "trading or execution boundary"})
+            high_risk.append(
+                {"path": path, "reason": "authorization, provider, or governance boundary"}
+            )
+        elif path.startswith("src/finharness/") and any(
+            keyword in normalized for keyword in ARCHIVED_LIVE_BOUNDARY_KEYWORDS
+        ):
+            high_risk.append(
+                {"path": path, "reason": "possible archived live-trading reintroduction"}
+            )
     return {
         "high_risk_files": high_risk,
         "requires_human_review": bool(high_risk),
@@ -302,18 +401,40 @@ def classify_security_surface(paths: list[str]) -> dict[str, Any]:
     }
 
 
-def infer_required_checks(changed_files: list[str]) -> list[str]:
+def infer_required_checks(
+    changed_files: list[str],
+    catalog: dict[str, Any] | None = None,
+) -> list[str]:
     checks = {"task check", "task hardening:gate"}
+    for system in affected_systems_for_files(changed_files, catalog):
+        checks.update(system["checks"])
     if any(
         path.startswith("data/research/") or path.startswith("docs/research/")
         for path in changed_files
     ):
         checks.add("uv run python -m unittest tests/test_research_assets.py")
-    if any("risk_gate" in path for path in changed_files):
-        checks.add("uv run python -m unittest tests/test_risk_gate.py")
+    if any("research_assets" in path for path in changed_files):
+        checks.add("uv run python -m unittest tests/test_research_assets.py")
         checks.add("task eval:redteam-boundary")
-    if any("execution" in path or "okx" in path or "alpaca" in path for path in changed_files):
-        checks.add("uv run python -m unittest tests/test_execution.py")
+    if any(
+        "restricted_symbols" in path or "restricted-symbols" in path for path in changed_files
+    ):
+        checks.add("uv run python -m unittest tests/test_restricted_symbols.py")
+        checks.add("task eval:redteam-boundary")
+    if any("authorization" in path for path in changed_files):
+        checks.add("uv run python -m unittest tests/test_authorization.py")
+        checks.add("task eval:redteam-boundary")
+    if any(
+        "data_entry" in path or "providers/" in path or "ccxt_provider" in path
+        for path in changed_files
+    ):
+        checks.add("uv run python -m unittest tests/test_data_entry.py tests/test_ccxt_provider.py")
+    if any(
+        path.startswith("experiments/archive/live_trading_legacy/")
+        or any(keyword in path.replace("-", "_") for keyword in ARCHIVED_LIVE_BOUNDARY_KEYWORDS)
+        for path in changed_files
+    ):
+        checks.add("task docs:current-check")
         checks.add("task eval:redteam-boundary")
     if any(path.startswith(".github/") or path in {".gitleaks.toml"} for path in changed_files):
         checks.add("task security:scan")
@@ -326,7 +447,9 @@ def build_blast_radius(
     changed_files: list[str],
     import_graph: dict[str, Any],
     test_map: dict[str, Any],
+    system_catalog: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    system_catalog = system_catalog or load_system_catalog()
     reverse: dict[str, set[str]] = defaultdict(set)
     for edge in import_graph["edges"]:
         reverse[edge["target"]].add(edge["source"])
@@ -346,8 +469,9 @@ def build_blast_radius(
     return {
         "changed_files": changed_files,
         "affected_files": sorted(affected),
+        "affected_systems": affected_systems_for_files(changed_files, system_catalog),
         "suggested_tests": sorted(set(tests)),
-        "required_checks": infer_required_checks(changed_files),
+        "required_checks": infer_required_checks(changed_files, system_catalog),
     }
 
 
@@ -372,8 +496,9 @@ def build_repo_intelligence(root: Path = ROOT) -> dict[str, Any]:
     import_graph = build_import_graph(root)
     task_graph = parse_taskfile(root)
     test_map = build_test_map(root)
+    system_catalog = load_system_catalog(root)
     changed_files = git_changed_files(root)
-    blast_radius = build_blast_radius(changed_files, import_graph, test_map)
+    blast_radius = build_blast_radius(changed_files, import_graph, test_map, system_catalog)
     security_surface = classify_security_surface(changed_files)
     return {
         "workflow": "finharness_repo_intelligence_v1",
@@ -385,6 +510,13 @@ def build_repo_intelligence(root: Path = ROOT) -> dict[str, Any]:
         "import_graph": import_graph,
         "task_graph": task_graph,
         "test_map": test_map,
+        "system_catalog": {
+            "schema": system_catalog["schema"],
+            "status": system_catalog["status"],
+            "updated": system_catalog.get("updated", ""),
+            "system_count": system_catalog.get("system_count", 0),
+            "source_path": system_catalog["source_path"],
+        },
         "blast_radius": blast_radius,
         "security_surface": security_surface,
         "mermaid": render_mermaid(import_graph),
@@ -443,6 +575,12 @@ def render_repo_intelligence_markdown(intelligence: dict[str, Any]) -> str:
         lines.extend(f"- `{path}`" for path in blast["changed_files"])
     else:
         lines.append("- No local changed files detected.")
+    lines.extend(["", "## Affected Systems", ""])
+    if blast["affected_systems"]:
+        for system in blast["affected_systems"]:
+            lines.append(f"- `{system['id']}` ({system['status']}): {system['summary']}")
+    else:
+        lines.append("- No catalogued systems matched the changed files.")
     lines.extend(
         [
             "",

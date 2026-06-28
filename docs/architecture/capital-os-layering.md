@@ -1,6 +1,6 @@
 # FinHarness 分层架构(Capital OS Layering)
 
-> 状态:current(2026-06-26)。这是 FinHarness **架构分层的单一事实源**,
+> 状态:current(2026-06-28)。这是 FinHarness **架构分层的单一事实源**,
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
@@ -24,8 +24,8 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L0A** | 个人资本数据 Personal Capital Data | 我有什么? | `beancount_adapter.py`、`personal_finance.py`、`snapshot_ingest`、`data_entry.py` | ✅ 有 |
 | **L0B** | 外部标的数据 External Instrument Data | 外部价格/财报/宏观是多少? | `data_entry.py`(yfinance)、`research_evidence.py` | 🟡 仅价格+证据;Instrument/财报/宏观分类待建 |
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
-| **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | (散在 thresholds/redlines,无统一对象) | ❌ **gap(下一块砖)** |
-| **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`routes_proposal.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
+| **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
+| **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
 | **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_tools.py`(quote / risk) | 🟡 未接 StateCore/IPS/Proposal |
 | **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | (无 ActionIntent / PreTradeImpactReport) | ❌ gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
@@ -37,14 +37,14 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 ## 新版相对现状的增量
 
 现状文档(north-star 06-17/06-24、system-map 06-22)已覆盖 L0A/L1/L2/L4/L8。
-本版**明确新增**的工程目标,按优先级:
+PR #51 已补上 L3 IPS v0。下一版增量按优先级:
 
-1. **L3 IPS**:统一的 `InvestmentPolicyStatement` 对象 + 约束检查,让 L4 detector
-   从默认 `ObservationThresholds` 改读用户政策(这是解锁个性化的关键一块砖)。
-2. **L0B**:外部标的数据从"仅价格"扩成 Instrument / 财报 / 宏观分类。
-3. **L5**:把 Agent 接到 StateCore/IPS/Proposal(只解释,不计算 source-of-truth,不授权执行)。
-4. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
+1. **L0B**:外部标的数据从"仅价格"扩成 Instrument / 财报 / 宏观分类。
+2. **L5**:把 Agent 接到 StateCore/IPS/Proposal(只解释,不计算 source-of-truth,不授权执行)。
+3. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
    需先把它重构成可接受 hypothetical 持仓集的形态)。
+4. **P5 follow-up**:高风险 proposal 若缺 `counter_evidence`,可以记录和拒绝;
+   若之后要批准,需要 proposal revision / scaffold update 路径。
 
 ## 不变量(跨层)
 
@@ -63,3 +63,9 @@ vectorbt_runner.py / workflow.py / backtrader_runner.py`,以及对应 `scripts/`
 `task` 任务与测试。共享底座 `market_data.py`(MarketDataSnapshot 等类型)、`metrics.py`
 保留,作为 L0B 的数据子件复用。文档归档在
 [docs/archive/ten-layer-trading-chain/](../archive/ten-layer-trading-chain/)。
+
+live-trading 相关的 OKX / Alpaca / trading guard / market-access ledger 代码已于
+2026-06-27 从 mainline runtime 归档到
+`experiments/archive/live_trading_legacy/`。当前 Taskfile 不暴露 live execution 或
+paper broker 执行入口;若未来需要只读 market-data 能力,应按 L0B 重新建外部数据
+adapter,不要继承归档执行代码。

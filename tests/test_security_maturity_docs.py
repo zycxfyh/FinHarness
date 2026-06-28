@@ -8,6 +8,15 @@ THREAT_MODEL = ROOT / "docs" / "security" / "finharness-threat-model.md"
 SSDF_MAP = ROOT / "docs" / "security" / "ssdf-control-map.md"
 SECURITY_RUNBOOK = ROOT / "docs" / "security" / "security-response-runbook.md"
 CODEOWNERS = ROOT / ".github" / "CODEOWNERS"
+CURRENT_SECURITY_EVIDENCE = (THREAT_MODEL, SSDF_MAP, SECURITY_RUNBOOK, CODEOWNERS)
+ARCHIVED_MAINLINE_PATHS = (
+    "src/finharness/okx_cli.py",
+    "src/finharness/alpaca_client.py",
+    "src/finharness/execution.py",
+    "src/finharness/risk_gate.py",
+    "src/finharness/execution/",
+    "src/finharness/risk_gate/",
+)
 
 
 class SecurityMaturityDocsTest(unittest.TestCase):
@@ -16,11 +25,12 @@ class SecurityMaturityDocsTest(unittest.TestCase):
 
         required = [
             "Provider credentials",
-            "Live mutation gates",
+            "Archived live-trading boundary",
             "Research asset specs",
-            "src/finharness/okx_cli.py",
-            "src/finharness/execution.py",
+            "src/finharness/data_entry.py",
+            "src/finharness/restricted_symbols.py",
             "src/finharness/research_assets.py",
+            "experiments/archive/live_trading_legacy/",
             ".github/workflows/security.yml",
             "docs/security/security-response-runbook.md",
             ".github/CODEOWNERS",
@@ -76,11 +86,13 @@ class SecurityMaturityDocsTest(unittest.TestCase):
         required = [
             ".github/",
             "Taskfile.yml",
-            "src/finharness/execution/",
-            "src/finharness/risk_gate/",
-            "src/finharness/okx_cli.py",
-            "src/finharness/alpaca_client.py",
+            "src/finharness/authorization.py",
+            "src/finharness/restricted_symbols.py",
+            "src/finharness/data_entry.py",
+            "src/finharness/providers/",
+            "src/finharness/research_assets.py",
             "src/finharness/release_preflight_graph.py",
+            "experiments/archive/live_trading_legacy/",
             "docs/security/",
             "data/security/",
             "@zycxfyh",
@@ -88,6 +100,13 @@ class SecurityMaturityDocsTest(unittest.TestCase):
         for item in required:
             with self.subTest(item=item):
                 self.assertIn(item, text)
+
+    def test_current_security_evidence_does_not_require_archived_mainline_paths(self) -> None:
+        for path in CURRENT_SECURITY_EVIDENCE:
+            text = path.read_text(encoding="utf-8")
+            for retired_path in ARCHIVED_MAINLINE_PATHS:
+                with self.subTest(path=path.name, retired_path=retired_path):
+                    self.assertNotIn(retired_path, text)
 
 
 if __name__ == "__main__":

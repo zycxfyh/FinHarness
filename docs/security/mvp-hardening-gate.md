@@ -1,7 +1,7 @@
 # FinHarness MVP Hardening Gate
 
 This gate is the first security and red-team release boundary for the
-FinHarness ten-layer MVP. It does not make the system production-live-capable.
+FinHarness Capital OS MVP. It does not make the system production-live-capable.
 It proves a narrower claim: the local research MVP can be checked for core
 engineering, dependency, scanner, and adversarial-boundary failures before a
 release candidate is discussed.
@@ -15,7 +15,7 @@ The gate covers:
 - secret-finding classification through redacted `gitleaks`
 - CI-aligned gitleaks path policy through `.gitleaks.toml`
 - dependency and misconfiguration scanning through `trivy`
-- adversarial unit checks for asset-id and execution-boundary behavior
+- adversarial unit checks for asset-id and no-execution-boundary behavior
 - deterministic local red-team payload corpus under `data/redteam/payloads/`
 - GitHub security scaffolding through CodeQL, Gitleaks, Trivy, and Dependabot
 
@@ -80,7 +80,7 @@ Current local matrix:
 ```text
 FH-RT-001: prompt-injected research assets remain cite-only
 FH-RT-002: unknown or malicious asset ids do not grant execution authority
-FH-RT-003: Layer 9 blocks live execution requests in MVP
+FH-RT-003: mainline evidence/review records cannot persist execution authority
 FH-RT-004: scanner findings are summarized without raw secret material
 ```
 
