@@ -4,6 +4,8 @@ import unittest
 from decimal import Decimal
 
 from finharness.agent_context import (
+    CONTEXT_PACK_SPECS,
+    AgentContextPackSpec,
     build_current_ips_context,
     build_ips_check_context,
     build_open_proposals_context,
@@ -159,6 +161,28 @@ class AgentContextPackTest(unittest.TestCase):
         self.assertIn("decision_scaffold", body["summary"]["items"][0])
         self.assertIn("open proposals truncated to 1 items", body["data_gaps"])
         self.assert_non_authoritative(body)
+
+    def test_open_proposals_context_honors_max_chars_after_compaction(self) -> None:
+        original = CONTEXT_PACK_SPECS["open_proposals"]
+        CONTEXT_PACK_SPECS["open_proposals"] = AgentContextPackSpec(
+            name=original.name,
+            description=original.description,
+            source=original.source,
+            max_items=10,
+            max_chars=500,
+        )
+        self.addCleanup(CONTEXT_PACK_SPECS.__setitem__, "open_proposals", original)
+        self._create_proposal("p_long", claim="Review " + ("concentration " * 400))
+
+        pack = build_open_proposals_context(self.engine, limit=2)
+        encoded = pack.model_dump_json()
+
+        self.assertLessEqual(len(encoded), CONTEXT_PACK_SPECS["open_proposals"].max_chars)
+        self.assertEqual(pack.summary, {"compacted": True})
+        self.assertTrue(
+            any("compact marker" in gap or "compact markers" in gap for gap in pack.data_gaps)
+        )
+        self.assert_non_authoritative(pack.model_dump(mode="json"))
 
     def test_proposal_timeline_context_reads_review_events(self) -> None:
         self._create_proposal("p_timeline")

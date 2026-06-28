@@ -348,21 +348,34 @@ def _pack(
     non_claims: tuple[str, ...],
     spec: AgentContextPackSpec,
 ) -> AgentContextPack:
+    bounded_refs = _refs(source_refs)
+    bounded_data_gaps = _dedupe(data_gaps)
+    if len(bounded_refs) > spec.max_items:
+        bounded_data_gaps.append(f"source refs truncated to {spec.max_items} items")
     pack = AgentContextPack(
         name=name,
         available=available,
         summary=_bounded_value(summary, max_items=spec.max_items),
-        source_refs=_refs(source_refs),
-        data_gaps=tuple(_dedupe(data_gaps)),
+        source_refs=bounded_refs[: spec.max_items],
+        data_gaps=tuple(bounded_data_gaps),
         non_claims=tuple(_dedupe(non_claims)),
         execution_allowed=False,
     )
-    encoded = pack.model_dump_json()
-    if len(encoded) <= spec.max_chars:
+    return _fit_pack_to_budget(pack, spec)
+
+
+def _fit_pack_to_budget(
+    pack: AgentContextPack, spec: AgentContextPackSpec
+) -> AgentContextPack:
+    if len(pack.model_dump_json()) <= spec.max_chars:
         return pack
-    return pack.model_copy(
+    compacted = pack.model_copy(
         update={
-            "summary": _bounded_value(pack.summary, max_items=max(1, spec.max_items // 2)),
+            "summary": _bounded_value(
+                pack.summary,
+                max_items=max(1, spec.max_items // 2),
+                max_string_chars=240,
+            ),
             "data_gaps": tuple(
                 _dedupe(
                     [
@@ -371,6 +384,36 @@ def _pack(
                     ]
                 )
             ),
+        }
+    )
+    if len(compacted.model_dump_json()) <= spec.max_chars:
+        return compacted
+    marker = compacted.model_copy(
+        update={
+            "summary": {"compacted": True},
+            "data_gaps": tuple(
+                _dedupe(
+                    [
+                        *compacted.data_gaps,
+                        (
+                            f"context pack exceeded {spec.max_chars} chars; "
+                            "summary was replaced by compact marker"
+                        ),
+                    ]
+                )
+            ),
+        }
+    )
+    if len(marker.model_dump_json()) <= spec.max_chars:
+        return marker
+    return marker.model_copy(
+        update={
+            "source_refs": (),
+            "data_gaps": (
+                f"context pack exceeded {spec.max_chars} chars; "
+                "summary and source refs were replaced by compact markers",
+            ),
+            "non_claims": ("Not execution authorization.", "Not investment advice."),
         }
     )
 
@@ -415,11 +458,22 @@ def _timeline_entry_summary(entry: Any) -> dict[str, Any]:
 def _bounded_value(value: Any, *, max_items: int, max_string_chars: int = 500) -> Any:
     if isinstance(value, dict):
         return {
-            str(key): _bounded_value(child, max_items=max_items)
+            str(key): _bounded_value(
+                child,
+                max_items=max_items,
+                max_string_chars=max_string_chars,
+            )
             for key, child in list(value.items())[:max_items]
         }
     if isinstance(value, (list, tuple)):
-        return [_bounded_value(child, max_items=max_items) for child in list(value)[:max_items]]
+        return [
+            _bounded_value(
+                child,
+                max_items=max_items,
+                max_string_chars=max_string_chars,
+            )
+            for child in list(value)[:max_items]
+        ]
     if isinstance(value, str):
         return _truncate_text(value, max_chars=max_string_chars)
     try:

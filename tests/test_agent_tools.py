@@ -11,7 +11,12 @@ from finharness.agent_tools import (
     current_ips_context_payload,
     evaluate_latest_risk_note_payload,
     finance_research_agent,
+    get_capital_summary_context,
+    get_current_ips_context,
     get_historical_risk_metrics,
+    get_ips_check_context,
+    get_open_proposals_context,
+    get_proposal_timeline_context,
     get_quote_snapshot,
     historical_risk_metrics_payload,
     tool_names,
@@ -65,6 +70,26 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             set(get_historical_risk_metrics.params_json_schema["required"]),
             {"symbol", "start", "end"},
         )
+
+    def test_context_tool_schemas_are_strict(self) -> None:
+        context_tools = [
+            get_capital_summary_context,
+            get_current_ips_context,
+            get_ips_check_context,
+            get_open_proposals_context,
+            get_proposal_timeline_context,
+        ]
+        for tool in context_tools:
+            with self.subTest(tool=tool.name):
+                schema = tool.params_json_schema
+                self.assertFalse(schema["additionalProperties"])
+
+        open_schema = get_open_proposals_context.params_json_schema
+        self.assertEqual(set(open_schema["properties"]), {"limit"})
+
+        timeline_schema = get_proposal_timeline_context.params_json_schema
+        self.assertEqual(set(timeline_schema["properties"]), {"proposal_id", "limit"})
+        self.assertEqual(set(timeline_schema["required"]), {"proposal_id", "limit"})
 
     def test_context_payload_unavailable_state_core_is_non_authoritative(self) -> None:
         from finharness.statecore.store import StateCoreStoreError
