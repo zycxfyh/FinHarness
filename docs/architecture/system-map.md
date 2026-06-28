@@ -76,9 +76,10 @@ domain model / read model / write(command) model / adapters / invariants
 
 ### 7. Agent Explanation
 
-- **职责**:给人解释状态、风险笔记、工具结果。当前仍薄,下一步应接
-  StateCore/IPS/Proposal 摘要包。
-- **domain/adapters**:`agent_tools.py`、`hermes_bridge.py`。
+- **职责**:给人解释状态、IPS policy、proposal/review timeline、风险笔记和工具结果。
+- **read model**:`agent_context.py` 中的 bounded context packs:
+  capital summary、current IPS、IPS check、open proposals、proposal timeline。
+- **domain/adapters**:`agent_context.py`、`agent_tools.py`、`hermes_bridge.py`。
 - **invariants**:Agent 只通过 tool 和最小上下文读数据;不裸读全库;不写核心状态;
   不计算 source-of-truth;不授权执行。
 
