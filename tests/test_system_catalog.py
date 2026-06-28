@@ -30,6 +30,14 @@ def _task_names() -> set[str]:
     return set((data.get("tasks") or {}).keys())
 
 
+def _unittest_target_path(target: str) -> Path | None:
+    if target.startswith("tests.") and "/" not in target:
+        return ROOT / f"{target.replace('.', '/')}.py"
+    if target.startswith("tests/") and target.endswith(".py"):
+        return ROOT / target
+    return None
+
+
 class SystemCatalogTest(unittest.TestCase):
     def test_catalog_shape_is_complete(self) -> None:
         catalog = _catalog()
@@ -69,6 +77,22 @@ class SystemCatalogTest(unittest.TestCase):
                 task_name = check.split()[1]
                 if task_name not in tasks:
                     missing.append(f"{system['id']} references missing task {task_name}")
+        self.assertEqual([], missing)
+
+    def test_unittest_checks_reference_existing_tests(self) -> None:
+        catalog = _catalog()
+        missing: list[str] = []
+        prefix = "uv run python -m unittest "
+        for system in catalog["systems"]:
+            for check in system["checks"]:
+                if not check.startswith(prefix):
+                    continue
+                for target in check.removeprefix(prefix).split():
+                    path = _unittest_target_path(target)
+                    if path is not None and not path.exists():
+                        missing.append(
+                            f"{system['id']} references missing unittest target {target}"
+                        )
         self.assertEqual([], missing)
 
 
