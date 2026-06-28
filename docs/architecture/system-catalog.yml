@@ -148,7 +148,7 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over read-only Capital OS context packs; default posture is read/explain and does not own source-of-truth.
+    summary: Profile-selected Agent tools over Capital OS context packs; default posture is read/explain, and review-draft can create append-only governed proposal drafts for human review.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
@@ -159,10 +159,11 @@ systems:
       - src/finharness/hermes_bridge.py
     mature_posture: Hermes-style spec, availability, output-budget, and capability-profile ideas; profiles select visible tools and are not permission bypasses.
     checks:
+      - uv run python -m unittest tests.test_agent_proposal_drafts
       - uv run python -m unittest tests.test_agent_capabilities
       - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools
-    upgrade_trigger: Future append-only proposal/review/simulation tools need explicit profiles, tests, and receipt-backed command paths.
+    upgrade_trigger: Agent review-note, scaffold-revision, simulation, or any stronger action path needs explicit profiles, tests, and receipt-backed command paths; execution remains absent.
 
   - id: cockpit_api
     name: Cockpit / API

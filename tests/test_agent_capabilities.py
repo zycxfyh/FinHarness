@@ -8,6 +8,7 @@ from finharness.agent_capabilities import (
     CAPITAL_CONTEXT_TOOL_NAMES,
     CURRENT_AGENT_TOOL_NAMES,
     DEFAULT_AGENT_PROFILE,
+    DRAFT_PROPOSAL_TOOL_NAMES,
     AgentCapability,
     AgentCapabilityProfile,
     get_agent_profile,
@@ -65,19 +66,15 @@ class AgentCapabilitiesTest(unittest.TestCase):
                     )
                 )
 
-    def test_future_capabilities_are_planned_not_active(self) -> None:
+    def test_review_draft_profile_allows_proposal_drafts_only(self) -> None:
         review_profile = get_agent_profile("review-draft")
-        self.assertNotIn(AgentCapability.CAPITAL_PROPOSE, review_profile.capabilities)
+        self.assertIn(AgentCapability.CAPITAL_PROPOSE, review_profile.capabilities)
         self.assertNotIn(AgentCapability.CAPITAL_REVIEW_NOTE, review_profile.capabilities)
-        self.assertIn(
-            AgentCapability.CAPITAL_PROPOSE,
-            review_profile.planned_capabilities,
-        )
         self.assertIn(
             AgentCapability.CAPITAL_REVIEW_NOTE,
             review_profile.planned_capabilities,
         )
-        self.assertFalse(
+        self.assertTrue(
             profile_allows_capability(
                 "review-draft",
                 AgentCapability.CAPITAL_PROPOSE,
@@ -89,7 +86,10 @@ class AgentCapabilitiesTest(unittest.TestCase):
                 AgentCapability.CAPITAL_REVIEW_NOTE,
             )
         )
+        self.assertTrue(set(DRAFT_PROPOSAL_TOOL_NAMES).issubset(review_profile.tool_names))
+        self.assertTrue(set(DRAFT_PROPOSAL_TOOL_NAMES).isdisjoint(DEFAULT_AGENT_PROFILE.tool_names))
 
+    def test_simulation_capability_is_planned_not_active(self) -> None:
         simulation_profile = get_agent_profile("simulation")
         self.assertNotIn(AgentCapability.CAPITAL_SIMULATE, simulation_profile.capabilities)
         self.assertIn(

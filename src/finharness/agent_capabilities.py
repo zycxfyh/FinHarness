@@ -26,6 +26,10 @@ CAPITAL_CONTEXT_TOOL_NAMES = (
     "get_proposal_timeline_context",
 )
 
+DRAFT_PROPOSAL_TOOL_NAMES = (
+    "draft_governed_proposal_from_context",
+)
+
 CURRENT_AGENT_TOOL_NAMES = (
     "get_quote_snapshot",
     "get_historical_risk_metrics",
@@ -79,18 +83,18 @@ DEFAULT_AGENT_PROFILE = AgentCapabilityProfile(
 REVIEW_DRAFT_AGENT_PROFILE = AgentCapabilityProfile(
     name="review-draft",
     description=(
-        "Future append-only review drafting posture. Today it exposes only existing "
-        "read/explain tools; proposal and review-note writes are not implemented."
+        "Append-only proposal draft posture. It exposes the existing read/explain "
+        "tools plus a receipt-backed governed proposal draft tool."
     ),
     capabilities=(
         AgentCapability.CAPITAL_READ,
         AgentCapability.CAPITAL_EXPLAIN,
+        AgentCapability.CAPITAL_PROPOSE,
     ),
     planned_capabilities=(
-        AgentCapability.CAPITAL_PROPOSE,
         AgentCapability.CAPITAL_REVIEW_NOTE,
     ),
-    tool_names=CURRENT_AGENT_TOOL_NAMES,
+    tool_names=(*CURRENT_AGENT_TOOL_NAMES, *DRAFT_PROPOSAL_TOOL_NAMES),
 )
 
 SIMULATION_AGENT_PROFILE = AgentCapabilityProfile(

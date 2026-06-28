@@ -10,6 +10,7 @@ from agents.tool_context import ToolContext
 from finharness.agent_capabilities import tool_names_for_profile
 from finharness.agent_tools import (
     current_ips_context_payload,
+    draft_governed_proposal_from_context,
     evaluate_latest_risk_note_payload,
     finance_research_agent,
     get_capital_summary_context,
@@ -50,6 +51,11 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(finance_research_agent.tools), 8)
         self.assertEqual(tool_names(), list(tool_names_for_profile("default")))
+        self.assertNotIn("draft_governed_proposal_from_context", tool_names())
+        self.assertIn(
+            "draft_governed_proposal_from_context",
+            tool_names("review-draft"),
+        )
 
     def test_agent_does_not_expose_mutating_capital_tools(self) -> None:
         names = set(tool_names())
@@ -92,6 +98,30 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         timeline_schema = get_proposal_timeline_context.params_json_schema
         self.assertEqual(set(timeline_schema["properties"]), {"proposal_id", "limit"})
         self.assertEqual(set(timeline_schema["required"]), {"proposal_id", "limit"})
+
+    def test_proposal_draft_tool_schema_has_fixed_top_level_fields(self) -> None:
+        schema = draft_governed_proposal_from_context.params_json_schema
+        self.assertTrue(
+            {
+                "kind",
+                "claim",
+                "evidence",
+                "decision_scaffold",
+                "source_refs",
+                "reason",
+            }.issubset(set(schema["properties"]))
+        )
+        self.assertEqual(
+            set(schema["required"]),
+            {
+                "kind",
+                "claim",
+                "evidence",
+                "decision_scaffold",
+                "source_refs",
+                "reason",
+            },
+        )
 
     def test_context_payload_unavailable_state_core_is_non_authoritative(self) -> None:
         from finharness.statecore.store import StateCoreStoreError

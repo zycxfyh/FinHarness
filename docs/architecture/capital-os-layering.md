@@ -26,7 +26,7 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
 | **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
-| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_capabilities.py`、`agent_tools.py` | ✅ v0:只读 context packs + default read/explain capability profile |
+| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_capabilities.py`、`agent_tools.py` | ✅ v0:context packs + default read/explain profile + review-draft proposal drafts |
 | **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | (无 ActionIntent / PreTradeImpactReport) | ❌ gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
 | **L8** | Cockpit / API 产品表面 | 用户怎么用这一切? | FastAPI(`api/app.py` + routers)、vanilla JS cockpit | ✅ 有 |
@@ -40,8 +40,9 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 PR #51 已补上 L3 IPS v0。下一版增量按优先级:
 
 1. **L0B**:外部标的数据从"仅价格"扩成 Instrument / 财报 / 宏观分类。
-2. **L5**:把只读 context packs 用在更好的 Agent 解释/eval 中(仍不计算
-   source-of-truth,不授权执行)。
+2. **L5**:把 context packs 用在更好的 Agent 解释/eval 中;review-draft profile
+   可写 append-only governed proposal draft,但不是 approval、recommendation 或
+   execution authorization。
 3. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
    需先把它重构成可接受 hypothetical 持仓集的形态)。
 
