@@ -5,12 +5,24 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from agents import Agent, function_tool
+from sqlalchemy.engine import Engine
 
+from finharness.agent_context import (
+    AgentContextPack,
+    build_capital_summary_context,
+    build_current_ips_context,
+    build_ips_check_context,
+    build_open_proposals_context,
+    build_proposal_timeline_context,
+    unavailable_context_pack,
+)
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
+from finharness.statecore.store import StateCoreStoreError, open_state_core
 
 ROOT = Path(__file__).resolve().parents[2]
 LATEST_RISK_NOTE = ROOT / "data" / "cache" / "latest_risk_note.txt"
@@ -102,10 +114,108 @@ def evaluate_latest_risk_note_payload(timeout_seconds: float = 60.0) -> dict[str
     }
 
 
+def _pack_payload(pack: AgentContextPack) -> dict[str, object]:
+    return pack.model_dump(mode="json")
+
+
+def _with_default_engine(
+    name: str,
+    builder: Callable[..., AgentContextPack],
+    *args: object,
+    **kwargs: object,
+) -> dict[str, object]:
+    try:
+        engine = open_state_core()
+    except StateCoreStoreError as exc:
+        return _pack_payload(unavailable_context_pack(name, str(exc)))
+    try:
+        pack = builder(engine, *args, **kwargs)
+        return _pack_payload(pack)
+    finally:
+        engine.dispose()
+
+
+def capital_summary_context_payload(engine: Engine | None = None) -> dict[str, object]:
+    if engine is not None:
+        return _pack_payload(build_capital_summary_context(engine))
+    return _with_default_engine("capital_summary", build_capital_summary_context)
+
+
+def current_ips_context_payload(engine: Engine | None = None) -> dict[str, object]:
+    if engine is not None:
+        return _pack_payload(build_current_ips_context(engine))
+    return _with_default_engine("current_ips", build_current_ips_context)
+
+
+def ips_check_context_payload(engine: Engine | None = None) -> dict[str, object]:
+    if engine is not None:
+        return _pack_payload(build_ips_check_context(engine))
+    return _with_default_engine("ips_check", build_ips_check_context)
+
+
+def open_proposals_context_payload(
+    *, limit: int = 10, engine: Engine | None = None
+) -> dict[str, object]:
+    if engine is not None:
+        return _pack_payload(build_open_proposals_context(engine, limit=limit))
+    return _with_default_engine("open_proposals", build_open_proposals_context, limit=limit)
+
+
+def proposal_timeline_context_payload(
+    proposal_id: str,
+    *,
+    limit: int = 20,
+    engine: Engine | None = None,
+) -> dict[str, object]:
+    if engine is not None:
+        return _pack_payload(
+            build_proposal_timeline_context(engine, proposal_id=proposal_id, limit=limit)
+        )
+    return _with_default_engine(
+        "proposal_timeline",
+        build_proposal_timeline_context,
+        proposal_id=proposal_id,
+        limit=limit,
+    )
+
+
+@function_tool
+def get_capital_summary_context() -> dict[str, object]:
+    """Read the bounded Capital OS exposure context pack."""
+    return capital_summary_context_payload()
+
+
+@function_tool
+def get_current_ips_context() -> dict[str, object]:
+    """Read the active IPS context pack, if one exists."""
+    return current_ips_context_payload()
+
+
+@function_tool
+def get_ips_check_context() -> dict[str, object]:
+    """Read the IPS compliance context pack for current exposure."""
+    return ips_check_context_payload()
+
+
+@function_tool
+def get_open_proposals_context(limit: int = 10) -> dict[str, object]:
+    """Read open governed proposals awaiting human review."""
+    return open_proposals_context_payload(limit=limit)
+
+
+@function_tool
+def get_proposal_timeline_context(proposal_id: str, limit: int = 20) -> dict[str, object]:
+    """Read a governed proposal's bounded review timeline."""
+    return proposal_timeline_context_payload(proposal_id=proposal_id, limit=limit)
+
+
 finance_research_agent = Agent(
     name="Finance Research Harness Agent",
     instructions=(
-        "Use tools to fetch data, run backtests, and evaluate risk notes. "
+        "Use read-only tools to inspect bounded FinHarness context packs, fetch data, "
+        "run backtests, and evaluate risk notes. "
+        "Capital OS context packs are for explanation and review only; they never "
+        "authorize actions or execution. "
         "Always state that outputs are for education, not investment advice. "
         "Always disclose that the current default data source is yfinance/Yahoo Finance, "
         "not TradingView/TV, and that optional providers are evidence sources only."
@@ -114,6 +224,11 @@ finance_research_agent = Agent(
         get_quote_snapshot,
         get_historical_risk_metrics,
         evaluate_latest_risk_note,
+        get_capital_summary_context,
+        get_current_ips_context,
+        get_ips_check_context,
+        get_open_proposals_context,
+        get_proposal_timeline_context,
     ],
 )
 
@@ -123,6 +238,11 @@ def tool_names() -> list[str]:
         get_quote_snapshot.name,
         get_historical_risk_metrics.name,
         evaluate_latest_risk_note.name,
+        get_capital_summary_context.name,
+        get_current_ips_context.name,
+        get_ips_check_context.name,
+        get_open_proposals_context.name,
+        get_proposal_timeline_context.name,
     ]
 
 

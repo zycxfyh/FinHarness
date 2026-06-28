@@ -147,18 +147,20 @@ systems:
 
   - id: agent_explanation
     name: Agent Explanation
-    status: thin
-    summary: Tool-mediated explanations over bounded context; Agent does not own source-of-truth.
+    status: current
+    summary: Tool-mediated explanations over read-only Capital OS context packs; Agent does not own source-of-truth.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
     runtime_roots:
+      - src/finharness/agent_context.py
       - src/finharness/agent_tools.py
       - src/finharness/hermes_bridge.py
-    mature_posture: OpenAI Agents/tool calling as an explanation adapter, not a state writer.
+    mature_posture: Hermes-style spec, availability, and output-budget ideas; OpenAI Agents/tool calling remains an explanation adapter, not a state writer.
     checks:
+      - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools
-    upgrade_trigger: Agent starts reading StateCore/IPS/Proposal summary packs.
+    upgrade_trigger: Agent explanations need multi-step evidence planning, eval traces, or richer L5/L6 simulation handoff.
 
   - id: cockpit_api
     name: Cockpit / API
