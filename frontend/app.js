@@ -17,6 +17,7 @@ const selectors = {
   views: {
     overview: document.querySelector("#overview-view"),
     exposure: document.querySelector("#exposure-view"),
+    policy: document.querySelector("#policy-view"),
     proposals: document.querySelector("#proposals-view"),
     timeline: document.querySelector("#timeline-view"),
     retrospective: document.querySelector("#retrospective-view"),
@@ -29,6 +30,8 @@ const selectors = {
   exposureHoldings: document.querySelector("#exposure-holdings"),
   exposureObligations: document.querySelector("#exposure-obligations"),
   exposureGaps: document.querySelector("#exposure-gaps"),
+  policyCurrent: document.querySelector("#policy-current"),
+  policyCheck: document.querySelector("#policy-check"),
   latestBrief: document.querySelector("#latest-brief"),
   controls: document.querySelector("#controls-block"),
   proposalFilter: document.querySelector("#proposal-filter"),
@@ -86,6 +89,27 @@ function formatMoney(value) {
   }).format(value);
 }
 
+function asNumber(value) {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function formatMonths(value) {
+  const number = asNumber(value);
+  return number === null ? "Unknown" : `${number.toFixed(1)} mo`;
+}
+
+function formatPolicyPercent(value) {
+  const number = asNumber(value);
+  return number === null ? "Not set" : `${(number * 100).toFixed(1)}%`;
+}
+
 function renderRows(element, rows) {
   clear(element);
   if (!rows.length) {
@@ -108,6 +132,19 @@ function renderNonClaims(element, nonClaims = productNonClaims) {
     wrap.append(textElement("span", "tag", claim));
   }
   element.append(wrap);
+}
+
+function renderInlineList(parent, title, values) {
+  if (!Array.isArray(values) || !values.length) {
+    return;
+  }
+  parent.append(textElement("h4", "", title));
+  const list = document.createElement("ul");
+  list.className = "brief-lines";
+  for (const value of values) {
+    list.append(textElement("li", "", String(value)));
+  }
+  parent.append(list);
 }
 
 async function apiGet(path) {
@@ -212,6 +249,88 @@ async function renderOverview() {
     ["Execution allowed", controls.execution_allowed],
   ]);
   renderNonClaims(selectors.controls, controls.non_claims);
+}
+
+function renderPolicyCurrent(parent, current) {
+  clear(parent);
+  if (!current || !current.available || !current.ips) {
+    renderRows(parent, [["Available", false], ["Execution allowed", false]]);
+    parent.append(textElement("p", "empty-state", "No active IPS has been recorded."));
+    renderNonClaims(parent, current && current.non_claims);
+    return;
+  }
+
+  const ips = current.ips;
+  renderRows(parent, [
+    ["Available", current.available],
+    ["IPS ID", ips.ips_id],
+    ["Status", ips.status],
+    ["Liquidity floor", formatMonths(ips.liquidity_floor_months)],
+    ["Single holding cap", formatPolicyPercent(ips.max_single_holding_pct)],
+    ["Cash overweight flag", formatPolicyPercent(ips.cash_overweight_pct)],
+    ["High-interest flag", formatPolicyPercent(ips.high_interest_rate_pct)],
+    ["Base currency", ips.base_currency],
+    ["Review cadence", ips.review_cadence || "Not set"],
+    ["Receipt", ips.receipt_ref],
+    ["Execution allowed", current.execution_allowed || ips.execution_allowed],
+  ]);
+  renderInlineList(parent, "Allowed asset classes", ips.allowed_asset_classes);
+  renderInlineList(parent, "Restricted actions", ips.restricted_actions);
+  renderInlineList(parent, "Source refs", ips.source_refs);
+  renderNonClaims(parent, current.non_claims);
+}
+
+function renderPolicyCheck(parent, check) {
+  clear(parent);
+  if (!check) {
+    parent.append(textElement("p", "empty-state", "Compliance check unavailable."));
+    return;
+  }
+
+  renderRows(parent, [
+    ["IPS ID", check.ips_id],
+    ["As of", check.as_of_date],
+    ["Violations", check.violations && check.violations.length ? check.violations.join(", ") : "None"],
+    ["Blocked", check.blocked && check.blocked.length ? check.blocked.join(", ") : "None"],
+    ["Execution allowed", check.execution_allowed],
+  ]);
+  parent.append(textElement("h4", "", "Rules"));
+  const results = Array.isArray(check.results) ? check.results : [];
+  if (!results.length) {
+    parent.append(emptyNode());
+  }
+  for (const result of results) {
+    const item = document.createElement("div");
+    item.className = "item policy-rule";
+    item.append(textElement("span", `tag ${result.status}`, result.status));
+    item.append(textElement("span", "item-title", result.rule));
+    item.append(textElement("span", "item-meta", `Boundary: ${result.boundary}`));
+    item.append(textElement("span", "item-meta", `Observed: ${result.observed}`));
+    item.append(textElement("p", "item-meta", result.detail));
+    parent.append(item);
+  }
+  renderInlineList(parent, "Source refs", check.source_refs);
+  renderNonClaims(parent, check.non_claims);
+}
+
+async function renderPolicy() {
+  const current = await apiGet("/ips/current");
+  renderPolicyCurrent(selectors.policyCurrent, current);
+  clear(selectors.policyCheck);
+  if (!current.available) {
+    selectors.policyCheck.append(
+      textElement("p", "empty-state", "No active IPS; compliance check is not available."),
+    );
+    renderNonClaims(selectors.policyCheck, current.non_claims);
+    return;
+  }
+  try {
+    renderPolicyCheck(selectors.policyCheck, await apiGet("/ips/check"));
+  } catch (error) {
+    selectors.policyCheck.append(
+      textElement("p", "error-text", `Compliance check unavailable: ${error.message}`),
+    );
+  }
 }
 
 function proposalStatusTag(proposal) {
@@ -910,6 +1029,7 @@ async function renderTimeline() {
 const renderers = {
   overview: renderOverview,
   exposure: renderExposure,
+  policy: renderPolicy,
   proposals: renderProposals,
   timeline: renderTimeline,
   retrospective: renderRetrospective,
@@ -919,6 +1039,7 @@ const renderers = {
 const errorTargets = {
   overview: () => selectors.latestBrief,
   exposure: () => selectors.exposureGrid,
+  policy: () => selectors.policyCheck,
   proposals: () => selectors.proposalDetail,
   timeline: () => selectors.timelineList,
   retrospective: () => selectors.retrospectiveBlock,

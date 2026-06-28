@@ -19,7 +19,7 @@ Use this as a lookup page. For system ownership, read
 | ReviewInterface | Local governed commands | Attestation, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
 | AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Tool-bound explanation/eval surfaces, no source-of-truth writes | `task agent:describe`, `task agent:run` |
-| CockpitInterface | FastAPI + static frontend | Read/review product surface, no execution endpoints | `task api:serve` |
+| CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
 
