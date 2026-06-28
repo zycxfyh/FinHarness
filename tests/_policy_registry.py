@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -89,6 +90,51 @@ _REVIEW_WRITE_ENTRYPOINTS = (
     "create_governed_review_event",
 )
 
+_CURRENT_DOC_PATHS = (
+    _ROOT / "README.md",
+    _ROOT / "docs" / "README.md",
+    _ROOT / "docs" / "tutorials" / "golden-path.md",
+    _ROOT / "docs" / "reference" / "README.md",
+    _ROOT / "docs" / "reference" / "commands.md",
+    _ROOT / "docs" / "reference" / "config-env.md",
+    _ROOT / "docs" / "reference" / "interfaces.md",
+    _ROOT / "docs" / "how-to" / "README.md",
+    _ROOT / "docs" / "architecture" / "capital-os-layering.md",
+    _ROOT / "docs" / "architecture" / "engineering-leverage-map.md",
+    _ROOT / "docs" / "architecture" / "framework-index.md",
+    _ROOT / "docs" / "architecture" / "system-map.md",
+    _ROOT / "docs" / "architecture" / "module-map.md",
+    _ROOT / "docs" / "architecture" / "documentation-fact-governance.md",
+)
+
+_TASK_REF_RE = re.compile(r"`task ([A-Za-z0-9][A-Za-z0-9:_-]*)(?:\s|`)")
+
+_ARCHIVED_TASK_PREFIXES = (
+    "alpaca:",
+    "okx:",
+    "trading:",
+    "guard:",
+    "ten-layer:",
+    "market-data:",
+    "indicators:",
+    "events:",
+    "interpretation:",
+    "hypotheses:",
+    "validation:",
+    "proposal:",
+    "risk-gate:",
+    "execution:",
+    "post-trade:",
+)
+
+_RETIRED_MODULE_TOKENS = (
+    "ten_layer_graph.py",
+    "market_cockpit.py",
+    "okx_live_gate.py",
+    "alpaca_client.py",
+    "trading_guard.py",
+)
+
 
 def _identifiers(module_path: Path) -> set[str]:
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
@@ -129,6 +175,16 @@ def _reachable_tasks(name: str, tasks: dict, seen: set[str] | None = None) -> se
     return seen
 
 
+def _taskfile_tasks() -> dict:
+    return (yaml.safe_load((_ROOT / "Taskfile.yml").read_text(encoding="utf-8")) or {}).get(
+        "tasks", {}
+    )
+
+
+def _relative(path: Path) -> str:
+    return str(path.relative_to(_ROOT))
+
+
 def _evidence_item() -> ResearchEvidence:
     return ResearchEvidence(
         kind="historical_risk_profile",
@@ -146,6 +202,63 @@ def _evidence_item() -> ResearchEvidence:
 
 
 # --- checks (return violation messages; empty == pass) ----------------------------------
+
+def _check_current_docs_reference_live_tasks() -> list[str]:
+    task_names = set(_taskfile_tasks())
+    out: list[str] = []
+    for path in _CURRENT_DOC_PATHS:
+        if not path.exists():
+            out.append(f"current doc missing: {_relative(path)}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for match in _TASK_REF_RE.finditer(text):
+            task_name = match.group(1)
+            if task_name not in task_names:
+                out.append(f"{_relative(path)} references missing task {task_name}")
+    return out
+
+
+def _check_current_docs_do_not_expose_archived_task_prefixes() -> list[str]:
+    out: list[str] = []
+    for path in _CURRENT_DOC_PATHS:
+        if not path.exists():
+            out.append(f"current doc missing: {_relative(path)}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for prefix in _ARCHIVED_TASK_PREFIXES:
+            if f"`task {prefix}" in text:
+                out.append(f"{_relative(path)} exposes archived task prefix {prefix}")
+    return out
+
+
+def _check_capital_os_ips_current() -> list[str]:
+    path = _ROOT / "docs" / "architecture" / "capital-os-layering.md"
+    if not path.exists():
+        return [f"current doc missing: {_relative(path)}"]
+    text = path.read_text(encoding="utf-8")
+    out: list[str] = []
+    for token in ("`ips.py`", "api/routes_ips.py"):
+        if token not in text:
+            out.append(f"{_relative(path)} does not show shipped IPS token {token}")
+    l3_rows = [line for line in text.splitlines() if line.startswith("| **L3** |")]
+    if not l3_rows:
+        out.append(f"{_relative(path)} has no L3 IPS row")
+    elif any("gap" in row or "❌" in row for row in l3_rows):
+        out.append(f"{_relative(path)} still marks L3 IPS as a gap")
+    return out
+
+
+def _check_module_map_omits_retired_modules() -> list[str]:
+    path = _ROOT / "docs" / "architecture" / "module-map.md"
+    if not path.exists():
+        return [f"current doc missing: {_relative(path)}"]
+    text = path.read_text(encoding="utf-8")
+    return [
+        f"{_relative(path)} lists retired module as current: {token}"
+        for token in _RETIRED_MODULE_TOKENS
+        if token in text
+    ]
+
 
 def _check_research_import_boundary() -> list[str]:
     out: list[str] = []
@@ -395,6 +508,38 @@ POLICIES: tuple[PolicyRule, ...] = (
         source="fixture standardization (#4)",
         description="Shared system fixtures exist for the first standardized systems.",
         check=_check_fixture_standard_references,
+    ),
+    PolicyRule(
+        id="GOV-DOCS-001",
+        owner="docs-current-facts",
+        scope="README.md and maintained docs current-facts lane",
+        source="documentation fact governance (Taskfile drift)",
+        description="Current docs only reference live Taskfile task names.",
+        check=_check_current_docs_reference_live_tasks,
+    ),
+    PolicyRule(
+        id="GOV-DOCS-002",
+        owner="docs-current-facts",
+        scope="README.md and maintained docs current-facts lane",
+        source="documentation fact governance (archive/current boundary)",
+        description="Current docs do not expose archived task prefixes as runnable commands.",
+        check=_check_current_docs_do_not_expose_archived_task_prefixes,
+    ),
+    PolicyRule(
+        id="GOV-DOCS-003",
+        owner="architecture-docs",
+        scope="docs/architecture/capital-os-layering.md",
+        source="documentation fact governance (layer status drift)",
+        description="Capital OS docs reflect that IPS v0 is shipped in mainline.",
+        check=_check_capital_os_ips_current,
+    ),
+    PolicyRule(
+        id="GOV-DOCS-004",
+        owner="architecture-docs",
+        scope="docs/architecture/module-map.md",
+        source="documentation fact governance (retired module drift)",
+        description="Module map does not list retired ten-layer/live-trading modules as current.",
+        check=_check_module_map_omits_retired_modules,
     ),
     PolicyRule(
         id="GOV-RESEARCH-002",

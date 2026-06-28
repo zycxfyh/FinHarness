@@ -16,20 +16,18 @@ package.json @zycxfyh
 pnpm-lock.yaml @zycxfyh
 docs/archive/legacy-rust-crate/ @zycxfyh
 
-# Trading, provider, execution, risk, and governance code.
-src/finharness/execution/ @zycxfyh
-src/finharness/execution_graph.py @zycxfyh
-src/finharness/risk_gate/ @zycxfyh
-src/finharness/risk_gate_graph.py @zycxfyh
-src/finharness/okx_cli.py @zycxfyh
-src/finharness/alpaca_client.py @zycxfyh
+# Security, provider, authorization, and governance code.
+src/finharness/authorization.py @zycxfyh
+src/finharness/restricted_symbols.py @zycxfyh
+src/finharness/data_entry.py @zycxfyh
+src/finharness/providers/ @zycxfyh
 src/finharness/release_preflight_graph.py @zycxfyh
 src/finharness/quality_governance_graph.py @zycxfyh
 src/finharness/governance_dashboard.py @zycxfyh
 src/finharness/governance_dashboard_graph.py @zycxfyh
 src/finharness/hardening.py @zycxfyh
 src/finharness/research_assets.py @zycxfyh
-src/finharness/ten_layer_graph.py @zycxfyh
+experiments/archive/live_trading_legacy/ @zycxfyh
 
 # Security, governance, and validation evidence.
 docs/security/ @zycxfyh

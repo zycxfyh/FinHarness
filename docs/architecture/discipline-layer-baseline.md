@@ -1,5 +1,10 @@
 # Discipline-Layer Baseline (regression guard for mature-wheel work)
 
+> Historical / superseded reference (2026-06-28): this baseline protected the
+> retired ten-layer execution/risk-gate stack. Use Capital OS layering,
+> `docs/architecture/system-map.md`, and `task governance:policies` for current
+> guardrails.
+
 This is the **护栏 / regression baseline** for the
 [mature wheel control plane](mature-wheel-control-plane.md). Any replacement step
 that touches `risk_gate`, `execution`, the lesson→rule path, or receipts —

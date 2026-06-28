@@ -228,10 +228,10 @@ RED_TEAM_BOUNDARY_MATRIX = [
     },
     {
         "id": "FH-RT-003",
-        "risk": "Layer 9 must block live execution requests in MVP.",
+        "risk": "Mainline evidence and review records must not persist execution authority.",
         "evidence": (
-            "tests/test_execution.py::"
-            "ExecutionLayerTest::test_live_mode_is_blocked_before_submit"
+            "tests/test_review_events.py::"
+            "ReviewEventTest::test_execution_allowed_cannot_be_persisted"
         ),
     },
     {

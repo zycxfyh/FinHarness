@@ -4,7 +4,7 @@
   "execution_allowed": false,
   "failed_case_count": 0,
   "failed_cases": [],
-  "generated_at": "2026-06-26T10:45:42Z",
+  "generated_at": "2026-06-28T06:54:47Z",
   "generated_count": 32,
   "non_claims": [
     "Not OSS-Fuzz coverage.",

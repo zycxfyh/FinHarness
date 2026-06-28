@@ -3,11 +3,13 @@
   "description": "Deterministic governance-boundary fuzz cases. No secrets, credentials, live provider calls, or autonomous execution.",
   "cases": [
     {
-      "id": "security_surface_execution_paths",
+      "id": "security_surface_current_boundaries",
       "target": "security_surface",
       "paths": [
-        "src/finharness/execution.py",
-        "src/finharness/risk-gate.py",
+        "src/finharness/authorization.py",
+        "src/finharness/restricted_symbols.py",
+        "docs/security/finharness-threat-model.md",
+        "experiments/archive/live_trading_legacy/okx/okx_cli.py",
         ".github/workflows/security.yml"
       ]
     },
@@ -27,7 +29,7 @@
         "unknown_asset",
         "live_write_enable"
       ],
-      "layer": "L9"
+      "layer": "L5"
     },
     {
       "id": "research_assets_path_like_ids",
@@ -37,7 +39,7 @@
         ".env",
         "OKX-LIVE-WRITE"
       ],
-      "layer": "L8"
+      "layer": "L4"
     }
   ]
 }

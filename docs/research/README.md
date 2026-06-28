@@ -1,10 +1,10 @@
 # Research Asset Library
 
-Date: 2026-06-02
-Status: draft MVP
+Date: 2026-06-28
+Status: current cite-only reference
 
-FinHarness research assets sit outside the ten-layer chain. They provide
-reusable contracts and references that the evidence layers may cite, but they
+FinHarness research assets are reusable contracts and references. They may be
+selected into evidence, proposal, review, or Agent explanation context, but they
 do not execute strategies, compute portfolio accounting, claim compliance, or
 authorize live trading.
 
@@ -12,7 +12,7 @@ authorize live trading.
 
 ```text
 StrategySpec:
-  reusable strategy contract for L5-L10 handoff
+  reusable strategy contract and non-claim boundary
 
 MathMethodSpec:
   mathematical validation, risk, cost, robustness, or attribution contract
@@ -38,60 +38,43 @@ data/research/
   experiment-receipts/
 ```
 
-## Ten-Layer Relationship
+## Current Runtime Boundary
 
-The top-level graph can resolve asset ids and pass a compact cite-only context
-to L5-L10. This context is written into each layer's `SourceSpec.config` so the
-receipt lineage can answer which strategy, method, or reference assets were
-consulted.
-
-Example:
-
-```text
-task ten-layer:graph -- \
-  --asset-id strategy.trend_following.v0 \
-  --asset-id math.validation.walk_forward.v0 \
-  --asset-id reference.provider.alpaca_paper_adapter.v0
-```
-
-```text
-L5 Hypotheses:
-  may cite StrategySpec thesis and assumptions
-
-L6 Validation:
-  may cite MathMethodSpec validation contracts
-
-L7 Proposal:
-  may cite StrategySpec proposal/risk/execution constraints
-
-L8 Risk Gate:
-  may cite StrategySpec risk contracts and MathMethodSpec risk methods
-
-L9 Execution:
-  may read execution constraints after Risk Gate, paper/fake-first only
-
-L10 Post-Trade:
-  may cite review metrics and attribution MathMethodSpec assets
-```
-
-## Boundary
-
-```text
-Research assets are inputs and references.
-Asset policy is cite_only.
-Asset context is written to SourceSpec.config and lineage receipts.
-Missing asset ids are reported, not silently erased.
-The ten-layer graph remains the lifecycle orchestrator.
-Risk Gate remains the independent pre-execution control.
-Execution remains paper/fake-first in this MVP.
-Post-Trade cannot create orders.
-Asset refs never set execution_allowed=true.
-```
-
-Current typed loader:
+The typed loader lives in:
 
 ```text
 src/finharness/research_assets.py
 tests/test_research_assets.py
-tests/test_research_asset_handoff.py
 ```
+
+The policy is always:
+
+```text
+asset policy = cite_only
+missing asset ids = reported, not silently erased
+execution_allowed = false
+```
+
+Research assets can support proposal/review explanations and evidence
+attachments. They must not become instructions, broker commands, live-trading
+approval, or a substitute for human review.
+
+## Using Assets From Code
+
+```python
+from finharness.research_assets import resolve_research_assets
+
+selection = resolve_research_assets(
+    research_asset_ids=[
+        "strategy.trend_following.v0",
+        "math.validation.walk_forward.v0",
+    ],
+)
+context = selection.context_for_layer("L5")
+assert context["policy"] == "cite_only"
+assert context["execution_allowed"] is False
+```
+
+`LayerRef` still accepts the older L1-L10 asset labels for compatibility with
+existing JSON assets. That compatibility does not make the retired ten-layer
+workflow current again; Capital OS remains the mainline architecture.

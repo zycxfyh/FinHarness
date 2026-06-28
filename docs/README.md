@@ -3,13 +3,16 @@
 This is the task map for FinHarness documentation. Start with the job you are
 trying to do, not with the architecture.
 
-FinHarness is not a trading bot. It is a research, evidence, workflow, risk,
-execution, and review harness. The docs should make the safe path easy and the
-unsafe path visibly blocked.
+FinHarness is not a trading bot. It is a personal capital governance harness:
+state, IPS, proposal/review, evidence, Agent explanation, and cockpit read
+surfaces. The docs should make the safe path easy and the unsafe path visibly
+blocked.
 
 ## Start Here
 
 - Understand the product direction and category: [Product Thesis](product/product-thesis.md), [Product Roadmap](product/product-roadmap.md), [North Star](product-north-star.md)
+- Need the framework in one screen: [Framework Index](architecture/framework-index.md)
+- Need the engineering leverage / future-tooling map: [Engineering Leverage Map](architecture/engineering-leverage-map.md)
 - New to the project: [Golden Path Tutorial](tutorials/golden-path.md)
 - Need to perform one task: [How-to Guides](how-to/README.md)
 - Need exact facts, commands, or schemas: [Reference](reference/README.md)
@@ -20,17 +23,20 @@ unsafe path visibly blocked.
 | Goal | Use this |
 | --- | --- |
 | Run the first safe end-to-end flow | [Golden Path Tutorial](tutorials/golden-path.md) |
-| Review a paper broker workflow | [Safe Paper-Trade Review](how-to/safe-paper-trade-review.md) |
+| See every system's core summary | [Framework Index](architecture/framework-index.md) |
+| See which engineering layers prevent future drag | [Engineering Leverage Map](architecture/engineering-leverage-map.md) |
+| Understand current architecture layering | [Capital OS Layering](architecture/capital-os-layering.md) |
 | Add a mature-wheel adapter | [Add A Mature-Wheel Adapter](how-to/add-mature-wheel-adapter.md) |
 | Promote a lesson into a rule | [Promote Lesson To Rule](how-to/promote-lesson-to-rule.md) |
 | Understand the mature-wheel migration | [Mature Wheel Control Plane](architecture/mature-wheel-control-plane.md) |
-| Check which policy rules protect trading boundaries | [Policy Contract](architecture/policy-contract.md) |
-| Check what receipts and lineage already capture | [Evidence Inventory](architecture/evidence-inventory.md) |
+| Check current machine guardrails | `task governance:policies`, [Documentation Fact Governance](architecture/documentation-fact-governance.md) |
+| Check current module ownership | [Module Map](architecture/module-map.md) |
 | Look up commands | [Command Reference](reference/commands.md) |
 | Look up interfaces | [Interface Reference](reference/interfaces.md) |
 | Look up receipt fields and locations | [Receipt Reference](reference/receipts.md) |
 | Look up config/env vars | [Config And Environment Reference](reference/config-env.md) |
 | Understand the system layering (L0–L8) | [Capital OS Layering](architecture/capital-os-layering.md) |
+| Keep current docs synchronized with code | [Documentation Fact Governance](architecture/documentation-fact-governance.md) |
 | Read runtime operations reports | [Operations](operations/) |
 | Read reviews and lessons | [Reviews](reviews/README.md), [Lessons](lessons/README.md) |
 | Contribute without letting docs rot | [Contributing](../CONTRIBUTING.md) |
@@ -53,7 +59,12 @@ guidance.
 Tutorials and how-tos must teach the brakes as first-class behavior:
 
 - default no live execution;
-- `execution_allowed=false` unless a layer explicitly proves otherwise;
-- human review before proposal/risk/execution promotion;
-- Riskfolio/vectorbt/indicators are evidence, not authority;
+- `execution_allowed=false` throughout current mainline receipts and records;
+- human review before proposal/review promotion;
+- external data, Riskfolio/vectorbt-style tools, and research assets are
+  evidence, not authority;
 - lesson drafts do not become rules until a human promotes them.
+
+Current navigation docs are checked by `task docs:current-check`. Historical
+notes, reviews, and archived docs may preserve old commands as historical
+evidence; current entry points must match `Taskfile.yml`.

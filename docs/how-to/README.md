@@ -10,14 +10,15 @@ Start with the tutorial first: [Golden Path Tutorial](../tutorials/golden-path.m
 
 - First safe end-to-end run: [Golden Path Tutorial](../tutorials/golden-path.md).
 - Command lookup while recipes are being expanded: [Command Reference](../reference/commands.md).
-- Layer-specific responsibilities: [Module Docs](../modules/README.md).
+- Layer-specific responsibilities: [Module Map](../architecture/module-map.md).
 
 | How-to | Use it when | Current entry point |
 | --- | --- | --- |
-| [Do a safe paper-trade review](safe-paper-trade-review.md) | You need broker workflow evidence without live authority. | `task alpaca:paper-strategy-order` |
 | [Add a mature-wheel adapter](add-mature-wheel-adapter.md) | You are replacing local heavy logic with a mature library. | [Mature Wheel Control Plane](../architecture/mature-wheel-control-plane.md) |
 | [Import a personal-finance export](import-personal-finance-export.md) | You have a Beancount ledger or a FinHarness-contract CSV to mirror into state core. | `task beancount:import` / `task personal-finance:import` |
 | [Promote a lesson draft into a rule change](promote-lesson-to-rule.md) | A human has reviewed a lesson and wants traceable rule lineage. | `task lessons:promote`, `task rules:audit` |
+| Keep current docs in sync | Current docs mention commands or modules that moved. | `task docs:current-check` |
 
-Safety rule for every how-to: teach the brake in the same document as the
-action. No recipe should make trading feel like a one-click path.
+Archived recipes may preserve old broker or trading workflows as history, but
+current how-to entries should use only live `task --list` commands. Safety rule
+for every how-to: teach the brake in the same document as the action.

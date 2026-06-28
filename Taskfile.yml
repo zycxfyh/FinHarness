@@ -257,6 +257,12 @@ tasks:
     cmds:
       - find docs -type f | sort
 
+  docs:current-check:
+    desc: Check maintained docs against live task/module facts
+    cmds:
+      - uv run python -m unittest tests.test_docs_current_facts
+      - uv run python -m unittest tests.test_system_catalog
+
   vocab:lint:
     desc: Advisory controlled-vocabulary lint for formal docs and code strings
     cmds:
@@ -330,4 +336,3 @@ tasks:
     desc: Run Engineering Delivery Graph; pass evidence args with -- --goal "..."
     cmds:
       - uv run python scripts/run_engineering_delivery_graph.py {{.CLI_ARGS}}
-

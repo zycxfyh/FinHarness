@@ -1,5 +1,10 @@
 # Policy Contract Inventory
 
+> Historical / superseded reference (2026-06-28): this policy inventory was for
+> the retired ten-layer execution/risk-gate/live-trading stack. Current machine
+> policy rules live in `tests/_policy_registry.py` and are listed by
+> `task governance:policies`.
+
 This document is the Phase 5 PolicyInterface contract. It inventories the
 discipline rules already enforced in code so they can be reviewed in one place.
 It is not an execution authority. If this document and code disagree, code is

@@ -1,5 +1,10 @@
 # ExecutionEngineInterface — Nautilus Default Spec (for Codex)
 
+> Historical / archived design spec (2026-06-28): the mainline execution graph
+> this document targeted has been retired. Live-trading code is archived under
+> `experiments/archive/live_trading_legacy/`; current mainline has no live
+> execution entrypoint.
+
 Executable spec for **Phase 3** — the highest-authority-risk step. Goal: make the
 execution graph default to the NautilusTrader paper adapter and restrict the fake
 adapter to tests, **without weakening the live block**.

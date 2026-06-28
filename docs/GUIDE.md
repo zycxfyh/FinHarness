@@ -1,9 +1,10 @@
 # FinHarness User Guide
 
-> For the maintained executable first-run path, start with
-> [docs/README.md](README.md) and
-> [tutorials/golden-path.md](tutorials/golden-path.md). This guide remains useful
-> as an operator-oriented explanation of the system and its behavior guardrails.
+> Historical guide. This page preserves operator context from the pre-#50/#52
+> trading-research era and may mention archived commands. For current executable
+> entry points, start with [docs/README.md](README.md),
+> [tutorials/golden-path.md](tutorials/golden-path.md), and
+> [reference/commands.md](reference/commands.md).
 
 **Use this after the golden path.** Read it top to bottom once and you will
 understand what FinHarness is for, how the behavior guardrails work, and why the

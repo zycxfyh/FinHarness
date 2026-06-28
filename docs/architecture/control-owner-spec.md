@@ -1,5 +1,10 @@
 # Control Owner — Execution Spec (NOW-3 / G05)
 
+> Historical / superseded reference (2026-06-28): this spec was written for the
+> retired execution/risk-gate/live-trading stack. Current mainline governance is
+> Capital OS + `tests/_policy_registry.py`; live-trading code is archived under
+> `experiments/archive/live_trading_legacy/`.
+
 Executable spec for the meta-governance gap: the per-action human attestation
 exists, but **no named human owns the control system as a whole.** Today the only
 things validating FinHarness are two AIs and a user who cannot read the code.
