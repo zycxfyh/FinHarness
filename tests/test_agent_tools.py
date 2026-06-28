@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 from agents.tool_context import ToolContext
 
+from finharness.agent_capabilities import tool_names_for_profile
 from finharness.agent_tools import (
     current_ips_context_payload,
     evaluate_latest_risk_note_payload,
@@ -48,6 +49,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(len(finance_research_agent.tools), 8)
+        self.assertEqual(tool_names(), list(tool_names_for_profile("default")))
 
     def test_agent_does_not_expose_mutating_capital_tools(self) -> None:
         names = set(tool_names())

@@ -11,6 +11,7 @@ from pathlib import Path
 from agents import Agent, function_tool
 from sqlalchemy.engine import Engine
 
+from finharness.agent_capabilities import tool_names_for_profile
 from finharness.agent_context import (
     AgentContextPack,
     build_capital_summary_context,
@@ -234,16 +235,7 @@ finance_research_agent = Agent(
 
 
 def tool_names() -> list[str]:
-    return [
-        get_quote_snapshot.name,
-        get_historical_risk_metrics.name,
-        evaluate_latest_risk_note.name,
-        get_capital_summary_context.name,
-        get_current_ips_context.name,
-        get_ips_check_context.name,
-        get_open_proposals_context.name,
-        get_proposal_timeline_context.name,
-    ]
+    return list(tool_names_for_profile("default"))
 
 
 def describe_agent() -> str:
