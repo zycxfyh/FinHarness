@@ -349,7 +349,9 @@ button.item.active {
   margin-top: 10px;
 }
 
-.attestation-form {
+.attestation-form,
+.scaffold-revision-form,
+.review-event-form {
   display: grid;
   gap: 10px;
   margin-top: 14px;

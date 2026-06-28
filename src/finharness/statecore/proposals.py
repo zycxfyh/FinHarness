@@ -14,7 +14,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from finharness.market_data import ROOT
-from finharness.statecore.decision_scaffold import ensure_forcing
+from finharness.statecore.decision_scaffold import ALL_FIELDS, ensure_forcing, normalize
 from finharness.statecore.models import (
     REVIEW_EVENT_KINDS,
     Attestation,
@@ -37,6 +37,15 @@ DecisionInput = Literal["approved", "rejected"]
 class GovernedProposalWrite:
     proposal: Proposal
     receipt_ref: str
+    execution_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class GovernedProposalRevisionWrite:
+    proposal: Proposal
+    receipt_ref: str
+    previous_receipt_ref: str | None
+    changed_scaffold_fields: tuple[str, ...]
     execution_allowed: bool = False
 
 
@@ -160,8 +169,9 @@ def _proposal_receipt_payload(
     *,
     content_hash: str,
     supersedes: str | None,
+    revision_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "receipt_id": receipt_id,
         "kind": "state_core_proposal",
         "created_at_utc": proposal.created_at_utc,
@@ -180,6 +190,9 @@ def _proposal_receipt_payload(
             ],
         },
     }
+    if revision_context is not None:
+        payload["revision_context"] = revision_context
+    return payload
 
 
 def _attestation_receipt_payload(
@@ -218,6 +231,7 @@ def create_governed_proposal(
     proposal_id: str | None = None,
     created_at_utc: str | None = None,
     idempotent: bool = False,
+    revision_context: dict[str, Any] | None = None,
 ) -> GovernedProposalWrite:
     """Write a governed proposal without execution authority.
 
@@ -288,7 +302,11 @@ def create_governed_proposal(
         as_of_utc=created_at,
     )
     receipt_payload = _proposal_receipt_payload(
-        proposal, receipt_id, content_hash=content_hash, supersedes=supersedes
+        proposal,
+        receipt_id,
+        content_hash=content_hash,
+        supersedes=supersedes,
+        revision_context=revision_context,
     )
     receipt_existed = receipt_path.exists()
     atomic_write_json(receipt_path, receipt_payload)
@@ -313,6 +331,90 @@ def create_governed_proposal(
     return GovernedProposalWrite(
         proposal=proposal,
         receipt_ref=receipt_ref,
+        execution_allowed=False,
+    )
+
+
+def revise_governed_proposal_scaffold(
+    *,
+    proposal_id: str,
+    scaffold_patch: dict[str, Any],
+    attester: str,
+    reason: str,
+    source_refs: list[str] | None = None,
+    engine: Engine,
+    receipt_root: str | Path,
+) -> GovernedProposalRevisionWrite:
+    """Append a human-authored decision-scaffold revision for an existing proposal.
+
+    Mature review systems keep immutable history and write a new revision with a
+    human reason instead of mutating a prior record in place. This command keeps
+    the proposal row as current state but appends a new proposal receipt whose
+    ``supersedes`` link points at the prior receipt.
+    """
+    if not attester.strip() or not reason.strip():
+        raise ValueError("proposal scaffold revision requires a named human and written reason")
+
+    unknown = sorted(set(scaffold_patch) - set(ALL_FIELDS))
+    if unknown:
+        raise ValueError(
+            "unknown decision-scaffold field(s): "
+            + ", ".join(unknown)
+            + f". Allowed fields: {', '.join(ALL_FIELDS)}."
+        )
+
+    patch = normalize(scaffold_patch)
+    if not patch:
+        raise ValueError("proposal scaffold revision requires at least one non-blank field")
+
+    with Session(engine) as session:
+        existing = session.get(Proposal, proposal_id)
+    if existing is None:
+        raise KeyError(proposal_id)
+
+    previous_scaffold = normalize(existing.decision_scaffold)
+    merged_scaffold = ensure_forcing({**previous_scaffold, **patch})
+    changed_fields = tuple(
+        field for field in ALL_FIELDS if previous_scaffold.get(field) != merged_scaffold.get(field)
+    )
+    if not changed_fields:
+        raise ValueError("proposal scaffold revision does not change any stored field")
+
+    refs = _dedupe_text(
+        [
+            *existing.source_refs,
+            *([existing.receipt_ref] if existing.receipt_ref else []),
+            *(source_refs or []),
+        ]
+    )
+    revision_context = {
+        "kind": "decision_scaffold_revision",
+        "attester": attester.strip(),
+        "reason": reason.strip(),
+        "previous_receipt_ref": existing.receipt_ref,
+        "changed_scaffold_fields": list(changed_fields),
+        "execution_allowed": False,
+    }
+    write = create_governed_proposal(
+        kind=existing.kind,
+        claim=existing.claim,
+        evidence=existing.evidence,
+        assumptions=existing.assumptions,
+        limitations=existing.limitations,
+        non_claims=existing.non_claims,
+        source_refs=refs,
+        decision_scaffold=merged_scaffold,
+        engine=engine,
+        receipt_root=receipt_root,
+        proposal_id=existing.proposal_id,
+        idempotent=True,
+        revision_context=revision_context,
+    )
+    return GovernedProposalRevisionWrite(
+        proposal=write.proposal,
+        receipt_ref=write.receipt_ref,
+        previous_receipt_ref=existing.receipt_ref,
+        changed_scaffold_fields=changed_fields,
         execution_allowed=False,
     )
 

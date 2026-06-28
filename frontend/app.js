@@ -172,6 +172,23 @@ async function apiPost(path, payload) {
   return body;
 }
 
+async function apiPatch(path, payload) {
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = body.detail ? JSON.stringify(body.detail) : response.statusText;
+    throw new Error(`${response.status} ${detail}`);
+  }
+  return body;
+}
+
 function activate(view) {
   state.activeView = view;
   for (const tab of selectors.tabs) {
@@ -425,6 +442,76 @@ function renderAttestationForm(parent, proposalId) {
         decision: data.get("decision"),
         attester: data.get("attester"),
         reason: data.get("reason"),
+      });
+      setStatus("Synced", "ok");
+      await renderProposals();
+    } catch (error) {
+      setStatus("API error", "error");
+      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
+    }
+  });
+  parent.append(form);
+}
+
+function renderDecisionScaffold(parent, proposal) {
+  const scaffold = proposal.decision_scaffold || {};
+  parent.append(textElement("h4", "", "Decision scaffold"));
+  const fields = [
+    ["Intent", scaffold.decision_intent],
+    ["Thesis", scaffold.thesis],
+    ["Do nothing", scaffold.do_nothing_case],
+    ["Risk if wrong", scaffold.risk_if_wrong],
+    ["Counter evidence", scaffold.counter_evidence],
+    ["Alternatives", scaffold.alternatives],
+    ["Position impact", scaffold.position_impact],
+    ["Tax consideration", scaffold.tax_consideration],
+    ["Review date", scaffold.review_date],
+    ["Emotion", scaffold.emotion],
+  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "");
+  if (!fields.length) {
+    parent.append(textElement("p", "empty-state", "No scaffold recorded."));
+    return;
+  }
+  for (const [key, value] of fields) {
+    const row = document.createElement("div");
+    row.className = "data-row";
+    row.append(textElement("span", "data-key", key));
+    row.append(textElement("span", "data-value", formatValue(value)));
+    parent.append(row);
+  }
+}
+
+function renderScaffoldRevisionForm(parent, proposalId) {
+  const form = document.createElement("form");
+  form.className = "scaffold-revision-form";
+  form.innerHTML = `
+    <div class="form-row">
+      <label for="scaffold-counter-evidence">Counter evidence</label>
+      <textarea id="scaffold-counter-evidence" name="counter_evidence"></textarea>
+    </div>
+    <div class="form-row">
+      <label for="scaffold-attester">Reviewer</label>
+      <input id="scaffold-attester" name="attester" autocomplete="name" />
+    </div>
+    <div class="form-row">
+      <label for="scaffold-reason">Reason</label>
+      <textarea id="scaffold-reason" name="reason"></textarea>
+    </div>
+    <button class="submit-button" type="submit">Record Scaffold Revision</button>
+  `;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!window.confirm("Record a scaffold revision? It appends a new proposal revision.")) {
+      return;
+    }
+    const data = new FormData(form);
+    try {
+      await apiPatch(`/proposals/${proposalId}/decision-scaffold`, {
+        attester: data.get("attester"),
+        reason: data.get("reason"),
+        decision_scaffold: {
+          counter_evidence: data.get("counter_evidence"),
+        },
       });
       setStatus("Synced", "ok");
       await renderProposals();
@@ -922,6 +1009,8 @@ async function renderProposalDetail() {
     ["Receipt", detail.proposal.receipt_ref],
   ]);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
+  renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
+  renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id);
   renderRevisionHistory(selectors.proposalDetail, revisionHistory);
   renderNonClaims(selectors.proposalDetail, detail.non_claims);
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));

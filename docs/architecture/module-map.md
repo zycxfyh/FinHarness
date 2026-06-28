@@ -25,7 +25,7 @@ archived  只作历史参考,不属于 mainline runtime
 | Capital Map | current | `exposure.py`, `daily_brief.py`, `daily_change_brief.py` | Read-only state views, ten-slot daily brief, data gaps explicit. |
 | IPS / Policy | current | `ips.py`, `api/routes_ips.py`, `InvestmentPolicyStatement` | L3 v0. Active IPS personalizes L4 `ObservationThresholds`; compliance check is descriptive. |
 | Decision Workflow | current | `allocation.py`, `statecore/decision_scaffold.py`, `statecore/risk_classification.py` | Capital allocation candidates become governed proposals. High-risk approval needs counter-evidence. |
-| Review System | current | `statecore/proposals.py`, `proposal_revisions.py`, `review_read.py`, `annual_review.py`, `lesson_loop.py`, `rule_change_ledger.py` | Append-only review, attestation, compare marks, annual review, lesson-to-rule. |
+| Review System | current | `statecore/proposals.py`, `proposal_revisions.py`, `review_read.py`, `annual_review.py`, `lesson_loop.py`, `rule_change_ledger.py` | Append-only review, scaffold revision, attestation, compare marks, annual review, lesson-to-rule. |
 | Research Evidence | current | `research_evidence.py`, `research_history_provider.py`, `research_enrichment.py`, `research_rigor.py`, `research_assets.py`, `redlines.py` | Historical/descriptive evidence only. Default path stays offline. |
 | External Data Adapters | thin | `data_entry.py`, `market_data.py`, `providers/ccxt_provider.py`, `portfolio_risk.py`, `metrics.py`, `data_quality.py` | Mature-wheel adapters; not source-of-truth for personal state. |
 | Personal Finance Imports | current | `beancount_adapter.py`, `personal_finance.py`, import scripts | Read-only mirror into State Core; FinHarness is not the ledger. |
