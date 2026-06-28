@@ -21,6 +21,7 @@
     <nav class="tabs" aria-label="Cockpit views">
       <button class="tab active" type="button" data-view="overview">Overview</button>
       <button class="tab" type="button" data-view="exposure">Exposure</button>
+      <button class="tab" type="button" data-view="policy">Policy</button>
       <button class="tab" type="button" data-view="proposals">Proposals</button>
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="retrospective">Retrospective</button>
@@ -61,6 +62,20 @@
           <h3 id="exposure-gaps-title">Data Gaps</h3>
           <div id="exposure-gaps" class="data-block"></div>
         </section>
+      </section>
+
+      <section id="policy-view" class="view" aria-labelledby="policy-title">
+        <h2 id="policy-title">Policy</h2>
+        <div class="policy-layout">
+          <section class="panel" aria-labelledby="policy-current-title">
+            <h3 id="policy-current-title">Investment Policy Statement</h3>
+            <div id="policy-current" class="data-block"></div>
+          </section>
+          <section class="panel" aria-labelledby="policy-check-title">
+            <h3 id="policy-check-title">Compliance Check</h3>
+            <div id="policy-check" class="data-block"></div>
+          </section>
+        </div>
       </section>
 
       <section id="proposals-view" class="view" aria-labelledby="proposals-title">

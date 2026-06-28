@@ -99,9 +99,10 @@ tasks:
       - uv run python -m unittest tests.integration_quality_governance_graph tests.integration_release_preflight_graph tests.integration_property_baseline
 
   test:frontend:
-    desc: Run jsdom-based frontend DOM tests (revision history + research evidence render)
+    desc: Run jsdom-based frontend DOM tests
     cmds:
       - node frontend/tests/revision_history.test.cjs
+      - node frontend/tests/ips_policy.test.cjs
       - node frontend/tests/research_evidence.test.cjs
       - node frontend/tests/review_workspace.test.cjs
       - node frontend/tests/review_retrospective.test.cjs
@@ -116,6 +117,7 @@ tasks:
     desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
     cmds:
       - uv run python -m unittest tests.test_governance_invariants
+      - node frontend/tests/ips_policy.test.cjs
       - node frontend/tests/research_evidence.test.cjs
       - node frontend/tests/review_workspace.test.cjs
       - node frontend/tests/review_retrospective.test.cjs

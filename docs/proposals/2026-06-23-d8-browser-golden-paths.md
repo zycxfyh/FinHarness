@@ -24,8 +24,8 @@ the **Cockpit** system through its existing read-only HTTP/static surface.
   read-only cockpit API. No new route, no new renderer, no new read model.
 - This is the **1st** browser-test harness (jsdom `.cjs` tests are the layer below, run
   via `node frontend/tests/*.test.cjs`). Not a 3rd-occurrence shared-module trigger.
-- **User-visible surface: none.** No new cockpit tab, no UI change. The 6 existing tabs
-  (Overview / Exposure / Proposals / Timeline / Retrospective / Compare,
+- **User-visible surface: none.** No new cockpit tab, no UI change. The current tabs
+  (Overview / Exposure / Policy / Proposals / Timeline / Retrospective / Compare,
   [frontend/index.html](../../frontend/index.html)) are asserted, not modified.
 
 ## 2. Current behavior
@@ -53,7 +53,7 @@ The 2–3 locked golden paths (DOM anchors are real, from `frontend/index.html`)
 
 1. **Cockpit loads, not blank**: `/cockpit/` reaches a ready state —
    `#api-status` leaves "Connecting", `#boundary-line` shows `execution_allowed=false`,
-   the default `#overview-view` is active, and the 6 tab buttons exist.
+   the default `#overview-view` is active, and the 7 tab buttons exist.
 2. **Proposals view opens (seeded)**: with a **minimal seeded proposal** in the ephemeral
    state, click the `data-view="proposals"` tab and open its detail; assert the
    detail / revision / review blocks render (not blank) with no uncaught error. Empty DB
