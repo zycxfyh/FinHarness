@@ -54,12 +54,54 @@ class AgentCapabilitiesTest(unittest.TestCase):
         for profile in list_agent_profiles():
             with self.subTest(profile=profile.name):
                 self.assertNotIn(AgentCapability.CAPITAL_EXECUTE, profile.capabilities)
+                self.assertNotIn(
+                    AgentCapability.CAPITAL_EXECUTE,
+                    profile.planned_capabilities,
+                )
                 self.assertFalse(
                     profile_allows_capability(
                         profile.name,
                         AgentCapability.CAPITAL_EXECUTE,
                     )
                 )
+
+    def test_future_capabilities_are_planned_not_active(self) -> None:
+        review_profile = get_agent_profile("review-draft")
+        self.assertNotIn(AgentCapability.CAPITAL_PROPOSE, review_profile.capabilities)
+        self.assertNotIn(AgentCapability.CAPITAL_REVIEW_NOTE, review_profile.capabilities)
+        self.assertIn(
+            AgentCapability.CAPITAL_PROPOSE,
+            review_profile.planned_capabilities,
+        )
+        self.assertIn(
+            AgentCapability.CAPITAL_REVIEW_NOTE,
+            review_profile.planned_capabilities,
+        )
+        self.assertFalse(
+            profile_allows_capability(
+                "review-draft",
+                AgentCapability.CAPITAL_PROPOSE,
+            )
+        )
+        self.assertFalse(
+            profile_allows_capability(
+                "review-draft",
+                AgentCapability.CAPITAL_REVIEW_NOTE,
+            )
+        )
+
+        simulation_profile = get_agent_profile("simulation")
+        self.assertNotIn(AgentCapability.CAPITAL_SIMULATE, simulation_profile.capabilities)
+        self.assertIn(
+            AgentCapability.CAPITAL_SIMULATE,
+            simulation_profile.planned_capabilities,
+        )
+        self.assertFalse(
+            profile_allows_capability(
+                "simulation",
+                AgentCapability.CAPITAL_SIMULATE,
+            )
+        )
 
     def test_execution_allowed_is_always_false(self) -> None:
         for profile in list_agent_profiles():

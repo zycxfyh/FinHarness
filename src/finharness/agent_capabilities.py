@@ -53,6 +53,7 @@ class AgentCapabilityProfile(BaseModel):
     name: str
     description: str
     capabilities: tuple[AgentCapability, ...]
+    planned_capabilities: tuple[AgentCapability, ...] = ()
     tool_names: tuple[str, ...]
     non_claims: tuple[str, ...] = AGENT_CAPABILITY_NON_CLAIMS
     execution_allowed: bool = False
@@ -84,6 +85,8 @@ REVIEW_DRAFT_AGENT_PROFILE = AgentCapabilityProfile(
     capabilities=(
         AgentCapability.CAPITAL_READ,
         AgentCapability.CAPITAL_EXPLAIN,
+    ),
+    planned_capabilities=(
         AgentCapability.CAPITAL_PROPOSE,
         AgentCapability.CAPITAL_REVIEW_NOTE,
     ),
@@ -99,6 +102,8 @@ SIMULATION_AGENT_PROFILE = AgentCapabilityProfile(
     capabilities=(
         AgentCapability.CAPITAL_READ,
         AgentCapability.CAPITAL_EXPLAIN,
+    ),
+    planned_capabilities=(
         AgentCapability.CAPITAL_SIMULATE,
     ),
     tool_names=CURRENT_AGENT_TOOL_NAMES,
