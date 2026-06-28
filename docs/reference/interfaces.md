@@ -15,8 +15,8 @@ Use this as a lookup page. For system ownership, read
 | StateCoreInterface | SQLite / SQLModel | Queryable mirror, DecimalText money, receipt index, atomic writes | `statecore/`, [Receipt Reference](receipts.md) |
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
-| ProposalInterface | Local governed commands | Proposal creation, decision scaffold, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
-| ReviewInterface | Local governed commands | Attestation, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
+| ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
+| ReviewInterface | Local governed commands | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
 | AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Tool-bound explanation/eval surfaces, no source-of-truth writes | `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |

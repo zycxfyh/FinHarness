@@ -22,6 +22,7 @@ from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
     create_governed_review_event,
+    revise_governed_proposal_scaffold,
 )
 from finharness.statecore.risk_classification import HighRiskConfirmationError
 from finharness.statecore.store import StateCoreStoreError
@@ -109,6 +110,35 @@ class ProposalRevisionResponse(BaseModel):
     non_claims: tuple[str, ...] = (
         "Proposal revisions are historical evidence only.",
         "Revision history is not execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+
+
+class ProposalScaffoldRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attester: str
+    reason: str
+    decision_scaffold: dict[str, Any]
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator("attester", "reason")
+    @classmethod
+    def require_human_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("proposal scaffold revision requires a named human and written reason")
+        return value
+
+
+class ProposalScaffoldRevisionResponse(BaseModel):
+    proposal: Proposal
+    receipt_ref: str
+    previous_receipt_ref: str | None
+    changed_scaffold_fields: tuple[str, ...]
+    non_claims: tuple[str, ...] = (
+        "Proposal scaffold revisions are historical review evidence.",
+        "Counter-evidence enables human confirmation checks; it is not execution authorization.",
         "Not investment advice.",
     )
     execution_allowed: bool = False
@@ -246,6 +276,44 @@ async def get_proposal_revisions(
     return ProposalRevisionResponse(
         proposal_id=proposal.proposal_id,
         revisions=_proposal_revision_chain(proposal, receipt_root=receipt_root),
+        execution_allowed=False,
+    )
+
+
+@router.patch(
+    "/proposals/{proposal_id}/decision-scaffold",
+    response_model=ProposalScaffoldRevisionResponse,
+)
+async def revise_proposal_decision_scaffold(
+    proposal_id: str,
+    request: ProposalScaffoldRevisionRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ProposalScaffoldRevisionResponse:
+    try:
+        result = revise_governed_proposal_scaffold(
+            proposal_id=proposal_id,
+            scaffold_patch=request.decision_scaffold,
+            attester=request.attester.strip(),
+            reason=request.reason.strip(),
+            source_refs=list(request.source_refs),
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"proposal not found: {proposal_id}",
+        ) from exc
+    except (DecisionScaffoldError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StateCoreStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ProposalScaffoldRevisionResponse(
+        proposal=result.proposal,
+        receipt_ref=result.receipt_ref,
+        previous_receipt_ref=result.previous_receipt_ref,
+        changed_scaffold_fields=result.changed_scaffold_fields,
         execution_allowed=False,
     )
 

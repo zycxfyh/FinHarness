@@ -23,6 +23,9 @@ class AsgiTestClient:
     def post(self, path: str, **kwargs: Any) -> httpx.Response:
         return asyncio.run(self._request("POST", path, **kwargs))
 
+    def patch(self, path: str, **kwargs: Any) -> httpx.Response:
+        return asyncio.run(self._request("PATCH", path, **kwargs))
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         transport = httpx.ASGITransport(app=self.app)
         async with httpx.AsyncClient(

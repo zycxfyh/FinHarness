@@ -54,15 +54,16 @@ domain model / read model / write(command) model / adapters / invariants
 
 ### 5. Review System
 
-- **职责**:人类对 governed proposal 的复核:attestation、annotation、archive、
-  reopen、compare mark、annual review、lesson-to-rule。
+- **职责**:人类对 governed proposal 的复核:attestation、decision-scaffold
+  revision、annotation、archive、reopen、compare mark、annual review、lesson-to-rule。
 - **domain**:`statecore/proposals.py`、`statecore/proposal_revisions.py`、
   `review_read.py`、`annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py`。
 - **read model**:`read_proposal_timeline`、`read_compare_marks`、review routes。
-- **write(command)**:`create_governed_attestation`、
+- **write(command)**:`create_governed_attestation`、`revise_governed_proposal_scaffold`、
   `create_governed_review_event`、`task review:annual`、`task lessons:*`。
 - **invariants**:append-only;attestation 是 decision of record,不是 execution
-  authorization;receipt 写失败必须清理 queryable mirror。
+  authorization;scaffold revision 只补 review evidence 和 `counter_evidence`,
+  不授权执行;receipt 写失败必须清理 queryable mirror。
 
 ### 6. Research Evidence
 

@@ -43,8 +43,10 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
 2. **L5**:把 Agent 接到 StateCore/IPS/Proposal(只解释,不计算 source-of-truth,不授权执行)。
 3. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
    需先把它重构成可接受 hypothetical 持仓集的形态)。
-4. **P5 follow-up**:高风险 proposal 若缺 `counter_evidence`,可以记录和拒绝;
-   若之后要批准,需要 proposal revision / scaffold update 路径。
+
+P5 follow-up 已有实现路径:高风险 proposal 若缺 `counter_evidence`,可以记录和拒绝;
+若之后要批准,先通过 proposal scaffold revision 补 `counter_evidence`,再走 human
+attestation。该 revision 是 review evidence,不是 execution authorization。
 
 ## 不变量(跨层)
 
