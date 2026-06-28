@@ -79,9 +79,14 @@ domain model / read model / write(command) model / adapters / invariants
 - **职责**:给人解释状态、IPS policy、proposal/review timeline、风险笔记和工具结果。
 - **read model**:`agent_context.py` 中的 bounded context packs:
   capital summary、current IPS、IPS check、open proposals、proposal timeline。
-- **domain/adapters**:`agent_context.py`、`agent_tools.py`、`hermes_bridge.py`。
-- **invariants**:Agent 只通过 tool 和最小上下文读数据;不裸读全库;不写核心状态;
-  不计算 source-of-truth;不授权执行。
+- **domain/adapters**:`agent_context.py`、`agent_capabilities.py`、
+  `agent_tools.py`、`hermes_bridge.py`。
+- **tool posture**:`agent_capabilities.py` 定义显式 capability profiles;default
+  profile 是 read/explain,未来 propose/review-note/simulate profile 只能通过新增
+  工具、测试和 receipt-backed command path 扩展。
+- **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;
+  capability profiles 不是 permission bypass;default profile 不写核心状态、不计算
+  source-of-truth、不授权执行;没有 execution profile。
 
 ### 8. Cockpit / Product API
 

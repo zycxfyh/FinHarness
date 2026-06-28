@@ -26,7 +26,7 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
 | **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
-| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_tools.py` | ✅ v0:只读 context packs 已接 StateCore/IPS/Proposal/Review |
+| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_capabilities.py`、`agent_tools.py` | ✅ v0:只读 context packs + default read/explain capability profile |
 | **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | (无 ActionIntent / PreTradeImpactReport) | ❌ gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
 | **L8** | Cockpit / API 产品表面 | 用户怎么用这一切? | FastAPI(`api/app.py` + routers)、vanilla JS cockpit | ✅ 有 |

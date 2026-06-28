@@ -148,19 +148,21 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Tool-mediated explanations over read-only Capital OS context packs; Agent does not own source-of-truth.
+    summary: Profile-selected Agent tools over read-only Capital OS context packs; default posture is read/explain and does not own source-of-truth.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
     runtime_roots:
+      - src/finharness/agent_capabilities.py
       - src/finharness/agent_context.py
       - src/finharness/agent_tools.py
       - src/finharness/hermes_bridge.py
-    mature_posture: Hermes-style spec, availability, and output-budget ideas; OpenAI Agents/tool calling remains an explanation adapter, not a state writer.
+    mature_posture: Hermes-style spec, availability, output-budget, and capability-profile ideas; profiles select visible tools and are not permission bypasses.
     checks:
+      - uv run python -m unittest tests.test_agent_capabilities
       - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools
-    upgrade_trigger: Agent explanations need multi-step evidence planning, eval traces, or richer L5/L6 simulation handoff.
+    upgrade_trigger: Future append-only proposal/review/simulation tools need explicit profiles, tests, and receipt-backed command paths.
 
   - id: cockpit_api
     name: Cockpit / API
