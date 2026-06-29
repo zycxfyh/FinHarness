@@ -83,11 +83,13 @@ domain model / read model / write(command) model / adapters / invariants
   `agent_tools.py`、`hermes_bridge.py`。
 - **tool posture**:`agent_capabilities.py` 定义显式 capability profiles;default
   profile 是 read/explain;planned capabilities 只表达路线图,不能被 runtime 当成权限;
-  未来 propose/review-note/simulate 只能通过新增工具、测试和 receipt-backed command
-  path 变成 active capabilities。
+  review-draft profile 允许 Agent 创建 append-only governed proposal draft;未来
+  review-note/simulate 只能通过新增工具、测试和 receipt-backed command path 变成
+  active capabilities。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;
-  capability profiles 不是 permission bypass;default profile 不写核心状态、不计算
-  source-of-truth、不授权执行;没有 execution profile。
+  capability profiles 不是 permission bypass;Agent draft proposal 是 review object,
+  不是 approval、recommendation 或 execution authorization;default profile 不写核心状态;
+  没有 live order、transfer、broker write API、receipt 删除/覆盖或 Agent approval。
 
 ### 8. Cockpit / Product API
 

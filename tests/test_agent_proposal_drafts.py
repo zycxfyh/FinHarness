@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+
+from finharness.agent_context import (
+    build_open_proposals_context,
+    build_proposal_timeline_context,
+)
+from finharness.agent_tools import (
+    AGENT_PROPOSAL_DRAFT_NON_CLAIMS,
+    draft_governed_proposal_from_context_payload,
+)
+from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.proposals import create_governed_attestation
+from finharness.statecore.risk_classification import HighRiskConfirmationError
+from finharness.statecore.store import read_all
+from tests._scaffold import VALID_SCAFFOLD
+from tests._statecore_fixtures import StateCoreFixture
+
+
+class AgentProposalDraftTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixture = StateCoreFixture()
+        self.engine = self.fixture.engine
+        self.receipt_root = self.fixture.receipt_root
+        self.addCleanup(self.fixture.cleanup)
+
+    def _draft(self, **overrides: object) -> dict[str, object]:
+        payload = {
+            "kind": "cash_buffer_low",
+            "claim": "Review the cash buffer because runway is below policy.",
+            "evidence": {"runway_months": 2.0},
+            "decision_scaffold": VALID_SCAFFOLD,
+            "source_refs": ["context://capital_summary"],
+            "reason": "Agent surfaced a review draft from bounded context.",
+            "engine": self.engine,
+            "receipt_root": self.receipt_root,
+        }
+        payload.update(overrides)
+        return draft_governed_proposal_from_context_payload(**payload)  # type: ignore[arg-type]
+
+    def test_rejects_blank_claim(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-blank claim"):
+            self._draft(claim="   ")
+
+    def test_rejects_blank_reason(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-blank reason"):
+            self._draft(reason="   ")
+
+    def test_rejects_empty_source_refs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least one source ref"):
+            self._draft(source_refs=[])
+
+    def test_rejects_direct_execution_kind(self) -> None:
+        for kind in ("execute_order", "fund_transfer", "broker_trade"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(
+                ValueError, "execution/order/transfer"
+            ):
+                self._draft(kind=kind)
+
+    def test_rejects_execution_allowed_attempts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "execution_allowed=true"):
+            self._draft(evidence={"execution_allowed": True})
+        with self.assertRaisesRegex(ValueError, "execution_allowed=true"):
+            self._draft(decision_scaffold={**VALID_SCAFFOLD, "execution_allowed": True})
+
+    def test_rejects_profile_without_capital_propose(self) -> None:
+        with self.assertRaisesRegex(ValueError, "does not allow capital-propose"):
+            self._draft(profile_name="default")
+
+    def test_creates_governed_proposal_receipt_without_execution(self) -> None:
+        body = self._draft()
+
+        self.assertTrue(body["requires_human_review"])
+        self.assertFalse(body["execution_allowed"])
+        self.assertEqual(body["authority_level"], "needs_human_confirm")
+        self.assertEqual(body["non_claims"], list(AGENT_PROPOSAL_DRAFT_NON_CLAIMS))
+        self.assertEqual(body["source_refs"], ["context://capital_summary"])
+
+        proposals = read_all(Proposal, engine=self.engine)
+        self.assertEqual(len(proposals), 1)
+        self.assertFalse(proposals[0].execution_allowed)
+
+        receipt_path = Path(str(body["receipt_ref"]))
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertFalse(payload["governance"]["execution_allowed"])
+        self.assertTrue(payload["governance"]["human_review_required"])
+        self.assertEqual(payload["revision_context"]["kind"], "agent_proposal_draft")
+        self.assertEqual(payload["revision_context"]["profile"], "review-draft")
+
+    def test_created_proposal_appears_in_open_context(self) -> None:
+        body = self._draft()
+
+        context = build_open_proposals_context(self.engine).model_dump(mode="json")
+
+        self.assertTrue(context["available"])
+        self.assertIn(
+            body["proposal_id"],
+            {item["proposal_id"] for item in context["summary"]["items"]},
+        )
+
+    def test_created_proposal_timeline_context_is_readable(self) -> None:
+        body = self._draft()
+
+        context = build_proposal_timeline_context(
+            self.engine,
+            str(body["proposal_id"]),
+        ).model_dump(mode="json")
+
+        self.assertTrue(context["available"])
+        self.assertEqual(context["summary"]["proposal_id"], body["proposal_id"])
+        self.assertEqual(context["summary"]["entry_count"], 0)
+        self.assertFalse(context["execution_allowed"])
+
+    def test_high_risk_draft_cannot_bypass_counter_evidence_approval_gate(self) -> None:
+        body = self._draft(
+            kind="concentration_high",
+            claim="Review concentration above the user's threshold.",
+            evidence={"top_holding_weight": 0.8},
+        )
+
+        with self.assertRaises(HighRiskConfirmationError):
+            create_governed_attestation(
+                proposal_id=str(body["proposal_id"]),
+                decision="approved",
+                attester="Jane Control",
+                reason="Attempted approval before counter-evidence.",
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(read_all(Attestation, engine=self.engine), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

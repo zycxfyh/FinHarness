@@ -7,11 +7,16 @@ import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from agents import Agent, function_tool
 from sqlalchemy.engine import Engine
 
-from finharness.agent_capabilities import tool_names_for_profile
+from finharness.agent_capabilities import (
+    AgentCapability,
+    profile_allows_capability,
+    tool_names_for_profile,
+)
 from finharness.agent_context import (
     AgentContextPack,
     build_capital_summary_context,
@@ -21,8 +26,11 @@ from finharness.agent_context import (
     build_proposal_timeline_context,
     unavailable_context_pack,
 )
+from finharness.config import load_settings
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
+from finharness.statecore.decision_scaffold import ensure_forcing
+from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import StateCoreStoreError, open_state_core
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,6 +44,22 @@ Max drawdown and volatility can change when market regimes, liquidity, or data f
 Transaction costs, slippage, taxes, and venue constraints must be reviewed before any paper
 or live use.
 """
+AGENT_PROPOSAL_DRAFT_NON_CLAIMS = (
+    "Agent-created proposals are review drafts, not recommendations.",
+    "Human review is required before any decision of record.",
+    "Not execution authorization.",
+    "Not investment advice.",
+)
+DANGEROUS_PROPOSAL_KIND_TERMS = (
+    "execute",
+    "execution",
+    "order",
+    "transfer",
+    "trade",
+    "broker",
+    "action_intent",
+    "fund",
+)
 
 
 @function_tool
@@ -180,6 +204,134 @@ def proposal_timeline_context_payload(
     )
 
 
+def draft_governed_proposal_from_context_payload(
+    *,
+    kind: str,
+    claim: str,
+    evidence: dict[str, Any],
+    decision_scaffold: dict[str, Any],
+    source_refs: list[str],
+    reason: str,
+    assumptions: dict[str, Any] | None = None,
+    limitations: dict[str, Any] | None = None,
+    context_pack_refs: list[str] | None = None,
+    profile_name: str = "review-draft",
+    engine: Engine | None = None,
+    receipt_root: str | Path | None = None,
+) -> dict[str, object]:
+    """Create an append-only governed proposal draft through the Agent profile gate."""
+    _validate_agent_proposal_draft(
+        profile_name=profile_name,
+        kind=kind,
+        claim=claim,
+        reason=reason,
+        evidence=evidence,
+        decision_scaffold=decision_scaffold,
+        assumptions=assumptions or {},
+        limitations=limitations or {},
+        source_refs=source_refs,
+    )
+    normalized_scaffold = ensure_forcing(decision_scaffold)
+    refs = _dedupe_refs([*source_refs, *(context_pack_refs or [])])
+    revision_context = {
+        "kind": "agent_proposal_draft",
+        "profile": profile_name,
+        "reason": reason.strip(),
+        "context_pack_refs": list(context_pack_refs or []),
+        "requires_human_review": True,
+        "execution_allowed": False,
+    }
+    owned_engine = engine is None
+    active_engine = engine or open_state_core()
+    active_receipt_root = Path(receipt_root or load_settings().receipt_root)
+    try:
+        write = create_governed_proposal(
+            kind=kind.strip(),
+            claim=claim.strip(),
+            evidence=evidence,
+            assumptions=assumptions or {},
+            limitations=limitations or {},
+            non_claims=list(AGENT_PROPOSAL_DRAFT_NON_CLAIMS),
+            source_refs=refs,
+            decision_scaffold=normalized_scaffold,
+            engine=active_engine,
+            receipt_root=active_receipt_root,
+            revision_context=revision_context,
+        )
+    finally:
+        if owned_engine:
+            active_engine.dispose()
+    return {
+        "proposal_id": write.proposal.proposal_id,
+        "kind": write.proposal.kind,
+        "receipt_ref": write.receipt_ref,
+        "authority_level": write.proposal.authority_level,
+        "requires_human_review": True,
+        "execution_allowed": False,
+        "non_claims": write.proposal.non_claims,
+        "source_refs": write.proposal.source_refs,
+    }
+
+
+def _validate_agent_proposal_draft(
+    *,
+    profile_name: str,
+    kind: str,
+    claim: str,
+    reason: str,
+    evidence: dict[str, Any],
+    decision_scaffold: dict[str, Any],
+    assumptions: dict[str, Any],
+    limitations: dict[str, Any],
+    source_refs: list[str],
+) -> None:
+    if not profile_allows_capability(profile_name, AgentCapability.CAPITAL_PROPOSE):
+        raise ValueError(f"agent profile {profile_name!r} does not allow capital-propose")
+    if not claim.strip():
+        raise ValueError("agent proposal draft requires a non-blank claim")
+    if not reason.strip():
+        raise ValueError("agent proposal draft requires a non-blank reason")
+    if not _dedupe_refs(source_refs):
+        raise ValueError("agent proposal draft requires at least one source ref")
+    kind_text = kind.strip().lower()
+    if not kind_text:
+        raise ValueError("agent proposal draft requires a non-blank kind")
+    if any(term in kind_text for term in DANGEROUS_PROPOSAL_KIND_TERMS):
+        raise ValueError("agent proposal draft kind cannot request execution/order/transfer")
+    for name, value in (
+        ("evidence", evidence),
+        ("decision_scaffold", decision_scaffold),
+        ("assumptions", assumptions),
+        ("limitations", limitations),
+    ):
+        if _contains_execution_allowed_true(value):
+            raise ValueError(f"{name} cannot set execution_allowed=true")
+
+
+def _contains_execution_allowed_true(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (key == "execution_allowed" and child is True)
+            or _contains_execution_allowed_true(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_execution_allowed_true(child) for child in value)
+    return False
+
+
+def _dedupe_refs(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
 @function_tool
 def get_capital_summary_context() -> dict[str, object]:
     """Read the bounded Capital OS exposure context pack."""
@@ -210,6 +362,34 @@ def get_proposal_timeline_context(proposal_id: str, limit: int = 20) -> dict[str
     return proposal_timeline_context_payload(proposal_id=proposal_id, limit=limit)
 
 
+@function_tool(strict_mode=False)
+def draft_governed_proposal_from_context(
+    kind: str,
+    claim: str,
+    evidence: dict[str, Any],
+    decision_scaffold: dict[str, Any],
+    source_refs: list[str],
+    reason: str,
+    assumptions: dict[str, Any] | None = None,
+    limitations: dict[str, Any] | None = None,
+    context_pack_refs: list[str] | None = None,
+    profile_name: str = "review-draft",
+) -> dict[str, object]:
+    """Create a receipt-backed governed proposal draft for human review."""
+    return draft_governed_proposal_from_context_payload(
+        kind=kind,
+        claim=claim,
+        evidence=evidence,
+        decision_scaffold=decision_scaffold,
+        source_refs=source_refs,
+        reason=reason,
+        assumptions=assumptions,
+        limitations=limitations,
+        context_pack_refs=context_pack_refs,
+        profile_name=profile_name,
+    )
+
+
 finance_research_agent = Agent(
     name="Finance Research Harness Agent",
     instructions=(
@@ -234,8 +414,8 @@ finance_research_agent = Agent(
 )
 
 
-def tool_names() -> list[str]:
-    return list(tool_names_for_profile("default"))
+def tool_names(profile_name: str = "default") -> list[str]:
+    return list(tool_names_for_profile(profile_name))
 
 
 def describe_agent() -> str:
