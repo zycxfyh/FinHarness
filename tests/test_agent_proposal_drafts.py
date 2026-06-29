@@ -156,6 +156,20 @@ class AgentProposalDraftTest(unittest.TestCase):
         self.assertIn("not approval", " ".join(agent_review["non_claims"]).lower())
         self.assertEqual(listed[0]["agent_review"]["created_by"], "agent")
 
+        queue_checks = detail["queue_checks"]
+        self.assertEqual(queue_checks["created_by"], "agent")
+        self.assertEqual(queue_checks["active_profile"], "review-draft")
+        self.assertEqual(queue_checks["check_state"], "block")
+        self.assertEqual(queue_checks["source_refs"], body["source_refs"])
+        self.assertEqual(queue_checks["context_pack_refs"], ["context://capital_summary"])
+        self.assertFalse(queue_checks["execution_allowed"])
+        self.assertFalse(queue_checks["authority_transition"])
+        self.assertIn("human_review_required", {item["code"] for item in queue_checks["blocks"]})
+        self.assertEqual(listed[0]["queue_checks"]["created_by"], "agent")
+
+        explicit = client.get(f"/proposals/{body['proposal_id']}/queue-checks").json()
+        self.assertEqual(explicit, queue_checks)
+
     def test_api_review_surface_keeps_agent_source_refs_from_draft_receipt(self) -> None:
         body = self._draft(
             context_pack_refs=["context://capital_summary"],
@@ -191,6 +205,50 @@ class AgentProposalDraftTest(unittest.TestCase):
         self.assertEqual(agent_review["source_refs"], body["source_refs"])
         self.assertNotIn("human://review_note", agent_review["source_refs"])
 
+    def test_agent_queue_checks_report_duplicate_open_drafts(self) -> None:
+        first = self._draft()
+        second = self._draft()
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+
+        checks = client.get(f"/proposals/{second['proposal_id']}/queue-checks").json()
+
+        duplicate_blocks = [
+            item for item in checks["blocks"] if item["code"] == "duplicate_proposal"
+        ]
+        self.assertEqual(checks["check_state"], "block")
+        self.assertEqual(len(duplicate_blocks), 1)
+        self.assertIn(first["proposal_id"], duplicate_blocks[0]["related_proposal_ids"])
+
+    def test_agent_queue_checks_clear_human_review_required_after_attestation(self) -> None:
+        body = self._draft()
+        create_governed_attestation(
+            proposal_id=str(body["proposal_id"]),
+            decision="rejected",
+            attester="Jane Control",
+            reason="Recorded human review; this is not execution authorization.",
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+
+        checks = client.get(f"/proposals/{body['proposal_id']}/queue-checks").json()
+
+        self.assertEqual(checks["check_state"], "pass")
+        self.assertFalse(checks["open_for_review"])
+        self.assertNotIn("human_review_required", {item["code"] for item in checks["blocks"]})
+        self.assertFalse(checks["execution_allowed"])
+        self.assertFalse(checks["authority_transition"])
+
     def test_high_risk_draft_cannot_bypass_counter_evidence_approval_gate(self) -> None:
         body = self._draft(
             kind="concentration_high",
@@ -208,6 +266,15 @@ class AgentProposalDraftTest(unittest.TestCase):
                 receipt_root=self.receipt_root,
             )
         self.assertEqual(read_all(Attestation, engine=self.engine), [])
+
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+        checks = client.get(f"/proposals/{body['proposal_id']}/queue-checks").json()
+        self.assertIn("counter_evidence_needed", {item["code"] for item in checks["blocks"]})
 
 
 if __name__ == "__main__":

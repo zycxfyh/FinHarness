@@ -420,6 +420,66 @@ function renderAgentReviewSurface(parent, agentReview) {
   parent.append(section);
 }
 
+function renderProposalQueueChecks(parent, queueChecks) {
+  if (!queueChecks) {
+    return;
+  }
+  const section = document.createElement("section");
+  section.className = "detail-section";
+  section.append(textElement("h4", "", "Proposal queue checks"));
+  const rows = document.createElement("div");
+  renderRows(rows, [
+    ["State", queueChecks.check_state],
+    ["Created by", queueChecks.created_by],
+    ["Active profile", queueChecks.active_profile || "n/a"],
+    ["Open for review", queueChecks.open_for_review],
+    ["Requires human review", queueChecks.requires_human_review],
+    ["Execution allowed", queueChecks.execution_allowed],
+    ["Authority transition", queueChecks.authority_transition],
+  ]);
+  section.append(rows);
+
+  function renderFindings(title, findings) {
+    if (!findings || !findings.length) {
+      return;
+    }
+    section.append(textElement("h5", "", title));
+    for (const finding of findings) {
+      const item = document.createElement("div");
+      item.className = "item";
+      item.append(
+        textElement(
+          "span",
+          "item-title",
+          `${finding.severity || "check"}: ${finding.code || "unknown"}`,
+        ),
+      );
+      item.append(textElement("span", "item-meta", finding.message || ""));
+      if (finding.recovery_hint) {
+        item.append(textElement("span", "item-meta", finding.recovery_hint));
+      }
+      if (finding.related_proposal_ids && finding.related_proposal_ids.length) {
+        item.append(
+          textElement(
+            "span",
+            "item-meta",
+            `related: ${finding.related_proposal_ids.join(", ")}`,
+          ),
+        );
+      }
+      section.append(item);
+    }
+  }
+
+  renderFindings("Blocks", queueChecks.blocks);
+  renderFindings("Warnings", queueChecks.warnings);
+  renderTextList(section, "Source refs", queueChecks.source_refs);
+  renderTextList(section, "Receipt refs", queueChecks.receipt_refs);
+  renderTextList(section, "Context packs", queueChecks.context_pack_refs);
+  renderNonClaims(section, queueChecks.non_claims);
+  parent.append(section);
+}
+
 function renderAttestations(parent, attestations) {
   if (!attestations.length) {
     parent.append(textElement("p", "empty-state", "No attestations recorded."));
@@ -1036,6 +1096,7 @@ async function renderProposalDetail() {
     ["Receipt", detail.proposal.receipt_ref],
   ]);
   renderAgentReviewSurface(selectors.proposalDetail, detail.agent_review);
+  renderProposalQueueChecks(selectors.proposalDetail, detail.queue_checks);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
   renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
   renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id);

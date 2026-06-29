@@ -12,6 +12,10 @@ from sqlmodel import Session, select
 
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.market_data import ROOT
+from finharness.proposal_queue_checks import (
+    ProposalQueueChecks,
+    build_proposal_queue_checks,
+)
 from finharness.review_read import read_proposal_timeline
 from finharness.statecore.decision_scaffold import DecisionScaffoldError
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
@@ -114,6 +118,7 @@ class ProposalReviewResponse(BaseModel):
     attestations: list[Attestation]
     open_for_review: bool
     agent_review: AgentReviewSurface | None = None
+    queue_checks: ProposalQueueChecks
     non_claims: tuple[str, ...] = (
         "Proposal is review evidence only.",
         "Human attestation is not execution authorization.",
@@ -274,17 +279,29 @@ def _proposal_review_response(
     proposal: Proposal,
     attestations: list[Attestation],
     *,
+    engine: EngineDependency,
     receipt_root: Path,
 ) -> ProposalReviewResponse:
     open_for_review = not attestations
+    agent_review = _agent_review_surface(
+        proposal,
+        receipt_root=receipt_root,
+        open_for_review=open_for_review,
+    )
     return ProposalReviewResponse(
         proposal=proposal,
         attestations=attestations,
         open_for_review=open_for_review,
-        agent_review=_agent_review_surface(
+        agent_review=agent_review,
+        queue_checks=build_proposal_queue_checks(
             proposal,
-            receipt_root=receipt_root,
+            engine=engine,
             open_for_review=open_for_review,
+            created_by="agent" if agent_review else "human_or_system",
+            active_profile=agent_review.active_profile if agent_review else None,
+            source_refs=list(proposal.source_refs),
+            receipt_refs=[proposal.receipt_ref] if proposal.receipt_ref else [],
+            context_pack_refs=agent_review.context_pack_refs if agent_review else [],
         ),
         execution_allowed=False,
     )
@@ -316,6 +333,7 @@ async def list_proposals(
                 _proposal_review_response(
                     proposal,
                     attestations,
+                    engine=engine,
                     receipt_root=receipt_root,
                 )
             )
@@ -349,8 +367,34 @@ async def get_proposal(
     return _proposal_review_response(
         proposal,
         attestations,
+        engine=engine,
         receipt_root=receipt_root,
     )
+
+
+@router.get(
+    "/proposals/{proposal_id}/queue-checks",
+    response_model=ProposalQueueChecks,
+)
+async def get_proposal_queue_checks(
+    proposal_id: str,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ProposalQueueChecks:
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+        if proposal is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"proposal not found: {proposal_id}",
+            )
+        attestations = _proposal_attestations(proposal_id, session=session)
+    return _proposal_review_response(
+        proposal,
+        attestations,
+        engine=engine,
+        receipt_root=receipt_root,
+    ).queue_checks
 
 
 @router.get("/proposals/{proposal_id}/revisions", response_model=ProposalRevisionResponse)
