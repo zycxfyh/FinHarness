@@ -164,7 +164,20 @@ class AgentProposalDraftTest(unittest.TestCase):
         self.assertEqual(queue_checks["context_pack_refs"], ["context://capital_summary"])
         self.assertFalse(queue_checks["execution_allowed"])
         self.assertFalse(queue_checks["authority_transition"])
-        self.assertIn("human_review_required", {item["code"] for item in queue_checks["blocks"]})
+        self.assertEqual(
+            queue_checks["blocked_transitions"],
+            ["human_attestation", "authority_transition", "execution"],
+        )
+        human_review_block = next(
+            item
+            for item in queue_checks["blocks"]
+            if item["code"] == "human_review_required"
+        )
+        self.assertEqual(
+            human_review_block["blocked_transitions"],
+            ["human_attestation", "authority_transition", "execution"],
+        )
+        self.assertNotIn("review_entry", human_review_block["blocked_transitions"])
         self.assertEqual(listed[0]["queue_checks"]["created_by"], "agent")
 
         explicit = client.get(f"/proposals/{body['proposal_id']}/queue-checks").json()
@@ -221,7 +234,9 @@ class AgentProposalDraftTest(unittest.TestCase):
             item for item in checks["blocks"] if item["code"] == "duplicate_proposal"
         ]
         self.assertEqual(checks["check_state"], "block")
+        self.assertIn("review_entry", checks["blocked_transitions"])
         self.assertEqual(len(duplicate_blocks), 1)
+        self.assertIn("review_entry", duplicate_blocks[0]["blocked_transitions"])
         self.assertIn(first["proposal_id"], duplicate_blocks[0]["related_proposal_ids"])
 
     def test_agent_queue_checks_clear_human_review_required_after_attestation(self) -> None:
@@ -245,6 +260,7 @@ class AgentProposalDraftTest(unittest.TestCase):
 
         self.assertEqual(checks["check_state"], "pass")
         self.assertFalse(checks["open_for_review"])
+        self.assertEqual(checks["blocked_transitions"], [])
         self.assertNotIn("human_review_required", {item["code"] for item in checks["blocks"]})
         self.assertFalse(checks["execution_allowed"])
         self.assertFalse(checks["authority_transition"])
@@ -274,7 +290,15 @@ class AgentProposalDraftTest(unittest.TestCase):
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
         checks = client.get(f"/proposals/{body['proposal_id']}/queue-checks").json()
-        self.assertIn("counter_evidence_needed", {item["code"] for item in checks["blocks"]})
+        counter_evidence_block = next(
+            item
+            for item in checks["blocks"]
+            if item["code"] == "counter_evidence_needed"
+        )
+        self.assertEqual(
+            counter_evidence_block["blocked_transitions"],
+            ["human_attestation", "authority_transition", "execution"],
+        )
 
 
 if __name__ == "__main__":

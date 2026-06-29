@@ -39,8 +39,10 @@ Use this as a lookup page. For system ownership, read
   active profile, context/source refs, receipt ref, and human-review state) in
   proposal review responses.
 - Agent-created proposal drafts expose read-only queue checks (`pass`/`warn`/`block`,
-  block codes, recovery hints, source refs, receipt refs) without granting approval,
-  attestation, or execution authority.
+  block codes, blocked transition scope, recovery hints, source refs, receipt
+  refs) without granting approval, attestation, or execution authority. A
+  `human_review_required` block means the draft must move through human review;
+  it is not a reason to keep the draft out of the review queue.
 - There is no Agent approval, live order, fund transfer, broker write API, or
   receipt deletion/overwrite interface.
 - Any new production dependency still needs explicit user approval before being

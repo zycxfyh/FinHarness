@@ -71,15 +71,16 @@ This reference supports a staged route:
 ```text
 #62 Agent proposal draft review surface
 #63 Proposal draft queue checks
-#64 ReviewTask / EvidenceRequest lifecycle
-#65 ToolEntry metadata + check_fn
-#66 Evidence Provider Registry
-#67 Capital Context Budget / Projection
-#68 Structured Error Taxonomy
-#69 Workspace Scope / Mutation Semantics
-#70 Capital Control Plane v0
-#71 Capital Security Model / Trust Boundary v0
-#72 Capital Lifecycle / Release Governance v0
+#64 Queue check transition scope
+#65 ReviewTask / EvidenceRequest lifecycle
+#66 ToolEntry metadata + check_fn
+#67 Evidence Provider Registry
+#68 Capital Context Budget / Projection
+#69 Structured Error Taxonomy
+#70 Workspace Scope / Mutation Semantics
+#71 Capital Control Plane v0
+#72 Capital Security Model / Trust Boundary v0
+#73 Capital Lifecycle / Release Governance v0
 ```
 
 The route should keep adding reviewability and reliability before adding broader

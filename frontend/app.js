@@ -436,6 +436,12 @@ function renderProposalQueueChecks(parent, queueChecks) {
     ["Requires human review", queueChecks.requires_human_review],
     ["Execution allowed", queueChecks.execution_allowed],
     ["Authority transition", queueChecks.authority_transition],
+    [
+      "Blocked transitions",
+      queueChecks.blocked_transitions && queueChecks.blocked_transitions.length
+        ? queueChecks.blocked_transitions.join(", ")
+        : "none",
+    ],
   ]);
   section.append(rows);
 
@@ -457,6 +463,15 @@ function renderProposalQueueChecks(parent, queueChecks) {
       item.append(textElement("span", "item-meta", finding.message || ""));
       if (finding.recovery_hint) {
         item.append(textElement("span", "item-meta", finding.recovery_hint));
+      }
+      if (finding.blocked_transitions && finding.blocked_transitions.length) {
+        item.append(
+          textElement(
+            "span",
+            "item-meta",
+            `blocks: ${finding.blocked_transitions.join(", ")}`,
+          ),
+        );
       }
       if (finding.related_proposal_ids && finding.related_proposal_ids.length) {
         item.append(

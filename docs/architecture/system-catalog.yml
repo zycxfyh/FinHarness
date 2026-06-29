@@ -148,7 +148,7 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over Capital OS context packs; runtime registry/factory maps profiles to actual SDK tools, default posture is read/explain, and review-draft can create append-only governed proposal drafts plus read-only queue checks for human review.
+    summary: Profile-selected Agent tools over Capital OS context packs; runtime registry/factory maps profiles to actual SDK tools, default posture is read/explain, and review-draft can create append-only governed proposal drafts plus read-only queue checks with explicit transition scope for human review.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
