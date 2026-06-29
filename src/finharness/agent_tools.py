@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -50,15 +51,17 @@ AGENT_PROPOSAL_DRAFT_NON_CLAIMS = (
     "Not execution authorization.",
     "Not investment advice.",
 )
-DANGEROUS_PROPOSAL_KIND_TERMS = (
-    "execute",
-    "execution",
-    "order",
-    "transfer",
-    "trade",
-    "broker",
-    "action_intent",
-    "fund",
+AGENT_DRAFT_BLOCKED_KIND_TOKENS = frozenset(
+    {
+        "execute",
+        "execution",
+        "order",
+        "transfer",
+        "trade",
+        "broker",
+        "action",
+        "intent",
+    }
 )
 
 
@@ -296,7 +299,7 @@ def _validate_agent_proposal_draft(
     kind_text = kind.strip().lower()
     if not kind_text:
         raise ValueError("agent proposal draft requires a non-blank kind")
-    if any(term in kind_text for term in DANGEROUS_PROPOSAL_KIND_TERMS):
+    if _proposal_kind_tokens(kind_text) & AGENT_DRAFT_BLOCKED_KIND_TOKENS:
         raise ValueError("agent proposal draft kind cannot request execution/order/transfer")
     for name, value in (
         ("evidence", evidence),
@@ -318,6 +321,10 @@ def _contains_execution_allowed_true(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_contains_execution_allowed_true(child) for child in value)
     return False
+
+
+def _proposal_kind_tokens(kind: str) -> set[str]:
+    return {token for token in re.split(r"[^a-z0-9]+", kind.lower()) if token}
 
 
 def _dedupe_refs(values: list[str]) -> list[str]:
@@ -362,6 +369,8 @@ def get_proposal_timeline_context(proposal_id: str, limit: int = 20) -> dict[str
     return proposal_timeline_context_payload(proposal_id=proposal_id, limit=limit)
 
 
+# The Agents SDK cannot currently keep strict mode for flexible nested evidence/scaffold
+# dicts. The fixed top-level schema is tested; runtime validators govern nested content.
 @function_tool(strict_mode=False)
 def draft_governed_proposal_from_context(
     kind: str,

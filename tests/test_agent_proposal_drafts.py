@@ -54,11 +54,25 @@ class AgentProposalDraftTest(unittest.TestCase):
             self._draft(source_refs=[])
 
     def test_rejects_direct_execution_kind(self) -> None:
-        for kind in ("execute_order", "fund_transfer", "broker_trade"):
+        for kind in ("execute_order", "fund_transfer", "broker_trade", "action_intent"):
             with self.subTest(kind=kind), self.assertRaisesRegex(
                 ValueError, "execution/order/transfer"
             ):
                 self._draft(kind=kind)
+
+    def test_allows_normal_finance_review_kind_terms_without_substring_blocks(
+        self,
+    ) -> None:
+        for kind in (
+            "emergency_fund_review",
+            "funding_gap_review",
+            "tradeoff_review",
+            "brokerage_fee_review",
+            "orderly_rebalance_review",
+        ):
+            with self.subTest(kind=kind):
+                body = self._draft(kind=kind)
+                self.assertEqual(body["kind"], kind)
 
     def test_rejects_execution_allowed_attempts(self) -> None:
         with self.assertRaisesRegex(ValueError, "execution_allowed=true"):
