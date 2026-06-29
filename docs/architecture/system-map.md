@@ -87,8 +87,9 @@ domain model / read model / write(command) model / adapters / invariants
   tools;review-draft profile 允许 Agent 创建 append-only governed proposal draft;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
-  checks 暴露 pass/warn/block、block code、recovery hint、source/receipt refs,但不
-  产生 approval、attestation 或 execution authorization;未来 review-note/simulate
+  checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
+  source/receipt refs,并区分 review_entry、human_attestation、authority_transition
+  和 execution,但不产生 approval、attestation 或 execution authorization;未来 review-note/simulate
   只能通过新增工具、registry 映射、测试和 receipt-backed command path 变成
   active capabilities。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;

@@ -53,6 +53,22 @@ Borrow the block-kind idea, but make it domain-specific:
 | `policy_mismatch` | Proposal conflicts with IPS/policy facts |
 | `human_review_required` | The system can draft but cannot decide |
 
+## Transition Scope
+
+A `block` must name what it blocks. Do not let one word mean every possible
+transition.
+
+| Transition | Meaning |
+| --- | --- |
+| `review_entry` | The draft should not enter the review queue as a distinct ready item yet |
+| `human_attestation` | The draft should not become a human decision of record yet |
+| `authority_transition` | The draft must not become higher authority state |
+| `execution` | The draft must not authorize live action |
+
+`human_review_required` is an authority-boundary block. It blocks
+`human_attestation`, `authority_transition`, and `execution`; it does not block
+`review_entry`, because entering human review is the required path.
+
 ## Authorship Rule
 
 Review event authors should be derived from authenticated/local runtime context where possible, not accepted as arbitrary caller-supplied truth.

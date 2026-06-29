@@ -104,6 +104,7 @@ window.renderProposalQueueChecks(queueParent, {
   requires_human_review: true,
   execution_allowed: false,
   authority_transition: false,
+  blocked_transitions: ["human_attestation", "authority_transition", "execution"],
   source_refs: ["context://capital_summary"],
   receipt_refs: ["data/receipts/proposals/r.json"],
   context_pack_refs: ["context://capital_summary"],
@@ -113,6 +114,7 @@ window.renderProposalQueueChecks(queueParent, {
       severity: "block",
       message: "Agent-created proposal draft is pending human review.",
       recovery_hint: "A human reviewer must attest or reject the proposal.",
+      blocked_transitions: ["human_attestation", "authority_transition", "execution"],
       related_proposal_ids: [],
     },
   ],
@@ -122,6 +124,8 @@ window.renderProposalQueueChecks(queueParent, {
 const queueText = queueParent.textContent;
 assert.ok(queueText.includes("Proposal queue checks"), "queue checks header renders");
 assert.ok(queueText.includes("human_review_required"), "queue block code renders");
+assert.ok(queueText.includes("human_attestation"), "blocked transition renders");
+assert.ok(queueText.includes("blocks:"), "finding transition scope renders");
 assert.ok(queueText.includes("review-draft"), "queue active profile renders");
 assert.ok(queueText.includes("does not authorize execution"), "queue non-claim renders");
 assert.strictEqual(

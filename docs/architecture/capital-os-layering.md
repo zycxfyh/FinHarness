@@ -1,6 +1,6 @@
 # FinHarness 分层架构(Capital OS Layering)
 
-> 状态:current(2026-06-28)。这是 FinHarness **架构分层的单一事实源**,
+> 状态:current(2026-06-29)。这是 FinHarness **架构分层的单一事实源**,
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
@@ -42,8 +42,8 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
 1. **L0B**:外部标的数据从"仅价格"扩成 Instrument / 财报 / 宏观分类。
 2. **L5**:把 context packs 用在更好的 Agent 解释/eval 中;review-draft profile
    可写 append-only governed proposal draft,并在 proposal review surface 暴露
-   Agent provenance 和 queue checks,但不是 approval、recommendation 或 execution
-   authorization。
+   Agent provenance 和带 blocked transition scope 的 queue checks,但不是 approval、
+   recommendation 或 execution authorization。
 3. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
    需先把它重构成可接受 hypothetical 持仓集的形态)。
 

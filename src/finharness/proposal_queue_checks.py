@@ -23,6 +23,12 @@ QueueCheckCode = Literal[
 ]
 QueueCheckSeverity = Literal["warn", "block"]
 QueueCheckState = Literal["pass", "warn", "block"]
+QueueCheckBlockedTransition = Literal[
+    "review_entry",
+    "human_attestation",
+    "authority_transition",
+    "execution",
+]
 QueueCheckClassification = Literal[
     "authority_boundary",
     "duplicate",
@@ -41,6 +47,7 @@ class QueueCheckFinding(BaseModel):
     classification: QueueCheckClassification
     message: str
     recovery_hint: str
+    blocked_transitions: tuple[QueueCheckBlockedTransition, ...] = ()
     source_refs: list[str] = Field(default_factory=list)
     receipt_refs: list[str] = Field(default_factory=list)
     related_proposal_ids: list[str] = Field(default_factory=list)
@@ -58,6 +65,7 @@ class ProposalQueueChecks(BaseModel):
     check_state: QueueCheckState
     blocks: list[QueueCheckFinding] = Field(default_factory=list)
     warnings: list[QueueCheckFinding] = Field(default_factory=list)
+    blocked_transitions: tuple[QueueCheckBlockedTransition, ...] = ()
     source_refs: list[str] = Field(default_factory=list)
     receipt_refs: list[str] = Field(default_factory=list)
     context_pack_refs: list[str] = Field(default_factory=list)
@@ -77,6 +85,8 @@ class ProposalQueueChecks(BaseModel):
     non_claims: tuple[str, ...] = (
         "Proposal queue checks are review readiness metadata, not approval.",
         "Queue pass/warn/block does not authorize execution.",
+        "A block names the transition it blocks; human review required does "
+        "not block review entry.",
         "Human attestation remains outside Agent authority.",
     )
 
@@ -124,6 +134,23 @@ def _duplicate_open_proposal_ids(proposal: Proposal, *, engine: Engine) -> list[
     return sorted(duplicates)
 
 
+def _blocked_transition_summary(
+    blocks: list[QueueCheckFinding],
+) -> tuple[QueueCheckBlockedTransition, ...]:
+    order: tuple[QueueCheckBlockedTransition, ...] = (
+        "review_entry",
+        "human_attestation",
+        "authority_transition",
+        "execution",
+    )
+    present = {
+        transition
+        for finding in blocks
+        for transition in finding.blocked_transitions
+    }
+    return tuple(transition for transition in order if transition in present)
+
+
 def build_proposal_queue_checks(
     proposal: Proposal,
     *,
@@ -156,6 +183,7 @@ def build_proposal_queue_checks(
         message: str,
         recovery_hint: str,
         *,
+        blocked_transitions: tuple[QueueCheckBlockedTransition, ...],
         source_refs_for_finding: list[str] | None = None,
         receipt_refs_for_finding: list[str] | None = None,
         related_proposal_ids: list[str] | None = None,
@@ -167,6 +195,7 @@ def build_proposal_queue_checks(
                 classification=classification,
                 message=message,
                 recovery_hint=recovery_hint,
+                blocked_transitions=blocked_transitions,
                 source_refs=source_refs_for_finding or [],
                 receipt_refs=receipt_refs_for_finding or [],
                 related_proposal_ids=related_proposal_ids or [],
@@ -182,6 +211,12 @@ def build_proposal_queue_checks(
             "evidence_gap",
             "Proposal has no source references attached to the review record.",
             "Attach source references or regenerate the draft from bounded context.",
+            blocked_transitions=(
+                "review_entry",
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
         )
 
     scaffold = proposal.decision_scaffold or {}
@@ -193,6 +228,11 @@ def build_proposal_queue_checks(
             "readiness",
             "Proposal decision scaffold lacks counter-evidence.",
             "Add a counter-evidence condition before human attestation.",
+            blocked_transitions=(
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
         )
 
     if _truthy_marker(
@@ -207,6 +247,11 @@ def build_proposal_queue_checks(
             "evidence_gap",
             "Proposal records an unresolved data gap.",
             "Resolve the data gap or record why review can proceed despite it.",
+            blocked_transitions=(
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
             source_refs_for_finding=resolved_source_refs,
         )
 
@@ -219,6 +264,11 @@ def build_proposal_queue_checks(
             "evidence_gap",
             "Proposal marks its context or source evidence as stale.",
             "Refresh the context pack or attach a current receipt/source ref.",
+            blocked_transitions=(
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
             source_refs_for_finding=resolved_source_refs,
             receipt_refs_for_finding=resolved_receipt_refs,
         )
@@ -232,6 +282,11 @@ def build_proposal_queue_checks(
             "policy",
             "Proposal records a policy or IPS mismatch.",
             "Resolve the policy mismatch or keep the draft blocked for explicit human review.",
+            blocked_transitions=(
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
             source_refs_for_finding=resolved_source_refs,
         )
 
@@ -242,6 +297,11 @@ def build_proposal_queue_checks(
             "duplicate",
             "Another open proposal has the same kind and claim.",
             "Review the existing open proposal before adding another draft to the queue.",
+            blocked_transitions=(
+                "review_entry",
+                "authority_transition",
+                "execution",
+            ),
             related_proposal_ids=duplicates,
         )
 
@@ -252,6 +312,11 @@ def build_proposal_queue_checks(
             "Agent-created proposal draft is pending human review.",
             "A human reviewer must attest or reject the proposal; this is not "
             "execution authorization.",
+            blocked_transitions=(
+                "human_attestation",
+                "authority_transition",
+                "execution",
+            ),
             source_refs_for_finding=resolved_source_refs,
             receipt_refs_for_finding=resolved_receipt_refs,
         )
@@ -271,6 +336,7 @@ def build_proposal_queue_checks(
         check_state=check_state,
         blocks=blocks,
         warnings=warnings,
+        blocked_transitions=_blocked_transition_summary(blocks),
         source_refs=resolved_source_refs,
         receipt_refs=resolved_receipt_refs,
         context_pack_refs=resolved_context_pack_refs,
