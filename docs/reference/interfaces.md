@@ -18,7 +18,7 @@ Use this as a lookup page. For system ownership, read
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
-| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools; default profile is read-only; review-draft profile can create append-only governed proposal drafts for human review, with no approval or execution authority | `agent_context.py`, `agent_capabilities.py`, `agent_tools.py`, `task agent:describe`, `task agent:run` |
+| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through a runtime registry/factory; default profile is read-only; review-draft profile can create append-only governed proposal drafts for human review, with no approval or execution authority | `agent_context.py`, `agent_capabilities.py`, `agent_tools.py`, `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
@@ -31,8 +31,9 @@ Use this as a lookup page. For system ownership, read
   and `execution_allowed=false`.
 - Human attestation is review evidence, not execution authorization.
 - Archived live-trading code is not a current interface.
-- Agent capability profiles are explicit product postures, not permission
-  bypasses; Agent-created proposal drafts are review objects, not approvals,
+- Agent capability profiles are explicit product postures resolved through a
+  runtime tool registry/factory, not permission bypasses; Agent-created proposal
+  drafts are review objects, not approvals,
   recommendations, or execution authorization.
 - There is no Agent approval, live order, fund transfer, broker write API, or
   receipt deletion/overwrite interface.

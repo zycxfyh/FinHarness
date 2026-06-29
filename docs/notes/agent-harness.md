@@ -4,16 +4,29 @@
 
 The OpenAI Agents SDK layer lives in `src/finharness/agent_tools.py`.
 
-Registered tools:
+Tools are registered once in `AGENT_TOOL_REGISTRY`, then exposed through
+capability profiles in `agent_capabilities.py`.
+
+Default profile tools:
 
 - `get_quote_snapshot`
 - `get_historical_risk_metrics`
-- `run_finance_graph_workflow`
 - `evaluate_latest_risk_note`
+- `get_capital_summary_context`
+- `get_current_ips_context`
+- `get_ips_check_context`
+- `get_open_proposals_context`
+- `get_proposal_timeline_context`
+
+The `review-draft` profile adds:
+
+- `draft_governed_proposal_from_context`
 
 The agent is named `Finance Research Harness Agent`.
 
-`run_finance_graph_workflow` calls the LangGraph workflow in `src/finharness/finance_graph.py`.
+Use `build_finance_research_agent(profile_name=...)` to create a runtime Agent
+for a specific profile. Unknown profiles and profile tool names that are missing
+from the registry fail closed.
 
 ## Local Checks
 
@@ -21,6 +34,7 @@ Describe the registered agent and tools:
 
 ```bash
 task agent:describe
+task agent:describe -- --profile review-draft
 ```
 
 Run tool-level tests without any model or API key:
@@ -33,6 +47,7 @@ Run the real SDK `Runner` only when `OPENAI_API_KEY` is already present in the e
 
 ```bash
 task agent:run
+FINHARNESS_AGENT_PROFILE=review-draft task agent:run
 ```
 
 If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to read secret files.
@@ -42,3 +57,7 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
 - The agent must state that outputs are educational and not investment advice.
 - The agent must disclose that historical data currently comes from yfinance/Yahoo Finance, not TradingView/TV.
 - The agent can run promptfoo risk assertions against generated notes.
+- The default profile remains read/explain only.
+- The `review-draft` profile can create append-only governed proposal drafts
+  for human review, not approvals, recommendations, execution authorization,
+  orders, transfers, or broker actions.
