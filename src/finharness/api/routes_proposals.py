@@ -127,6 +127,55 @@ class ProposalReviewResponse(BaseModel):
     execution_allowed: bool = False
 
 
+ReviewTaskState = Literal[
+    "ready_for_review",
+    "needs_evidence",
+    "blocked",
+    "completed",
+    "archived",
+]
+
+
+class EvidenceRequest(BaseModel):
+    request_id: str
+    code: str
+    status: Literal["open"] = "open"
+    message: str
+    recovery_hint: str
+    source_refs: list[str] = Field(default_factory=list)
+    receipt_refs: list[str] = Field(default_factory=list)
+    blocked_transitions: tuple[str, ...] = ()
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ReviewTaskLifecycle(BaseModel):
+    task_id: str
+    proposal_id: str
+    state: ReviewTaskState
+    created_by: Literal["agent", "human_or_system"]
+    active_profile: str | None = None
+    open_for_review: bool
+    is_archived: bool
+    queue_check_state: str
+    block_codes: list[str] = Field(default_factory=list)
+    blocked_transitions: tuple[str, ...] = ()
+    evidence_requests: list[EvidenceRequest] = Field(default_factory=list)
+    latest_event_kind: str | None = None
+    latest_event_at_utc: str | None = None
+    source_refs: list[str] = Field(default_factory=list)
+    receipt_refs: list[str] = Field(default_factory=list)
+    context_pack_refs: list[str] = Field(default_factory=list)
+    requires_human_review: bool = True
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    non_claims: tuple[str, ...] = (
+        "Review task lifecycle is a read-only projection, not a new task write surface.",
+        "Evidence requests are derived from queue checks; they are not approval.",
+        "Review task state does not authorize execution.",
+    )
+
+
 class ProposalRevision(BaseModel):
     receipt_id: str
     receipt_ref: str
@@ -307,6 +356,76 @@ def _proposal_review_response(
     )
 
 
+_EVIDENCE_REQUEST_CODES = {
+    "missing_source_refs",
+    "counter_evidence_needed",
+    "data_gap",
+    "stale_context",
+    "policy_mismatch",
+}
+
+
+def _review_task_lifecycle(
+    review: ProposalReviewResponse,
+    *,
+    timeline: ProposalTimelineResponse,
+) -> ReviewTaskLifecycle:
+    queue_checks = review.queue_checks
+    evidence_requests = [
+        EvidenceRequest(
+            request_id=f"evidence_request:{review.proposal.proposal_id}:{finding.code}",
+            code=finding.code,
+            message=finding.message,
+            recovery_hint=finding.recovery_hint,
+            source_refs=list(finding.source_refs),
+            receipt_refs=list(finding.receipt_refs),
+            blocked_transitions=tuple(finding.blocked_transitions),
+            execution_allowed=False,
+            authority_transition=False,
+        )
+        for finding in queue_checks.blocks
+        if finding.code in _EVIDENCE_REQUEST_CODES
+    ]
+    latest = timeline.entries[0] if timeline.entries else None
+    non_evidence_blocks = [
+        finding.code
+        for finding in queue_checks.blocks
+        if finding.code not in _EVIDENCE_REQUEST_CODES
+        and finding.code != "human_review_required"
+    ]
+    if timeline.is_archived:
+        state: ReviewTaskState = "archived"
+    elif not review.open_for_review:
+        state = "completed"
+    elif evidence_requests:
+        state = "needs_evidence"
+    elif non_evidence_blocks:
+        state = "blocked"
+    else:
+        state = "ready_for_review"
+    return ReviewTaskLifecycle(
+        task_id=f"review_task:{review.proposal.proposal_id}",
+        proposal_id=review.proposal.proposal_id,
+        state=state,
+        created_by=queue_checks.created_by,
+        active_profile=queue_checks.active_profile,
+        open_for_review=review.open_for_review,
+        is_archived=timeline.is_archived,
+        queue_check_state=queue_checks.check_state,
+        block_codes=[finding.code for finding in queue_checks.blocks],
+        blocked_transitions=queue_checks.blocked_transitions,
+        evidence_requests=evidence_requests,
+        latest_event_kind=latest.kind if latest else None,
+        latest_event_at_utc=latest.created_at_utc if latest else None,
+        source_refs=list(queue_checks.source_refs),
+        receipt_refs=list(queue_checks.receipt_refs),
+        context_pack_refs=list(queue_checks.context_pack_refs),
+        requires_human_review=True,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
 @router.get("/proposals", response_model=list[ProposalReviewResponse])
 async def list_proposals(
     engine: EngineDependency,
@@ -395,6 +514,54 @@ async def get_proposal_queue_checks(
         engine=engine,
         receipt_root=receipt_root,
     ).queue_checks
+
+
+@router.get(
+    "/proposals/{proposal_id}/review-task",
+    response_model=ReviewTaskLifecycle,
+)
+async def get_proposal_review_task(
+    proposal_id: str,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ReviewTaskLifecycle:
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+        if proposal is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"proposal not found: {proposal_id}",
+            )
+        attestations = _proposal_attestations(proposal_id, session=session)
+    timeline = read_proposal_timeline(engine, proposal_id)
+    if timeline is None:
+        raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}")
+    review = _proposal_review_response(
+        proposal,
+        attestations,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
+    return _review_task_lifecycle(
+        review,
+        timeline=ProposalTimelineResponse(
+            proposal_id=timeline.proposal_id,
+            is_archived=timeline.is_archived,
+            entries=[
+                TimelineEntry(
+                    source_type=entry.source_type,
+                    id=entry.id,
+                    kind=entry.kind,
+                    created_at_utc=entry.created_at_utc,
+                    attester=entry.attester,
+                    reason=entry.reason,
+                    detail=entry.detail,
+                )
+                for entry in timeline.entries
+            ],
+            execution_allowed=False,
+        ),
+    )
 
 
 @router.get("/proposals/{proposal_id}/revisions", response_model=ProposalRevisionResponse)

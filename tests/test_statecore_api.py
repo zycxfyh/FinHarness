@@ -291,6 +291,7 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals": {"get", "post"},
             "/proposals/{proposal_id}": {"get"},
             "/proposals/{proposal_id}/queue-checks": {"get"},
+            "/proposals/{proposal_id}/review-task": {"get"},
             "/proposals/{proposal_id}/revisions": {"get"},
             "/proposals/{proposal_id}/decision-scaffold": {"patch"},
             "/proposals/{proposal_id}/attest": {"post"},

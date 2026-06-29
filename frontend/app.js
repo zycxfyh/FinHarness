@@ -495,6 +495,69 @@ function renderProposalQueueChecks(parent, queueChecks) {
   parent.append(section);
 }
 
+function renderReviewTaskLifecycle(parent, reviewTask) {
+  if (!reviewTask) {
+    return;
+  }
+  const section = document.createElement("section");
+  section.className = "detail-section";
+  section.append(textElement("h4", "", "Review task lifecycle"));
+  const rows = document.createElement("div");
+  renderRows(rows, [
+    ["Task", reviewTask.task_id],
+    ["State", reviewTask.state],
+    ["Created by", reviewTask.created_by],
+    ["Active profile", reviewTask.active_profile || "n/a"],
+    ["Open for review", reviewTask.open_for_review],
+    ["Archived", reviewTask.is_archived],
+    ["Queue state", reviewTask.queue_check_state],
+    ["Execution allowed", reviewTask.execution_allowed],
+    ["Authority transition", reviewTask.authority_transition],
+  ]);
+  section.append(rows);
+  renderTextList(section, "Blocks", reviewTask.block_codes);
+  renderTextList(section, "Blocked transitions", reviewTask.blocked_transitions);
+
+  const requests = Array.isArray(reviewTask.evidence_requests)
+    ? reviewTask.evidence_requests
+    : [];
+  section.append(textElement("h5", "", "Evidence requests"));
+  if (!requests.length) {
+    section.append(textElement("p", "empty-state", "No open evidence requests."));
+  } else {
+    for (const request of requests) {
+      const item = document.createElement("div");
+      item.className = "item";
+      item.append(
+        textElement(
+          "span",
+          "item-title",
+          `${request.status || "open"}: ${request.code || "unknown"}`,
+        ),
+      );
+      item.append(textElement("span", "item-meta", request.message || ""));
+      if (request.recovery_hint) {
+        item.append(textElement("span", "item-meta", request.recovery_hint));
+      }
+      if (request.blocked_transitions && request.blocked_transitions.length) {
+        item.append(
+          textElement(
+            "span",
+            "item-meta",
+            `blocks: ${request.blocked_transitions.join(", ")}`,
+          ),
+        );
+      }
+      section.append(item);
+    }
+  }
+  renderTextList(section, "Source refs", reviewTask.source_refs);
+  renderTextList(section, "Receipt refs", reviewTask.receipt_refs);
+  renderTextList(section, "Context packs", reviewTask.context_pack_refs);
+  renderNonClaims(section, reviewTask.non_claims);
+  parent.append(section);
+}
+
 function renderAttestations(parent, attestations) {
   if (!attestations.length) {
     parent.append(textElement("p", "empty-state", "No attestations recorded."));
@@ -1097,10 +1160,11 @@ async function renderProposalDetail() {
     selectors.proposalDetail.append(emptyNode());
     return;
   }
-  const [detail, revisionHistory, timeline] = await Promise.all([
+  const [detail, revisionHistory, timeline, reviewTask] = await Promise.all([
     apiGet(`/proposals/${state.selectedProposalId}`),
     apiGet(`/proposals/${state.selectedProposalId}/revisions`),
     apiGet(`/proposals/${state.selectedProposalId}/timeline`),
+    apiGet(`/proposals/${state.selectedProposalId}/review-task`),
   ]);
   renderRows(selectors.proposalDetail, [
     ["ID", detail.proposal.proposal_id],
@@ -1112,6 +1176,7 @@ async function renderProposalDetail() {
   ]);
   renderAgentReviewSurface(selectors.proposalDetail, detail.agent_review);
   renderProposalQueueChecks(selectors.proposalDetail, detail.queue_checks);
+  renderReviewTaskLifecycle(selectors.proposalDetail, reviewTask);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
   renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
   renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id);

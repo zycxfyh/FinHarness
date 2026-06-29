@@ -134,7 +134,48 @@ assert.strictEqual(
   "queue checks must not render action affordances",
 );
 
-// 5. The write form never POSTs without an explicit confirm.
+// 5. Review task lifecycle renders evidence requests as read-only metadata.
+const taskParent = window.document.createElement("div");
+window.renderReviewTaskLifecycle(taskParent, {
+  task_id: "review_task:prop_1",
+  proposal_id: "prop_1",
+  state: "needs_evidence",
+  created_by: "agent",
+  active_profile: "review-draft",
+  open_for_review: true,
+  is_archived: false,
+  queue_check_state: "block",
+  block_codes: ["data_gap"],
+  blocked_transitions: ["human_attestation", "authority_transition", "execution"],
+  evidence_requests: [
+    {
+      request_id: "evidence_request:prop_1:data_gap",
+      code: "data_gap",
+      status: "open",
+      message: "Proposal records an unresolved data gap.",
+      recovery_hint: "Resolve the data gap.",
+      blocked_transitions: ["human_attestation", "authority_transition", "execution"],
+    },
+  ],
+  source_refs: ["context://capital_summary"],
+  receipt_refs: ["data/receipts/proposals/r.json"],
+  context_pack_refs: ["context://capital_summary"],
+  execution_allowed: false,
+  authority_transition: false,
+  non_claims: ["Review task state does not authorize execution."],
+});
+const taskText = taskParent.textContent;
+assert.ok(taskText.includes("Review task lifecycle"), "review task header renders");
+assert.ok(taskText.includes("needs_evidence"), "review task state renders");
+assert.ok(taskText.includes("data_gap"), "evidence request code renders");
+assert.ok(taskText.includes("does not authorize execution"), "review task non-claim renders");
+assert.strictEqual(
+  taskParent.querySelectorAll("button, a").length,
+  0,
+  "review task lifecycle must not render action affordances",
+);
+
+// 6. The write form never POSTs without an explicit confirm.
 function renderForm() {
   const parent = window.document.createElement("div");
   window.renderReviewEventForm(parent, "prop_1");

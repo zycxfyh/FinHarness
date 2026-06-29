@@ -89,7 +89,8 @@ domain model / read model / write(command) model / adapters / invariants
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
   source/receipt refs,并区分 review_entry、human_attestation、authority_transition
-  和 execution,但不产生 approval、attestation 或 execution authorization;未来 review-note/simulate
+  和 execution;review-task lifecycle 把 proposal/timeline/queue checks 投影成
+  read-only ReviewTask/EvidenceRequest,但不产生 approval、attestation 或 execution authorization;未来 review-note/simulate
   只能通过新增工具、registry 映射、测试和 receipt-backed command path 变成
   active capabilities。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;
