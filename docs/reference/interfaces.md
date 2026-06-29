@@ -32,8 +32,9 @@ Use this as a lookup page. For system ownership, read
 - Human attestation is review evidence, not execution authorization.
 - Archived live-trading code is not a current interface.
 - Agent capability profiles are explicit product postures resolved through a
-  runtime tool registry/factory, not permission bypasses; Agent-created proposal
-  drafts are review objects, not approvals,
+  runtime `AgentToolEntry` registry/factory, not permission bypasses; Agent tool
+  metadata exposes capability, toolset, side-effect, availability, and
+  non-authority claims. Agent-created proposal drafts are review objects, not approvals,
   recommendations, or execution authorization.
 - Agent-created proposal drafts expose review provenance (`created_by=agent`,
   active profile, context/source refs, receipt ref, and human-review state) in

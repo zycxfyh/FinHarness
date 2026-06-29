@@ -83,8 +83,9 @@ domain model / read model / write(command) model / adapters / invariants
   `agent_tools.py`、`proposal_queue_checks.py`、`hermes_bridge.py`。
 - **tool posture**:`agent_capabilities.py` 定义显式 capability profiles;default
   profile 是 read/explain;planned capabilities 只表达路线图,不能被 runtime 当成权限;
-  `agent_tools.py` 的 registry/factory 把 profile tool names 映射成 actual SDK
-  tools;review-draft profile 允许 Agent 创建 append-only governed proposal draft;
+  `agent_tools.py` 的 `AgentToolEntry` registry/factory 把 profile tool names 映射成
+  actual SDK tools,并暴露 capability、toolset、side-effect、availability 和
+  non-authority metadata;review-draft profile 允许 Agent 创建 append-only governed proposal draft;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
