@@ -82,10 +82,38 @@ class AttestationCreateResponse(BaseModel):
     execution_allowed: bool = False
 
 
+class AgentReviewSurface(BaseModel):
+    created_by: Literal["agent"] = "agent"
+    active_profile: str
+    reason: str
+    context_pack_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    receipt_ref: str
+    review_state: Literal["pending_human_review", "human_attestation_recorded"]
+    requires_human_review: bool = True
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    guardrails: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "execution_allowed": False,
+            "requires_human_review": True,
+            "not_approval": True,
+            "not_attestation": True,
+            "not_execution_authorization": True,
+        }
+    )
+    non_claims: tuple[str, ...] = (
+        "Agent-created proposals are review drafts, not recommendations.",
+        "Human review is required before any decision of record.",
+        "Agent draft provenance is review metadata, not approval or execution.",
+    )
+
+
 class ProposalReviewResponse(BaseModel):
     proposal: Proposal
     attestations: list[Attestation]
     open_for_review: bool
+    agent_review: AgentReviewSurface | None = None
     non_claims: tuple[str, ...] = (
         "Proposal is review evidence only.",
         "Human attestation is not execution authorization.",
@@ -101,6 +129,7 @@ class ProposalRevision(BaseModel):
     content_hash: str | None = None
     supersedes: str | None = None
     proposal: dict[str, Any] = Field(default_factory=dict)
+    revision_context: dict[str, Any] = Field(default_factory=dict)
     execution_allowed: bool = False
 
 
@@ -194,15 +223,77 @@ def _proposal_revision_chain(
             content_hash=record.content_hash,
             supersedes=record.supersedes,
             proposal=record.proposal,
+            revision_context=record.revision_context,
             execution_allowed=False,
         )
         for record in walk.revisions
     ]
 
 
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _agent_review_surface(
+    proposal: Proposal,
+    *,
+    receipt_root: Path,
+    open_for_review: bool,
+) -> AgentReviewSurface | None:
+    walk = walk_proposal_revisions(
+        proposal.proposal_id,
+        proposal.receipt_ref,
+        allowed_roots=(ROOT.resolve(), receipt_root.resolve()),
+        max_revisions=100,
+    )
+    for record in walk.revisions:
+        context = record.revision_context
+        if context.get("kind") != "agent_proposal_draft":
+            continue
+        return AgentReviewSurface(
+            active_profile=str(context.get("profile") or "unknown"),
+            reason=str(context.get("reason") or ""),
+            context_pack_refs=_string_list(context.get("context_pack_refs")),
+            source_refs=_string_list(record.proposal.get("source_refs")),
+            receipt_ref=record.receipt_ref,
+            review_state=(
+                "pending_human_review"
+                if open_for_review
+                else "human_attestation_recorded"
+            ),
+            requires_human_review=True,
+            execution_allowed=False,
+            authority_transition=False,
+        )
+    return None
+
+
+def _proposal_review_response(
+    proposal: Proposal,
+    attestations: list[Attestation],
+    *,
+    receipt_root: Path,
+) -> ProposalReviewResponse:
+    open_for_review = not attestations
+    return ProposalReviewResponse(
+        proposal=proposal,
+        attestations=attestations,
+        open_for_review=open_for_review,
+        agent_review=_agent_review_surface(
+            proposal,
+            receipt_root=receipt_root,
+            open_for_review=open_for_review,
+        ),
+        execution_allowed=False,
+    )
+
+
 @router.get("/proposals", response_model=list[ProposalReviewResponse])
 async def list_proposals(
     engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
     status: Annotated[Literal["all", "open", "attested"], Query()] = "all",
     archive: Annotated[Literal["all", "active", "archived"], Query()] = "all",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -222,11 +313,10 @@ async def list_proposals(
         for proposal in proposals:
             attestations = _proposal_attestations(proposal.proposal_id, session=session)
             responses.append(
-                ProposalReviewResponse(
-                    proposal=proposal,
-                    attestations=attestations,
-                    open_for_review=not attestations,
-                    execution_allowed=False,
+                _proposal_review_response(
+                    proposal,
+                    attestations,
+                    receipt_root=receipt_root,
                 )
             )
     if status == "open":
@@ -243,7 +333,11 @@ async def list_proposals(
 
 
 @router.get("/proposals/{proposal_id}", response_model=ProposalReviewResponse)
-async def get_proposal(proposal_id: str, engine: EngineDependency) -> ProposalReviewResponse:
+async def get_proposal(
+    proposal_id: str,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ProposalReviewResponse:
     with Session(engine) as session:
         proposal = session.get(Proposal, proposal_id)
         if proposal is None:
@@ -252,11 +346,10 @@ async def get_proposal(proposal_id: str, engine: EngineDependency) -> ProposalRe
                 detail=f"proposal not found: {proposal_id}",
             )
         attestations = _proposal_attestations(proposal_id, session=session)
-    return ProposalReviewResponse(
-        proposal=proposal,
-        attestations=attestations,
-        open_for_review=not attestations,
-        execution_allowed=False,
+    return _proposal_review_response(
+        proposal,
+        attestations,
+        receipt_root=receipt_root,
     )
 
 

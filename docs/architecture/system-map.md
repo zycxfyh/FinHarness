@@ -84,9 +84,11 @@ domain model / read model / write(command) model / adapters / invariants
 - **tool posture**:`agent_capabilities.py` 定义显式 capability profiles;default
   profile 是 read/explain;planned capabilities 只表达路线图,不能被 runtime 当成权限;
   `agent_tools.py` 的 registry/factory 把 profile tool names 映射成 actual SDK
-  tools;review-draft profile 允许 Agent 创建 append-only governed proposal draft;未来
-  review-note/simulate 只能通过新增工具、registry 映射、测试和 receipt-backed
-  command path 变成 active capabilities。
+  tools;review-draft profile 允许 Agent 创建 append-only governed proposal draft;
+  proposal review surface 会暴露 created_by=agent、active profile、context/source
+  refs、receipt ref、requires_human_review、execution_allowed=false;未来 review-note/
+  simulate 只能通过新增工具、registry 映射、测试和 receipt-backed command path 变成
+  active capabilities。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;
   capability profiles 不是 permission bypass;Agent draft proposal 是 review object,
   不是 approval、recommendation 或 execution authorization;default profile 不写核心状态;

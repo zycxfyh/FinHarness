@@ -67,14 +67,40 @@ assert.strictEqual(
   "read-only timeline must have no buttons or links",
 );
 
-// 3. The write form never POSTs without an explicit confirm.
+// 3. Agent draft provenance renders as read-only review metadata, not an action surface.
+const agentParent = window.document.createElement("div");
+window.renderAgentReviewSurface(agentParent, {
+  created_by: "agent",
+  active_profile: "review-draft",
+  review_state: "pending_human_review",
+  requires_human_review: true,
+  execution_allowed: false,
+  authority_transition: false,
+  receipt_ref: "data/receipts/proposals/r.json",
+  reason: "Agent surfaced a review draft from bounded context.",
+  context_pack_refs: ["context://capital_summary"],
+  source_refs: ["context://capital_summary"],
+  non_claims: ["Agent draft provenance is review metadata, not approval or execution."],
+});
+const agentText = agentParent.textContent;
+assert.ok(agentText.includes("Agent draft provenance"), "agent provenance header renders");
+assert.ok(agentText.includes("review-draft"), "active profile renders");
+assert.ok(agentText.includes("pending_human_review"), "review state renders");
+assert.ok(agentText.includes("execution"), "non-claim renders");
+assert.strictEqual(
+  agentParent.querySelectorAll("button, a").length,
+  0,
+  "agent provenance must not render action affordances",
+);
+
+// 4. The write form never POSTs without an explicit confirm.
 function renderForm() {
   const parent = window.document.createElement("div");
   window.renderReviewEventForm(parent, "prop_1");
   return parent.querySelector("form");
 }
 
-// 3a. confirm() returns false -> no fetch.
+// 4a. confirm() returns false -> no fetch.
 let fetchCalls = [];
 window.fetch = (p, opts) => {
   fetchCalls.push([p, opts]);
@@ -87,7 +113,7 @@ form.querySelector('[name="reason"]').value = "cleanup";
 form.dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
 assert.strictEqual(fetchCalls.length, 0, "cancelled confirm must not POST");
 
-// 3b. confirm() returns true -> exactly one POST to the review-events endpoint.
+// 4b. confirm() returns true -> exactly one POST to the review-events endpoint.
 fetchCalls = [];
 window.confirm = () => true;
 form = renderForm();

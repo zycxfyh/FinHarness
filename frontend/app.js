@@ -393,6 +393,33 @@ function renderProposalList(proposals) {
   }
 }
 
+function renderAgentReviewSurface(parent, agentReview) {
+  if (!agentReview) {
+    return;
+  }
+  const section = document.createElement("section");
+  section.className = "detail-section";
+  section.append(textElement("h4", "", "Agent draft provenance"));
+  const rows = document.createElement("div");
+  renderRows(rows, [
+    ["Created by", agentReview.created_by],
+    ["Active profile", agentReview.active_profile],
+    ["Review state", agentReview.review_state],
+    ["Requires human review", agentReview.requires_human_review],
+    ["Execution allowed", agentReview.execution_allowed],
+    ["Authority transition", agentReview.authority_transition],
+    ["Receipt", agentReview.receipt_ref],
+  ]);
+  section.append(rows);
+  if (agentReview.reason) {
+    section.append(textElement("p", "item-meta", agentReview.reason));
+  }
+  renderTextList(section, "Context packs", agentReview.context_pack_refs);
+  renderTextList(section, "Source refs", agentReview.source_refs);
+  renderNonClaims(section, agentReview.non_claims);
+  parent.append(section);
+}
+
 function renderAttestations(parent, attestations) {
   if (!attestations.length) {
     parent.append(textElement("p", "empty-state", "No attestations recorded."));
@@ -1008,6 +1035,7 @@ async function renderProposalDetail() {
     ["Execution allowed", detail.execution_allowed],
     ["Receipt", detail.proposal.receipt_ref],
   ]);
+  renderAgentReviewSurface(selectors.proposalDetail, detail.agent_review);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
   renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
   renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id);
