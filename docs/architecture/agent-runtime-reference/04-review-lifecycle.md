@@ -69,6 +69,21 @@ transition.
 `human_attestation`, `authority_transition`, and `execution`; it does not block
 `review_entry`, because entering human review is the required path.
 
+## Review Task Projection
+
+The first FinHarness shape should be a read-only lifecycle projection, not a
+new mutable task board:
+
+- `ReviewTask` is derived from proposal state, queue checks, timeline events,
+  attestations, and archive state.
+- `EvidenceRequest` is derived from queue findings such as `data_gap`,
+  `stale_context`, `missing_source_refs`, `counter_evidence_needed`, and
+  `policy_mismatch`.
+- Task states are review-facing summaries such as `ready_for_review`,
+  `needs_evidence`, `blocked`, `completed`, and `archived`.
+- The projection can be shown in Cockpit and used by future Agent context packs,
+  but it cannot approve, attest, execute, or mutate proposal state.
+
 ## Authorship Rule
 
 Review event authors should be derived from authenticated/local runtime context where possible, not accepted as arbitrary caller-supplied truth.

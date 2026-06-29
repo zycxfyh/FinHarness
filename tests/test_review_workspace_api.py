@@ -43,6 +43,7 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
                 "kind": "rebalance_review",
                 "claim": claim,
                 "evidence": {"k": 1},
+                "source_refs": ["context://review_workspace_api"],
                 "decision_scaffold": VALID_SCAFFOLD,
             },
         )
@@ -123,6 +124,67 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         body = self._add_event(pid, "annotation", text="note").json()
         self.assertFalse(body["execution_allowed"])
         self.assertFalse(body["review_event"]["execution_allowed"])
+
+    def test_review_task_lifecycle_derives_evidence_requests(self) -> None:
+        resp = self.client.post(
+            "/proposals",
+            json={
+                "kind": "rebalance_review",
+                "claim": "review evidence gap",
+                "evidence": {"data_gap": True},
+                "source_refs": ["context://capital_summary"],
+                "decision_scaffold": VALID_SCAFFOLD,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        pid = resp.json()["proposal"]["proposal_id"]
+
+        body = self.client.get(f"/proposals/{pid}/review-task").json()
+
+        self.assertEqual(body["task_id"], f"review_task:{pid}")
+        self.assertEqual(body["state"], "needs_evidence")
+        self.assertEqual(body["queue_check_state"], "block")
+        self.assertEqual(body["block_codes"], ["data_gap"])
+        self.assertFalse(body["execution_allowed"])
+        self.assertFalse(body["authority_transition"])
+        self.assertEqual(len(body["evidence_requests"]), 1)
+        request = body["evidence_requests"][0]
+        self.assertEqual(request["request_id"], f"evidence_request:{pid}:data_gap")
+        self.assertEqual(request["code"], "data_gap")
+        self.assertEqual(request["status"], "open")
+        self.assertIn("human_attestation", request["blocked_transitions"])
+        self.assertFalse(request["execution_allowed"])
+
+    def test_review_task_lifecycle_ready_completed_and_archived_states(self) -> None:
+        pid = self._create_proposal("ready lifecycle")
+        self._add_event(pid, "annotation", text="watch this")
+
+        ready = self.client.get(f"/proposals/{pid}/review-task").json()
+        self.assertEqual(ready["state"], "ready_for_review")
+        self.assertEqual(ready["latest_event_kind"], "annotation")
+        self.assertFalse(ready["execution_allowed"])
+
+        attested = self.client.post(
+            f"/proposals/{pid}/attest",
+            json={
+                "decision": "rejected",
+                "attester": "operator",
+                "reason": "human review recorded",
+            },
+        )
+        self.assertEqual(attested.status_code, 200)
+
+        completed = self.client.get(f"/proposals/{pid}/review-task").json()
+        self.assertEqual(completed["state"], "completed")
+        self.assertFalse(completed["open_for_review"])
+        self.assertFalse(completed["execution_allowed"])
+
+        archived_id = self._create_proposal("archived lifecycle")
+        self._add_event(archived_id, "archive")
+        archived = self.client.get(f"/proposals/{archived_id}/review-task").json()
+        self.assertEqual(archived["state"], "archived")
+        self.assertTrue(archived["is_archived"])
+        self.assertFalse(archived["execution_allowed"])
 
 
 if __name__ == "__main__":
