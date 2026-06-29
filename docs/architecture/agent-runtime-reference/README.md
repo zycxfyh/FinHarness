@@ -85,3 +85,7 @@ This reference supports a staged route:
 
 The route should keep adding reviewability and reliability before adding broader
 Agent write capability.
+
+Current mainline has implemented the route through `#66`: Agent tools are
+resolved through profile-selected `AgentToolEntry` records that expose
+capability, toolset, side-effect, availability, and non-authority metadata.

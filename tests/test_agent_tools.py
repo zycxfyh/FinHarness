@@ -10,7 +10,12 @@ from agents.tool_context import ToolContext
 
 from finharness.agent_capabilities import list_agent_profiles, tool_names_for_profile
 from finharness.agent_tools import (
+    AGENT_TOOL_ENTRIES,
     AGENT_TOOL_REGISTRY,
+    AgentToolAvailability,
+    AgentToolEntry,
+    agent_tool_entries_for_profile,
+    agent_tool_metadata_for_profile,
     agent_tools_for_profile,
     build_finance_research_agent,
     current_ips_context_payload,
@@ -96,7 +101,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             agent_tools_for_profile("missing")
 
         with (
-            patch.dict(AGENT_TOOL_REGISTRY, {}, clear=True),
+            patch.dict(AGENT_TOOL_ENTRIES, {}, clear=True),
             self.assertRaisesRegex(ValueError, "unregistered tools"),
         ):
             agent_tools_for_profile("default")
@@ -107,6 +112,77 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output["profile"]["name"], "review-draft")
         self.assertEqual(output["tools"], list(tool_names_for_profile("review-draft")))
         self.assertIn("draft_governed_proposal_from_context", output["tools"])
+        self.assertEqual(
+            [entry["name"] for entry in output["tool_entries"]],
+            list(tool_names_for_profile("review-draft")),
+        )
+        draft_entry = next(
+            entry
+            for entry in output["tool_entries"]
+            if entry["name"] == "draft_governed_proposal_from_context"
+        )
+        self.assertEqual(draft_entry["capability"], "capital-propose")
+        self.assertEqual(draft_entry["toolset"], "proposal_draft")
+        self.assertEqual(draft_entry["side_effect"], "append_only_review_write")
+        self.assertTrue(draft_entry["requires_human_review"])
+        self.assertFalse(draft_entry["execution_allowed"])
+        self.assertFalse(draft_entry["authority_transition"])
+
+    def test_agent_tool_entries_are_profile_ordered_and_non_authoritative(self) -> None:
+        self.assertEqual(set(AGENT_TOOL_REGISTRY), set(AGENT_TOOL_ENTRIES))
+        for profile in list_agent_profiles():
+            with self.subTest(profile=profile.name):
+                entries = agent_tool_entries_for_profile(profile.name)
+                self.assertEqual(
+                    [entry.name for entry in entries],
+                    list(tool_names_for_profile(profile.name)),
+                )
+                for entry in entries:
+                    self.assertFalse(entry.execution_allowed)
+                    self.assertFalse(entry.authority_transition)
+                    self.assertTrue(entry.description)
+                    self.assertIn(entry.capability, profile.capabilities)
+                    self.assertIn("Not execution authorization.", entry.non_claims)
+                    availability = entry.check_fn()
+                    self.assertIsInstance(availability, AgentToolAvailability)
+
+    def test_default_profile_tool_metadata_has_no_append_only_write_surface(self) -> None:
+        metadata = agent_tool_metadata_for_profile("default")
+
+        self.assertEqual([entry["name"] for entry in metadata], tool_names())
+        self.assertNotIn(
+            "append_only_review_write",
+            {entry["side_effect"] for entry in metadata},
+        )
+        for entry in metadata:
+            self.assertFalse(entry["requires_human_review"])
+            self.assertFalse(entry["execution_allowed"])
+            self.assertFalse(entry["authority_transition"])
+            self.assertIn("availability", entry)
+
+    def test_tool_entry_constructor_rejects_authority_mismatch(self) -> None:
+        with self.assertRaisesRegex(ValueError, "name mismatch"):
+            AgentToolEntry(
+                name="wrong",
+                tool=get_quote_snapshot,
+                capability=AGENT_TOOL_ENTRIES[get_quote_snapshot.name].capability,
+                toolset="market_data",
+                description="Bad entry.",
+                side_effect="read",
+                check_fn=lambda: AgentToolAvailability(True),
+            )
+
+        with self.assertRaisesRegex(ValueError, "execution authority"):
+            AgentToolEntry(
+                name=get_quote_snapshot.name,
+                tool=get_quote_snapshot,
+                capability=AGENT_TOOL_ENTRIES[get_quote_snapshot.name].capability,
+                toolset="market_data",
+                description="Bad entry.",
+                side_effect="read",
+                check_fn=lambda: AgentToolAvailability(True),
+                execution_allowed=True,
+            )
 
     def test_agent_does_not_expose_mutating_capital_tools(self) -> None:
         names = set(tool_names())

@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agents import Agent, FunctionTool, Tool, function_tool
 from sqlalchemy.engine import Engine
@@ -33,7 +35,11 @@ from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
 from finharness.statecore.decision_scaffold import ensure_forcing
 from finharness.statecore.proposals import create_governed_proposal
-from finharness.statecore.store import StateCoreStoreError, open_state_core
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    open_state_core,
+    state_core_db_path,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 LATEST_RISK_NOTE = ROOT / "data" / "cache" / "latest_risk_note.txt"
@@ -65,6 +71,12 @@ AGENT_DRAFT_BLOCKED_KIND_TOKENS = frozenset(
     }
 )
 AGENT_NAME = "Finance Research Harness Agent"
+AGENT_TOOL_ENTRY_NON_CLAIMS = (
+    "Agent tool entries describe runtime visibility; they do not grant authority.",
+    "Tool availability is diagnostic metadata, not approval.",
+    "Not execution authorization.",
+    "Not investment advice.",
+)
 AGENT_BASE_INSTRUCTIONS = (
     "Use profile-selected tools to inspect bounded FinHarness context packs, fetch data, "
     "run backtests, evaluate risk notes, and create only the review objects exposed by "
@@ -75,6 +87,80 @@ AGENT_BASE_INSTRUCTIONS = (
     "Always disclose that the current default data source is yfinance/Yahoo Finance, "
     "not TradingView/TV, and that optional providers are evidence sources only."
 )
+
+AgentToolSideEffect = Literal["read", "local_eval", "append_only_review_write"]
+AgentToolset = Literal["market_data", "eval", "capital_context", "proposal_draft"]
+
+
+@dataclass(frozen=True)
+class AgentToolAvailability:
+    """Cheap runtime availability result for a declared Agent tool."""
+
+    available: bool
+    reason: str | None = None
+
+    def model(self) -> dict[str, object]:
+        return {
+            "available": self.available,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class AgentToolEntry:
+    """Hermes-style metadata wrapper around an Agents SDK tool."""
+
+    name: str
+    tool: FunctionTool
+    capability: AgentCapability
+    toolset: AgentToolset
+    description: str
+    side_effect: AgentToolSideEffect
+    check_fn: Callable[[], AgentToolAvailability]
+    requires_human_review: bool = False
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    non_claims: tuple[str, ...] = AGENT_TOOL_ENTRY_NON_CLAIMS
+
+    def __post_init__(self) -> None:
+        if self.name != self.tool.name:
+            raise ValueError(f"agent tool entry name mismatch: {self.name} != {self.tool.name}")
+        if self.execution_allowed:
+            raise ValueError("agent tool entries never grant execution authority")
+        if self.authority_transition:
+            raise ValueError("agent tool entries never grant authority transitions")
+
+    def metadata(self) -> dict[str, object]:
+        availability = self.check_fn()
+        return {
+            "name": self.name,
+            "capability": self.capability.value,
+            "toolset": self.toolset,
+            "description": self.description,
+            "side_effect": self.side_effect,
+            "availability": availability.model(),
+            "requires_human_review": self.requires_human_review,
+            "execution_allowed": False,
+            "authority_transition": False,
+            "non_claims": list(self.non_claims),
+        }
+
+
+def _available() -> AgentToolAvailability:
+    return AgentToolAvailability(True)
+
+
+def _state_core_path_available() -> AgentToolAvailability:
+    path = state_core_db_path(load_settings().state_core_db_path)
+    if path.exists():
+        return AgentToolAvailability(True)
+    return AgentToolAvailability(False, f"state-core sqlite file missing: {path}")
+
+
+def _promptfoo_available() -> AgentToolAvailability:
+    if shutil.which("pnpm") is None:
+        return AgentToolAvailability(False, "pnpm is not available on PATH")
+    return AgentToolAvailability(True)
 
 
 @function_tool
@@ -411,31 +497,115 @@ def draft_governed_proposal_from_context(
     )
 
 
-AGENT_TOOL_REGISTRY: dict[str, FunctionTool] = {
-    tool.name: tool
-    for tool in (
-        get_quote_snapshot,
-        get_historical_risk_metrics,
-        evaluate_latest_risk_note,
-        get_capital_summary_context,
-        get_current_ips_context,
-        get_ips_check_context,
-        get_open_proposals_context,
-        get_proposal_timeline_context,
-        draft_governed_proposal_from_context,
+AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
+    entry.name: entry
+    for entry in (
+        AgentToolEntry(
+            name=get_quote_snapshot.name,
+            tool=get_quote_snapshot,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="market_data",
+            description="Read one quote snapshot through the configured market-data adapter.",
+            side_effect="read",
+            check_fn=_available,
+        ),
+        AgentToolEntry(
+            name=get_historical_risk_metrics.name,
+            tool=get_historical_risk_metrics,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="market_data",
+            description="Fetch historical prices and compute descriptive risk metrics.",
+            side_effect="read",
+            check_fn=_available,
+        ),
+        AgentToolEntry(
+            name=evaluate_latest_risk_note.name,
+            tool=evaluate_latest_risk_note,
+            capability=AgentCapability.CAPITAL_EXPLAIN,
+            toolset="eval",
+            description="Run local promptfoo assertions against the latest generated risk note.",
+            side_effect="local_eval",
+            check_fn=_promptfoo_available,
+        ),
+        AgentToolEntry(
+            name=get_capital_summary_context.name,
+            tool=get_capital_summary_context,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read the bounded Capital OS exposure context pack.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+        ),
+        AgentToolEntry(
+            name=get_current_ips_context.name,
+            tool=get_current_ips_context,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read the active IPS context pack when one exists.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+        ),
+        AgentToolEntry(
+            name=get_ips_check_context.name,
+            tool=get_ips_check_context,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read the IPS compliance context pack for current exposure.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+        ),
+        AgentToolEntry(
+            name=get_open_proposals_context.name,
+            tool=get_open_proposals_context,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read open governed proposals awaiting human review.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+        ),
+        AgentToolEntry(
+            name=get_proposal_timeline_context.name,
+            tool=get_proposal_timeline_context,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read a governed proposal's bounded review timeline.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+        ),
+        AgentToolEntry(
+            name=draft_governed_proposal_from_context.name,
+            tool=draft_governed_proposal_from_context,
+            capability=AgentCapability.CAPITAL_PROPOSE,
+            toolset="proposal_draft",
+            description="Create an append-only governed proposal draft for human review.",
+            side_effect="append_only_review_write",
+            check_fn=_state_core_path_available,
+            requires_human_review=True,
+        ),
     )
+}
+AGENT_TOOL_REGISTRY: dict[str, FunctionTool] = {
+    name: entry.tool for name, entry in AGENT_TOOL_ENTRIES.items()
 }
 
 
-def agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
+def agent_tool_entries_for_profile(profile_name: str = "default") -> list[AgentToolEntry]:
     names = tool_names_for_profile(profile_name)
-    missing = [name for name in names if name not in AGENT_TOOL_REGISTRY]
+    missing = [name for name in names if name not in AGENT_TOOL_ENTRIES]
     if missing:
         raise ValueError(
             f"agent profile {profile_name!r} references unregistered tools: "
             f"{', '.join(missing)}"
         )
-    return [AGENT_TOOL_REGISTRY[name] for name in names]
+    return [AGENT_TOOL_ENTRIES[name] for name in names]
+
+
+def agent_tool_metadata_for_profile(profile_name: str = "default") -> list[dict[str, object]]:
+    return [entry.metadata() for entry in agent_tool_entries_for_profile(profile_name)]
+
+
+def agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
+    return [entry.tool for entry in agent_tool_entries_for_profile(profile_name)]
 
 
 def build_finance_research_agent(profile_name: str = "default") -> Agent:
@@ -468,6 +638,7 @@ def describe_agent(profile_name: str = "default") -> str:
             "agent": agent.name,
             "profile": profile.model_dump(mode="json"),
             "tools": [tool.name for tool in agent.tools],
+            "tool_entries": agent_tool_metadata_for_profile(profile.name),
         },
         indent=2,
         sort_keys=True,
