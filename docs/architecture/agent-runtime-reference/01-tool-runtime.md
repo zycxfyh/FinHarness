@@ -64,11 +64,13 @@ FinHarness 的 Agent 工具已经开始走向 `AgentToolEntry` 风格:
 3. Governance primitives cannot be shadowed by plugin or user-defined tool names.
 4. Agent-facing tool descriptions must match the active profile.
 5. Tool errors should be structured and reviewable, not hidden in prose.
+6. Runtime dispatch results must carry `execution_allowed=false` and
+   `authority_transition=false`.
 
 ## Do Now
 
-- Keep `AgentToolEntry` as the local source for tool metadata: capability,
-  toolset, side-effect, availability check, and non-authority claims.
+- Keep `AgentToolEntry` plus `agent_runtime.py` as the local source for tool
+  metadata, resolved visibility, structured dispatch results, and runtime errors.
 - Prefer tests that prove visible tools match the selected profile.
 - Keep generated tool docs close to the registry, not manually duplicated in many docs.
 
@@ -76,7 +78,7 @@ FinHarness 的 Agent 工具已经开始走向 `AgentToolEntry` 风格:
 
 - Add richer dynamic availability checks when tools depend on optional provider
   credentials, policy toggles, or runtime control-plane state.
-- Add bounded result wrappers for larger context-pack tools.
+- Persist or page oversized results if previews become insufficient.
 - Add machine-readable guardrail metadata to each tool entry.
 
 ## Not Now

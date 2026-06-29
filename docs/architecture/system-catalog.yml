@@ -148,19 +148,21 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata maps profiles to actual SDK tools with capability, toolset, side-effect, and availability facts; default posture is read/explain, and review-draft can create append-only governed proposal drafts plus read-only queue checks and review-task lifecycle projections for human review.
+    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, visible/hidden/unavailable runtime facts, structured dispatch results/errors, and result budgets; default posture is read/explain, and review-draft can create append-only governed proposal drafts plus read-only queue checks and review-task lifecycle projections for human review.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
     runtime_roots:
       - src/finharness/agent_capabilities.py
       - src/finharness/agent_context.py
+      - src/finharness/agent_runtime.py
       - src/finharness/agent_tools.py
       - src/finharness/proposal_queue_checks.py
       - src/finharness/hermes_bridge.py
-    mature_posture: Hermes-style spec, availability, output-budget, toolset registry, and capability-profile ideas; ToolEntry availability and profiles are diagnostics/visibility, not permission bypasses.
+    mature_posture: Hermes-style spec, availability, dispatch wrapper, output-budget, toolset registry, and capability-profile ideas; ToolEntry availability and profiles are diagnostics/visibility, not permission bypasses.
     checks:
       - uv run python -m unittest tests.test_agent_proposal_drafts
+      - uv run python -m unittest tests.test_agent_runtime
       - uv run python -m unittest tests.test_agent_capabilities
       - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools

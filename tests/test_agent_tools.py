@@ -170,6 +170,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 description="Bad entry.",
                 side_effect="read",
                 check_fn=lambda: AgentToolAvailability(True),
+                dispatch_handler=lambda _arguments: {},
             )
 
         with self.assertRaisesRegex(ValueError, "execution authority"):
@@ -181,6 +182,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 description="Bad entry.",
                 side_effect="read",
                 check_fn=lambda: AgentToolAvailability(True),
+                dispatch_handler=lambda _arguments: {},
                 execution_allowed=True,
             )
 
