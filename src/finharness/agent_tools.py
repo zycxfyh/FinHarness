@@ -90,6 +90,8 @@ AGENT_BASE_INSTRUCTIONS = (
 
 AgentToolSideEffect = Literal["read", "local_eval", "append_only_review_write"]
 AgentToolset = Literal["market_data", "eval", "capital_context", "proposal_draft"]
+AgentToolUnavailablePolicy = Literal["hide", "diagnostic_stub", "fail_closed"]
+AgentToolHandler = Callable[[dict[str, Any]], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,9 @@ class AgentToolEntry:
     description: str
     side_effect: AgentToolSideEffect
     check_fn: Callable[[], AgentToolAvailability]
+    dispatch_handler: AgentToolHandler
+    unavailable_policy: AgentToolUnavailablePolicy = "hide"
+    max_result_chars: int = 12_000
     requires_human_review: bool = False
     execution_allowed: bool = False
     authority_transition: bool = False
@@ -139,6 +144,8 @@ class AgentToolEntry:
             "description": self.description,
             "side_effect": self.side_effect,
             "availability": availability.model(),
+            "unavailable_policy": self.unavailable_policy,
+            "max_result_chars": self.max_result_chars,
             "requires_human_review": self.requires_human_review,
             "execution_allowed": False,
             "authority_transition": False,
@@ -163,9 +170,21 @@ def _promptfoo_available() -> AgentToolAvailability:
     return AgentToolAvailability(True)
 
 
+def _call_payload(handler: Callable[..., dict[str, object]]) -> AgentToolHandler:
+    def call(arguments: dict[str, Any]) -> dict[str, object]:
+        return handler(**arguments)
+
+    return call
+
+
 @function_tool
 def get_quote_snapshot(symbol: str) -> dict[str, object]:
     """Get a quote snapshot through the default available data provider."""
+    return get_quote_snapshot_payload(symbol=symbol)
+
+
+def get_quote_snapshot_payload(symbol: str) -> dict[str, object]:
+    """Build the quote snapshot payload behind the Agents SDK adapter."""
     quote = fetch_quote_snapshot(symbol)
     return quote.__dict__
 
@@ -508,6 +527,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read one quote snapshot through the configured market-data adapter.",
             side_effect="read",
             check_fn=_available,
+            dispatch_handler=_call_payload(get_quote_snapshot_payload),
         ),
         AgentToolEntry(
             name=get_historical_risk_metrics.name,
@@ -517,6 +537,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Fetch historical prices and compute descriptive risk metrics.",
             side_effect="read",
             check_fn=_available,
+            dispatch_handler=_call_payload(historical_risk_metrics_payload),
         ),
         AgentToolEntry(
             name=evaluate_latest_risk_note.name,
@@ -526,6 +547,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Run local promptfoo assertions against the latest generated risk note.",
             side_effect="local_eval",
             check_fn=_promptfoo_available,
+            dispatch_handler=_call_payload(evaluate_latest_risk_note_payload),
+            unavailable_policy="hide",
         ),
         AgentToolEntry(
             name=get_capital_summary_context.name,
@@ -535,6 +558,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read the bounded Capital OS exposure context pack.",
             side_effect="read",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(capital_summary_context_payload),
+            unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
             name=get_current_ips_context.name,
@@ -544,6 +569,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read the active IPS context pack when one exists.",
             side_effect="read",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(current_ips_context_payload),
+            unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
             name=get_ips_check_context.name,
@@ -553,6 +580,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read the IPS compliance context pack for current exposure.",
             side_effect="read",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(ips_check_context_payload),
+            unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
             name=get_open_proposals_context.name,
@@ -562,6 +591,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read open governed proposals awaiting human review.",
             side_effect="read",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(open_proposals_context_payload),
+            unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
             name=get_proposal_timeline_context.name,
@@ -571,6 +602,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Read a governed proposal's bounded review timeline.",
             side_effect="read",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(proposal_timeline_context_payload),
+            unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
             name=draft_governed_proposal_from_context.name,
@@ -580,6 +613,8 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             description="Create an append-only governed proposal draft for human review.",
             side_effect="append_only_review_write",
             check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(draft_governed_proposal_from_context_payload),
+            unavailable_policy="fail_closed",
             requires_human_review=True,
         ),
     )
@@ -605,6 +640,16 @@ def agent_tool_metadata_for_profile(profile_name: str = "default") -> list[dict[
 
 
 def agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
+    from finharness.agent_runtime import resolve_agent_tool_entries
+
+    return [
+        resolved.entry.tool
+        for resolved in resolve_agent_tool_entries(profile_name)
+        if resolved.model_visible
+    ]
+
+
+def _static_agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
     return [entry.tool for entry in agent_tool_entries_for_profile(profile_name)]
 
 
@@ -623,7 +668,16 @@ def build_finance_research_agent(profile_name: str = "default") -> Agent:
     )
 
 
-finance_research_agent = build_finance_research_agent()
+finance_research_agent = Agent(
+    name=AGENT_NAME,
+    instructions=(
+        f"{AGENT_BASE_INSTRUCTIONS} "
+        "Active capability profile: default. "
+        "Agent capability profiles select visible tools; they do not grant authority. "
+        "Execution is not allowed."
+    ),
+    tools=_static_agent_tools_for_profile("default"),
+)
 
 
 def tool_names(profile_name: str = "default") -> list[str]:
@@ -631,14 +685,18 @@ def tool_names(profile_name: str = "default") -> list[str]:
 
 
 def describe_agent(profile_name: str = "default") -> str:
+    from finharness.agent_runtime import agent_runtime_view
+
     profile = get_agent_profile(profile_name)
     agent = build_finance_research_agent(profile.name)
+    runtime_view = agent_runtime_view(profile.name)
     return json.dumps(
         {
             "agent": agent.name,
             "profile": profile.model_dump(mode="json"),
             "tools": [tool.name for tool in agent.tools],
             "tool_entries": agent_tool_metadata_for_profile(profile.name),
+            **runtime_view,
         },
         indent=2,
         sort_keys=True,

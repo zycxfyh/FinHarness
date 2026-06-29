@@ -9,6 +9,7 @@ import pandas as pd
 from agents.tool_context import ToolContext
 
 from finharness.agent_capabilities import list_agent_profiles, tool_names_for_profile
+from finharness.agent_runtime import resolve_agent_tool_entries
 from finharness.agent_tools import (
     AGENT_TOOL_ENTRIES,
     AGENT_TOOL_REGISTRY,
@@ -71,7 +72,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         for profile in list_agent_profiles():
             with self.subTest(profile=profile.name):
                 self.assertEqual(
-                    [tool.name for tool in agent_tools_for_profile(profile.name)],
+                    [entry.name for entry in agent_tool_entries_for_profile(profile.name)],
                     list(tool_names_for_profile(profile.name)),
                 )
 
@@ -89,11 +90,11 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [tool.name for tool in review_agent.tools],
-            list(tool_names_for_profile("review-draft")),
-        )
-        self.assertIn(
-            "draft_governed_proposal_from_context",
-            {tool.name for tool in review_agent.tools},
+            [
+                item.entry.name
+                for item in resolve_agent_tool_entries("review-draft")
+                if item.model_visible
+            ],
         )
 
     def test_profile_runtime_fail_closed_for_unknown_or_unregistered_tools(self) -> None:
@@ -110,8 +111,12 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         output = json.loads(describe_agent("review-draft"))
 
         self.assertEqual(output["profile"]["name"], "review-draft")
-        self.assertEqual(output["tools"], list(tool_names_for_profile("review-draft")))
-        self.assertIn("draft_governed_proposal_from_context", output["tools"])
+        resolved_names = [
+            entry["name"]
+            for entry in output["resolved_tools"]
+            if entry["model_visible"]
+        ]
+        self.assertEqual(output["tools"], resolved_names)
         self.assertEqual(
             [entry["name"] for entry in output["tool_entries"]],
             list(tool_names_for_profile("review-draft")),
@@ -170,6 +175,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 description="Bad entry.",
                 side_effect="read",
                 check_fn=lambda: AgentToolAvailability(True),
+                dispatch_handler=lambda _arguments: {},
             )
 
         with self.assertRaisesRegex(ValueError, "execution authority"):
@@ -181,6 +187,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 description="Bad entry.",
                 side_effect="read",
                 check_fn=lambda: AgentToolAvailability(True),
+                dispatch_handler=lambda _arguments: {},
                 execution_allowed=True,
             )
 

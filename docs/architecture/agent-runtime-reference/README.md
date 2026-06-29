@@ -74,18 +74,19 @@ This reference supports a staged route:
 #64 Queue check transition scope
 #65 ReviewTask / EvidenceRequest lifecycle
 #66 ToolEntry metadata + check_fn
-#67 Evidence Provider Registry
-#68 Capital Context Budget / Projection
-#69 Structured Error Taxonomy
-#70 Workspace Scope / Mutation Semantics
-#71 Capital Control Plane v0
-#72 Capital Security Model / Trust Boundary v0
-#73 Capital Lifecycle / Release Governance v0
+#67 Agent Tool Runtime Pipeline v0
+#68 Evidence Provider Registry
+#69 Capital Context Budget / Projection
+#70 Runtime Trace / Diagnostics Surface
+#71 Control Plane v0
+#72 Security / Trust Boundary v0
+#73 Lifecycle / Release Governance v0
 ```
 
 The route should keep adding reviewability and reliability before adding broader
 Agent write capability.
 
-Current mainline has implemented the route through `#66`: Agent tools are
-resolved through profile-selected `AgentToolEntry` records that expose
-capability, toolset, side-effect, availability, and non-authority metadata.
+Current mainline has implemented the route through `#67`: Agent tools are
+resolved through profile-selected `AgentToolEntry` records and a runtime pipeline
+that exposes visible/hidden/unavailable tools, structured dispatch results,
+structured runtime errors, result-budget truncation, and non-authority metadata.

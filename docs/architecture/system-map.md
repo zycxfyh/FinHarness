@@ -85,7 +85,9 @@ domain model / read model / write(command) model / adapters / invariants
   profile 是 read/explain;planned capabilities 只表达路线图,不能被 runtime 当成权限;
   `agent_tools.py` 的 `AgentToolEntry` registry/factory 把 profile tool names 映射成
   actual SDK tools,并暴露 capability、toolset、side-effect、availability 和
-  non-authority metadata;review-draft profile 允许 Agent 创建 append-only governed proposal draft;
+  non-authority metadata;`agent_runtime.py` 负责 visible/hidden/unavailable tool
+  resolution、structured result/error、result-budget truncation 和 dispatch wrapper;
+  review-draft profile 允许 Agent 创建 append-only governed proposal draft;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
