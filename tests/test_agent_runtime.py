@@ -26,7 +26,9 @@ class AgentRuntimeTest(unittest.TestCase):
         visible_names = [item.entry.name for item in resolved if item.model_visible]
         self.assertIn("get_capital_summary_context", visible_names)
         self.assertNotIn("draft_governed_proposal_from_context", visible_names)
-        self.assertTrue(all(item.availability.available for item in resolved))
+        self.assertTrue(
+            all(item.entry.unavailable_policy != "fail_closed" for item in resolved)
+        )
         self.assertTrue(all(not item.entry.execution_allowed for item in resolved))
 
     def test_describe_agent_exposes_runtime_view(self) -> None:
@@ -38,7 +40,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertTrue(body["runtime_rules"]["availability_affects_model_visibility"])
         draft = next(
             item
-            for item in body["resolved_tools"]
+            for item in body["resolved_tools"] + body["hidden_tools"]
             if item["name"] == "draft_governed_proposal_from_context"
         )
         self.assertEqual(draft["side_effect"], "append_only_review_write")
