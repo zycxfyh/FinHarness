@@ -12,7 +12,8 @@
 更细的文件事实看 [Module Map](module-map.md);系统边界看
 [System Map](system-map.md);分层演进看 [Capital OS Layering](capital-os-layering.md)。
 机器可读目录看 [System Catalog](system-catalog.yml);工程推进风险看
-[Engineering Leverage Map](engineering-leverage-map.md)。
+[Engineering Leverage Map](engineering-leverage-map.md)。Agent L5 参考模式看
+[Agent Runtime Reference](agent-runtime-reference/README.md)。
 
 ## One Sentence
 
@@ -60,6 +61,7 @@ Archived live-trading code has no edge back into mainline.
 | “现在能跑什么?” | [Command Reference](../reference/commands.md), `task --list` | Taskfile 是命令事实源 |
 | “哪些文档必须保持 current?” | [Documentation Fact Governance](documentation-fact-governance.md) | current lane 与 history lane 分开 |
 | “哪些成熟方案可借?” | [Engineering Leverage Map](engineering-leverage-map.md), [Scaffolding Inventory](scaffolding-inventory.md), [Mature Wheel Control Plane](mature-wheel-control-plane.md) | 工程层次、keep / standardize / replace / defer 判断 |
+| “Agent L5 参考哪些成熟运行时模式?” | [Agent Runtime Reference](agent-runtime-reference/README.md) | Hermes-style tool runtime、prompt/context、guardrail、review lifecycle、delegation、memory/skills 的参考边界 |
 | “机器可读系统目录在哪?” | [System Catalog](system-catalog.yml) | 给 repo intelligence / checks / future generated docs 使用 |
 | “哪些边界是机器守的?” | `task governance:policies` | policy registry 是当前 guardrail 入口 |
 | “安全边界在哪?” | [Threat Model](../security/finharness-threat-model.md), [SSDF Control Map](../security/ssdf-control-map.md) | current security facts |
