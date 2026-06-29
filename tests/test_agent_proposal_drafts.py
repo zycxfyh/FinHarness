@@ -12,12 +12,14 @@ from finharness.agent_tools import (
     AGENT_PROPOSAL_DRAFT_NON_CLAIMS,
     draft_governed_proposal_from_context_payload,
 )
+from finharness.api.app import create_app
 from finharness.statecore.models import Attestation, Proposal
 from finharness.statecore.proposals import create_governed_attestation
 from finharness.statecore.risk_classification import HighRiskConfirmationError
 from finharness.statecore.store import read_all
 from tests._scaffold import VALID_SCAFFOLD
 from tests._statecore_fixtures import StateCoreFixture
+from tests.asgi_test_client import AsgiTestClient
 
 
 class AgentProposalDraftTest(unittest.TestCase):
@@ -127,6 +129,67 @@ class AgentProposalDraftTest(unittest.TestCase):
         self.assertEqual(context["summary"]["proposal_id"], body["proposal_id"])
         self.assertEqual(context["summary"]["entry_count"], 0)
         self.assertFalse(context["execution_allowed"])
+
+    def test_api_review_surface_exposes_agent_draft_provenance(self) -> None:
+        body = self._draft(context_pack_refs=["context://capital_summary"])
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+
+        detail = client.get(f"/proposals/{body['proposal_id']}").json()
+        listed = client.get("/proposals", params={"status": "open"}).json()
+
+        agent_review = detail["agent_review"]
+        self.assertEqual(agent_review["created_by"], "agent")
+        self.assertEqual(agent_review["active_profile"], "review-draft")
+        self.assertEqual(agent_review["context_pack_refs"], ["context://capital_summary"])
+        self.assertEqual(agent_review["source_refs"], ["context://capital_summary"])
+        self.assertEqual(agent_review["receipt_ref"], body["receipt_ref"])
+        self.assertEqual(agent_review["review_state"], "pending_human_review")
+        self.assertTrue(agent_review["requires_human_review"])
+        self.assertFalse(agent_review["execution_allowed"])
+        self.assertFalse(agent_review["authority_transition"])
+        self.assertTrue(agent_review["guardrails"]["not_attestation"])
+        self.assertIn("not approval", " ".join(agent_review["non_claims"]).lower())
+        self.assertEqual(listed[0]["agent_review"]["created_by"], "agent")
+
+    def test_api_review_surface_keeps_agent_source_refs_from_draft_receipt(self) -> None:
+        body = self._draft(
+            context_pack_refs=["context://capital_summary"],
+            source_refs=["context://agent_source"],
+        )
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+
+        revised = client.patch(
+            f"/proposals/{body['proposal_id']}/decision-scaffold",
+            json={
+                "attester": "Jane Control",
+                "reason": "Added human review source after Agent draft.",
+                "decision_scaffold": {
+                    "counter_evidence": (
+                        "If updated cash runway exceeds six months, the review should pause."
+                    )
+                },
+                "source_refs": ["human://review_note"],
+            },
+        )
+        self.assertEqual(revised.status_code, 200)
+        self.assertIn("human://review_note", revised.json()["proposal"]["source_refs"])
+
+        detail = client.get(f"/proposals/{body['proposal_id']}").json()
+
+        agent_review = detail["agent_review"]
+        self.assertEqual(agent_review["receipt_ref"], body["receipt_ref"])
+        self.assertEqual(agent_review["source_refs"], body["source_refs"])
+        self.assertNotIn("human://review_note", agent_review["source_refs"])
 
     def test_high_risk_draft_cannot_bypass_counter_evidence_approval_gate(self) -> None:
         body = self._draft(

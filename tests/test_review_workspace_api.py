@@ -15,6 +15,7 @@ _PROPOSAL_ITEM_KEYS = {
     "proposal",
     "attestations",
     "open_for_review",
+    "agent_review",
     "non_claims",
     "execution_allowed",
 }

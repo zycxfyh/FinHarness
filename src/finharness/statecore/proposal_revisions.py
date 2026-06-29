@@ -51,6 +51,7 @@ class RevisionRecord:
     content_hash: str | None
     supersedes: str | None
     proposal: dict[str, Any]
+    revision_context: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,11 @@ def _read_revision(
         content_hash=payload.get("content_hash"),
         supersedes=supersedes_raw if isinstance(supersedes_raw, str) else None,
         proposal=payload_proposal,
+        revision_context=(
+            payload["revision_context"]
+            if isinstance(payload.get("revision_context"), dict)
+            else {}
+        ),
     )
     if supersedes_raw is not None and not isinstance(supersedes_raw, str):
         return record, fault(
