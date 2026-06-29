@@ -69,17 +69,17 @@ FinHarness should not copy accidental breadth:
 This reference supports a staged route:
 
 ```text
-#61 Agent proposal draft review surface
-#62 Proposal draft queue checks
-#63 ReviewTask / EvidenceRequest lifecycle
-#64 ToolEntry metadata + check_fn
-#65 Evidence Provider Registry
-#66 Capital Context Budget / Projection
-#67 Structured Error Taxonomy
-#68 Workspace Scope / Mutation Semantics
-#69 Capital Control Plane v0
-#70 Capital Security Model / Trust Boundary v0
-#71 Capital Lifecycle / Release Governance v0
+#62 Agent proposal draft review surface
+#63 Proposal draft queue checks
+#64 ReviewTask / EvidenceRequest lifecycle
+#65 ToolEntry metadata + check_fn
+#66 Evidence Provider Registry
+#67 Capital Context Budget / Projection
+#68 Structured Error Taxonomy
+#69 Workspace Scope / Mutation Semantics
+#70 Capital Control Plane v0
+#71 Capital Security Model / Trust Boundary v0
+#72 Capital Lifecycle / Release Governance v0
 ```
 
 The route should keep adding reviewability and reliability before adding broader

@@ -18,7 +18,7 @@ Use this as a lookup page. For system ownership, read
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
-| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through a runtime registry/factory; default profile is read-only; review-draft profile can create append-only governed proposal drafts whose Agent provenance is exposed on the review surface, with no approval or execution authority | `agent_context.py`, `agent_capabilities.py`, `agent_tools.py`, `task agent:describe`, `task agent:run` |
+| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through a runtime registry/factory; default profile is read-only; review-draft profile can create append-only governed proposal drafts whose Agent provenance and queue checks are exposed on the review surface, with no approval or execution authority | `agent_context.py`, `agent_capabilities.py`, `agent_tools.py`, `proposal_queue_checks.py`, `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
@@ -38,6 +38,9 @@ Use this as a lookup page. For system ownership, read
 - Agent-created proposal drafts expose review provenance (`created_by=agent`,
   active profile, context/source refs, receipt ref, and human-review state) in
   proposal review responses.
+- Agent-created proposal drafts expose read-only queue checks (`pass`/`warn`/`block`,
+  block codes, recovery hints, source refs, receipt refs) without granting approval,
+  attestation, or execution authority.
 - There is no Agent approval, live order, fund transfer, broker write API, or
   receipt deletion/overwrite interface.
 - Any new production dependency still needs explicit user approval before being

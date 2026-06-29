@@ -93,7 +93,44 @@ assert.strictEqual(
   "agent provenance must not render action affordances",
 );
 
-// 4. The write form never POSTs without an explicit confirm.
+// 4. Proposal queue checks render as read-only review metadata.
+const queueParent = window.document.createElement("div");
+window.renderProposalQueueChecks(queueParent, {
+  proposal_id: "prop_1",
+  created_by: "agent",
+  active_profile: "review-draft",
+  check_state: "block",
+  open_for_review: true,
+  requires_human_review: true,
+  execution_allowed: false,
+  authority_transition: false,
+  source_refs: ["context://capital_summary"],
+  receipt_refs: ["data/receipts/proposals/r.json"],
+  context_pack_refs: ["context://capital_summary"],
+  blocks: [
+    {
+      code: "human_review_required",
+      severity: "block",
+      message: "Agent-created proposal draft is pending human review.",
+      recovery_hint: "A human reviewer must attest or reject the proposal.",
+      related_proposal_ids: [],
+    },
+  ],
+  warnings: [],
+  non_claims: ["Queue pass/warn/block does not authorize execution."],
+});
+const queueText = queueParent.textContent;
+assert.ok(queueText.includes("Proposal queue checks"), "queue checks header renders");
+assert.ok(queueText.includes("human_review_required"), "queue block code renders");
+assert.ok(queueText.includes("review-draft"), "queue active profile renders");
+assert.ok(queueText.includes("does not authorize execution"), "queue non-claim renders");
+assert.strictEqual(
+  queueParent.querySelectorAll("button, a").length,
+  0,
+  "queue checks must not render action affordances",
+);
+
+// 5. The write form never POSTs without an explicit confirm.
 function renderForm() {
   const parent = window.document.createElement("div");
   window.renderReviewEventForm(parent, "prop_1");
