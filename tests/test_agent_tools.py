@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -7,9 +8,13 @@ from unittest.mock import patch
 import pandas as pd
 from agents.tool_context import ToolContext
 
-from finharness.agent_capabilities import tool_names_for_profile
+from finharness.agent_capabilities import list_agent_profiles, tool_names_for_profile
 from finharness.agent_tools import (
+    AGENT_TOOL_REGISTRY,
+    agent_tools_for_profile,
+    build_finance_research_agent,
     current_ips_context_payload,
+    describe_agent,
     draft_governed_proposal_from_context,
     evaluate_latest_risk_note_payload,
     finance_research_agent,
@@ -56,6 +61,52 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             "draft_governed_proposal_from_context",
             tool_names("review-draft"),
         )
+
+    def test_tool_registry_covers_every_profile_tool_name(self) -> None:
+        for profile in list_agent_profiles():
+            with self.subTest(profile=profile.name):
+                self.assertEqual(
+                    [tool.name for tool in agent_tools_for_profile(profile.name)],
+                    list(tool_names_for_profile(profile.name)),
+                )
+
+    def test_build_agent_uses_exact_profile_toolset(self) -> None:
+        default_agent = build_finance_research_agent()
+        review_agent = build_finance_research_agent("review-draft")
+
+        self.assertEqual(
+            [tool.name for tool in default_agent.tools],
+            list(tool_names_for_profile("default")),
+        )
+        self.assertNotIn(
+            "draft_governed_proposal_from_context",
+            {tool.name for tool in default_agent.tools},
+        )
+        self.assertEqual(
+            [tool.name for tool in review_agent.tools],
+            list(tool_names_for_profile("review-draft")),
+        )
+        self.assertIn(
+            "draft_governed_proposal_from_context",
+            {tool.name for tool in review_agent.tools},
+        )
+
+    def test_profile_runtime_fail_closed_for_unknown_or_unregistered_tools(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown agent capability profile"):
+            agent_tools_for_profile("missing")
+
+        with (
+            patch.dict(AGENT_TOOL_REGISTRY, {}, clear=True),
+            self.assertRaisesRegex(ValueError, "unregistered tools"),
+        ):
+            agent_tools_for_profile("default")
+
+    def test_describe_agent_uses_profile_runtime_tools(self) -> None:
+        output = json.loads(describe_agent("review-draft"))
+
+        self.assertEqual(output["profile"]["name"], "review-draft")
+        self.assertEqual(output["tools"], list(tool_names_for_profile("review-draft")))
+        self.assertIn("draft_governed_proposal_from_context", output["tools"])
 
     def test_agent_does_not_expose_mutating_capital_tools(self) -> None:
         names = set(tool_names())

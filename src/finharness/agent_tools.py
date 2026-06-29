@@ -10,11 +10,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agents import Agent, function_tool
+from agents import Agent, FunctionTool, Tool, function_tool
 from sqlalchemy.engine import Engine
 
 from finharness.agent_capabilities import (
     AgentCapability,
+    get_agent_profile,
     profile_allows_capability,
     tool_names_for_profile,
 )
@@ -62,6 +63,17 @@ AGENT_DRAFT_BLOCKED_KIND_TOKENS = frozenset(
         "action",
         "intent",
     }
+)
+AGENT_NAME = "Finance Research Harness Agent"
+AGENT_BASE_INSTRUCTIONS = (
+    "Use profile-selected tools to inspect bounded FinHarness context packs, fetch data, "
+    "run backtests, evaluate risk notes, and create only the review objects exposed by "
+    "the active profile. "
+    "Capital OS context packs are for explanation and review only; they never "
+    "authorize actions or execution. "
+    "Always state that outputs are for education, not investment advice. "
+    "Always disclose that the current default data source is yfinance/Yahoo Finance, "
+    "not TradingView/TV, and that optional providers are evidence sources only."
 )
 
 
@@ -399,18 +411,9 @@ def draft_governed_proposal_from_context(
     )
 
 
-finance_research_agent = Agent(
-    name="Finance Research Harness Agent",
-    instructions=(
-        "Use read-only tools to inspect bounded FinHarness context packs, fetch data, "
-        "run backtests, and evaluate risk notes. "
-        "Capital OS context packs are for explanation and review only; they never "
-        "authorize actions or execution. "
-        "Always state that outputs are for education, not investment advice. "
-        "Always disclose that the current default data source is yfinance/Yahoo Finance, "
-        "not TradingView/TV, and that optional providers are evidence sources only."
-    ),
-    tools=[
+AGENT_TOOL_REGISTRY: dict[str, FunctionTool] = {
+    tool.name: tool
+    for tool in (
         get_quote_snapshot,
         get_historical_risk_metrics,
         evaluate_latest_risk_note,
@@ -419,19 +422,52 @@ finance_research_agent = Agent(
         get_ips_check_context,
         get_open_proposals_context,
         get_proposal_timeline_context,
-    ],
-)
+        draft_governed_proposal_from_context,
+    )
+}
+
+
+def agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
+    names = tool_names_for_profile(profile_name)
+    missing = [name for name in names if name not in AGENT_TOOL_REGISTRY]
+    if missing:
+        raise ValueError(
+            f"agent profile {profile_name!r} references unregistered tools: "
+            f"{', '.join(missing)}"
+        )
+    return [AGENT_TOOL_REGISTRY[name] for name in names]
+
+
+def build_finance_research_agent(profile_name: str = "default") -> Agent:
+    profile = get_agent_profile(profile_name)
+    instructions = (
+        f"{AGENT_BASE_INSTRUCTIONS} "
+        f"Active capability profile: {profile.name}. {profile.description} "
+        "Agent capability profiles select visible tools; they do not grant authority. "
+        "Execution is not allowed."
+    )
+    return Agent(
+        name=AGENT_NAME,
+        instructions=instructions,
+        tools=agent_tools_for_profile(profile.name),
+    )
+
+
+finance_research_agent = build_finance_research_agent()
 
 
 def tool_names(profile_name: str = "default") -> list[str]:
     return list(tool_names_for_profile(profile_name))
 
 
-def describe_agent() -> str:
+def describe_agent(profile_name: str = "default") -> str:
+    profile = get_agent_profile(profile_name)
+    agent = build_finance_research_agent(profile.name)
     return json.dumps(
         {
-            "agent": finance_research_agent.name,
-            "tools": tool_names(),
+            "agent": agent.name,
+            "profile": profile.model_dump(mode="json"),
+            "tools": [tool.name for tool in agent.tools],
         },
         indent=2,
         sort_keys=True,

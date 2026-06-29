@@ -293,12 +293,12 @@ tasks:
   agent:describe:
     desc: Describe registered OpenAI Agents SDK tools
     cmds:
-      - uv run python scripts/describe_agent_tools.py
+      - uv run python scripts/describe_agent_tools.py {{.CLI_ARGS}}
 
   agent:run:
     desc: Run the real agent when OPENAI_API_KEY is configured
     cmds:
-      - uv run python scripts/run_agent_once.py
+      - uv run python scripts/run_agent_once.py {{.CLI_ARGS}}
 
   eval:smoke:
     desc: Run promptfoo local echo eval
