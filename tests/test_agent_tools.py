@@ -101,7 +101,8 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
 
     def test_proposal_draft_tool_schema_has_fixed_top_level_fields(self) -> None:
         schema = draft_governed_proposal_from_context.params_json_schema
-        self.assertTrue(
+        self.assertEqual(
+            set(schema["properties"]),
             {
                 "kind",
                 "claim",
@@ -109,7 +110,11 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "decision_scaffold",
                 "source_refs",
                 "reason",
-            }.issubset(set(schema["properties"]))
+                "assumptions",
+                "limitations",
+                "context_pack_refs",
+                "profile_name",
+            },
         )
         self.assertEqual(
             set(schema["required"]),
@@ -122,6 +127,9 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "reason",
             },
         )
+        self.assertNotIn("additionalProperties", schema)
+        self.assertTrue(schema["properties"]["evidence"]["additionalProperties"])
+        self.assertTrue(schema["properties"]["decision_scaffold"]["additionalProperties"])
 
     def test_context_payload_unavailable_state_core_is_non_authoritative(self) -> None:
         from finharness.statecore.store import StateCoreStoreError
