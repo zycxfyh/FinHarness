@@ -72,3 +72,8 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
   proposal timeline, but they are not proposal revisions, attestations,
   approvals, rejections, recommendations, execution authorization, orders,
   transfers, or broker actions.
+- `AgentReviewNoteDraft` artifacts are consumed by deterministic review queue
+  triage (`/review/queue`) alongside proposals, attestations, archived state,
+  receipt index rows, and proposal queue checks. The queue is a read model for
+  human reviewer attention and next actions; it is not approval, rejection,
+  attestation, recommendation, or execution authorization.

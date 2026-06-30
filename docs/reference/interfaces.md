@@ -16,7 +16,7 @@ Use this as a lookup page. For system ownership, read
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
-| ReviewInterface | Local governed commands | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
+| ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
 | AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through `AgentToolEntry`, profile-aware context projection, evidence provider registry, and the runtime pipeline; default profile is read-only baseline; review-draft profile can create append-only governed proposal drafts; review-note profile can create append-only `AgentReviewNoteDraft` artifacts on existing proposals; stronger permissions graduate through explicit runtime contracts and governance carriers | `agent_context.py`, `agent_context_projection.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `proposal_queue_checks.py`, `review_read.py`, `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
@@ -58,6 +58,11 @@ Use this as a lookup page. For system ownership, read
 - Proposal review tasks and evidence requests are read-only projections derived
   from proposals, attestations, review events, and queue checks. They are not a
   separate mutable Kanban board and do not create approval or execution authority.
+- Review queue triage is a deterministic read model derived from proposals,
+  attestations, archived state, review events, AgentReviewNoteDraft payloads,
+  receipt index rows, and proposal queue checks. It prioritizes human review
+  work and next actions; it is not approval, rejection, attestation, execution
+  authorization, or investment advice.
 - There is no current Agent approval, live order, fund transfer, broker write API,
   or receipt deletion/overwrite interface. Those are future capability candidates
   only if they receive purpose-built runtime profiles, command paths, receipts,

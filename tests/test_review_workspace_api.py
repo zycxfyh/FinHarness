@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from finharness.agent_tools import draft_agent_review_note_from_context_payload
 from finharness.api.app import create_app
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
@@ -185,6 +186,57 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         self.assertEqual(archived["state"], "archived")
         self.assertTrue(archived["is_archived"])
         self.assertFalse(archived["execution_allowed"])
+
+    def test_review_queue_triage_exposes_agent_review_notes_and_closed_filter(self) -> None:
+        active_id = self._create_proposal("active queue note")
+        attested_id = self._create_proposal("attested queue note")
+        archived_id = self._create_proposal("archived queue note")
+        draft_agent_review_note_from_context_payload(
+            proposal_id=active_id,
+            review_kind="risk_check",
+            suggested_severity="high",
+            summary="Review the cash timing evidence.",
+            rationale="The proposal does not cite a cashflow context pack.",
+            findings=["Proposal source refs are present."],
+            risks=["Cash timing could change the review outcome."],
+            open_questions=["Is the cashflow context current?"],
+            evidence_refs=["evidence://cashflow"],
+            source_refs=["context://proposal_timeline"],
+            context_pack_refs=["context_pack://proposal_timeline"],
+            data_gaps=["No cashflow context pack cited."],
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        self.client.post(
+            f"/proposals/{attested_id}/attest",
+            json={
+                "decision": "approved",
+                "attester": "operator",
+                "reason": "human review recorded",
+            },
+        )
+        self._add_event(archived_id, "archive")
+
+        active = self.client.get("/review/queue").json()
+        self.assertFalse(active["execution_allowed"])
+        self.assertFalse(active["authority_transition"])
+        self.assertIn("not approval", " ".join(active["non_claims"]))
+        self.assertEqual({item["proposal_id"] for item in active["items"]}, {active_id})
+        item = active["items"][0]
+        self.assertEqual(item["priority"], "high")
+        self.assertEqual(item["review_note_count"], 1)
+        self.assertEqual(item["latest_review_note_summary"], "Review the cash timing evidence.")
+        self.assertEqual(item["open_questions"], ["Is the cashflow context current?"])
+        self.assertFalse(item["execution_allowed"])
+        self.assertFalse(item["authority_transition"])
+
+        all_items = self.client.get(
+            "/review/queue",
+            params={"include_closed": "true"},
+        ).json()
+        statuses = {item["proposal_id"]: item["status"] for item in all_items["items"]}
+        self.assertEqual(statuses[attested_id], "reviewed")
+        self.assertEqual(statuses[archived_id], "archived")
 
 
 if __name__ == "__main__":

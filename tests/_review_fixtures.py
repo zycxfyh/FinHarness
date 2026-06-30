@@ -31,17 +31,26 @@ class ReviewFixture:
         self.engine.dispose()
         self.tmp.cleanup()
 
-    def proposal(self, proposal_id: str, *, kind: str = "cash_buffer_low") -> Any:
+    def proposal(
+        self,
+        proposal_id: str,
+        *,
+        kind: str = "cash_buffer_low",
+        claim: str | None = None,
+        evidence: dict[str, Any] | None = None,
+        source_refs: list[str] | None = None,
+    ) -> Any:
         return create_governed_proposal(
             kind=kind,
-            claim=f"{proposal_id} claim",
-            evidence={"k": 1},
+            claim=claim or f"{proposal_id} claim",
+            evidence=evidence or {"k": 1},
             decision_scaffold={
                 "decision_intent": f"Review {proposal_id}",
                 "thesis": f"{proposal_id} surfaced by the {kind} detector",
                 "do_nothing_case": "Leave it; the surfaced condition persists.",
                 "risk_if_wrong": "Acting may incur cost or forgo upside.",
             },
+            source_refs=source_refs or [],
             engine=self.engine,
             receipt_root=self.receipt_root,
             proposal_id=proposal_id,

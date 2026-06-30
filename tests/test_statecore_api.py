@@ -299,6 +299,7 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}/review-events": {"post"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
+            "/review/queue": {"get"},
             "/ips/current": {"get"},
             "/ips/draft": {"post"},
             "/ips/check": {"get"},

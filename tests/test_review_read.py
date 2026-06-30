@@ -7,10 +7,12 @@ from pathlib import Path
 
 from sqlmodel import Session
 
+from finharness.agent_tools import draft_agent_review_note_from_context_payload
 from finharness.review_read import (
     read_compare_marks,
     read_proposal_timeline,
     read_retrospective,
+    read_review_queue,
 )
 from finharness.statecore.models import Proposal
 from tests._review_fixtures import ReviewFixture
@@ -77,6 +79,120 @@ class ReviewReadCompareMarksTest(unittest.TestCase):
         self.assertEqual(pairs[0].missing_side, "right")
         self.assertFalse(pairs[0].compare_with_exists)
         self.assertTrue(pairs[0].data_gaps)
+
+
+class ReviewReadQueueTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fx = ReviewFixture()
+        self.addCleanup(self.fx.cleanup)
+
+    def test_active_queue_excludes_closed_by_default_and_can_include_them(self) -> None:
+        self.fx.proposal("open", source_refs=["context://open"])
+        self.fx.proposal("attested", source_refs=["context://attested"])
+        self.fx.attest("attested")
+        self.fx.proposal("archived", source_refs=["context://archived"])
+        self.fx.event("archived", "archive")
+
+        active = read_review_queue(self.fx.engine, receipt_root=self.fx.receipt_root)
+        self.assertEqual([item.proposal_id for item in active.items], ["open"])
+        self.assertEqual(active.items[0].status, "needs_human_review")
+        self.assertEqual(active.items[0].evidence_status, "complete")
+        self.assertFalse(active.items[0].execution_allowed)
+        self.assertFalse(active.items[0].authority_transition)
+
+        all_items = read_review_queue(
+            self.fx.engine,
+            receipt_root=self.fx.receipt_root,
+            include_closed=True,
+        )
+        statuses = {item.proposal_id: item.status for item in all_items.items}
+        self.assertEqual(statuses["attested"], "reviewed")
+        self.assertEqual(statuses["archived"], "archived")
+
+    def test_agent_review_note_enters_review_queue_triage(self) -> None:
+        self.fx.proposal("note_target", source_refs=["context://proposal"])
+        draft_agent_review_note_from_context_payload(
+            proposal_id="note_target",
+            review_kind="risk_check",
+            suggested_severity="high",
+            summary="Liquidity evidence needs a second look.",
+            rationale="The proposal does not show near-term cash timing.",
+            findings=["Drift evidence exists."],
+            risks=["Cash timing could change the review outcome."],
+            open_questions=["Is the latest cashflow context current?"],
+            evidence_refs=["evidence://drift"],
+            source_refs=["context://proposal_timeline"],
+            context_pack_refs=["context_pack://proposal_timeline"],
+            data_gaps=["No cashflow context pack cited."],
+            engine=self.fx.engine,
+            receipt_root=self.fx.receipt_root,
+        )
+
+        queue = read_review_queue(self.fx.engine, receipt_root=self.fx.receipt_root)
+        item = queue.items[0]
+
+        self.assertEqual(item.proposal_id, "note_target")
+        self.assertEqual(item.priority, "high")
+        self.assertEqual(item.review_note_count, 1)
+        self.assertEqual(
+            item.latest_review_note_summary,
+            "Liquidity evidence needs a second look.",
+        )
+        self.assertEqual(item.open_questions, ["Is the latest cashflow context current?"])
+        self.assertEqual(item.risks, ["Cash timing could change the review outcome."])
+        self.assertEqual(item.data_gaps, ["No cashflow context pack cited."])
+        self.assertEqual(
+            item.source_refs,
+            [
+                "context://proposal",
+                "context://proposal_timeline",
+                "evidence://drift",
+            ],
+        )
+        self.assertIn("answer Agent open questions", item.next_actions)
+        self.assertFalse(item.execution_allowed)
+
+    def test_unreadable_agent_review_note_payload_enters_queue_data_gaps(self) -> None:
+        self.fx.proposal("bad_note", source_refs=["context://proposal"])
+        self.fx.event(
+            "bad_note",
+            "agent_review_note",
+            text="{not-json",
+        )
+
+        queue = read_review_queue(self.fx.engine, receipt_root=self.fx.receipt_root)
+        item = queue.items[0]
+
+        self.assertEqual(item.proposal_id, "bad_note")
+        self.assertEqual(item.evidence_status, "incomplete")
+        self.assertIn("agent review note payload is unreadable", item.data_gaps)
+        self.assertIn("Agent review note reports data gaps.", item.triage_reasons)
+        self.assertFalse(item.execution_allowed)
+
+    def test_duplicate_candidate_is_triage_hint_not_state_change(self) -> None:
+        self.fx.proposal(
+            "dup_a",
+            kind="rebalance_review",
+            claim="Review the same target allocation.",
+            source_refs=["context://dup"],
+        )
+        self.fx.proposal(
+            "dup_b",
+            kind="rebalance_review",
+            claim="Review the same target allocation.",
+            source_refs=["context://dup"],
+        )
+
+        queue = read_review_queue(self.fx.engine, receipt_root=self.fx.receipt_root)
+        by_id = {item.proposal_id: item for item in queue.items}
+
+        self.assertEqual(by_id["dup_a"].duplicate_candidates, ["dup_b"])
+        self.assertEqual(by_id["dup_b"].duplicate_candidates, ["dup_a"])
+        self.assertIn(
+            "compare duplicate candidates before progressing review",
+            by_id["dup_a"].next_actions,
+        )
+        self.assertFalse(by_id["dup_a"].execution_allowed)
 
 
 class ReviewReadRetrospectiveTest(unittest.TestCase):
