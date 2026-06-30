@@ -86,7 +86,7 @@ This reference supports a staged route:
 #66 ToolEntry metadata + check_fn
 #67 Agent Tool Runtime Pipeline v0
 #68 Evidence Provider Registry v0
-#69 Capital Context Budget / Projection
+#69 Capital Context Budget / Projection v0
 #70 Runtime Trace / Diagnostics Surface
 #71 Control Plane v0
 #72 Security / Trust Boundary v0
@@ -97,11 +97,12 @@ The route should use reviewability and reliability to unlock broader Agent
 capability. Every new permission should arrive as an explicit runtime contract,
 not as a prompt promise or hidden helper.
 
-Current mainline has implemented the route through `#68`: Agent tools are
+Current mainline has implemented the route through `#69`: Agent tools are
 resolved through profile-selected `AgentToolEntry` records, declared evidence
-provider ids, and a runtime pipeline that exposes visible/hidden/unavailable
-tools, structured dispatch results, structured runtime errors, evidence
-envelopes, result-budget truncation, and authority-boundary metadata. This is the
+provider ids, profile-aware context projection policies, and a runtime pipeline
+that exposes visible/hidden/unavailable tools, structured dispatch results,
+structured runtime errors, evidence envelopes, context-budget projection,
+result-budget truncation, and authority-boundary metadata. This is the
 foundation for opening stronger Agent permissions in later profiles because the
-system can now say which provider, source, receipt, context pack, and runtime
-policy shaped each output.
+system can now say which profile, tool, provider, source, receipt, context pack,
+projection policy, and runtime policy shaped each output.

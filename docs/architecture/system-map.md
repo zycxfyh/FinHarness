@@ -76,23 +76,27 @@ domain model / read model / write(command) model / adapters / invariants
 
 ### 7. Agent Explanation
 
-- **职责**:给人解释状态、IPS policy、proposal/review timeline、风险笔记和工具结果。
+- **职责**:把 Agent 团队放进个人资本办公室的治理运行时:解释状态、IPS policy、
+  proposal/review timeline、风险笔记和工具结果,并通过显式 profile/tool/evidence/
+  context projection contract 逐步开放更强能力。
 - **read model**:`agent_context.py` 中的 bounded context packs:
   capital summary、current IPS、IPS check、open proposals、proposal timeline。
-- **domain/adapters**:`agent_context.py`、`agent_capabilities.py`、
-  `agent_evidence.py`、`agent_tools.py`、`proposal_queue_checks.py`、
-  `hermes_bridge.py`。
+- **domain/adapters**:`agent_context.py`、`agent_context_projection.py`、
+  `agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、
+  `proposal_queue_checks.py`、`hermes_bridge.py`。
 - **tool posture**:`agent_capabilities.py` 定义显式 capability profiles;default
   profile 是 read/explain baseline,不是最终 ceiling;planned capabilities 只表达路线图,
   不能被 runtime 当成权限,但可以通过 profile、ToolEntry、evidence provider、
   receipt-backed command path、review/approval surface 和测试毕业为 active capability;
   `agent_tools.py` 的 `AgentToolEntry` registry/factory 把 profile tool names 映射成
   actual SDK tools,并暴露 capability、toolset、side-effect、availability 和
-  non-authority metadata;`agent_evidence.py` 提供 evidence provider registry 和
+  non-authority metadata;`agent_context_projection.py` 提供 profile-aware
+  context budget 和 `get_capital_context_projection` office brief 工具,让 Agent
+  团队按角色拿到适量、可追踪、可诊断的 Capital OS 上下文;`agent_evidence.py` 提供 evidence provider registry 和
   dispatch evidence envelope,把 source_refs、receipt_refs、context_pack_refs、
   data_gaps 和 non-claims 从裸 payload 投影成可审查 provenance;`agent_runtime.py`
   负责 visible/hidden/unavailable tool resolution、structured result/error/evidence、
-  result-budget truncation 和 dispatch wrapper;
+  profile-aware context projection、result-budget truncation 和 dispatch wrapper;
   review-draft profile 允许 Agent 创建 append-only governed proposal draft;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue

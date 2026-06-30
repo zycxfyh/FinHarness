@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 import pandas as pd
 from agents.tool_context import ToolContext
 
 from finharness.agent_capabilities import list_agent_profiles, tool_names_for_profile
-from finharness.agent_runtime import resolve_agent_tool_entries
+from finharness.agent_runtime import dispatch_agent_tool, resolve_agent_tool_entries
 from finharness.agent_tools import (
     AGENT_TOOL_ENTRIES,
     AGENT_TOOL_REGISTRY,
@@ -24,6 +25,7 @@ from finharness.agent_tools import (
     draft_governed_proposal_from_context,
     evaluate_latest_risk_note_payload,
     finance_research_agent,
+    get_capital_context_projection,
     get_capital_summary_context,
     get_current_ips_context,
     get_historical_risk_metrics,
@@ -45,6 +47,23 @@ def ctx(tool_name: str, arguments: str = "") -> ToolContext[None]:
     )
 
 
+def proposal_draft_args() -> dict[str, object]:
+    return {
+        "kind": "allocation_review",
+        "claim": "Review the proposed target allocation.",
+        "evidence": {"summary": "Allocation drift is above policy threshold."},
+        "decision_scaffold": {
+            "recommendation": "review",
+            "options": ["keep", "rebalance"],
+        },
+        "source_refs": ["context://capital_summary"],
+        "reason": "Drift review needs a human decision.",
+        "assumptions": {"data_is_current": True},
+        "limitations": {"not_tax_advice": True},
+        "context_pack_refs": ["context_pack://capital_summary"],
+    }
+
+
 class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
     def test_agent_registers_expected_tools(self) -> None:
         self.assertEqual(
@@ -53,6 +72,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "get_quote_snapshot",
                 "get_historical_risk_metrics",
                 "evaluate_latest_risk_note",
+                "get_capital_context_projection",
                 "get_capital_summary_context",
                 "get_current_ips_context",
                 "get_ips_check_context",
@@ -60,7 +80,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "get_proposal_timeline_context",
             ],
         )
-        self.assertEqual(len(finance_research_agent.tools), 8)
+        self.assertEqual(len(finance_research_agent.tools), 9)
         self.assertEqual(tool_names(), list(tool_names_for_profile("default")))
         self.assertNotIn("draft_governed_proposal_from_context", tool_names())
         self.assertIn(
@@ -96,6 +116,167 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 if item.model_visible
             ],
         )
+
+    async def test_agent_sdk_tools_are_profile_bound_runtime_wrappers(self) -> None:
+        original = AGENT_TOOL_ENTRIES["get_capital_context_projection"]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda arguments: {
+                "name": "capital_context_projection",
+                "available": True,
+                "profile_name": arguments["profile_name"],
+                "packs": [],
+                "source_refs": [],
+                "context_pack_refs": [],
+                "data_gaps": [],
+                "non_claims": [],
+                "execution_allowed": False,
+            },
+        )
+
+        with patch.dict(AGENT_TOOL_ENTRIES, {"get_capital_context_projection": patched}):
+            review_agent = build_finance_research_agent("review-draft")
+            tool = next(
+                item
+                for item in review_agent.tools
+                if item.name == "get_capital_context_projection"
+            )
+
+            result = await tool.on_invoke_tool(
+                ctx("get_capital_context_projection", '{"open_proposals_limit": 10}'),
+                '{"open_proposals_limit": 10}',
+            )
+
+        self.assertIsNot(tool, original.tool)
+        self.assertEqual(tool.params_json_schema, original.tool.params_json_schema)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["profile_name"], "review-draft")
+        self.assertEqual(result["tool_name"], "get_capital_context_projection")
+        self.assertIsNotNone(result["evidence"])
+
+    async def test_agent_sdk_proposal_draft_wrapper_uses_active_profile(self) -> None:
+        original = AGENT_TOOL_ENTRIES["draft_governed_proposal_from_context"]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda arguments: {
+                "proposal_id": "proposal-agent-draft",
+                "kind": arguments["kind"],
+                "receipt_ref": "receipt://agent-draft",
+                "authority_level": "proposal",
+                "requires_human_review": True,
+                "execution_allowed": False,
+                "non_claims": ["Not execution authorization."],
+                "source_refs": arguments["source_refs"],
+                "receipt_refs": ["receipt://agent-draft"],
+                "context_pack_refs": arguments["context_pack_refs"],
+                "profile_name": arguments["profile_name"],
+            },
+        )
+
+        with patch.dict(
+            AGENT_TOOL_ENTRIES,
+            {"draft_governed_proposal_from_context": patched},
+        ):
+            review_agent = build_finance_research_agent("review-draft")
+            tool = next(
+                item
+                for item in review_agent.tools
+                if item.name == "draft_governed_proposal_from_context"
+            )
+
+            result = await tool.on_invoke_tool(
+                ctx("draft_governed_proposal_from_context"),
+                json.dumps(proposal_draft_args()),
+            )
+
+        self.assertIsNot(tool, original.tool)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["profile_name"], "review-draft")
+        self.assertEqual(result["tool_name"], "draft_governed_proposal_from_context")
+        self.assertEqual(result["evidence"]["receipt_refs"], ["receipt://agent-draft"])
+
+    async def test_default_and_review_agent_sdk_tools_use_their_active_profile(
+        self,
+    ) -> None:
+        original = AGENT_TOOL_ENTRIES["get_capital_context_projection"]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda arguments: {
+                "name": "capital_context_projection",
+                "available": True,
+                "profile_name": arguments["profile_name"],
+                "packs": [],
+                "source_refs": [],
+                "context_pack_refs": [],
+                "data_gaps": [],
+                "non_claims": [],
+                "execution_allowed": False,
+            },
+        )
+
+        with patch.dict(AGENT_TOOL_ENTRIES, {"get_capital_context_projection": patched}):
+            default_tool = next(
+                item
+                for item in build_finance_research_agent("default").tools
+                if item.name == "get_capital_context_projection"
+            )
+            review_tool = next(
+                item
+                for item in build_finance_research_agent("review-draft").tools
+                if item.name == "get_capital_context_projection"
+            )
+            default_result = await default_tool.on_invoke_tool(
+                ctx("get_capital_context_projection", '{"open_proposals_limit": 10}'),
+                '{"open_proposals_limit": 10}',
+            )
+            review_result = await review_tool.on_invoke_tool(
+                ctx("get_capital_context_projection", '{"open_proposals_limit": 10}'),
+                '{"open_proposals_limit": 10}',
+            )
+
+        self.assertEqual(default_result["result"]["profile_name"], "default")
+        self.assertEqual(review_result["result"]["profile_name"], "review-draft")
+
+    async def test_agent_sdk_tool_wrapper_rejects_invalid_arguments_json(self) -> None:
+        tool = next(
+            item
+            for item in build_finance_research_agent("default").tools
+            if item.name == "get_capital_context_projection"
+        )
+
+        result = await tool.on_invoke_tool(
+            ctx("get_capital_context_projection", "not json"),
+            "not json",
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "SCHEMA_VALIDATION_FAILED")
+
+    def test_proposal_draft_dispatch_rejects_profile_argument_bypass(self) -> None:
+        original = AGENT_TOOL_ENTRIES["draft_governed_proposal_from_context"]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda _arguments: {},
+        )
+        arguments = proposal_draft_args()
+        arguments["profile_name"] = "default"
+
+        with patch.dict(
+            AGENT_TOOL_ENTRIES,
+            {"draft_governed_proposal_from_context": patched},
+        ):
+            result = dispatch_agent_tool(
+                profile_name="review-draft",
+                tool_name="draft_governed_proposal_from_context",
+                arguments=arguments,
+            ).model()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "PROFILE_NOT_ALLOWED")
 
     def test_profile_runtime_fail_closed_for_unknown_or_unregistered_tools(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown agent capability profile"):
@@ -215,6 +396,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
 
     def test_context_tool_schemas_are_strict(self) -> None:
         context_tools = [
+            get_capital_context_projection,
             get_capital_summary_context,
             get_current_ips_context,
             get_ips_check_context,
@@ -228,6 +410,12 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
 
         open_schema = get_open_proposals_context.params_json_schema
         self.assertEqual(set(open_schema["properties"]), {"limit"})
+
+        projection_schema = get_capital_context_projection.params_json_schema
+        self.assertEqual(
+            set(projection_schema["properties"]),
+            {"open_proposals_limit"},
+        )
 
         timeline_schema = get_proposal_timeline_context.params_json_schema
         self.assertEqual(set(timeline_schema["properties"]), {"proposal_id", "limit"})
@@ -247,7 +435,6 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "assumptions",
                 "limitations",
                 "context_pack_refs",
-                "profile_name",
             },
         )
         self.assertEqual(
@@ -261,6 +448,7 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
                 "reason",
             },
         )
+        self.assertNotIn("profile_name", schema["properties"])
         self.assertNotIn("additionalProperties", schema)
         self.assertTrue(schema["properties"]["evidence"]["additionalProperties"])
         self.assertTrue(schema["properties"]["decision_scaffold"]["additionalProperties"])

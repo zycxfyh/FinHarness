@@ -19,6 +19,7 @@ AGENT_CAPABILITY_NON_CLAIMS = (
 )
 
 CAPITAL_CONTEXT_TOOL_NAMES = (
+    "get_capital_context_projection",
     "get_capital_summary_context",
     "get_current_ips_context",
     "get_ips_check_context",
