@@ -37,7 +37,10 @@ Use this as a lookup page. For system ownership, read
   provider ids, and non-authority claims. The Agent runtime pipeline resolves
   visible/hidden/unavailable tools and normalizes dispatch results/errors plus
   evidence envelopes without creating approval, recommendations, or execution
-  authorization. Agent-created proposal drafts are review objects.
+  authorization by implication. New Agent permissions should be opened through
+  explicit profiles, tool entries, evidence providers, review/approval contracts,
+  and tests rather than by broad prompt language. Agent-created proposal drafts
+  are review objects.
 - Agent-created proposal drafts expose review provenance (`created_by=agent`,
   active profile, context/source refs, receipt ref, and human-review state) in
   proposal review responses.
@@ -49,8 +52,10 @@ Use this as a lookup page. For system ownership, read
 - Proposal review tasks and evidence requests are read-only projections derived
   from proposals, attestations, review events, and queue checks. They are not a
   separate mutable Kanban board and do not create approval or execution authority.
-- There is no Agent approval, live order, fund transfer, broker write API, or
-  receipt deletion/overwrite interface.
+- There is no current Agent approval, live order, fund transfer, broker write API,
+  or receipt deletion/overwrite interface. Those are future capability candidates
+  only if they receive purpose-built runtime profiles, command paths, receipts,
+  review/approval surfaces, and failure modes.
 - Any new production dependency still needs explicit user approval before being
   added.
 
