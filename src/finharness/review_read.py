@@ -245,6 +245,29 @@ def _review_note_payload_pairs(
     return pairs
 
 
+def _unreadable_review_note_gaps(events: list[ReviewEvent]) -> list[str]:
+    gaps: list[str] = []
+    for event in events:
+        if event.kind != "agent_review_note" or not event.text:
+            continue
+        try:
+            payload = json.loads(event.text)
+        except json.JSONDecodeError:
+            gaps.append("agent review note payload is unreadable")
+            continue
+        if not isinstance(payload, dict):
+            gaps.append("agent review note payload is not an object")
+    return gaps
+
+
+def _source_refs_for(queue_source_refs: list[str], notes: list[dict[str, Any]]) -> list[str]:
+    refs = list(queue_source_refs)
+    for note in notes:
+        refs.extend(_text_items(note.get("source_refs")))
+        refs.extend(_text_items(note.get("evidence_refs")))
+    return sorted(set(refs))
+
+
 def _receipt_refs_for(proposal: Proposal, events: list[ReviewEvent]) -> list[str]:
     refs: list[str] = []
     if proposal.receipt_ref:
@@ -375,6 +398,7 @@ def _build_review_queue_item(
     note_data_gaps = [
         item for note in notes for item in _text_items(note.get("data_gaps"))
     ]
+    unreadable_note_gaps = _unreadable_review_note_gaps(events)
     duplicate_candidates = sorted(
         {
             proposal_id
@@ -400,7 +424,7 @@ def _build_review_queue_item(
         stale_context_flags.append("proposal receipt_ref missing from receipt index")
 
     block_codes: set[str] = {str(finding.code) for finding in queue_checks.blocks}
-    data_gaps = sorted(set(note_data_gaps))
+    data_gaps = sorted({*note_data_gaps, *unreadable_note_gaps})
     evidence_status = _evidence_status(
         block_codes=block_codes,
         data_gaps=data_gaps,
@@ -451,7 +475,7 @@ def _build_review_queue_item(
         data_gaps=data_gaps,
         duplicate_candidates=duplicate_candidates,
         stale_context_flags=sorted(set(stale_context_flags)),
-        source_refs=list(queue_checks.source_refs),
+        source_refs=_source_refs_for(list(queue_checks.source_refs), notes),
         receipt_refs=_receipt_refs_for(proposal, events),
         next_actions=_next_actions(
             status=status,

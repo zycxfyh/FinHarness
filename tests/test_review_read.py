@@ -141,7 +141,32 @@ class ReviewReadQueueTest(unittest.TestCase):
         self.assertEqual(item.open_questions, ["Is the latest cashflow context current?"])
         self.assertEqual(item.risks, ["Cash timing could change the review outcome."])
         self.assertEqual(item.data_gaps, ["No cashflow context pack cited."])
+        self.assertEqual(
+            item.source_refs,
+            [
+                "context://proposal",
+                "context://proposal_timeline",
+                "evidence://drift",
+            ],
+        )
         self.assertIn("answer Agent open questions", item.next_actions)
+        self.assertFalse(item.execution_allowed)
+
+    def test_unreadable_agent_review_note_payload_enters_queue_data_gaps(self) -> None:
+        self.fx.proposal("bad_note", source_refs=["context://proposal"])
+        self.fx.event(
+            "bad_note",
+            "agent_review_note",
+            text="{not-json",
+        )
+
+        queue = read_review_queue(self.fx.engine, receipt_root=self.fx.receipt_root)
+        item = queue.items[0]
+
+        self.assertEqual(item.proposal_id, "bad_note")
+        self.assertEqual(item.evidence_status, "incomplete")
+        self.assertIn("agent review note payload is unreadable", item.data_gaps)
+        self.assertIn("Agent review note reports data gaps.", item.triage_reasons)
         self.assertFalse(item.execution_allowed)
 
     def test_duplicate_candidate_is_triage_hint_not_state_change(self) -> None:
