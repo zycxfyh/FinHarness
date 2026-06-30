@@ -71,6 +71,10 @@ FinHarness 的 Agent 工具已经开始走向 `AgentToolEntry` 风格:
 
 - Keep `AgentToolEntry` plus `agent_runtime.py` as the local source for tool
   metadata, resolved visibility, structured dispatch results, and runtime errors.
+- Keep `agent_evidence.py` as the local source for evidence provider declarations
+  and dispatch evidence envelopes. Tool handlers may return raw `source_refs`,
+  `receipt_ref`, `context_pack_refs`, `data_gaps`, and `non_claims`, but runtime
+  should project those into a bounded envelope before presenting them as provenance.
 - Prefer tests that prove visible tools match the selected profile.
 - Keep generated tool docs close to the registry, not manually duplicated in many docs.
 

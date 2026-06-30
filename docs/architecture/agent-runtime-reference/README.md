@@ -1,6 +1,6 @@
 # Agent Runtime Reference
 
-状态:reference(2026-06-29)。本目录把 Hermes agent 项目的成熟运行时模式整理成
+状态:reference(2026-06-30)。本目录把 Hermes agent 项目的成熟运行时模式整理成
 FinHarness 可复用的设计参考。
 
 它不是当前功能清单。当前事实仍以 `system-map.md`、`framework-index.md`、
@@ -75,7 +75,7 @@ This reference supports a staged route:
 #65 ReviewTask / EvidenceRequest lifecycle
 #66 ToolEntry metadata + check_fn
 #67 Agent Tool Runtime Pipeline v0
-#68 Evidence Provider Registry
+#68 Evidence Provider Registry v0
 #69 Capital Context Budget / Projection
 #70 Runtime Trace / Diagnostics Surface
 #71 Control Plane v0
@@ -86,7 +86,8 @@ This reference supports a staged route:
 The route should keep adding reviewability and reliability before adding broader
 Agent write capability.
 
-Current mainline has implemented the route through `#67`: Agent tools are
-resolved through profile-selected `AgentToolEntry` records and a runtime pipeline
-that exposes visible/hidden/unavailable tools, structured dispatch results,
-structured runtime errors, result-budget truncation, and non-authority metadata.
+Current mainline has implemented the route through `#68`: Agent tools are
+resolved through profile-selected `AgentToolEntry` records, declared evidence
+provider ids, and a runtime pipeline that exposes visible/hidden/unavailable
+tools, structured dispatch results, structured runtime errors, evidence
+envelopes, result-budget truncation, and non-authority metadata.
