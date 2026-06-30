@@ -118,6 +118,7 @@ PROFILE_BOUND_TOOL_NAMES = frozenset(
         "get_capital_context_projection",
         "draft_governed_proposal_from_context",
         "draft_agent_review_note_from_context",
+        "draft_agent_scaffold_revision_apply_candidate_from_context",
     }
 )
 

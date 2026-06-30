@@ -90,10 +90,14 @@ This reference supports a staged route:
 #70 AgentReviewNoteDraft capability
 #71 Review Queue Triage
 #72 Risk Register v0
-#73 Runtime Trace / Diagnostics Surface
-#74 Control Plane v0
-#75 Security / Trust Boundary v0
-#76 Lifecycle / Release Governance v0
+#73 AgentScaffoldRevisionApplyCandidate
+#74 Human-confirmed scaffold revision apply
+#75 Simulation / Preflight
+#76 Paper autonomy
+#77 Runtime Trace / Diagnostics Surface
+#78 Control Plane v0
+#79 Security / Trust Boundary v0
+#80 Lifecycle / Release Governance v0
 ```
 
 The route should use reviewability and reliability to unlock broader Agent
@@ -122,3 +126,14 @@ for opening stronger Agent permissions in later profiles because the system can
 now say which profile, tool, provider, source, receipt, context pack, projection
 policy, runtime policy, governance artifact, review operating surface, and risk
 object shaped each output.
+
+`#73` opens the next stronger posture without skipping the authority ladder:
+`scaffold-candidate` can create append-only
+`AgentScaffoldRevisionApplyCandidate` timeline artifacts from active risk
+register items. These artifacts include a bounded `scaffold_patch`,
+`proposed_scaffold`, `changed_fields`, risk coverage, preflight/rollback
+context, and human confirmation requirements. They are system-applicable
+candidates, but they do not mutate proposals; human-confirmed apply remains the
+next capability layer. In `#73`, preflight, risk coverage, and rollback fields
+are explicitly Agent-supplied candidate payload; later system preflight is a
+separate capability layer.

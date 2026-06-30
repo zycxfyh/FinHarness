@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from agents import Agent, FunctionTool, Tool, function_tool
 from sqlalchemy.engine import Engine
+from sqlmodel import Session
 
 from finharness.agent_capabilities import (
     AgentCapability,
@@ -42,7 +43,9 @@ from finharness.agent_evidence import (
 from finharness.config import load_settings
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
-from finharness.statecore.decision_scaffold import ensure_forcing
+from finharness.risk_register import read_review_risk_register
+from finharness.statecore.decision_scaffold import ALL_FIELDS, ensure_forcing, normalize
+from finharness.statecore.models import Proposal
 from finharness.statecore.proposals import (
     create_governed_proposal,
     create_governed_review_event,
@@ -74,6 +77,16 @@ AGENT_REVIEW_NOTE_DRAFT_NON_CLAIMS = (
     "Agent-created review notes are draft review artifacts, not approvals.",
     "Review notes do not revise proposals, attest decisions, or close review tasks.",
     "Human review is required before any decision of record.",
+    "Not execution authorization.",
+    "Not investment advice.",
+)
+AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS = (
+    "Agent-created scaffold revision apply candidates are review artifacts, not applied revisions.",
+    "Apply candidates do not revise proposals, attest decisions, approve/reject "
+    "proposals, or authorize execution.",
+    "Candidate preflight, risk coverage, and rollback fields are Agent-supplied "
+    "candidate payload unless a later system preflight recomputes them.",
+    "Human confirmation is required before any scaffold revision is applied.",
     "Not execution authorization.",
     "Not investment advice.",
 )
@@ -620,6 +633,150 @@ def draft_agent_review_note_from_context_payload(
     }
 
 
+def draft_agent_scaffold_revision_apply_candidate_from_context_payload(
+    *,
+    proposal_id: str,
+    scaffold_patch: dict[str, Any],
+    change_summary: str,
+    rationale: str,
+    basis_risk_ids: list[str],
+    risk_coverage: dict[str, Any],
+    preflight_result: dict[str, Any],
+    rollback_info: dict[str, Any],
+    human_confirmation_requirements: list[str],
+    source_refs: list[str],
+    receipt_refs: list[str] | None = None,
+    context_pack_refs: list[str] | None = None,
+    data_gaps: list[str] | None = None,
+    profile_name: str = "scaffold-candidate",
+    engine: Engine | None = None,
+    receipt_root: str | Path | None = None,
+    **extra: Any,
+) -> dict[str, object]:
+    """Create an append-only AgentScaffoldRevisionApplyCandidate for a proposal."""
+    _validate_agent_scaffold_revision_apply_candidate_inputs(
+        profile_name=profile_name,
+        proposal_id=proposal_id,
+        scaffold_patch=scaffold_patch,
+        change_summary=change_summary,
+        rationale=rationale,
+        basis_risk_ids=basis_risk_ids,
+        risk_coverage=risk_coverage,
+        preflight_result=preflight_result,
+        rollback_info=rollback_info,
+        human_confirmation_requirements=human_confirmation_requirements,
+        source_refs=source_refs,
+        receipt_refs=receipt_refs or [],
+        context_pack_refs=context_pack_refs or [],
+        data_gaps=data_gaps or [],
+        extra=extra,
+    )
+    owned_engine = engine is None
+    active_engine = engine or open_state_core()
+    active_receipt_root = Path(receipt_root or load_settings().receipt_root)
+    try:
+        with Session(active_engine) as session:
+            proposal = session.get(Proposal, proposal_id.strip())
+            if proposal is None:
+                raise ValueError(
+                    "agent scaffold revision apply candidate references unknown proposal"
+                )
+            previous_scaffold = normalize(proposal.decision_scaffold)
+
+        patch = normalize(scaffold_patch)
+        proposed_scaffold = ensure_forcing({**previous_scaffold, **patch})
+        changed_fields = [
+            field
+            for field in ALL_FIELDS
+            if previous_scaffold.get(field) != proposed_scaffold.get(field)
+        ]
+        if not changed_fields:
+            raise ValueError(
+                "agent scaffold revision apply candidate requires at least one changed field"
+            )
+        _validate_basis_risks(
+            engine=active_engine,
+            receipt_root=active_receipt_root,
+            proposal_id=proposal_id.strip(),
+            basis_risk_ids=basis_risk_ids,
+        )
+        candidate_id = _agent_scaffold_revision_apply_candidate_id()
+        refs = _dedupe_refs(
+            [
+                *source_refs,
+                *(receipt_refs or []),
+                *(context_pack_refs or []),
+                *basis_risk_ids,
+            ]
+        )
+        receipt_refs_clean = _dedupe_refs(receipt_refs or [])
+        candidate = {
+            "schema": "finharness.agent_scaffold_revision_apply_candidate.v1",
+            "candidate_id": candidate_id,
+            "proposal_id": proposal_id.strip(),
+            "profile_name": profile_name,
+            "consequence_class": "C2",
+            "apply_candidate": True,
+            "basis_risk_ids": _dedupe_refs(basis_risk_ids),
+            "scaffold_patch": patch,
+            "proposed_scaffold": proposed_scaffold,
+            "changed_fields": changed_fields,
+            "change_summary": change_summary.strip(),
+            "rationale": rationale.strip(),
+            "risk_coverage": copy.deepcopy(risk_coverage),
+            "risk_coverage_source": "agent_supplied_candidate_payload",
+            "preflight_result": copy.deepcopy(preflight_result),
+            "preflight_result_source": "agent_supplied_candidate_payload",
+            "system_preflight_recomputed": False,
+            "rollback_info": copy.deepcopy(rollback_info),
+            "rollback_info_source": "agent_supplied_candidate_payload",
+            "human_confirmation_requirements": _clean_strings(
+                human_confirmation_requirements
+            ),
+            "source_refs": _dedupe_refs(source_refs),
+            "receipt_refs": receipt_refs_clean,
+            "context_pack_refs": _dedupe_refs(context_pack_refs or []),
+            "data_gaps": _dedupe_refs(data_gaps or []),
+            "non_claims": list(
+                AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS
+            ),
+            "transition_rule": {
+                "may_enter_proposal_timeline": True,
+                "may_be_applied_by_human_confirmed_flow": True,
+                "may_revise_proposal_without_human_confirmation": False,
+                "may_attest": False,
+                "may_approve": False,
+                "may_reject": False,
+                "may_execute": False,
+            },
+            "requires_human_review": True,
+            "execution_allowed": False,
+            "authority_transition": False,
+        }
+        write = create_governed_review_event(
+            proposal_id=proposal_id.strip(),
+            kind="agent_scaffold_revision_apply_candidate",
+            attester=f"agent:{profile_name}",
+            reason=rationale.strip(),
+            text=json.dumps(
+                candidate,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ),
+            source_refs=refs,
+            engine=active_engine,
+            receipt_root=active_receipt_root,
+        )
+    finally:
+        if owned_engine:
+            active_engine.dispose()
+    candidate["review_event_id"] = write.review_event.review_event_id
+    candidate["receipt_ref"] = write.receipt_ref
+    candidate["receipt_refs"] = _dedupe_refs([*receipt_refs_clean, write.receipt_ref])
+    return candidate
+
+
 def _validate_agent_proposal_draft(
     *,
     profile_name: str,
@@ -713,6 +870,156 @@ def _validate_agent_review_note_draft(
             )
 
 
+def _validate_agent_scaffold_revision_apply_candidate_inputs(
+    *,
+    profile_name: str,
+    proposal_id: str,
+    scaffold_patch: dict[str, Any],
+    change_summary: str,
+    rationale: str,
+    basis_risk_ids: list[str],
+    risk_coverage: dict[str, Any],
+    preflight_result: dict[str, Any],
+    rollback_info: dict[str, Any],
+    human_confirmation_requirements: list[str],
+    source_refs: list[str],
+    receipt_refs: list[str],
+    context_pack_refs: list[str],
+    data_gaps: list[str],
+    extra: dict[str, Any],
+) -> None:
+    if not profile_allows_capability(
+        profile_name, AgentCapability.CAPITAL_SCAFFOLD_REVISION
+    ):
+        raise ValueError(
+            f"agent profile {profile_name!r} does not allow capital-scaffold-revision"
+        )
+    if not proposal_id.strip():
+        raise ValueError(
+            "agent scaffold revision apply candidate requires a non-blank proposal_id"
+        )
+    if not isinstance(scaffold_patch, dict):
+        raise ValueError("agent scaffold revision apply candidate scaffold_patch must be an object")
+    unknown_scaffold_fields = sorted(set(scaffold_patch) - set(ALL_FIELDS))
+    if unknown_scaffold_fields:
+        raise ValueError(
+            "agent scaffold revision apply candidate scaffold_patch has unknown field(s): "
+            + ", ".join(unknown_scaffold_fields)
+        )
+    if not normalize(scaffold_patch):
+        raise ValueError(
+            "agent scaffold revision apply candidate requires a non-empty scaffold_patch"
+        )
+    if not change_summary.strip():
+        raise ValueError("agent scaffold revision apply candidate requires a change_summary")
+    if not rationale.strip():
+        raise ValueError("agent scaffold revision apply candidate requires a rationale")
+    if not _dedupe_refs(basis_risk_ids):
+        raise ValueError("agent scaffold revision apply candidate requires basis_risk_ids")
+    if not _dedupe_refs(source_refs):
+        raise ValueError("agent scaffold revision apply candidate requires at least one source ref")
+    _validate_scaffold_candidate_shapes(
+        basis_risk_ids=basis_risk_ids,
+        risk_coverage=risk_coverage,
+        preflight_result=preflight_result,
+        rollback_info=rollback_info,
+        human_confirmation_requirements=human_confirmation_requirements,
+        source_refs=source_refs,
+        receipt_refs=receipt_refs,
+        context_pack_refs=context_pack_refs,
+        data_gaps=data_gaps,
+    )
+    _reject_agent_review_note_extra(extra, artifact_name="agent scaffold revision apply candidate")
+    _reject_forbidden_authority_markers(
+        artifact_values={
+            "scaffold_patch": scaffold_patch,
+            "risk_coverage": risk_coverage,
+            "preflight_result": preflight_result,
+            "rollback_info": rollback_info,
+            "human_confirmation_requirements": human_confirmation_requirements,
+            "source_refs": source_refs,
+            "receipt_refs": receipt_refs,
+            "context_pack_refs": context_pack_refs,
+            "data_gaps": data_gaps,
+            "extra": extra,
+        }
+    )
+
+
+def _validate_scaffold_candidate_shapes(
+    *,
+    basis_risk_ids: list[str],
+    risk_coverage: dict[str, Any],
+    preflight_result: dict[str, Any],
+    rollback_info: dict[str, Any],
+    human_confirmation_requirements: list[str],
+    source_refs: list[str],
+    receipt_refs: list[str],
+    context_pack_refs: list[str],
+    data_gaps: list[str],
+) -> None:
+    for name, list_value in (
+        ("basis_risk_ids", basis_risk_ids),
+        ("human_confirmation_requirements", human_confirmation_requirements),
+        ("source_refs", source_refs),
+        ("receipt_refs", receipt_refs),
+        ("context_pack_refs", context_pack_refs),
+        ("data_gaps", data_gaps),
+    ):
+        if not isinstance(list_value, list):
+            raise ValueError(f"agent scaffold revision apply candidate {name} must be a list")
+    for name, dict_value in (
+        ("risk_coverage", risk_coverage),
+        ("preflight_result", preflight_result),
+        ("rollback_info", rollback_info),
+    ):
+        if not isinstance(dict_value, dict):
+            raise ValueError(f"agent scaffold revision apply candidate {name} must be an object")
+
+
+def _reject_forbidden_authority_markers(
+    *, artifact_values: dict[str, Any]
+) -> None:
+    for name, value in artifact_values.items():
+        marker = _contains_forbidden_authority_marker(value)
+        if marker is not None:
+            raise ValueError(
+                f"{name} cannot carry authority/decision marker {marker!r}"
+            )
+
+
+def _validate_basis_risks(
+    *,
+    engine: Engine,
+    receipt_root: Path,
+    proposal_id: str,
+    basis_risk_ids: list[str],
+) -> None:
+    register = read_review_risk_register(
+        engine,
+        receipt_root=receipt_root,
+        limit=500,
+        include_closed=False,
+    )
+    active_risks = {item.risk_id: item for item in register.items}
+    missing = [risk_id for risk_id in _dedupe_refs(basis_risk_ids) if risk_id not in active_risks]
+    if missing:
+        raise ValueError(
+            "agent scaffold revision apply candidate references unknown active risk(s): "
+            + ", ".join(missing)
+        )
+    unrelated = [
+        risk_id
+        for risk_id in _dedupe_refs(basis_risk_ids)
+        if proposal_id not in active_risks[risk_id].related_proposal_ids
+    ]
+    if unrelated:
+        raise ValueError(
+            "agent scaffold revision apply candidate basis risk(s) are unrelated to proposal: "
+            + ", ".join(unrelated)
+        )
+
+
 def _validate_agent_review_note_choice(
     *,
     review_kind: str,
@@ -730,17 +1037,19 @@ def _validate_agent_review_note_choice(
         )
 
 
-def _reject_agent_review_note_extra(extra: dict[str, Any]) -> None:
+def _reject_agent_review_note_extra(
+    extra: dict[str, Any], *, artifact_name: str = "agent review note"
+) -> None:
     unknown = sorted(set(extra) - {"engine", "receipt_root"})
     if unknown:
         forbidden = sorted(set(unknown) & AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS)
         if forbidden:
             raise ValueError(
-                "agent review note cannot set authority/decision field(s): "
+                f"{artifact_name} cannot set authority/decision field(s): "
                 + ", ".join(forbidden)
             )
         raise ValueError(
-            "agent review note received unsupported field(s): " + ", ".join(unknown)
+            f"{artifact_name} received unsupported field(s): " + ", ".join(unknown)
         )
 
 
@@ -801,6 +1110,11 @@ def _proposal_kind_tokens(kind: str) -> set[str]:
 def _agent_review_note_id() -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"agent_review_note_{stamp}_{uuid4().hex[:8]}"
+
+
+def _agent_scaffold_revision_apply_candidate_id() -> str:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"agent_scaffold_candidate_{stamp}_{uuid4().hex[:8]}"
 
 
 def _clean_strings(values: list[str]) -> list[str]:
@@ -916,6 +1230,42 @@ def draft_agent_review_note_from_context(
         open_questions=open_questions,
         evidence_refs=evidence_refs,
         source_refs=source_refs,
+        context_pack_refs=context_pack_refs,
+        data_gaps=data_gaps,
+    )
+
+
+# Flexible nested patch/preflight/rollback objects are governed by runtime validators.
+# Runtime injects profile_name; the model only supplies content and provenance.
+@function_tool(strict_mode=False)
+def draft_agent_scaffold_revision_apply_candidate_from_context(
+    proposal_id: str,
+    scaffold_patch: dict[str, Any],
+    change_summary: str,
+    rationale: str,
+    basis_risk_ids: list[str],
+    risk_coverage: dict[str, Any],
+    preflight_result: dict[str, Any],
+    rollback_info: dict[str, Any],
+    human_confirmation_requirements: list[str],
+    source_refs: list[str],
+    receipt_refs: list[str] | None = None,
+    context_pack_refs: list[str] | None = None,
+    data_gaps: list[str] | None = None,
+) -> dict[str, object]:
+    """Create an append-only AgentScaffoldRevisionApplyCandidate."""
+    return draft_agent_scaffold_revision_apply_candidate_from_context_payload(
+        proposal_id=proposal_id,
+        scaffold_patch=scaffold_patch,
+        change_summary=change_summary,
+        rationale=rationale,
+        basis_risk_ids=basis_risk_ids,
+        risk_coverage=risk_coverage,
+        preflight_result=preflight_result,
+        rollback_info=rollback_info,
+        human_confirmation_requirements=human_confirmation_requirements,
+        source_refs=source_refs,
+        receipt_refs=receipt_refs,
         context_pack_refs=context_pack_refs,
         data_gaps=data_gaps,
     )
@@ -1065,6 +1415,28 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             ),
             unavailable_policy="fail_closed",
             requires_human_review=True,
+        ),
+        AgentToolEntry(
+            name=draft_agent_scaffold_revision_apply_candidate_from_context.name,
+            tool=draft_agent_scaffold_revision_apply_candidate_from_context,
+            capability=AgentCapability.CAPITAL_SCAFFOLD_REVISION,
+            toolset="proposal_review",
+            description=(
+                "Create an append-only AgentScaffoldRevisionApplyCandidate for "
+                "human-confirmed scaffold revision apply."
+            ),
+            side_effect="append_only_review_write",
+            check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(
+                draft_agent_scaffold_revision_apply_candidate_from_context_payload
+            ),
+            evidence_provider_ids=(
+                "capital_context.state_core",
+                "proposal_receipt.state_core",
+            ),
+            unavailable_policy="fail_closed",
+            requires_human_review=True,
+            max_result_chars=20_000,
         ),
     )
 }

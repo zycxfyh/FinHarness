@@ -187,15 +187,23 @@ def read_proposal_timeline(engine: Any, proposal_id: str) -> ProposalTimeline | 
 
 def _review_event_detail(event: ReviewEvent) -> dict[str, Any]:
     detail = event.model_dump(mode="json")
-    if event.kind != "agent_review_note" or not event.text:
+    artifact_keys = {
+        "agent_review_note": "agent_review_note",
+        "agent_scaffold_revision_apply_candidate": (
+            "agent_scaffold_revision_apply_candidate"
+        ),
+    }
+    artifact_key = artifact_keys.get(event.kind)
+    if artifact_key is None or not event.text:
         return detail
     try:
         payload = json.loads(event.text)
     except json.JSONDecodeError:
-        detail.setdefault("data_gaps", []).append("agent review note payload is unreadable")
+        label = event.kind.replace("_", " ")
+        detail.setdefault("data_gaps", []).append(f"{label} payload is unreadable")
         return detail
     if isinstance(payload, dict):
-        detail["agent_review_note"] = payload
+        detail[artifact_key] = payload
     return detail
 
 
