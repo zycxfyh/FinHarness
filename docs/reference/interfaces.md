@@ -74,7 +74,9 @@ Use this as a lookup page. For system ownership, read
   artifacts derived from existing risk register items. They carry
   `scaffold_patch`, `proposed_scaffold`, `changed_fields`, preflight/rollback
   context, risk coverage, and human confirmation requirements, but they do not
-  mutate proposals. Applying the patch requires a later human-confirmed flow.
+  mutate proposals. Their preflight, risk coverage, and rollback fields are
+  Agent-supplied candidate payload until a later system preflight recomputes
+  them. Applying the patch requires a later human-confirmed flow.
 - There is no current Agent approval, live order, fund transfer, broker write API,
   or receipt deletion/overwrite interface. Those are future capability candidates
   only if they receive purpose-built runtime profiles, command paths, receipts,

@@ -104,6 +104,19 @@ class AgentScaffoldRevisionApplyCandidateTest(unittest.TestCase):
         self.assertFalse(body["authority_transition"])
         self.assertEqual(body["profile_name"], "scaffold-candidate")
         self.assertEqual(
+            body["preflight_result_source"],
+            "agent_supplied_candidate_payload",
+        )
+        self.assertEqual(
+            body["risk_coverage_source"],
+            "agent_supplied_candidate_payload",
+        )
+        self.assertEqual(
+            body["rollback_info_source"],
+            "agent_supplied_candidate_payload",
+        )
+        self.assertFalse(body["system_preflight_recomputed"])
+        self.assertEqual(
             body["non_claims"],
             list(AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS),
         )

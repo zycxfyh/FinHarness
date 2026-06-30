@@ -84,6 +84,8 @@ AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS = (
     "Agent-created scaffold revision apply candidates are review artifacts, not applied revisions.",
     "Apply candidates do not revise proposals, attest decisions, approve/reject "
     "proposals, or authorize execution.",
+    "Candidate preflight, risk coverage, and rollback fields are Agent-supplied "
+    "candidate payload unless a later system preflight recomputes them.",
     "Human confirmation is required before any scaffold revision is applied.",
     "Not execution authorization.",
     "Not investment advice.",
@@ -722,8 +724,12 @@ def draft_agent_scaffold_revision_apply_candidate_from_context_payload(
             "change_summary": change_summary.strip(),
             "rationale": rationale.strip(),
             "risk_coverage": copy.deepcopy(risk_coverage),
+            "risk_coverage_source": "agent_supplied_candidate_payload",
             "preflight_result": copy.deepcopy(preflight_result),
+            "preflight_result_source": "agent_supplied_candidate_payload",
+            "system_preflight_recomputed": False,
             "rollback_info": copy.deepcopy(rollback_info),
+            "rollback_info_source": "agent_supplied_candidate_payload",
             "human_confirmation_requirements": _clean_strings(
                 human_confirmation_requirements
             ),

@@ -134,4 +134,6 @@ register items. These artifacts include a bounded `scaffold_patch`,
 `proposed_scaffold`, `changed_fields`, risk coverage, preflight/rollback
 context, and human confirmation requirements. They are system-applicable
 candidates, but they do not mutate proposals; human-confirmed apply remains the
-next capability layer.
+next capability layer. In `#73`, preflight, risk coverage, and rollback fields
+are explicitly Agent-supplied candidate payload; later system preflight is a
+separate capability layer.
