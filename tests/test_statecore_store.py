@@ -293,14 +293,14 @@ class StateCoreStoreTest(unittest.TestCase):
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
 
-    def test_migration_updates_review_event_kind_constraint_for_agent_notes(self) -> None:
+    def test_migration_updates_review_event_kind_constraint_for_agent_artifacts(self) -> None:
         engine = init_state_core(self.db_path)
         write_records(
             [Proposal(proposal_id="p_review", kind="cash_buffer_low", claim="legacy")],
             engine=engine,
         )
         # Simulate the v3 review_events table whose closed kind set did not yet include
-        # agent_review_note.
+        # Agent review artifacts.
         with engine.begin() as connection:
             connection.execute(text("DROP TABLE review_events"))
             connection.execute(
@@ -336,6 +336,7 @@ class StateCoreStoreTest(unittest.TestCase):
                 )
             ).scalar_one()
             self.assertIn("agent_review_note", table_sql)
+            self.assertIn("agent_scaffold_revision_apply_candidate", table_sql)
         write_records(
             [
                 ReviewEvent(
@@ -349,7 +350,23 @@ class StateCoreStoreTest(unittest.TestCase):
             ],
             engine=engine,
         )
-        self.assertEqual(read_all(ReviewEvent, engine=engine)[0].kind, "agent_review_note")
+        write_records(
+            [
+                ReviewEvent(
+                    review_event_id="rev_agent_scaffold_candidate",
+                    proposal_id="p_review",
+                    kind="agent_scaffold_revision_apply_candidate",
+                    attester="agent:scaffold-candidate",
+                    reason="draft scaffold apply candidate",
+                    text="{}",
+                )
+            ],
+            engine=engine,
+        )
+        self.assertEqual(
+            {event.kind for event in read_all(ReviewEvent, engine=engine)},
+            {"agent_review_note", "agent_scaffold_revision_apply_candidate"},
+        )
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
 

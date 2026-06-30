@@ -497,6 +497,7 @@ ReviewEventKind = Literal[
     "reopen",
     "compare_mark",
     "agent_review_note",
+    "agent_scaffold_revision_apply_candidate",
 ]
 
 

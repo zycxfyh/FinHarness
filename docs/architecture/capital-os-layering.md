@@ -26,7 +26,7 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
 | **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
-| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_context_projection.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + context projection/budget + default read/explain profile + ToolEntry metadata + evidence provider registry + runtime pipeline + review-draft proposal drafts + review-note artifacts + review provenance + queue checks + review-task lifecycle |
+| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_context_projection.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + context projection/budget + default read/explain profile + ToolEntry metadata + evidence provider registry + runtime pipeline + review-draft proposal drafts + review-note artifacts + scaffold apply candidates + review provenance + queue checks + review-task lifecycle |
 | **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | (无 ActionIntent / PreTradeImpactReport) | ❌ gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
 | **L8** | Cockpit / API 产品表面 | 用户怎么用这一切? | FastAPI(`api/app.py` + routers)、vanilla JS cockpit | ✅ 有 |
@@ -43,7 +43,10 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
 2. **L5**:把 context packs 用在更好的 Agent 解释/eval 中;review-draft profile
    可写 append-only governed proposal draft,review-note profile 可写 append-only
    `AgentReviewNoteDraft` typed artifact,并在 proposal review surface/timeline 暴露
-   Agent provenance、带 blocked transition scope 的 queue checks 和 read-only
+   Agent provenance;scaffold-candidate profile 可基于 active risk register item 创建
+   append-only `AgentScaffoldRevisionApplyCandidate`,包含 patch/proposed scaffold/
+   changed fields/preflight/rollback/human confirmation requirements,但不直接修改
+   proposal;带 blocked transition scope 的 queue checks 和 read-only
    review-task lifecycle;Agent tools 通过 ToolEntry metadata 暴露 capability、
    toolset、side-effect、availability 和 evidence provider ids;`agent_context_projection.py`
    为不同 profile 提供 office brief 和上下文预算,并通过 runtime pipeline 暴露

@@ -1,6 +1,6 @@
 schema: finharness.system_catalog.v1
 status: current
-updated: "2026-06-30"
+updated: "2026-07-01"
 source_docs:
   framework_index: docs/architecture/framework-index.md
   system_map: docs/architecture/system-map.md
@@ -151,7 +151,7 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, review-draft can create append-only governed proposal drafts, and review-note can create append-only AgentReviewNoteDraft artifacts that feed deterministic review queue triage for human review.
+    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, review-draft can create append-only governed proposal drafts, review-note can create append-only AgentReviewNoteDraft artifacts, and scaffold-candidate can create append-only AgentScaffoldRevisionApplyCandidate artifacts from active risk register items without mutating proposals.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
@@ -169,6 +169,7 @@ systems:
     checks:
       - uv run python -m unittest tests.test_agent_proposal_drafts
       - uv run python -m unittest tests.test_agent_review_note_drafts
+      - uv run python -m unittest tests.test_agent_scaffold_revision_candidates
       - uv run python -m unittest tests.test_agent_context_projection
       - uv run python -m unittest tests.test_agent_evidence
       - uv run python -m unittest tests.test_agent_runtime

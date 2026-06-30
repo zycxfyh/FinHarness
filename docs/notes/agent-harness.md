@@ -26,6 +26,10 @@ The `review-note` profile adds:
 
 - `draft_agent_review_note_from_context`
 
+The `scaffold-candidate` profile adds:
+
+- `draft_agent_scaffold_revision_apply_candidate_from_context`
+
 The agent is named `Finance Research Harness Agent`.
 
 Use `build_finance_research_agent(profile_name=...)` to create a runtime Agent
@@ -40,6 +44,7 @@ Describe the registered agent and tools:
 task agent:describe
 task agent:describe -- --profile review-draft
 task agent:describe -- --profile review-note
+task agent:describe -- --profile scaffold-candidate
 ```
 
 Run tool-level tests without any model or API key:
@@ -54,6 +59,7 @@ Run the real SDK `Runner` only when `OPENAI_API_KEY` is already present in the e
 task agent:run
 FINHARNESS_AGENT_PROFILE=review-draft task agent:run
 FINHARNESS_AGENT_PROFILE=review-note task agent:run
+FINHARNESS_AGENT_PROFILE=scaffold-candidate task agent:run
 ```
 
 If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to read secret files.
@@ -82,3 +88,9 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
   policy mismatch, counter-evidence needs, Agent-reported risks, and open
   questions comparable for human review; it is not persistent risk state, risk
   acceptance, scoring, scenario generation, approval, or execution authorization.
+- The `scaffold-candidate` profile can create append-only
+  `AgentScaffoldRevisionApplyCandidate` artifacts from active risk register
+  items. Candidates include a scaffold patch, proposed scaffold, changed fields,
+  risk coverage, preflight/rollback context, and human confirmation
+  requirements. They do not mutate proposals; human-confirmed apply is a later
+  flow.

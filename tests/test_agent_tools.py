@@ -23,6 +23,7 @@ from finharness.agent_tools import (
     current_ips_context_payload,
     describe_agent,
     draft_agent_review_note_from_context,
+    draft_agent_scaffold_revision_apply_candidate_from_context,
     draft_governed_proposal_from_context,
     evaluate_latest_risk_note_payload,
     finance_research_agent,
@@ -82,6 +83,29 @@ def review_note_args() -> dict[str, object]:
     }
 
 
+def scaffold_candidate_args() -> dict[str, object]:
+    return {
+        "proposal_id": "proposal-agent-draft",
+        "scaffold_patch": {
+            "counter_evidence": "Human reviewer should confirm cashflow timing.",
+        },
+        "change_summary": "Add counter-evidence prompt.",
+        "rationale": "Risk register reports a missing evidence gap.",
+        "basis_risk_ids": ["risk:proposal-agent-draft:evidence_gap"],
+        "risk_coverage": {
+            "addressed": ["risk:proposal-agent-draft:evidence_gap"],
+            "unresolved": [],
+        },
+        "preflight_result": {"status": "candidate_only"},
+        "rollback_info": {"apply_path": "human_confirmed_scaffold_revision"},
+        "human_confirmation_requirements": ["Confirm changed fields before apply."],
+        "source_refs": ["context://risk_register"],
+        "receipt_refs": ["receipt://proposal-agent-draft"],
+        "context_pack_refs": ["context_pack://risk_register"],
+        "data_gaps": [],
+    }
+
+
 class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
     def test_agent_registers_expected_tools(self) -> None:
         self.assertEqual(
@@ -102,6 +126,10 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_names(), list(tool_names_for_profile("default")))
         self.assertNotIn("draft_governed_proposal_from_context", tool_names())
         self.assertNotIn("draft_agent_review_note_from_context", tool_names())
+        self.assertNotIn(
+            "draft_agent_scaffold_revision_apply_candidate_from_context",
+            tool_names(),
+        )
         self.assertIn(
             "draft_governed_proposal_from_context",
             tool_names("review-draft"),
@@ -110,9 +138,17 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             "draft_agent_review_note_from_context",
             tool_names("review-note"),
         )
+        self.assertIn(
+            "draft_agent_scaffold_revision_apply_candidate_from_context",
+            tool_names("scaffold-candidate"),
+        )
         self.assertNotIn(
             "draft_agent_review_note_from_context",
             tool_names("review-draft"),
+        )
+        self.assertNotIn(
+            "draft_agent_scaffold_revision_apply_candidate_from_context",
+            tool_names("review-note"),
         )
 
     def test_tool_registry_covers_every_profile_tool_name(self) -> None:
@@ -268,6 +304,59 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["tool_name"], "draft_agent_review_note_from_context")
         self.assertEqual(result["evidence"]["receipt_refs"], ["receipt://agent-review-note"])
 
+    async def test_agent_sdk_scaffold_candidate_wrapper_uses_active_profile(self) -> None:
+        original = AGENT_TOOL_ENTRIES[
+            "draft_agent_scaffold_revision_apply_candidate_from_context"
+        ]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda arguments: {
+                "candidate_id": "agent_scaffold_candidate_test",
+                "proposal_id": arguments["proposal_id"],
+                "profile_name": arguments["profile_name"],
+                "basis_risk_ids": arguments["basis_risk_ids"],
+                "changed_fields": ["counter_evidence"],
+                "receipt_ref": "receipt://agent-scaffold-candidate",
+                "receipt_refs": ["receipt://agent-scaffold-candidate"],
+                "source_refs": arguments["source_refs"],
+                "context_pack_refs": arguments["context_pack_refs"],
+                "non_claims": ["Not execution authorization."],
+                "requires_human_review": True,
+                "execution_allowed": False,
+                "authority_transition": False,
+            },
+        )
+
+        with patch.dict(
+            AGENT_TOOL_ENTRIES,
+            {"draft_agent_scaffold_revision_apply_candidate_from_context": patched},
+        ):
+            agent = build_finance_research_agent("scaffold-candidate")
+            tool = next(
+                item
+                for item in agent.tools
+                if item.name
+                == "draft_agent_scaffold_revision_apply_candidate_from_context"
+            )
+
+            result = await tool.on_invoke_tool(
+                ctx("draft_agent_scaffold_revision_apply_candidate_from_context"),
+                json.dumps(scaffold_candidate_args()),
+            )
+
+        self.assertIsNot(tool, original.tool)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["profile_name"], "scaffold-candidate")
+        self.assertEqual(
+            result["tool_name"],
+            "draft_agent_scaffold_revision_apply_candidate_from_context",
+        )
+        self.assertEqual(
+            result["evidence"]["receipt_refs"],
+            ["receipt://agent-scaffold-candidate"],
+        )
+
     async def test_default_and_review_agent_sdk_tools_use_their_active_profile(
         self,
     ) -> None:
@@ -413,6 +502,48 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             result = dispatch_agent_tool(
                 profile_name="review-note",
                 tool_name="draft_agent_review_note_from_context",
+                arguments=arguments,
+            ).model()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "SCHEMA_VALIDATION_FAILED")
+        self.assertIn("authority_transition", result["error"]["message"])
+
+    def test_scaffold_candidate_dispatch_rejects_profile_argument_bypass(self) -> None:
+        name = "draft_agent_scaffold_revision_apply_candidate_from_context"
+        original = AGENT_TOOL_ENTRIES[name]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+            dispatch_handler=lambda _arguments: {},
+        )
+        arguments = scaffold_candidate_args()
+        arguments["profile_name"] = "default"
+
+        with patch.dict(AGENT_TOOL_ENTRIES, {name: patched}):
+            result = dispatch_agent_tool(
+                profile_name="scaffold-candidate",
+                tool_name=name,
+                arguments=arguments,
+            ).model()
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "PROFILE_NOT_ALLOWED")
+
+    def test_scaffold_candidate_dispatch_rejects_nested_authority_markers(self) -> None:
+        name = "draft_agent_scaffold_revision_apply_candidate_from_context"
+        original = AGENT_TOOL_ENTRIES[name]
+        patched = replace(
+            original,
+            check_fn=lambda: AgentToolAvailability(True),
+        )
+        arguments = scaffold_candidate_args()
+        arguments["preflight_result"] = {"authority_transition": False}
+
+        with patch.dict(AGENT_TOOL_ENTRIES, {name: patched}):
+            result = dispatch_agent_tool(
+                profile_name="scaffold-candidate",
+                tool_name=name,
                 arguments=arguments,
             ).model()
 
@@ -640,6 +771,57 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(field, schema["properties"])
         self.assertFalse(schema["additionalProperties"])
+
+    def test_scaffold_candidate_tool_schema_excludes_runtime_authority_fields(self) -> None:
+        schema = (
+            draft_agent_scaffold_revision_apply_candidate_from_context.params_json_schema
+        )
+        self.assertEqual(
+            set(schema["properties"]),
+            {
+                "proposal_id",
+                "scaffold_patch",
+                "change_summary",
+                "rationale",
+                "basis_risk_ids",
+                "risk_coverage",
+                "preflight_result",
+                "rollback_info",
+                "human_confirmation_requirements",
+                "source_refs",
+                "receipt_refs",
+                "context_pack_refs",
+                "data_gaps",
+            },
+        )
+        self.assertEqual(
+            set(schema["required"]),
+            {
+                "proposal_id",
+                "scaffold_patch",
+                "change_summary",
+                "rationale",
+                "basis_risk_ids",
+                "risk_coverage",
+                "preflight_result",
+                "rollback_info",
+                "human_confirmation_requirements",
+                "source_refs",
+            },
+        )
+        for field in (
+            "profile_name",
+            "execution_allowed",
+            "authority_transition",
+            "approval_status",
+            "decision",
+        ):
+            self.assertNotIn(field, schema["properties"])
+        self.assertNotIn("additionalProperties", schema)
+        self.assertTrue(schema["properties"]["scaffold_patch"]["additionalProperties"])
+        self.assertTrue(schema["properties"]["risk_coverage"]["additionalProperties"])
+        self.assertTrue(schema["properties"]["preflight_result"]["additionalProperties"])
+        self.assertTrue(schema["properties"]["rollback_info"]["additionalProperties"])
 
     def test_context_payload_unavailable_state_core_is_non_authoritative(self) -> None:
         from finharness.statecore.store import StateCoreStoreError

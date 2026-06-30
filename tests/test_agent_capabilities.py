@@ -10,6 +10,7 @@ from finharness.agent_capabilities import (
     DEFAULT_AGENT_PROFILE,
     DRAFT_PROPOSAL_TOOL_NAMES,
     REVIEW_NOTE_TOOL_NAMES,
+    SCAFFOLD_REVISION_CANDIDATE_TOOL_NAMES,
     AgentCapability,
     AgentCapabilityProfile,
     get_agent_profile,
@@ -106,6 +107,46 @@ class AgentCapabilitiesTest(unittest.TestCase):
         self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).issubset(profile.tool_names))
         self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).isdisjoint(DEFAULT_AGENT_PROFILE.tool_names))
         self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).isdisjoint(tool_names_for_profile("review-draft")))
+        self.assertTrue(
+            set(REVIEW_NOTE_TOOL_NAMES).isdisjoint(tool_names_for_profile("scaffold-candidate"))
+        )
+
+    def test_scaffold_candidate_profile_allows_apply_candidates_only(self) -> None:
+        profile = get_agent_profile("scaffold-candidate")
+
+        self.assertIn(AgentCapability.CAPITAL_SCAFFOLD_REVISION, profile.capabilities)
+        self.assertNotIn(AgentCapability.CAPITAL_PROPOSE, profile.capabilities)
+        self.assertNotIn(AgentCapability.CAPITAL_REVIEW_NOTE, profile.capabilities)
+        self.assertTrue(
+            profile_allows_capability(
+                "scaffold-candidate",
+                AgentCapability.CAPITAL_SCAFFOLD_REVISION,
+            )
+        )
+        self.assertFalse(
+            profile_allows_capability(
+                "scaffold-candidate",
+                AgentCapability.CAPITAL_PROPOSE,
+            )
+        )
+        self.assertTrue(
+            set(SCAFFOLD_REVISION_CANDIDATE_TOOL_NAMES).issubset(profile.tool_names)
+        )
+        self.assertTrue(
+            set(SCAFFOLD_REVISION_CANDIDATE_TOOL_NAMES).isdisjoint(
+                DEFAULT_AGENT_PROFILE.tool_names
+            )
+        )
+        self.assertTrue(
+            set(SCAFFOLD_REVISION_CANDIDATE_TOOL_NAMES).isdisjoint(
+                tool_names_for_profile("review-draft")
+            )
+        )
+        self.assertTrue(
+            set(SCAFFOLD_REVISION_CANDIDATE_TOOL_NAMES).isdisjoint(
+                tool_names_for_profile("review-note")
+            )
+        )
 
     def test_simulation_capability_is_planned_not_active(self) -> None:
         simulation_profile = get_agent_profile("simulation")

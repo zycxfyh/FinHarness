@@ -105,6 +105,10 @@ domain model / read model / write(command) model / adapters / invariants
   review-note profile 允许 Agent 在已有 proposal timeline 上创建 append-only
   `AgentReviewNoteDraft` typed artifact,用于 findings、risks、open questions、
   evidence refs、data gaps 和 human review 准备,不修改 proposal/scaffold/attestation;
+  scaffold-candidate profile 允许 Agent 基于 `/risk/register` 的 active risk item
+  创建 append-only `AgentScaffoldRevisionApplyCandidate`,包含 `scaffold_patch`、
+  `proposed_scaffold`、changed fields、risk coverage、preflight、rollback 和 human
+  confirmation requirements,但不直接修改 proposal scaffold;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
