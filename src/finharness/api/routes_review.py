@@ -11,11 +11,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
-from finharness.review_read import read_compare_marks, read_retrospective
+from finharness.review_read import (
+    REVIEW_QUEUE_NON_CLAIMS,
+    read_compare_marks,
+    read_retrospective,
+    read_review_queue,
+)
 
 router = APIRouter(tags=["review"])
 
@@ -114,4 +119,80 @@ async def get_compare_marks(engine: EngineDependency) -> CompareMarksResponse:
             for pair in pairs
         ],
         execution_allowed=False,
+    )
+
+
+class ReviewQueueItemView(BaseModel):
+    proposal_id: str
+    kind: str
+    claim: str
+    created_at_utc: str
+    receipt_ref: str | None
+    status: str
+    priority: str
+    triage_reasons: list[str]
+    evidence_status: str
+    review_note_count: int
+    latest_review_note_summary: str | None
+    open_questions: list[str]
+    risks: list[str]
+    data_gaps: list[str]
+    duplicate_candidates: list[str]
+    stale_context_flags: list[str]
+    source_refs: list[str]
+    receipt_refs: list[str]
+    next_actions: list[str]
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ReviewQueueResponse(BaseModel):
+    items: list[ReviewQueueItemView]
+    non_claims: tuple[str, ...] = REVIEW_QUEUE_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+@router.get("/review/queue", response_model=ReviewQueueResponse)
+async def get_review_queue(
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+    limit: int = Query(default=50, ge=1, le=200),
+    include_closed: bool = False,
+) -> ReviewQueueResponse:
+    queue = read_review_queue(
+        engine,
+        receipt_root=receipt_root,
+        limit=limit,
+        include_closed=include_closed,
+    )
+    return ReviewQueueResponse(
+        items=[
+            ReviewQueueItemView(
+                proposal_id=item.proposal_id,
+                kind=item.kind,
+                claim=item.claim,
+                created_at_utc=item.created_at_utc,
+                receipt_ref=item.receipt_ref,
+                status=item.status,
+                priority=item.priority,
+                triage_reasons=item.triage_reasons,
+                evidence_status=item.evidence_status,
+                review_note_count=item.review_note_count,
+                latest_review_note_summary=item.latest_review_note_summary,
+                open_questions=item.open_questions,
+                risks=item.risks,
+                data_gaps=item.data_gaps,
+                duplicate_candidates=item.duplicate_candidates,
+                stale_context_flags=item.stale_context_flags,
+                source_refs=item.source_refs,
+                receipt_refs=item.receipt_refs,
+                next_actions=item.next_actions,
+                execution_allowed=False,
+                authority_transition=False,
+            )
+            for item in queue.items
+        ],
+        execution_allowed=False,
+        authority_transition=False,
     )

@@ -94,7 +94,7 @@ systems:
   - id: review_system
     name: Review System
     status: current
-    summary: Append-only proposal review, attestation, compare marks, annual review, and lesson-to-rule.
+    summary: Append-only proposal review, attestation, compare marks, annual review, lesson-to-rule, and deterministic review queue triage.
     docs:
       - docs/architecture/system-map.md
       - docs/engineering/system-directory-standard.md
@@ -107,6 +107,7 @@ systems:
     checks:
       - task governance:check
       - task test
+      - uv run python -m unittest tests.test_review_read tests.test_review_workspace_api
     upgrade_trigger: Review flows become collaborative or need role/permission separation.
 
   - id: research_evidence
@@ -148,7 +149,7 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, review-draft can create append-only governed proposal drafts, and review-note can create append-only AgentReviewNoteDraft artifacts on existing proposals for human review.
+    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, review-draft can create append-only governed proposal drafts, and review-note can create append-only AgentReviewNoteDraft artifacts that feed deterministic review queue triage for human review.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
