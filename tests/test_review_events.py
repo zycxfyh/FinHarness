@@ -66,6 +66,25 @@ class ReviewEventTest(unittest.TestCase):
         self.assertFalse(payload["governance"]["execution_allowed"])
         receipt.resolve().relative_to((self.receipt_root / "review-events").resolve())
 
+    def test_agent_review_note_kind_writes_readable_receipt(self) -> None:
+        write = self._event(
+            "agent_review_note",
+            text=json.dumps(
+                {
+                    "schema": "finharness.agent_review_note_draft.v1",
+                    "review_note_id": "agent_review_note_test",
+                    "execution_allowed": False,
+                },
+                sort_keys=True,
+            ),
+            source_refs=["context://proposal_timeline"],
+        )
+
+        self.assertEqual(write.review_event.kind, "agent_review_note")
+        payload = json.loads(Path(write.receipt_ref).read_text(encoding="utf-8"))
+        self.assertEqual(payload["review_event"]["kind"], "agent_review_note")
+        self.assertFalse(payload["governance"]["execution_allowed"])
+
     # --- content_hash is integrity, NOT idempotency -----------------------------------
     def test_repeated_annotation_is_a_new_event_not_a_noop(self) -> None:
         first = self._event("annotation", text="same note")

@@ -10,8 +10,10 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 from agents import Agent, FunctionTool, Tool, function_tool
 from sqlalchemy.engine import Engine
@@ -41,7 +43,10 @@ from finharness.config import load_settings
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
 from finharness.statecore.decision_scaffold import ensure_forcing
-from finharness.statecore.proposals import create_governed_proposal
+from finharness.statecore.proposals import (
+    create_governed_proposal,
+    create_governed_review_event,
+)
 from finharness.statecore.store import (
     StateCoreStoreError,
     open_state_core,
@@ -65,6 +70,13 @@ AGENT_PROPOSAL_DRAFT_NON_CLAIMS = (
     "Not execution authorization.",
     "Not investment advice.",
 )
+AGENT_REVIEW_NOTE_DRAFT_NON_CLAIMS = (
+    "Agent-created review notes are draft review artifacts, not approvals.",
+    "Review notes do not revise proposals, attest decisions, or close review tasks.",
+    "Human review is required before any decision of record.",
+    "Not execution authorization.",
+    "Not investment advice.",
+)
 AGENT_DRAFT_BLOCKED_KIND_TOKENS = frozenset(
     {
         "execute",
@@ -75,6 +87,42 @@ AGENT_DRAFT_BLOCKED_KIND_TOKENS = frozenset(
         "broker",
         "action",
         "intent",
+    }
+)
+AGENT_REVIEW_NOTE_KINDS = frozenset(
+    {
+        "evidence_check",
+        "risk_check",
+        "policy_check",
+        "counterargument",
+        "data_gap",
+        "human_question",
+        "process_warning",
+    }
+)
+AGENT_REVIEW_NOTE_SEVERITIES = frozenset(
+    {
+        "info",
+        "low",
+        "medium",
+        "high",
+        "blocking",
+    }
+)
+AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS = frozenset(
+    {
+        "execution_allowed",
+        "authority_transition",
+        "approval_status",
+        "approval",
+        "decision",
+        "approve",
+        "approved",
+        "rejection",
+        "reject",
+        "rejected",
+        "attestation",
+        "attestation_ref",
     }
 )
 AGENT_NAME = "Finance Research Harness Agent"
@@ -96,7 +144,13 @@ AGENT_BASE_INSTRUCTIONS = (
 )
 
 AgentToolSideEffect = Literal["read", "local_eval", "append_only_review_write"]
-AgentToolset = Literal["market_data", "eval", "capital_context", "proposal_draft"]
+AgentToolset = Literal[
+    "market_data",
+    "eval",
+    "capital_context",
+    "proposal_draft",
+    "proposal_review",
+]
 AgentToolUnavailablePolicy = Literal["hide", "diagnostic_stub", "fail_closed"]
 AgentToolHandler = Callable[[dict[str, Any]], dict[str, object]]
 
@@ -460,6 +514,112 @@ def draft_governed_proposal_from_context_payload(
     }
 
 
+def draft_agent_review_note_from_context_payload(
+    *,
+    proposal_id: str,
+    review_kind: str,
+    suggested_severity: str,
+    summary: str,
+    rationale: str,
+    findings: list[str],
+    risks: list[str],
+    open_questions: list[str],
+    evidence_refs: list[str],
+    source_refs: list[str],
+    context_pack_refs: list[str] | None = None,
+    data_gaps: list[str] | None = None,
+    profile_name: str = "review-note",
+    engine: Engine | None = None,
+    receipt_root: str | Path | None = None,
+    **extra: Any,
+) -> dict[str, object]:
+    """Create an append-only AgentReviewNoteDraft for an existing proposal."""
+    _validate_agent_review_note_draft(
+        profile_name=profile_name,
+        proposal_id=proposal_id,
+        review_kind=review_kind,
+        suggested_severity=suggested_severity,
+        summary=summary,
+        rationale=rationale,
+        findings=findings,
+        risks=risks,
+        open_questions=open_questions,
+        evidence_refs=evidence_refs,
+        source_refs=source_refs,
+        context_pack_refs=context_pack_refs or [],
+        data_gaps=data_gaps or [],
+        extra=extra,
+    )
+    note_id = _agent_review_note_id()
+    refs = _dedupe_refs(
+        [
+            *source_refs,
+            *evidence_refs,
+            *(context_pack_refs or []),
+        ]
+    )
+    review_note = {
+        "schema": "finharness.agent_review_note_draft.v1",
+        "review_note_id": note_id,
+        "proposal_id": proposal_id.strip(),
+        "profile_name": profile_name,
+        "review_kind": review_kind.strip(),
+        "suggested_severity": suggested_severity.strip(),
+        "summary": summary.strip(),
+        "rationale": rationale.strip(),
+        "findings": _clean_strings(findings),
+        "risks": _clean_strings(risks),
+        "open_questions": _clean_strings(open_questions),
+        "evidence_refs": _dedupe_refs(evidence_refs),
+        "source_refs": _dedupe_refs(source_refs),
+        "context_pack_refs": _dedupe_refs(context_pack_refs or []),
+        "data_gaps": _dedupe_refs(data_gaps or []),
+        "non_claims": list(AGENT_REVIEW_NOTE_DRAFT_NON_CLAIMS),
+        "transition_rule": {
+            "may_enter_proposal_timeline": True,
+            "may_enter_decision_packet": True,
+            "may_trigger_open_question": True,
+            "may_trigger_evidence_gap": True,
+            "may_revise_proposal": False,
+            "may_attest": False,
+            "may_approve": False,
+            "may_reject": False,
+            "may_execute": False,
+        },
+        "requires_human_review": True,
+        "execution_allowed": False,
+        "authority_transition": False,
+    }
+    owned_engine = engine is None
+    active_engine = engine or open_state_core()
+    active_receipt_root = Path(receipt_root or load_settings().receipt_root)
+    try:
+        write = create_governed_review_event(
+            proposal_id=proposal_id.strip(),
+            kind="agent_review_note",
+            attester=f"agent:{profile_name}",
+            reason=rationale.strip(),
+            text=json.dumps(
+                review_note,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ),
+            source_refs=refs,
+            engine=active_engine,
+            receipt_root=active_receipt_root,
+        )
+    finally:
+        if owned_engine:
+            active_engine.dispose()
+    review_note["review_event_id"] = write.review_event.review_event_id
+    review_note["receipt_ref"] = write.receipt_ref
+    return {
+        **review_note,
+        "receipt_refs": [write.receipt_ref],
+    }
+
+
 def _validate_agent_proposal_draft(
     *,
     profile_name: str,
@@ -495,6 +655,118 @@ def _validate_agent_proposal_draft(
             raise ValueError(f"{name} cannot set execution_allowed=true")
 
 
+def _validate_agent_review_note_draft(
+    *,
+    profile_name: str,
+    proposal_id: str,
+    review_kind: str,
+    suggested_severity: str,
+    summary: str,
+    rationale: str,
+    findings: list[str],
+    risks: list[str],
+    open_questions: list[str],
+    evidence_refs: list[str],
+    source_refs: list[str],
+    context_pack_refs: list[str],
+    data_gaps: list[str],
+    extra: dict[str, Any],
+) -> None:
+    if not profile_allows_capability(profile_name, AgentCapability.CAPITAL_REVIEW_NOTE):
+        raise ValueError(f"agent profile {profile_name!r} does not allow capital-review-note")
+    if not proposal_id.strip():
+        raise ValueError("agent review note requires a non-blank proposal_id")
+    _validate_agent_review_note_choice(
+        review_kind=review_kind,
+        suggested_severity=suggested_severity,
+    )
+    if not summary.strip():
+        raise ValueError("agent review note requires a non-blank summary")
+    if not rationale.strip():
+        raise ValueError("agent review note requires a non-blank rationale")
+    if not _dedupe_refs(source_refs):
+        raise ValueError("agent review note requires at least one source ref")
+    _reject_agent_review_note_extra(extra)
+    _validate_agent_review_note_lists(
+        findings=findings,
+        risks=risks,
+        open_questions=open_questions,
+        evidence_refs=evidence_refs,
+        source_refs=source_refs,
+        context_pack_refs=context_pack_refs,
+        data_gaps=data_gaps,
+    )
+    for name, value in (
+        ("findings", findings),
+        ("risks", risks),
+        ("open_questions", open_questions),
+        ("evidence_refs", evidence_refs),
+        ("source_refs", source_refs),
+        ("context_pack_refs", context_pack_refs),
+        ("data_gaps", data_gaps),
+        ("extra", extra),
+    ):
+        marker = _contains_forbidden_authority_marker(value)
+        if marker is not None:
+            raise ValueError(
+                f"{name} cannot carry authority/decision marker {marker!r}"
+            )
+
+
+def _validate_agent_review_note_choice(
+    *,
+    review_kind: str,
+    suggested_severity: str,
+) -> None:
+    if review_kind.strip() not in AGENT_REVIEW_NOTE_KINDS:
+        raise ValueError(
+            "agent review note kind must be one of "
+            + ", ".join(sorted(AGENT_REVIEW_NOTE_KINDS))
+        )
+    if suggested_severity.strip() not in AGENT_REVIEW_NOTE_SEVERITIES:
+        raise ValueError(
+            "agent review note suggested_severity must be one of "
+            + ", ".join(sorted(AGENT_REVIEW_NOTE_SEVERITIES))
+        )
+
+
+def _reject_agent_review_note_extra(extra: dict[str, Any]) -> None:
+    unknown = sorted(set(extra) - {"engine", "receipt_root"})
+    if unknown:
+        forbidden = sorted(set(unknown) & AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS)
+        if forbidden:
+            raise ValueError(
+                "agent review note cannot set authority/decision field(s): "
+                + ", ".join(forbidden)
+            )
+        raise ValueError(
+            "agent review note received unsupported field(s): " + ", ".join(unknown)
+        )
+
+
+def _validate_agent_review_note_lists(
+    *,
+    findings: list[str],
+    risks: list[str],
+    open_questions: list[str],
+    evidence_refs: list[str],
+    source_refs: list[str],
+    context_pack_refs: list[str],
+    data_gaps: list[str],
+) -> None:
+    for name, value in (
+        ("findings", findings),
+        ("risks", risks),
+        ("open_questions", open_questions),
+        ("evidence_refs", evidence_refs),
+        ("source_refs", source_refs),
+        ("context_pack_refs", context_pack_refs),
+        ("data_gaps", data_gaps),
+    ):
+        if not isinstance(value, list):
+            raise ValueError(f"agent review note {name} must be a list")
+
+
 def _contains_execution_allowed_true(value: Any) -> bool:
     if isinstance(value, dict):
         return any(
@@ -507,8 +779,32 @@ def _contains_execution_allowed_true(value: Any) -> bool:
     return False
 
 
+def _contains_forbidden_authority_marker(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = str(key).strip().lower().replace("-", "_")
+            if normalized in AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS:
+                return normalized
+            if (marker := _contains_forbidden_authority_marker(child)) is not None:
+                return marker
+    if isinstance(value, (list, tuple)):
+        for child in value:
+            if (marker := _contains_forbidden_authority_marker(child)) is not None:
+                return marker
+    return None
+
+
 def _proposal_kind_tokens(kind: str) -> set[str]:
     return {token for token in re.split(r"[^a-z0-9]+", kind.lower()) if token}
+
+
+def _agent_review_note_id() -> str:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"agent_review_note_{stamp}_{uuid4().hex[:8]}"
+
+
+def _clean_strings(values: list[str]) -> list[str]:
+    return [str(value).strip() for value in values if str(value).strip()]
 
 
 def _dedupe_refs(values: list[str]) -> list[str]:
@@ -588,6 +884,40 @@ def draft_governed_proposal_from_context(
         assumptions=assumptions,
         limitations=limitations,
         context_pack_refs=context_pack_refs,
+    )
+
+
+# The review-note tool keeps a fixed top-level schema. Runtime injects profile_name;
+# validators reject authority/decision fields supplied through non-SDK dispatch.
+@function_tool
+def draft_agent_review_note_from_context(
+    proposal_id: str,
+    review_kind: str,
+    suggested_severity: str,
+    summary: str,
+    rationale: str,
+    findings: list[str],
+    risks: list[str],
+    open_questions: list[str],
+    evidence_refs: list[str],
+    source_refs: list[str],
+    context_pack_refs: list[str] | None = None,
+    data_gaps: list[str] | None = None,
+) -> dict[str, object]:
+    """Create an append-only AgentReviewNoteDraft for an existing proposal."""
+    return draft_agent_review_note_from_context_payload(
+        proposal_id=proposal_id,
+        review_kind=review_kind,
+        suggested_severity=suggested_severity,
+        summary=summary,
+        rationale=rationale,
+        findings=findings,
+        risks=risks,
+        open_questions=open_questions,
+        evidence_refs=evidence_refs,
+        source_refs=source_refs,
+        context_pack_refs=context_pack_refs,
+        data_gaps=data_gaps,
     )
 
 
@@ -710,6 +1040,25 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="append_only_review_write",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(draft_governed_proposal_from_context_payload),
+            evidence_provider_ids=(
+                "capital_context.state_core",
+                "proposal_receipt.state_core",
+            ),
+            unavailable_policy="fail_closed",
+            requires_human_review=True,
+        ),
+        AgentToolEntry(
+            name=draft_agent_review_note_from_context.name,
+            tool=draft_agent_review_note_from_context,
+            capability=AgentCapability.CAPITAL_REVIEW_NOTE,
+            toolset="proposal_review",
+            description=(
+                "Create an append-only AgentReviewNoteDraft on an existing proposal "
+                "for human review."
+            ),
+            side_effect="append_only_review_write",
+            check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(draft_agent_review_note_from_context_payload),
             evidence_provider_ids=(
                 "capital_context.state_core",
                 "proposal_receipt.state_core",

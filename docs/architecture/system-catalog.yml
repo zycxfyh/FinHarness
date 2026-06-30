@@ -148,7 +148,7 @@ systems:
   - id: agent_explanation
     name: Agent Explanation
     status: current
-    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, and review-draft can create append-only governed proposal drafts plus read-only queue checks and review-task lifecycle projections for human review.
+    summary: Profile-selected Agent tools over Capital OS context packs; AgentToolEntry metadata, agent_evidence.py, agent_context_projection.py, and agent_runtime.py map profiles to actual SDK tools with capability, toolset, side-effect, availability, evidence provider ids, profile-aware context budgets, visible/hidden/unavailable runtime facts, structured dispatch results/errors/evidence envelopes, and result budgets; default posture is read/explain, review-draft can create append-only governed proposal drafts, and review-note can create append-only AgentReviewNoteDraft artifacts on existing proposals for human review.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
@@ -159,18 +159,20 @@ systems:
       - src/finharness/agent_evidence.py
       - src/finharness/agent_runtime.py
       - src/finharness/agent_tools.py
+      - src/finharness/review_read.py
       - src/finharness/proposal_queue_checks.py
       - src/finharness/hermes_bridge.py
     mature_posture: Hermes-style spec, availability, dispatch wrapper, output-budget, toolset registry, and capability-profile ideas; ToolEntry availability and profiles are diagnostics/visibility, not permission bypasses.
     checks:
       - uv run python -m unittest tests.test_agent_proposal_drafts
+      - uv run python -m unittest tests.test_agent_review_note_drafts
       - uv run python -m unittest tests.test_agent_context_projection
       - uv run python -m unittest tests.test_agent_evidence
       - uv run python -m unittest tests.test_agent_runtime
       - uv run python -m unittest tests.test_agent_capabilities
       - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools
-    upgrade_trigger: Agent review-note, scaffold-revision, simulation, or any stronger action path needs explicit profiles, tests, and receipt-backed command paths; execution remains absent.
+    upgrade_trigger: Agent scaffold-revision, simulation, approval-prep, or any stronger action path needs explicit profiles, tests, and receipt-backed command paths; execution remains absent.
 
   - id: cockpit_api
     name: Cockpit / API

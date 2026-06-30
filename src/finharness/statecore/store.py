@@ -139,7 +139,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 3
+CURRENT_STATE_CORE_USER_VERSION = 4
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -244,12 +244,42 @@ def _migrate_add_decision_scaffold_column(connection: Connection) -> None:
     )
 
 
+def _review_events_kind_constraint_current(connection: Connection) -> bool:
+    row = connection.execute(
+        text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'review_events'"
+        )
+    ).first()
+    sql = str(row[0] if row else "")
+    return "'agent_review_note'" in sql
+
+
+def _migrate_review_events_agent_review_note_kind(connection: Connection) -> None:
+    """Rebuild ``review_events`` so the closed kind set admits Agent review notes."""
+    inspector = inspect(connection)
+    if "review_events" not in set(inspector.get_table_names()):
+        return
+    if _review_events_kind_constraint_current(connection):
+        return
+    rows = [
+        dict(row)
+        for row in connection.execute(text("SELECT * FROM review_events")).mappings()
+    ]
+    connection.execute(text("ALTER TABLE review_events RENAME TO review_events_legacy_v3"))
+    SQLModel.metadata.tables["review_events"].create(connection)
+    if rows:
+        connection.execute(SQLModel.metadata.tables["review_events"].insert(), rows)
+    connection.execute(text("DROP TABLE review_events_legacy_v3"))
+
+
 def migrate_state_core(engine: Engine) -> None:
     """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
     migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
         (1, _migrate_positions_money_to_text),
         (2, _migrate_add_source_columns),
         (3, _migrate_add_decision_scaffold_column),
+        (4, _migrate_review_events_agent_review_note_kind),
     )
     try:
         with engine.connect() as connection:

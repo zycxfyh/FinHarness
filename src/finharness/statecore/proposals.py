@@ -491,7 +491,13 @@ def create_governed_attestation(
     )
 
 
-ReviewEventKind = Literal["annotation", "archive", "reopen", "compare_mark"]
+ReviewEventKind = Literal[
+    "annotation",
+    "archive",
+    "reopen",
+    "compare_mark",
+    "agent_review_note",
+]
 
 
 @dataclass(frozen=True)
@@ -627,7 +633,11 @@ def create_governed_review_event(
         kind="state_core_review_event",
         path=receipt_path,
         created_at_utc=created_at,
-        refs=[ref for ref in [proposal.receipt_ref, proposal.proposal_id] if ref],
+        refs=[
+            ref
+            for ref in [proposal.receipt_ref, proposal.proposal_id, *event.source_refs]
+            if ref
+        ],
     )
     try:
         write_records([event, receipt_index], engine=engine)

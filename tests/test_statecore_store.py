@@ -14,6 +14,7 @@ from finharness.statecore.models import (
     Position,
     Proposal,
     ReceiptIndex,
+    ReviewEvent,
     Snapshot,
 )
 from finharness.statecore.store import (
@@ -272,7 +273,8 @@ class StateCoreStoreTest(unittest.TestCase):
 
         with engine.connect() as connection:
             self.assertEqual(
-                int(connection.execute(text("PRAGMA user_version")).scalar_one()), 3
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()),
+                CURRENT_STATE_CORE_USER_VERSION,
             )
             columns = {
                 row[1]
@@ -288,6 +290,66 @@ class StateCoreStoreTest(unittest.TestCase):
         # The legacy row loads through the ORM with an empty scaffold dict.
         loaded = read_all(Proposal, engine=engine)
         self.assertEqual(loaded[0].decision_scaffold, {})
+        # Idempotent: a second run is a no-op.
+        migrate_state_core(engine)
+
+    def test_migration_updates_review_event_kind_constraint_for_agent_notes(self) -> None:
+        engine = init_state_core(self.db_path)
+        write_records(
+            [Proposal(proposal_id="p_review", kind="cash_buffer_low", claim="legacy")],
+            engine=engine,
+        )
+        # Simulate the v3 review_events table whose closed kind set did not yet include
+        # agent_review_note.
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE review_events"))
+            connection.execute(
+                text(
+                    "CREATE TABLE review_events ("
+                    "schema_version VARCHAR NOT NULL, as_of_utc VARCHAR NOT NULL, "
+                    "authority_level VARCHAR NOT NULL, review_event_id VARCHAR NOT NULL, "
+                    "proposal_id VARCHAR NOT NULL, kind VARCHAR NOT NULL, "
+                    "attester VARCHAR NOT NULL, reason VARCHAR NOT NULL, text VARCHAR, "
+                    "attestation_ref VARCHAR, compare_with VARCHAR, source_refs JSON NOT NULL, "
+                    "content_hash VARCHAR NOT NULL, execution_allowed BOOLEAN NOT NULL, "
+                    "created_at_utc VARCHAR NOT NULL, PRIMARY KEY (review_event_id), "
+                    "FOREIGN KEY(proposal_id) REFERENCES proposals (proposal_id), "
+                    "CONSTRAINT ck_review_events_execution_allowed_false "
+                    "CHECK (execution_allowed = 0), "
+                    "CONSTRAINT ck_review_events_kind_closed CHECK "
+                    "(kind IN ('annotation', 'archive', 'reopen', 'compare_mark')))"
+                )
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 3")
+
+        migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()),
+                CURRENT_STATE_CORE_USER_VERSION,
+            )
+            table_sql = connection.execute(
+                text(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'review_events'"
+                )
+            ).scalar_one()
+            self.assertIn("agent_review_note", table_sql)
+        write_records(
+            [
+                ReviewEvent(
+                    review_event_id="rev_agent_note",
+                    proposal_id="p_review",
+                    kind="agent_review_note",
+                    attester="agent:review-note",
+                    reason="draft review note",
+                    text="{}",
+                )
+            ],
+            engine=engine,
+        )
+        self.assertEqual(read_all(ReviewEvent, engine=engine)[0].kind, "agent_review_note")
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
 
