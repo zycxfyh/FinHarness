@@ -30,6 +30,11 @@ from finharness.agent_context import (
     build_proposal_timeline_context,
     unavailable_context_pack,
 )
+from finharness.agent_evidence import (
+    local_eval_source_ref,
+    market_data_source_ref,
+    resolve_evidence_providers,
+)
 from finharness.config import load_settings
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
 from finharness.metrics import summarize
@@ -120,6 +125,7 @@ class AgentToolEntry:
     side_effect: AgentToolSideEffect
     check_fn: Callable[[], AgentToolAvailability]
     dispatch_handler: AgentToolHandler
+    evidence_provider_ids: tuple[str, ...] = ()
     unavailable_policy: AgentToolUnavailablePolicy = "hide"
     max_result_chars: int = 12_000
     requires_human_review: bool = False
@@ -134,6 +140,7 @@ class AgentToolEntry:
             raise ValueError("agent tool entries never grant execution authority")
         if self.authority_transition:
             raise ValueError("agent tool entries never grant authority transitions")
+        resolve_evidence_providers(self.evidence_provider_ids)
 
     def metadata(self) -> dict[str, object]:
         availability = self.check_fn()
@@ -144,6 +151,7 @@ class AgentToolEntry:
             "description": self.description,
             "side_effect": self.side_effect,
             "availability": availability.model(),
+            "evidence_provider_ids": list(self.evidence_provider_ids),
             "unavailable_policy": self.unavailable_policy,
             "max_result_chars": self.max_result_chars,
             "requires_human_review": self.requires_human_review,
@@ -186,7 +194,19 @@ def get_quote_snapshot(symbol: str) -> dict[str, object]:
 def get_quote_snapshot_payload(symbol: str) -> dict[str, object]:
     """Build the quote snapshot payload behind the Agents SDK adapter."""
     quote = fetch_quote_snapshot(symbol)
-    return quote.__dict__
+    payload = quote.__dict__.copy()
+    payload["source_refs"] = [
+        market_data_source_ref(
+            provider=quote.provider,
+            dataset="quote",
+            symbol=quote.symbol,
+        )
+    ]
+    payload["non_claims"] = [
+        "Quote snapshots are descriptive market data, not investment advice.",
+        "Not execution authorization.",
+    ]
+    return payload
 
 
 @function_tool
@@ -206,6 +226,19 @@ def historical_risk_metrics_payload(symbol: str, start: str, end: str) -> dict[s
         "rows": len(history),
         "data_source": "yfinance/Yahoo Finance, not TradingView/TV",
         "metrics": metrics.__dict__,
+        "source_refs": [
+            market_data_source_ref(
+                provider="yfinance",
+                dataset="history",
+                symbol=symbol,
+                qualifier=f"start={start}&end={end}",
+            )
+        ],
+        "non_claims": [
+            "Historical metrics are descriptive and do not predict future returns.",
+            "Not investment advice.",
+            "Not execution authorization.",
+        ],
     }
 
 
@@ -250,12 +283,29 @@ def evaluate_latest_risk_note_payload(timeout_seconds: float = 60.0) -> dict[str
             "returncode": None,
             "stdout_tail": str(exc.output or "")[-2000:],
             "stderr_tail": f"promptfoo timed out after {timeout_seconds} seconds",
+            "source_refs": [
+                local_eval_source_ref("evals/promptfoo/risk-note.yaml"),
+                "cache://latest_risk_note",
+            ],
+            "data_gaps": [f"promptfoo timed out after {timeout_seconds} seconds"],
+            "non_claims": [
+                "Local eval evidence is diagnostic; it does not prove correctness.",
+                "Not execution authorization.",
+            ],
         }
     return {
         "ok": result.returncode == 0,
         "returncode": result.returncode,
         "stdout_tail": result.stdout[-2000:],
         "stderr_tail": result.stderr[-2000:],
+        "source_refs": [
+            local_eval_source_ref("evals/promptfoo/risk-note.yaml"),
+            "cache://latest_risk_note",
+        ],
+        "non_claims": [
+            "Local eval evidence is diagnostic; it does not prove correctness.",
+            "Not execution authorization.",
+        ],
     }
 
 
@@ -390,6 +440,8 @@ def draft_governed_proposal_from_context_payload(
         "execution_allowed": False,
         "non_claims": write.proposal.non_claims,
         "source_refs": write.proposal.source_refs,
+        "receipt_refs": [write.receipt_ref],
+        "context_pack_refs": list(context_pack_refs or []),
     }
 
 
@@ -528,6 +580,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_available,
             dispatch_handler=_call_payload(get_quote_snapshot_payload),
+            evidence_provider_ids=("market_data.yfinance",),
         ),
         AgentToolEntry(
             name=get_historical_risk_metrics.name,
@@ -538,6 +591,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_available,
             dispatch_handler=_call_payload(historical_risk_metrics_payload),
+            evidence_provider_ids=("market_data.yfinance",),
         ),
         AgentToolEntry(
             name=evaluate_latest_risk_note.name,
@@ -548,6 +602,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="local_eval",
             check_fn=_promptfoo_available,
             dispatch_handler=_call_payload(evaluate_latest_risk_note_payload),
+            evidence_provider_ids=("local_eval.promptfoo",),
             unavailable_policy="hide",
         ),
         AgentToolEntry(
@@ -559,6 +614,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(capital_summary_context_payload),
+            evidence_provider_ids=("capital_context.state_core",),
             unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
@@ -570,6 +626,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(current_ips_context_payload),
+            evidence_provider_ids=("capital_context.state_core",),
             unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
@@ -581,6 +638,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(ips_check_context_payload),
+            evidence_provider_ids=("capital_context.state_core",),
             unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
@@ -592,6 +650,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(open_proposals_context_payload),
+            evidence_provider_ids=("capital_context.state_core",),
             unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
@@ -603,6 +662,7 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="read",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(proposal_timeline_context_payload),
+            evidence_provider_ids=("capital_context.state_core",),
             unavailable_policy="diagnostic_stub",
         ),
         AgentToolEntry(
@@ -614,6 +674,10 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             side_effect="append_only_review_write",
             check_fn=_state_core_path_available,
             dispatch_handler=_call_payload(draft_governed_proposal_from_context_payload),
+            evidence_provider_ids=(
+                "capital_context.state_core",
+                "proposal_receipt.state_core",
+            ),
             unavailable_policy="fail_closed",
             requires_human_review=True,
         ),

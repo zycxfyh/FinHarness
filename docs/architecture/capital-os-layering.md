@@ -1,6 +1,6 @@
 # FinHarness 分层架构(Capital OS Layering)
 
-> 状态:current(2026-06-29)。这是 FinHarness **架构分层的单一事实源**,
+> 状态:current(2026-06-30)。这是 FinHarness **架构分层的单一事实源**,
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
@@ -26,7 +26,7 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
 | **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
-| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_capabilities.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + default read/explain profile + ToolEntry metadata + runtime pipeline + review-draft proposal drafts + review provenance + queue checks + review-task lifecycle |
+| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + default read/explain profile + ToolEntry metadata + evidence provider registry + runtime pipeline + review-draft proposal drafts + review provenance + queue checks + review-task lifecycle |
 | **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | (无 ActionIntent / PreTradeImpactReport) | ❌ gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
 | **L8** | Cockpit / API 产品表面 | 用户怎么用这一切? | FastAPI(`api/app.py` + routers)、vanilla JS cockpit | ✅ 有 |
@@ -44,9 +44,9 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
    可写 append-only governed proposal draft,并在 proposal review surface 暴露
    Agent provenance、带 blocked transition scope 的 queue checks 和 read-only
    review-task lifecycle;Agent tools 通过 ToolEntry metadata 暴露 capability、
-   toolset、side-effect 和 availability,并通过 runtime pipeline 暴露 resolved
-   visibility、structured result/error 和 result budget,但不是 approval、
-   recommendation 或 execution authorization。
+   toolset、side-effect、availability 和 evidence provider ids,并通过 runtime
+   pipeline 暴露 resolved visibility、structured result/error/evidence envelope
+   和 result budget,但不是 approval、recommendation 或 execution authorization。
 3. **L6**:`ActionIntent` → `PreTradeImpactReport`(复用 `exposure.compute_exposure`,
    需先把它重构成可接受 hypothetical 持仓集的形态)。
 

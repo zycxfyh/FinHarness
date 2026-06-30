@@ -1,6 +1,6 @@
 # Agent Runtime Reference
 
-状态:reference(2026-06-29)。本目录把 Hermes agent 项目的成熟运行时模式整理成
+状态:reference(2026-06-30)。本目录把 Hermes agent 项目的成熟运行时模式整理成
 FinHarness 可复用的设计参考。
 
 它不是当前功能清单。当前事实仍以 `system-map.md`、`framework-index.md`、
@@ -29,19 +29,27 @@ FinHarness 可复用的设计参考。
 
 ## Current Direction
 
-The next useful step is not to add more write capability. The next layer should make
-existing Agent output easier to review:
+The next useful step is managed capability expansion, not static restriction.
+Hermes demonstrates that powerful Agent systems stay usable because capabilities
+are declared, selected by profile/toolset, checked at runtime, routed through
+approval or review surfaces when needed, and diagnosed when they degrade. #68
+brings that shape into FinHarness by making evidence provenance reviewable,
+testable, and traceable.
 
-- expose which profile/tool/context pack shaped an Agent answer;
+That reviewability is an enablement layer:
+
+- expose which profile/tool/context pack/evidence provider shaped an Agent answer;
 - surface source references, receipt references, limitations, and guardrail findings;
-- keep default profile read/explain first;
-- keep review-draft style capability append-only and human-review bound;
-- keep approval, attestation, broker execution, fund transfer, and receipt rewriting
-  outside Agent authority.
+- keep default profile read/explain first as the baseline, not the ceiling;
+- graduate new Agent permissions through explicit profile + tool entry + evidence
+  provider + queue/review contract;
+- keep broker execution, fund transfer, receipt rewriting, and final authority
+  behind separately designed command paths rather than implicit model output.
 
 ## Design Rule
 
-Use Hermes as a runtime pattern library, not as a permission target.
+Use Hermes as a runtime pattern library for opening capabilities deliberately,
+not as a permission ceiling or as an invitation to copy every tool.
 
 FinHarness should copy the useful shape:
 
@@ -55,9 +63,11 @@ FinHarness should copy the useful shape:
 - external capability supply-chain boundaries;
 - diagnostics, budgets, and lifecycle receipts.
 
-FinHarness should not copy accidental breadth:
+FinHarness should not copy accidental breadth. New permissions should still pass
+through FinHarness-specific evidence, receipt, IPS, and review contracts:
 
-- no unrestricted shell or external execution authority;
+- no unrestricted shell or external execution authority without a purpose-built
+  profile, review/approval path, and receipt model;
 - no recursive subagent delegation by default;
 - no model-visible promise of capabilities that the active profile cannot use;
 - no memory or session recall treated as evidence of current portfolio state;
@@ -75,7 +85,7 @@ This reference supports a staged route:
 #65 ReviewTask / EvidenceRequest lifecycle
 #66 ToolEntry metadata + check_fn
 #67 Agent Tool Runtime Pipeline v0
-#68 Evidence Provider Registry
+#68 Evidence Provider Registry v0
 #69 Capital Context Budget / Projection
 #70 Runtime Trace / Diagnostics Surface
 #71 Control Plane v0
@@ -83,10 +93,15 @@ This reference supports a staged route:
 #73 Lifecycle / Release Governance v0
 ```
 
-The route should keep adding reviewability and reliability before adding broader
-Agent write capability.
+The route should use reviewability and reliability to unlock broader Agent
+capability. Every new permission should arrive as an explicit runtime contract,
+not as a prompt promise or hidden helper.
 
-Current mainline has implemented the route through `#67`: Agent tools are
-resolved through profile-selected `AgentToolEntry` records and a runtime pipeline
-that exposes visible/hidden/unavailable tools, structured dispatch results,
-structured runtime errors, result-budget truncation, and non-authority metadata.
+Current mainline has implemented the route through `#68`: Agent tools are
+resolved through profile-selected `AgentToolEntry` records, declared evidence
+provider ids, and a runtime pipeline that exposes visible/hidden/unavailable
+tools, structured dispatch results, structured runtime errors, evidence
+envelopes, result-budget truncation, and authority-boundary metadata. This is the
+foundation for opening stronger Agent permissions in later profiles because the
+system can now say which provider, source, receipt, context pack, and runtime
+policy shaped each output.

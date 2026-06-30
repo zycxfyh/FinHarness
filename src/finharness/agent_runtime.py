@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from finharness.agent_capabilities import get_agent_profile, tool_names_for_profile
+from finharness.agent_evidence import (
+    AgentEvidenceEnvelope,
+    build_agent_evidence_envelope,
+    evidence_provider_metadata_for_ids,
+)
 from finharness.agent_tools import (
     AGENT_TOOL_ENTRIES,
     AgentToolAvailability,
@@ -54,6 +59,7 @@ class AgentToolRuntimeResult:
     tool_name: str
     side_effect: AgentToolSideEffect | None
     result: dict[str, object] | None = None
+    evidence: AgentEvidenceEnvelope | None = None
     error: AgentToolRuntimeError | None = None
     truncated: bool = False
     original_result_chars: int | None = None
@@ -66,6 +72,7 @@ class AgentToolRuntimeResult:
             "tool_name": self.tool_name,
             "side_effect": self.side_effect,
             "result": self.result,
+            "evidence": self.evidence.model() if self.evidence else None,
             "error": self.error.model() if self.error else None,
             "truncated": self.truncated,
             "original_result_chars": self.original_result_chars,
@@ -88,6 +95,10 @@ class ResolvedAgentToolEntry:
             "capability": self.entry.capability.value,
             "toolset": self.entry.toolset,
             "side_effect": self.entry.side_effect,
+            "evidence_provider_ids": list(self.entry.evidence_provider_ids),
+            "evidence_providers": evidence_provider_metadata_for_ids(
+                self.entry.evidence_provider_ids
+            ),
             "availability": self.availability.model(),
             "model_visible": self.model_visible,
             "hidden_reason": self.hidden_reason,
@@ -276,6 +287,10 @@ def _success_result(
     entry: AgentToolEntry,
     result: dict[str, object],
 ) -> AgentToolRuntimeResult:
+    evidence = build_agent_evidence_envelope(
+        provider_ids=entry.evidence_provider_ids,
+        result=result,
+    )
     encoded = json.dumps(result, sort_keys=True, default=str)
     if len(encoded) <= entry.max_result_chars:
         return AgentToolRuntimeResult(
@@ -283,6 +298,7 @@ def _success_result(
             tool_name=entry.name,
             side_effect=entry.side_effect,
             result=result,
+            evidence=evidence,
             truncated=False,
             execution_allowed=False,
             authority_transition=False,
@@ -297,6 +313,7 @@ def _success_result(
             "truncated": True,
             "original_result_chars": len(encoded),
         },
+        evidence=evidence,
         error=AgentToolRuntimeError(
             code="RESULT_TOO_LARGE",
             message="agent tool result exceeded its runtime result budget",
