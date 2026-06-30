@@ -452,6 +452,9 @@ def _timeline_entry_summary(entry: Any) -> dict[str, Any]:
         value = detail.get(key)
         if value:
             out[key] = _bounded_value(value, max_items=5)
+    note = detail.get("agent_review_note")
+    if isinstance(note, dict):
+        out["agent_review_note"] = _bounded_value(note, max_items=12)
     return out
 
 

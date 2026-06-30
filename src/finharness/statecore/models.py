@@ -269,7 +269,13 @@ class Attestation(StateCoreBase, table=True):
         return value
 
 
-REVIEW_EVENT_KINDS: tuple[str, ...] = ("annotation", "archive", "reopen", "compare_mark")
+REVIEW_EVENT_KINDS: tuple[str, ...] = (
+    "annotation",
+    "archive",
+    "reopen",
+    "compare_mark",
+    "agent_review_note",
+)
 
 
 class ReviewEvent(StateCoreBase, table=True):
@@ -277,7 +283,7 @@ class ReviewEvent(StateCoreBase, table=True):
 
     Additive to (not a replacement for) Attestation: attestation stays the decision of
     record (approve/reject); ReviewEvent records annotation / archive / reopen /
-    compare_mark. Never carries execution authority. ``content_hash`` is for
+    compare_mark / agent_review_note. Never carries execution authority. ``content_hash`` is for
     integrity/replay only — it is NOT an idempotency key, so a repeated human annotation
     is a new event, not a no-op.
     """

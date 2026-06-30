@@ -22,6 +22,10 @@ The `review-draft` profile adds:
 
 - `draft_governed_proposal_from_context`
 
+The `review-note` profile adds:
+
+- `draft_agent_review_note_from_context`
+
 The agent is named `Finance Research Harness Agent`.
 
 Use `build_finance_research_agent(profile_name=...)` to create a runtime Agent
@@ -35,6 +39,7 @@ Describe the registered agent and tools:
 ```bash
 task agent:describe
 task agent:describe -- --profile review-draft
+task agent:describe -- --profile review-note
 ```
 
 Run tool-level tests without any model or API key:
@@ -48,6 +53,7 @@ Run the real SDK `Runner` only when `OPENAI_API_KEY` is already present in the e
 ```bash
 task agent:run
 FINHARNESS_AGENT_PROFILE=review-draft task agent:run
+FINHARNESS_AGENT_PROFILE=review-note task agent:run
 ```
 
 If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to read secret files.
@@ -61,3 +67,8 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
 - The `review-draft` profile can create append-only governed proposal drafts
   for human review, not approvals, recommendations, execution authorization,
   orders, transfers, or broker actions.
+- The `review-note` profile can create append-only `AgentReviewNoteDraft`
+  artifacts on existing proposals for human review. Review notes may enter the
+  proposal timeline, but they are not proposal revisions, attestations,
+  approvals, rejections, recommendations, execution authorization, orders,
+  transfers, or broker actions.

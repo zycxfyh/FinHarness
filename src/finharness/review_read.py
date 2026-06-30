@@ -12,6 +12,7 @@ R4a adds the compare-marks read model here as the system's natural extension.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -114,7 +115,7 @@ def read_proposal_timeline(engine: Any, proposal_id: str) -> ProposalTimeline | 
             created_at_utc=event.created_at_utc,
             attester=event.attester,
             reason=event.reason,
-            detail=event.model_dump(mode="json"),
+            detail=_review_event_detail(event),
         )
         for event in events
     ]
@@ -126,6 +127,20 @@ def read_proposal_timeline(engine: Any, proposal_id: str) -> ProposalTimeline | 
         is_archived=is_archived(proposal_id, engine=engine),
         entries=entries,
     )
+
+
+def _review_event_detail(event: ReviewEvent) -> dict[str, Any]:
+    detail = event.model_dump(mode="json")
+    if event.kind != "agent_review_note" or not event.text:
+        return detail
+    try:
+        payload = json.loads(event.text)
+    except json.JSONDecodeError:
+        detail.setdefault("data_gaps", []).append("agent review note payload is unreadable")
+        return detail
+    if isinstance(payload, dict):
+        detail["agent_review_note"] = payload
+    return detail
 
 
 def read_retrospective(

@@ -98,13 +98,16 @@ domain model / read model / write(command) model / adapters / invariants
   负责 visible/hidden/unavailable tool resolution、structured result/error/evidence、
   profile-aware context projection、result-budget truncation 和 dispatch wrapper;
   review-draft profile 允许 Agent 创建 append-only governed proposal draft;
+  review-note profile 允许 Agent 在已有 proposal timeline 上创建 append-only
+  `AgentReviewNoteDraft` typed artifact,用于 findings、risks、open questions、
+  evidence refs、data gaps 和 human review 准备,不修改 proposal/scaffold/attestation;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、
   source/receipt refs,并区分 review_entry、human_attestation、authority_transition
   和 execution;review-task lifecycle 把 proposal/timeline/queue checks 投影成
-  read-only ReviewTask/EvidenceRequest;未来 review-note、scaffold revision、
-  simulation、approval prep 或其他更强权限,应通过新增工具、registry 映射、
+  read-only ReviewTask/EvidenceRequest;未来 scaffold revision、simulation、
+  approval prep 或其他更强权限,应通过新增工具、registry 映射、
   evidence envelope、测试和 receipt-backed command path 变成 active capabilities,
   而不是靠 prompt 承诺。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;

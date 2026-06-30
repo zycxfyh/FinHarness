@@ -72,7 +72,7 @@ execution authorization.
 | `task wheels:data-check` | Check wheels plus provider-backed network data. | Network/provider availability required. |
 | `task wheels:size` | Show local wheel sizes. | Inventory only. |
 | `task experiments` | Run mature-wheel local Riskfolio experiment. | Experiment evidence only. |
-| `task agent:describe` | Describe registered OpenAI Agents SDK tools; pass `-- --profile review-draft` to inspect a non-default profile. | Tool inventory. |
+| `task agent:describe` | Describe registered OpenAI Agents SDK tools; pass `-- --profile review-draft` or `-- --profile review-note` to inspect a non-default profile. | Tool inventory. |
 | `task agent:run` | Run the real agent when `OPENAI_API_KEY` is configured; pass `-- --profile ...` or `FINHARNESS_AGENT_PROFILE`. | Agent output is not authority. |
 | `task eval:smoke` | Run promptfoo local echo eval. | Eval harness check. |
 | `task eval:risk` | Evaluate generated finance risk note. | Overclaim/risk-note check. |

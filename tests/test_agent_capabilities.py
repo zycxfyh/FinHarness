@@ -9,6 +9,7 @@ from finharness.agent_capabilities import (
     CURRENT_AGENT_TOOL_NAMES,
     DEFAULT_AGENT_PROFILE,
     DRAFT_PROPOSAL_TOOL_NAMES,
+    REVIEW_NOTE_TOOL_NAMES,
     AgentCapability,
     AgentCapabilityProfile,
     get_agent_profile,
@@ -70,10 +71,6 @@ class AgentCapabilitiesTest(unittest.TestCase):
         review_profile = get_agent_profile("review-draft")
         self.assertIn(AgentCapability.CAPITAL_PROPOSE, review_profile.capabilities)
         self.assertNotIn(AgentCapability.CAPITAL_REVIEW_NOTE, review_profile.capabilities)
-        self.assertIn(
-            AgentCapability.CAPITAL_REVIEW_NOTE,
-            review_profile.planned_capabilities,
-        )
         self.assertTrue(
             profile_allows_capability(
                 "review-draft",
@@ -88,6 +85,27 @@ class AgentCapabilitiesTest(unittest.TestCase):
         )
         self.assertTrue(set(DRAFT_PROPOSAL_TOOL_NAMES).issubset(review_profile.tool_names))
         self.assertTrue(set(DRAFT_PROPOSAL_TOOL_NAMES).isdisjoint(DEFAULT_AGENT_PROFILE.tool_names))
+
+    def test_review_note_profile_allows_review_note_drafts_only(self) -> None:
+        profile = get_agent_profile("review-note")
+
+        self.assertIn(AgentCapability.CAPITAL_REVIEW_NOTE, profile.capabilities)
+        self.assertNotIn(AgentCapability.CAPITAL_PROPOSE, profile.capabilities)
+        self.assertTrue(
+            profile_allows_capability(
+                "review-note",
+                AgentCapability.CAPITAL_REVIEW_NOTE,
+            )
+        )
+        self.assertFalse(
+            profile_allows_capability(
+                "review-note",
+                AgentCapability.CAPITAL_PROPOSE,
+            )
+        )
+        self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).issubset(profile.tool_names))
+        self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).isdisjoint(DEFAULT_AGENT_PROFILE.tool_names))
+        self.assertTrue(set(REVIEW_NOTE_TOOL_NAMES).isdisjoint(tool_names_for_profile("review-draft")))
 
     def test_simulation_capability_is_planned_not_active(self) -> None:
         simulation_profile = get_agent_profile("simulation")

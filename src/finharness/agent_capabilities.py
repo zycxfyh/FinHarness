@@ -31,6 +31,10 @@ DRAFT_PROPOSAL_TOOL_NAMES = (
     "draft_governed_proposal_from_context",
 )
 
+REVIEW_NOTE_TOOL_NAMES = (
+    "draft_agent_review_note_from_context",
+)
+
 CURRENT_AGENT_TOOL_NAMES = (
     "get_quote_snapshot",
     "get_historical_risk_metrics",
@@ -92,10 +96,24 @@ REVIEW_DRAFT_AGENT_PROFILE = AgentCapabilityProfile(
         AgentCapability.CAPITAL_EXPLAIN,
         AgentCapability.CAPITAL_PROPOSE,
     ),
-    planned_capabilities=(
+    tool_names=(*CURRENT_AGENT_TOOL_NAMES, *DRAFT_PROPOSAL_TOOL_NAMES),
+)
+
+REVIEW_NOTE_AGENT_PROFILE = AgentCapabilityProfile(
+    name="review-note",
+    description=(
+        "Append-only proposal review-note posture. It exposes existing read/explain "
+        "tools plus a receipt-backed AgentReviewNoteDraft tool for existing proposals."
+    ),
+    capabilities=(
+        AgentCapability.CAPITAL_READ,
+        AgentCapability.CAPITAL_EXPLAIN,
         AgentCapability.CAPITAL_REVIEW_NOTE,
     ),
-    tool_names=(*CURRENT_AGENT_TOOL_NAMES, *DRAFT_PROPOSAL_TOOL_NAMES),
+    planned_capabilities=(
+        AgentCapability.CAPITAL_SCAFFOLD_REVISION,
+    ),
+    tool_names=(*CURRENT_AGENT_TOOL_NAMES, *REVIEW_NOTE_TOOL_NAMES),
 )
 
 SIMULATION_AGENT_PROFILE = AgentCapabilityProfile(
@@ -117,6 +135,7 @@ SIMULATION_AGENT_PROFILE = AgentCapabilityProfile(
 AGENT_PROFILES = (
     DEFAULT_AGENT_PROFILE,
     REVIEW_DRAFT_AGENT_PROFILE,
+    REVIEW_NOTE_AGENT_PROFILE,
     SIMULATION_AGENT_PROFILE,
 )
 
