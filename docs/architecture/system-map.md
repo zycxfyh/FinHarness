@@ -59,13 +59,15 @@ domain model / read model / write(command) model / adapters / invariants
 - **domain**:`statecore/proposals.py`、`statecore/proposal_revisions.py`、
   `review_read.py`、`annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py`。
 - **read model**:`read_proposal_timeline`、`read_compare_marks`、
-  `read_review_queue`、review routes。
+  `read_review_queue`、`read_review_risk_register`、review/risk routes。
 - **write(command)**:`create_governed_attestation`、`revise_governed_proposal_scaffold`、
   `create_governed_review_event`、`task review:annual`、`task lessons:*`。
 - **invariants**:append-only;attestation 是 decision of record,不是 execution
   authorization;scaffold revision 只补 review evidence 和 `counter_evidence`,
   不授权执行;review queue triage 是派生 read model,用于排序 human review
-  work,不是 approval/rejection/attestation;receipt 写失败必须清理 queryable mirror。
+  work,不是 approval/rejection/attestation;risk register v0 只把 review queue
+  signals 派生成 risk objects,不是 persistent risk DB、risk acceptance、scoring
+  或 scenario generation;receipt 写失败必须清理 queryable mirror。
 
 ### 6. Research Evidence
 
@@ -112,7 +114,10 @@ domain model / read model / write(command) model / adapters / invariants
   attestations、archived state、review events、AgentReviewNoteDraft payloads、
   receipt index 和 queue checks 投影成 deterministic ReviewQueueItem,让人类
   reviewer 看到 priority、triage reasons、open questions、data gaps、duplicate/
-  stale flags 和 next actions;未来 scaffold revision、simulation、
+  stale flags 和 next actions;`/risk/register` 再把这些 queue signals 派生成
+  read-only RiskRegisterItem,用于比较 evidence gaps、stale context、duplicates、
+  policy mismatch、counter-evidence needs、Agent-reported risks 和 open questions,
+  不接受/关闭风险、不评分、不生成 scenario;未来 scaffold revision、simulation、
   approval prep 或其他更强权限,应通过新增工具、registry 映射、
   evidence envelope、测试和 receipt-backed command path 变成 active capabilities,
   而不是靠 prompt 承诺。

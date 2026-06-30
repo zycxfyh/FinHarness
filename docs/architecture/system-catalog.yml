@@ -94,20 +94,22 @@ systems:
   - id: review_system
     name: Review System
     status: current
-    summary: Append-only proposal review, attestation, compare marks, annual review, lesson-to-rule, and deterministic review queue triage.
+    summary: Append-only proposal review, attestation, compare marks, annual review, lesson-to-rule, deterministic review queue triage, and derived risk register v0.
     docs:
       - docs/architecture/system-map.md
       - docs/engineering/system-directory-standard.md
     runtime_roots:
       - src/finharness/statecore/proposals.py
       - src/finharness/review_read.py
+      - src/finharness/risk_register.py
       - src/finharness/lesson_loop.py
       - src/finharness/rule_change_ledger.py
-    mature_posture: Decision log and review discipline; attestation is review evidence, not execution.
+    mature_posture: Decision log plus risk/issue register discipline; attestation and risk severity hints are review evidence, not execution.
     checks:
       - task governance:check
       - task test
       - uv run python -m unittest tests.test_review_read tests.test_review_workspace_api
+      - uv run python -m unittest tests.test_risk_register
     upgrade_trigger: Review flows become collaborative or need role/permission separation.
 
   - id: research_evidence

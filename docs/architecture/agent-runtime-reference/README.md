@@ -89,17 +89,18 @@ This reference supports a staged route:
 #69 Capital Context Budget / Projection v0
 #70 AgentReviewNoteDraft capability
 #71 Review Queue Triage
-#72 Runtime Trace / Diagnostics Surface
-#73 Control Plane v0
-#74 Security / Trust Boundary v0
-#75 Lifecycle / Release Governance v0
+#72 Risk Register v0
+#73 Runtime Trace / Diagnostics Surface
+#74 Control Plane v0
+#75 Security / Trust Boundary v0
+#76 Lifecycle / Release Governance v0
 ```
 
 The route should use reviewability and reliability to unlock broader Agent
 capability. Every new permission should arrive as an explicit runtime contract,
 not as a prompt promise or hidden helper.
 
-Current mainline has implemented the route through `#71`: Agent tools are
+Current mainline has implemented the route through `#72`: Agent tools are
 resolved through profile-selected `AgentToolEntry` records, declared evidence
 provider ids, profile-aware context projection policies, and a runtime pipeline
 that exposes visible/hidden/unavailable tools, structured dispatch results,
@@ -111,8 +112,13 @@ through the proposal timeline and receipts rather than through approval,
 attestation, scaffold revision, or execution. Review queue triage now consumes
 those artifacts with proposals, attestations, archived state, receipt index rows,
 and proposal queue checks so human reviewers can see priority, triage reasons,
-open questions, data gaps, duplicate/stale flags, and next actions. This is the
-foundation for opening stronger Agent permissions in later profiles because the
-system can now say which profile, tool, provider, source, receipt, context pack,
-projection policy, runtime policy, governance artifact, and review operating
-surface shaped each output.
+open questions, data gaps, duplicate/stale flags, and next actions. Risk
+register v0 then derives read-only `RiskRegisterItem` objects from those queue
+signals so evidence gaps, stale context, duplicate proposals, policy mismatch,
+counter-evidence needs, Agent-reported risks, and open questions become
+comparable review objects. It does not persist risk state, accept/resolve risk,
+score risk, generate scenarios, or authorize execution. This is the foundation
+for opening stronger Agent permissions in later profiles because the system can
+now say which profile, tool, provider, source, receipt, context pack, projection
+policy, runtime policy, governance artifact, review operating surface, and risk
+object shaped each output.

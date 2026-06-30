@@ -13,6 +13,7 @@ from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_proposals import router as proposal_router
 from finharness.api.routes_review import router as review_router
+from finharness.api.routes_risk import router as risk_router
 from finharness.api.routes_state import router as state_router
 from finharness.market_data import ROOT
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
@@ -98,6 +99,7 @@ def create_app(
     api.include_router(state_router)
     api.include_router(proposal_router)
     api.include_router(review_router)
+    api.include_router(risk_router)
     api.include_router(ips_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():

@@ -300,6 +300,7 @@ class StateCoreApiTest(unittest.TestCase):
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
+            "/risk/register": {"get"},
             "/ips/current": {"get"},
             "/ips/draft": {"post"},
             "/ips/check": {"get"},
