@@ -66,6 +66,26 @@ Before LLM summarization, prefer deterministic projection:
 
 LLM summaries should never be the only stored state.
 
+## Current FinHarness v0
+
+`agent_context_projection.py` implements the first deterministic Capital Context
+Engine slice:
+
+- profile-aware projection budgets for `default`, `review-draft`, and
+  `simulation` postures;
+- a `get_capital_context_projection` office-brief tool that returns a bounded
+  bundle of Capital OS context packs;
+- per-pack priority, max chars, max items, source-ref limits, and selected
+  summary keys;
+- runtime dispatch projection for individual context-pack results before result
+  budget truncation;
+- projection metadata that records profile, tool, pack, budget, dropped keys,
+  and truncation state.
+
+This is an enablement surface for stronger Agent teams: as roles gain more
+tools, their context window should expand through explicit projection policies
+rather than prompt-only instructions or raw database access.
+
 ## Error Taxonomy
 
 FinHarness needs structured error classes:

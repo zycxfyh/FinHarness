@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from finharness.agent_capabilities import get_agent_profile, tool_names_for_profile
+from finharness.agent_context_projection import (
+    context_projection_view,
+    project_agent_context_result,
+)
 from finharness.agent_evidence import (
     AgentEvidenceEnvelope,
     build_agent_evidence_envelope,
@@ -109,6 +113,14 @@ class ResolvedAgentToolEntry:
         }
 
 
+PROFILE_BOUND_TOOL_NAMES = frozenset(
+    {
+        "get_capital_context_projection",
+        "draft_governed_proposal_from_context",
+    }
+)
+
+
 def resolve_agent_tool_entries(profile_name: str = "default") -> list[ResolvedAgentToolEntry]:
     profile = get_agent_profile(profile_name)
     resolved: list[ResolvedAgentToolEntry] = []
@@ -164,9 +176,11 @@ def agent_runtime_view(profile_name: str = "default") -> dict[str, object]:
             "availability_affects_model_visibility": True,
             "diagnostic_stub_tools_remain_model_visible": True,
             "dispatch_results_are_structured": True,
+            "context_projection_is_profile_budgeted": True,
             "execution_allowed": False,
             "authority_transition": False,
         },
+        "context_projection": context_projection_view(profile_name),
     }
 
 
@@ -226,8 +240,24 @@ def dispatch_agent_tool(
             recoverable=True,
         )
 
+    runtime_arguments = dict(arguments)
+    if tool_name in PROFILE_BOUND_TOOL_NAMES:
+        requested_profile = runtime_arguments.pop("profile_name", None)
+        if requested_profile is not None and str(requested_profile) != profile_name:
+            return _error_result(
+                tool_name=tool_name,
+                side_effect=entry.side_effect,
+                code="PROFILE_NOT_ALLOWED",
+                message=(
+                    "agent tool profile is selected by the active runtime "
+                    f"profile {profile_name!r}, not by tool arguments"
+                ),
+                recoverable=False,
+            )
+        runtime_arguments["profile_name"] = profile_name
+
     try:
-        result = entry.dispatch_handler(arguments)
+        result = entry.dispatch_handler(runtime_arguments)
     except StateCoreStoreError as exc:
         return _error_result(
             tool_name=tool_name,
@@ -264,7 +294,7 @@ def dispatch_agent_tool(
             reason=str(exc),
         )
 
-    return _success_result(entry=entry, result=result)
+    return _success_result(profile_name=profile_name, entry=entry, result=result)
 
 
 def _missing_required_arguments(
@@ -284,9 +314,15 @@ def _missing_required_arguments(
 
 def _success_result(
     *,
+    profile_name: str,
     entry: AgentToolEntry,
     result: dict[str, object],
 ) -> AgentToolRuntimeResult:
+    result = project_agent_context_result(
+        profile_name=profile_name,
+        tool_name=entry.name,
+        result=result,
+    )
     evidence = build_agent_evidence_envelope(
         provider_ids=entry.evidence_provider_ids,
         result=result,

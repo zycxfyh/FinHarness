@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -30,6 +31,7 @@ from finharness.agent_context import (
     build_proposal_timeline_context,
     unavailable_context_pack,
 )
+from finharness.agent_context_projection import build_capital_context_projection_payload
 from finharness.agent_evidence import (
     local_eval_source_ref,
     market_data_source_ref,
@@ -374,6 +376,19 @@ def proposal_timeline_context_payload(
     )
 
 
+def capital_context_projection_payload(
+    *,
+    profile_name: str = "default",
+    open_proposals_limit: int = 10,
+    engine: Engine | None = None,
+) -> dict[str, object]:
+    return build_capital_context_projection_payload(
+        profile_name=profile_name,
+        open_proposals_limit=open_proposals_limit,
+        engine=engine,
+    )
+
+
 def draft_governed_proposal_from_context_payload(
     *,
     kind: str,
@@ -509,6 +524,16 @@ def _dedupe_refs(values: list[str]) -> list[str]:
 
 
 @function_tool
+def get_capital_context_projection(
+    open_proposals_limit: int = 10,
+) -> dict[str, object]:
+    """Read the profile-budgeted Capital OS office context projection."""
+    return capital_context_projection_payload(
+        open_proposals_limit=open_proposals_limit,
+    )
+
+
+@function_tool
 def get_capital_summary_context() -> dict[str, object]:
     """Read the bounded Capital OS exposure context pack."""
     return capital_summary_context_payload()
@@ -551,7 +576,6 @@ def draft_governed_proposal_from_context(
     assumptions: dict[str, Any] | None = None,
     limitations: dict[str, Any] | None = None,
     context_pack_refs: list[str] | None = None,
-    profile_name: str = "review-draft",
 ) -> dict[str, object]:
     """Create a receipt-backed governed proposal draft for human review."""
     return draft_governed_proposal_from_context_payload(
@@ -564,7 +588,6 @@ def draft_governed_proposal_from_context(
         assumptions=assumptions,
         limitations=limitations,
         context_pack_refs=context_pack_refs,
-        profile_name=profile_name,
     )
 
 
@@ -604,6 +627,19 @@ AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
             dispatch_handler=_call_payload(evaluate_latest_risk_note_payload),
             evidence_provider_ids=("local_eval.promptfoo",),
             unavailable_policy="hide",
+        ),
+        AgentToolEntry(
+            name=get_capital_context_projection.name,
+            tool=get_capital_context_projection,
+            capability=AgentCapability.CAPITAL_READ,
+            toolset="capital_context",
+            description="Read the profile-budgeted Capital OS office context projection.",
+            side_effect="read",
+            check_fn=_state_core_path_available,
+            dispatch_handler=_call_payload(capital_context_projection_payload),
+            evidence_provider_ids=("capital_context.state_core",),
+            unavailable_policy="diagnostic_stub",
+            max_result_chars=20_000,
         ),
         AgentToolEntry(
             name=get_capital_summary_context.name,
@@ -707,14 +743,76 @@ def agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
     from finharness.agent_runtime import resolve_agent_tool_entries
 
     return [
-        resolved.entry.tool
+        _runtime_bound_tool(profile_name=profile_name, entry=resolved.entry)
         for resolved in resolve_agent_tool_entries(profile_name)
         if resolved.model_visible
     ]
 
 
 def _static_agent_tools_for_profile(profile_name: str = "default") -> list[Tool]:
-    return [entry.tool for entry in agent_tool_entries_for_profile(profile_name)]
+    return [
+        _runtime_bound_tool(profile_name=profile_name, entry=entry)
+        for entry in agent_tool_entries_for_profile(profile_name)
+    ]
+
+
+def _runtime_bound_tool(*, profile_name: str, entry: AgentToolEntry) -> FunctionTool:
+    async def invoke(_context: object, arguments_json: str) -> dict[str, object]:
+        try:
+            parsed = json.loads(arguments_json or "{}")
+        except json.JSONDecodeError as exc:
+            return _sdk_schema_error(entry=entry, reason=str(exc))
+        if not isinstance(parsed, dict):
+            return _sdk_schema_error(
+                entry=entry,
+                reason="tool arguments must be a JSON object",
+            )
+
+        from finharness.agent_runtime import dispatch_agent_tool
+
+        return dispatch_agent_tool(
+            profile_name=profile_name,
+            tool_name=entry.name,
+            arguments=parsed,
+        ).model()
+
+    return FunctionTool(
+        name=entry.tool.name,
+        description=entry.tool.description,
+        params_json_schema=copy.deepcopy(entry.tool.params_json_schema),
+        on_invoke_tool=invoke,
+        strict_json_schema=entry.tool.strict_json_schema,
+        is_enabled=entry.tool.is_enabled,
+        tool_input_guardrails=entry.tool.tool_input_guardrails,
+        tool_output_guardrails=entry.tool.tool_output_guardrails,
+        needs_approval=entry.tool.needs_approval,
+        timeout_seconds=entry.tool.timeout_seconds,
+        timeout_behavior=entry.tool.timeout_behavior,
+        timeout_error_function=entry.tool.timeout_error_function,
+        defer_loading=entry.tool.defer_loading,
+    )
+
+
+def _sdk_schema_error(*, entry: AgentToolEntry, reason: str) -> dict[str, object]:
+    return {
+        "ok": False,
+        "tool_name": entry.name,
+        "side_effect": entry.side_effect,
+        "result": None,
+        "evidence": None,
+        "error": {
+            "code": "SCHEMA_VALIDATION_FAILED",
+            "message": "invalid tool arguments JSON",
+            "recoverable": True,
+            "reason": reason,
+            "execution_allowed": False,
+            "authority_transition": False,
+        },
+        "truncated": False,
+        "original_result_chars": None,
+        "execution_allowed": False,
+        "authority_transition": False,
+    }
 
 
 def build_finance_research_agent(profile_name: str = "default") -> Agent:

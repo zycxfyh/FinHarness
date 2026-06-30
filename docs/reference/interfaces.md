@@ -18,7 +18,7 @@ Use this as a lookup page. For system ownership, read
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review | `task review:annual`, `review_read.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
-| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through `AgentToolEntry`, evidence provider registry, and the runtime pipeline; default profile is read-only; review-draft profile can create append-only governed proposal drafts whose Agent provenance, queue checks, evidence envelope, and review-task lifecycle projection are exposed on the review surface, with no approval or execution authority | `agent_context.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `proposal_queue_checks.py`, `task agent:describe`, `task agent:run` |
+| AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through `AgentToolEntry`, profile-aware context projection, evidence provider registry, and the runtime pipeline; default profile is read-only baseline; review-draft profile can create append-only governed proposal drafts whose Agent provenance, queue checks, evidence envelope, context budget, and review-task lifecycle projection are exposed on the review surface, with stronger permissions graduating through explicit runtime contracts | `agent_context.py`, `agent_context_projection.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `proposal_queue_checks.py`, `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
@@ -34,11 +34,12 @@ Use this as a lookup page. For system ownership, read
 - Agent capability profiles are explicit product postures resolved through a
   runtime `AgentToolEntry` registry/factory, not permission bypasses; Agent tool
   metadata exposes capability, toolset, side-effect, availability, evidence
-  provider ids, and non-authority claims. The Agent runtime pipeline resolves
-  visible/hidden/unavailable tools and normalizes dispatch results/errors plus
-  evidence envelopes without creating approval, recommendations, or execution
-  authorization by implication. New Agent permissions should be opened through
-  explicit profiles, tool entries, evidence providers, review/approval contracts,
+  provider ids, profile-aware context projection, and authority-boundary claims.
+  The Agent runtime pipeline resolves visible/hidden/unavailable tools and
+  normalizes dispatch results/errors plus evidence envelopes without creating
+  approval, recommendations, or execution authorization by implication. New
+  Agent permissions should be opened through explicit profiles, tool entries,
+  context projection policies, evidence providers, review/approval contracts,
   and tests rather than by broad prompt language. Agent-created proposal drafts
   are review objects.
 - Agent-created proposal drafts expose review provenance (`created_by=agent`,
