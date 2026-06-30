@@ -46,7 +46,8 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
    Agent provenance;scaffold-candidate profile 可基于 active risk register item 创建
    append-only `AgentScaffoldRevisionApplyCandidate`,包含 patch/proposed scaffold/
    changed fields/preflight/rollback/human confirmation requirements,但不直接修改
-   proposal;带 blocked transition scope 的 queue checks 和 read-only
+   proposal;human-confirmed apply path 可将 candidate patch 通过 proposal revision
+   chain 写成真实 scaffold revision;带 blocked transition scope 的 queue checks 和 read-only
    review-task lifecycle;Agent tools 通过 ToolEntry metadata 暴露 capability、
    toolset、side-effect、availability 和 evidence provider ids;`agent_context_projection.py`
    为不同 profile 提供 office brief 和上下文预算,并通过 runtime pipeline 暴露

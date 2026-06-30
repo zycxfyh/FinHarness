@@ -77,6 +77,12 @@ Use this as a lookup page. For system ownership, read
   mutate proposals. Their preflight, risk coverage, and rollback fields are
   Agent-supplied candidate payload until a later system preflight recomputes
   them. Applying the patch requires a later human-confirmed flow.
+- Human-confirmed scaffold candidate apply is a review-state transition:
+  `POST /scaffold-revision-candidates/{candidate_id}/apply` requires a human
+  attester/reason, expected candidate receipt, expected proposal receipt, and
+  `explicit_confirmation=true`, then writes a normal proposal revision receipt
+  linked back to the candidate. It is not Agent auto-apply, approval,
+  attestation, or execution authorization.
 - There is no current Agent approval, live order, fund transfer, broker write API,
   or receipt deletion/overwrite interface. Those are future capability candidates
   only if they receive purpose-built runtime profiles, command paths, receipts,

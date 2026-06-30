@@ -92,5 +92,5 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
   `AgentScaffoldRevisionApplyCandidate` artifacts from active risk register
   items. Candidates include a scaffold patch, proposed scaffold, changed fields,
   risk coverage, preflight/rollback context, and human confirmation
-  requirements. They do not mutate proposals; human-confirmed apply is a later
-  flow.
+  requirements. They do not mutate proposals by themselves; human-confirmed
+  apply moves a candidate patch through the proposal revision chain.

@@ -342,6 +342,7 @@ def revise_governed_proposal_scaffold(
     attester: str,
     reason: str,
     source_refs: list[str] | None = None,
+    revision_context_extra: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
 ) -> GovernedProposalRevisionWrite:
@@ -395,6 +396,14 @@ def revise_governed_proposal_scaffold(
         "changed_scaffold_fields": list(changed_fields),
         "execution_allowed": False,
     }
+    if revision_context_extra:
+        revision_context.update(
+            {
+                key: value
+                for key, value in revision_context_extra.items()
+                if key not in {"kind", "attester", "reason", "execution_allowed"}
+            }
+        )
     write = create_governed_proposal(
         kind=existing.kind,
         claim=existing.claim,

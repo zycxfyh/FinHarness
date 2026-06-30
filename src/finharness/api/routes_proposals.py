@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -227,6 +228,52 @@ class ProposalScaffoldRevisionResponse(BaseModel):
     execution_allowed: bool = False
 
 
+class ScaffoldRevisionCandidateApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    human_attester: str
+    human_reason: str
+    expected_candidate_receipt_ref: str
+    expected_proposal_receipt_ref: str
+    explicit_confirmation: bool
+
+    @field_validator(
+        "human_attester",
+        "human_reason",
+        "expected_candidate_receipt_ref",
+        "expected_proposal_receipt_ref",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("candidate apply requires non-blank human context and receipts")
+        return value
+
+    @field_validator("explicit_confirmation")
+    @classmethod
+    def require_explicit_confirmation(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("candidate apply requires explicit_confirmation=true")
+        return True
+
+
+class ScaffoldRevisionCandidateApplyResponse(BaseModel):
+    proposal: Proposal
+    receipt_ref: str
+    previous_receipt_ref: str | None
+    changed_scaffold_fields: tuple[str, ...]
+    applied_candidate_id: str
+    candidate_receipt_ref: str
+    candidate_review_event_id: str
+    non_claims: tuple[str, ...] = (
+        "Candidate apply is a human-confirmed scaffold revision, not Agent auto-apply.",
+        "Applying scaffold text is not approval, attestation, or execution authorization.",
+        "Not investment advice.",
+    )
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
 def _proposal_attestations(
     proposal_id: str,
     *,
@@ -246,7 +293,53 @@ def _proposal_attestations(
 _REVISION_ANOMALY_STATUS: dict[str, int] = {
     "missing": 404,
     "outside_allowed_roots": 404,
-}
+    }
+
+
+def _candidate_receipt_ref(event: ReviewEvent) -> str | None:
+    suffix = f"review-events/receipt_{event.review_event_id}.json"
+    for ref in event.source_refs:
+        if str(ref).endswith(suffix):
+            return str(ref)
+    return None
+
+
+def _scaffold_revision_candidate_event(
+    candidate_id: str,
+    *,
+    engine: EngineDependency,
+) -> tuple[ReviewEvent, dict[str, Any]] | None:
+    with Session(engine) as session:
+        events = list(
+            session.exec(
+                select(ReviewEvent).where(
+                    ReviewEvent.kind == "agent_scaffold_revision_apply_candidate"
+                )
+            ).all()
+        )
+    for event in events:
+        if not event.text:
+            continue
+        try:
+            payload = json.loads(event.text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("candidate_id") == candidate_id:
+            return event, payload
+    return None
+
+
+def _scaffold_patch_from_candidate(
+    *,
+    event: ReviewEvent,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if payload.get("proposal_id") != event.proposal_id:
+        raise ValueError("candidate payload proposal_id does not match review event")
+    patch = payload.get("scaffold_patch")
+    if not isinstance(patch, dict):
+        raise ValueError("candidate payload scaffold_patch is not an object")
+    return patch
 
 
 def _proposal_revision_chain(
@@ -619,6 +712,91 @@ async def revise_proposal_decision_scaffold(
         previous_receipt_ref=result.previous_receipt_ref,
         changed_scaffold_fields=result.changed_scaffold_fields,
         execution_allowed=False,
+    )
+
+
+@router.post(
+    "/scaffold-revision-candidates/{candidate_id}/apply",
+    response_model=ScaffoldRevisionCandidateApplyResponse,
+)
+async def apply_scaffold_revision_candidate(
+    candidate_id: str,
+    request: ScaffoldRevisionCandidateApplyRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ScaffoldRevisionCandidateApplyResponse:
+    candidate = _scaffold_revision_candidate_event(candidate_id, engine=engine)
+    if candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"scaffold revision candidate not found: {candidate_id}",
+        )
+    event, payload = candidate
+    candidate_receipt_ref = _candidate_receipt_ref(event)
+    if not candidate_receipt_ref:
+        raise HTTPException(
+            status_code=422,
+            detail="candidate review event receipt ref is missing",
+        )
+    if request.expected_candidate_receipt_ref.strip() != candidate_receipt_ref:
+        raise HTTPException(
+            status_code=409,
+            detail="candidate receipt ref does not match expected_candidate_receipt_ref",
+        )
+    with Session(engine) as session:
+        proposal = session.get(Proposal, event.proposal_id)
+    if proposal is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"proposal not found: {event.proposal_id}",
+        )
+    if request.expected_proposal_receipt_ref.strip() != (proposal.receipt_ref or ""):
+        raise HTTPException(
+            status_code=409,
+            detail="proposal receipt ref does not match expected_proposal_receipt_ref",
+        )
+
+    try:
+        scaffold_patch = _scaffold_patch_from_candidate(event=event, payload=payload)
+        result = revise_governed_proposal_scaffold(
+            proposal_id=event.proposal_id,
+            scaffold_patch=scaffold_patch,
+            attester=request.human_attester.strip(),
+            reason=request.human_reason.strip(),
+            source_refs=[
+                candidate_receipt_ref,
+                request.expected_proposal_receipt_ref.strip(),
+                *event.source_refs,
+                *_string_list(payload.get("source_refs")),
+                *_string_list(payload.get("receipt_refs")),
+            ],
+            revision_context_extra={
+                "source": "agent_scaffold_revision_apply_candidate",
+                "candidate_id": candidate_id,
+                "candidate_review_event_id": event.review_event_id,
+                "candidate_receipt_ref": candidate_receipt_ref,
+                "expected_proposal_receipt_ref": request.expected_proposal_receipt_ref.strip(),
+                "human_confirmed": True,
+                "explicit_confirmation": True,
+                "authority_transition": False,
+            },
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except (DecisionScaffoldError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StateCoreStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ScaffoldRevisionCandidateApplyResponse(
+        proposal=result.proposal,
+        receipt_ref=result.receipt_ref,
+        previous_receipt_ref=result.previous_receipt_ref,
+        changed_scaffold_fields=result.changed_scaffold_fields,
+        applied_candidate_id=candidate_id,
+        candidate_receipt_ref=candidate_receipt_ref,
+        candidate_review_event_id=event.review_event_id,
+        execution_allowed=False,
+        authority_transition=False,
     )
 
 
