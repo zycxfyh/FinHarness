@@ -17,6 +17,7 @@ Use this as a lookup page. For system ownership, read
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
+| RiskRegisterInterface | Local deterministic read model | Derived risk register view over review queue signals; no risk acceptance, scoring, scenario generation, or writes | `/risk/register`, `risk_register.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
 | AgentToolInterface | OpenAI Agents SDK, local Hermes bridge | Profile-selected Agent tools resolved through `AgentToolEntry`, profile-aware context projection, evidence provider registry, and the runtime pipeline; default profile is read-only baseline; review-draft profile can create append-only governed proposal drafts; review-note profile can create append-only `AgentReviewNoteDraft` artifacts on existing proposals; stronger permissions graduate through explicit runtime contracts and governance carriers | `agent_context.py`, `agent_context_projection.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `proposal_queue_checks.py`, `review_read.py`, `task agent:describe`, `task agent:run` |
 | CockpitInterface | FastAPI + static frontend | Read/review product surface, including exposure, IPS policy, proposals, review, no execution endpoints | `task api:serve` |
@@ -62,6 +63,12 @@ Use this as a lookup page. For system ownership, read
   attestations, archived state, review events, AgentReviewNoteDraft payloads,
   receipt index rows, and proposal queue checks. It prioritizes human review
   work and next actions; it is not approval, rejection, attestation, execution
+  authorization, or investment advice.
+- Risk register v0 is a deterministic read model derived from review queue
+  signals. It turns data gaps, stale context, duplicate candidates, policy
+  mismatches, counter-evidence needs, Agent-reported risks, and open questions
+  into comparable risk objects; it is not a persistent risk table, risk
+  acceptance workflow, scoring model, scenario generator, approval, execution
   authorization, or investment advice.
 - There is no current Agent approval, live order, fund transfer, broker write API,
   or receipt deletion/overwrite interface. Those are future capability candidates

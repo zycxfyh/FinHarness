@@ -77,3 +77,8 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
   receipt index rows, and proposal queue checks. The queue is a read model for
   human reviewer attention and next actions; it is not approval, rejection,
   attestation, recommendation, or execution authorization.
+- Risk register v0 (`/risk/register`) derives read-only risk objects from review
+  queue signals. It makes evidence gaps, stale context, duplicate proposals,
+  policy mismatch, counter-evidence needs, Agent-reported risks, and open
+  questions comparable for human review; it is not persistent risk state, risk
+  acceptance, scoring, scenario generation, approval, or execution authorization.
