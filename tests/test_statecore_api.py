@@ -304,6 +304,10 @@ class StateCoreApiTest(unittest.TestCase):
             "/action-intents/{action_intent_id}/preflight": {"get"},
             "/action-intents/{action_intent_id}/simulation-reports": {"post"},
             "/action-intent-simulation-reports/{simulation_report_id}": {"get"},
+            "/action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates": {
+                "post"
+            },
+            "/order-ticket-candidates/{order_ticket_candidate_id}": {"get"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
@@ -315,9 +319,15 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertEqual(set(paths), set(allowed_methods))
         for path, methods in paths.items():
             self.assertEqual(set(methods), allowed_methods[path])
+        order_candidate_paths = {
+            "/action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates",
+            "/order-ticket-candidates/{order_ticket_candidate_id}",
+        }
         for path in paths:
-            for forbidden in ("authorize", "execute", "live", "order", "transfer"):
+            for forbidden in ("authorize", "execute", "live", "transfer"):
                 self.assertNotIn(forbidden, path)
+            if "order" in path:
+                self.assertIn(path, order_candidate_paths)
 
         schemas = schema["components"]["schemas"]
         for model_name in (
@@ -330,6 +340,7 @@ class StateCoreApiTest(unittest.TestCase):
             "FinancialGoal",
             "InsurancePolicy",
             "Liability",
+            "OrderTicketCandidate",
             "Position",
             "Proposal",
             "ReceiptIndex",
