@@ -109,6 +109,11 @@ domain model / read model / write(command) model / adapters / invariants
   创建 append-only `AgentScaffoldRevisionApplyCandidate`,包含 `scaffold_patch`、
   `proposed_scaffold`、changed fields、risk coverage、preflight、rollback 和 human
   confirmation requirements,但不直接修改 proposal scaffold;
+  `/scaffold-revision-candidates/{candidate_id}/preflight` 是 system-recomputed
+  read-only preflight,会重新检查 candidate payload、当前 proposal receipt、
+  scaffold forcing/changed fields、active risk register basis 和 forbidden authority
+  markers,返回 pass/warn/block findings 与 deterministic report hash,但不应用
+  patch、不授权 apply;
   `/scaffold-revision-candidates/{candidate_id}/apply` 是 human-confirmed apply
   path,要求 human attester/reason、expected candidate/proposal receipts 和
   explicit confirmation,然后调用 existing scaffold revision command 并把 proposal

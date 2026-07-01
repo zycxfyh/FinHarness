@@ -92,19 +92,43 @@ This reference supports a staged route:
 #72 Risk Register v0
 #73 AgentScaffoldRevisionApplyCandidate
 #74 Human-confirmed scaffold revision apply
-#75 Simulation / Preflight
-#76 Paper autonomy
-#77 Runtime Trace / Diagnostics Surface
-#78 Control Plane v0
-#79 Security / Trust Boundary v0
-#80 Lifecycle / Release Governance v0
+#75 System-recomputed scaffold candidate preflight
+#76 Preflight-bound candidate apply
+#77 ActionIntent / OrderTicket candidate
+#78 Paper autonomous operation under Authority Contract
+#79 Event trigger + playbook engine
+#80 Runtime Trace / Diagnostics Surface
+#81 Control Plane v0
+#82 Security / Trust Boundary v0
+#83 Lifecycle / Release Governance v0
 ```
 
 The route should use reviewability and reliability to unlock broader Agent
 capability. Every new permission should arrive as an explicit runtime contract,
 not as a prompt promise or hidden helper.
 
-Current mainline has implemented the route through `#72`: Agent tools are
+The product authority principle is:
+
+```text
+Default-deny, user-authorized autonomy.
+```
+
+Governance is not capability suppression. Governance is the mechanism by which
+Agent authority becomes deployable. FinHarness should not default an Agent into
+approval, execution, account-management, or emergency-response authority; it
+should let a user grant scoped authority through explicit, revocable, machine-
+checkable contracts once the supporting controls exist.
+
+Future high-authority profiles should therefore graduate through an Authority
+Contract, not a disclaimer alone. A contract must define account scope, asset
+scope, action scope, consequence class, notional caps, turnover caps, risk
+budget, drawdown and cooldown triggers, allowed order/action types, leverage and
+derivative permissions, emergency playbook permissions, second-confirmation
+rules, monitoring, kill switch, receipt requirements, review cadence, and
+expiry. The contract is the runtime source of authority; model output remains
+content unless a profile, contract, preflight, and command path consume it.
+
+Current mainline has implemented the route through `#75`: Agent tools are
 resolved through profile-selected `AgentToolEntry` records, declared evidence
 provider ids, profile-aware context projection policies, and a runtime pipeline
 that exposes visible/hidden/unavailable tools, structured dispatch results,
@@ -146,3 +170,41 @@ and `explicit_confirmation=true`. The route then calls the existing
 revision receipt, and links the revision context back to the candidate receipt
 and review event. This is a human-confirmed state transition, not Agent
 auto-apply, approval, attestation, or execution authorization.
+
+`#75` adds the first system-recomputed preflight layer for those candidates:
+`GET /scaffold-revision-candidates/{candidate_id}/preflight` reads the candidate
+review event and current proposal state, then recomputes scaffold forcing,
+changed fields, proposal receipt freshness, active risk register basis, risk
+coverage completeness, and forbidden authority markers. It returns a
+pass/warn/block report with a deterministic `report_hash`. The endpoint is
+read-only: it does not apply the patch, attest, approve, reject, or authorize
+execution. This follows the Hermes-style guardrail shape: the system produces a
+structured readiness decision, and a later runtime/apply layer may consume that
+decision explicitly.
+
+The next step should bind human-confirmed apply to that system report:
+`#76` should require the caller to present the expected preflight report hash
+for the candidate state being applied. That keeps #74's useful human-confirmed
+state transition, while preventing a human from applying a stale or drifted
+candidate without seeing that the system recomputation has changed.
+
+After that, stronger autonomy should move through a product authority ladder
+rather than a single "Agent can trade" switch:
+
+```text
+Mode 0: Explain only
+Mode 1: Review + candidate generation
+Mode 2: Human-confirmed apply
+Mode 3: Paper autonomous operation
+Mode 4: Live defensive autonomous operation
+Mode 5: Live strategy autonomous operation
+Mode 6: Emergency playbook autonomous operation
+```
+
+Earlier autonomy should bias toward paper operation, defensive-only actions,
+small notional caps, ETF/cash/short-duration instruments, candidate order
+tickets, event-triggered alerts, and human-confirmed emergency actions. Later
+authority can consider larger live execution, leverage, options, short selling,
+margin, illiquid assets, crypto derivatives, naked options, transfers, or cross-
+account movement only behind higher Authority Contracts, stronger monitoring,
+and explicit revocation paths.
