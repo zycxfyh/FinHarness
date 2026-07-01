@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -18,6 +17,12 @@ from finharness.proposal_queue_checks import (
     build_proposal_queue_checks,
 )
 from finharness.review_read import read_proposal_timeline
+from finharness.scaffold_candidate_preflight import (
+    SCAFFOLD_CANDIDATE_PREFLIGHT_NON_CLAIMS,
+    PreflightFinding,
+    find_scaffold_revision_candidate,
+    preflight_scaffold_revision_candidate,
+)
 from finharness.statecore.decision_scaffold import DecisionScaffoldError
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
@@ -274,6 +279,37 @@ class ScaffoldRevisionCandidateApplyResponse(BaseModel):
     authority_transition: bool = False
 
 
+class ScaffoldCandidatePreflightFindingView(BaseModel):
+    code: str
+    severity: str
+    message: str
+    recovery_hint: str
+    source_refs: list[str] = Field(default_factory=list)
+    receipt_refs: list[str] = Field(default_factory=list)
+    blocks_apply: bool
+
+
+class ScaffoldCandidatePreflightResponse(BaseModel):
+    candidate_id: str
+    proposal_id: str
+    status: str
+    system_preflight_recomputed: bool
+    findings: list[ScaffoldCandidatePreflightFindingView]
+    candidate_receipt_ref: str | None
+    current_proposal_receipt_ref: str | None
+    proposed_scaffold: dict[str, Any]
+    changed_fields: list[str]
+    basis_risk_ids: list[str]
+    active_basis_risk_ids: list[str]
+    missing_basis_risk_ids: list[str]
+    source_refs: list[str]
+    receipt_refs: list[str]
+    report_hash: str
+    non_claims: tuple[str, ...] = SCAFFOLD_CANDIDATE_PREFLIGHT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
 def _proposal_attestations(
     proposal_id: str,
     *,
@@ -296,39 +332,6 @@ _REVISION_ANOMALY_STATUS: dict[str, int] = {
     }
 
 
-def _candidate_receipt_ref(event: ReviewEvent) -> str | None:
-    suffix = f"review-events/receipt_{event.review_event_id}.json"
-    for ref in event.source_refs:
-        if str(ref).endswith(suffix):
-            return str(ref)
-    return None
-
-
-def _scaffold_revision_candidate_event(
-    candidate_id: str,
-    *,
-    engine: EngineDependency,
-) -> tuple[ReviewEvent, dict[str, Any]] | None:
-    with Session(engine) as session:
-        events = list(
-            session.exec(
-                select(ReviewEvent).where(
-                    ReviewEvent.kind == "agent_scaffold_revision_apply_candidate"
-                )
-            ).all()
-        )
-    for event in events:
-        if not event.text:
-            continue
-        try:
-            payload = json.loads(event.text)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and payload.get("candidate_id") == candidate_id:
-            return event, payload
-    return None
-
-
 def _scaffold_patch_from_candidate(
     *,
     event: ReviewEvent,
@@ -340,6 +343,20 @@ def _scaffold_patch_from_candidate(
     if not isinstance(patch, dict):
         raise ValueError("candidate payload scaffold_patch is not an object")
     return patch
+
+
+def _preflight_finding_view(
+    finding: PreflightFinding,
+) -> ScaffoldCandidatePreflightFindingView:
+    return ScaffoldCandidatePreflightFindingView(
+        code=finding.code,
+        severity=finding.severity,
+        message=finding.message,
+        recovery_hint=finding.recovery_hint,
+        source_refs=finding.source_refs,
+        receipt_refs=finding.receipt_refs,
+        blocks_apply=finding.blocks_apply,
+    )
 
 
 def _proposal_revision_chain(
@@ -715,6 +732,46 @@ async def revise_proposal_decision_scaffold(
     )
 
 
+@router.get(
+    "/scaffold-revision-candidates/{candidate_id}/preflight",
+    response_model=ScaffoldCandidatePreflightResponse,
+)
+async def get_scaffold_revision_candidate_preflight(
+    candidate_id: str,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ScaffoldCandidatePreflightResponse:
+    report = preflight_scaffold_revision_candidate(
+        candidate_id,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"scaffold revision candidate not found: {candidate_id}",
+        )
+    return ScaffoldCandidatePreflightResponse(
+        candidate_id=report.candidate_id,
+        proposal_id=report.proposal_id,
+        status=report.status,
+        system_preflight_recomputed=report.system_preflight_recomputed,
+        findings=[_preflight_finding_view(finding) for finding in report.findings],
+        candidate_receipt_ref=report.candidate_receipt_ref,
+        current_proposal_receipt_ref=report.current_proposal_receipt_ref,
+        proposed_scaffold=report.proposed_scaffold,
+        changed_fields=report.changed_fields,
+        basis_risk_ids=report.basis_risk_ids,
+        active_basis_risk_ids=report.active_basis_risk_ids,
+        missing_basis_risk_ids=report.missing_basis_risk_ids,
+        source_refs=report.source_refs,
+        receipt_refs=report.receipt_refs,
+        report_hash=report.report_hash,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
 @router.post(
     "/scaffold-revision-candidates/{candidate_id}/apply",
     response_model=ScaffoldRevisionCandidateApplyResponse,
@@ -725,14 +782,20 @@ async def apply_scaffold_revision_candidate(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
 ) -> ScaffoldRevisionCandidateApplyResponse:
-    candidate = _scaffold_revision_candidate_event(candidate_id, engine=engine)
+    candidate = find_scaffold_revision_candidate(candidate_id, engine=engine)
     if candidate is None:
         raise HTTPException(
             status_code=404,
             detail=f"scaffold revision candidate not found: {candidate_id}",
         )
-    event, payload = candidate
-    candidate_receipt_ref = _candidate_receipt_ref(event)
+    event = candidate.event
+    payload = candidate.payload
+    if payload is None:
+        raise HTTPException(
+            status_code=422,
+            detail=candidate.payload_error or "candidate payload is not an object",
+        )
+    candidate_receipt_ref = candidate.candidate_receipt_ref
     if not candidate_receipt_ref:
         raise HTTPException(
             status_code=422,

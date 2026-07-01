@@ -94,3 +94,7 @@ If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to
   risk coverage, preflight/rollback context, and human confirmation
   requirements. They do not mutate proposals by themselves; human-confirmed
   apply moves a candidate patch through the proposal revision chain.
+- System scaffold candidate preflight recomputes candidate readiness from current
+  proposal state and active risk register state. It returns pass/warn/block
+  findings and a deterministic report hash without mutating proposals or
+  authorizing apply.
