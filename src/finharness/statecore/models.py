@@ -20,6 +20,22 @@ from sqlmodel import Field, SQLModel
 STATE_CORE_SCHEMA_VERSION = "finharness.state_core.v1"
 AuthorityLevel = str
 Decision = str
+ACTION_INTENT_TYPES: tuple[str, ...] = (
+    "reduce_exposure",
+    "increase_exposure",
+    "rebalance",
+    "raise_cash",
+    "defer_action",
+    "hedge_review",
+    "watchlist",
+    "request_more_evidence",
+)
+ACTION_INTENT_NEXT_STEPS: tuple[str, ...] = (
+    "action_preflight",
+    "simulation",
+    "human_review",
+    "discard",
+)
 
 
 def utc_now_iso() -> str:
@@ -383,4 +399,72 @@ class InvestmentPolicyStatement(StateCoreBase, table=True):
     def reject_execution_authority(cls, value: bool) -> bool:
         if value:
             raise ValueError("an investment policy statement never carries execution authority")
+        return False
+
+
+class ActionIntent(StateCoreBase, table=True):
+    """Candidate-only bridge from reviewed proposals to future capital actions.
+
+    An ``ActionIntent`` says what capital action may be considered next. It is not
+    an order ticket, broker instruction, simulation result, approval, or execution
+    authorization.
+    """
+
+    __tablename__ = "action_intents"
+    __table_args__ = (
+        CheckConstraint("execution_allowed = 0", name="ck_action_intents_execution_allowed_false"),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_action_intents_authority_transition_false",
+        ),
+        CheckConstraint(
+            "action_type IN ("
+            + ", ".join(f"'{action_type}'" for action_type in ACTION_INTENT_TYPES)
+            + ")",
+            name="ck_action_intents_type_closed",
+        ),
+        CheckConstraint(
+            "expected_next_step IN ("
+            + ", ".join(f"'{step}'" for step in ACTION_INTENT_NEXT_STEPS)
+            + ")",
+            name="ck_action_intents_next_step_closed",
+        ),
+    )
+
+    action_intent_id: str = Field(primary_key=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id", index=True)
+    source_proposal_receipt_ref: str
+    source_revision_receipt_ref: str | None = None
+    created_by: str
+    active_profile: str | None = None
+    action_type: str
+    status: str = "candidate"
+    target_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    intent_summary: str
+    rationale: str
+    constraints: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    trigger_context: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    required_preconditions: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    expected_next_step: str = "action_preflight"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "needs_human_confirm"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("action intents never carry execution authority")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("action intents never carry authority transitions")
         return False

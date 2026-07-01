@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
+from finharness.api.routes_action_intents import router as action_intent_router
 from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_proposals import router as proposal_router
@@ -100,6 +101,7 @@ def create_app(
     api.include_router(proposal_router)
     api.include_router(review_router)
     api.include_router(risk_router)
+    api.include_router(action_intent_router)
     api.include_router(ips_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():

@@ -14,6 +14,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from finharness.market_data import ROOT
 from finharness.statecore.models import (
     Account,
+    ActionIntent,
     Attestation,
     CashflowEvent,
     DocumentRef,
@@ -34,6 +35,7 @@ DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-cor
 
 StateCoreRecord = (
     Account
+    | ActionIntent
     | Position
     | Liability
     | FinancialGoal
