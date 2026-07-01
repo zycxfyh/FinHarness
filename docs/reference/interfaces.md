@@ -86,6 +86,14 @@ Use this as a lookup page. For system ownership, read
   explicitly acknowledges all warning codes. Successful apply writes a normal
   proposal revision receipt linked back to the candidate and preflight evidence.
   It is not Agent auto-apply, approval, attestation, or execution authorization.
+- Action intent candidates are the first capital-action bridge:
+  `POST /proposals/{proposal_id}/action-intents` creates a receipt-backed
+  `ActionIntentCandidate` from the current proposal receipt, and
+  `GET /action-intents/{action_intent_id}` retrieves it. The create path requires
+  expected proposal receipt freshness, source refs, typed action intent, target
+  scope, summary, and rationale; it rejects order/broker/execution/authority
+  fields. The object is not an order ticket, simulation, approval, broker action,
+  or execution authorization.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register

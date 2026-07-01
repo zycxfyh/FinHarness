@@ -299,6 +299,8 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}/review-events": {"post"},
             "/scaffold-revision-candidates/{candidate_id}/preflight": {"get"},
             "/scaffold-revision-candidates/{candidate_id}/apply": {"post"},
+            "/proposals/{proposal_id}/action-intents": {"post"},
+            "/action-intents/{action_intent_id}": {"get"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
@@ -317,6 +319,7 @@ class StateCoreApiTest(unittest.TestCase):
         schemas = schema["components"]["schemas"]
         for model_name in (
             "Account",
+            "ActionIntent",
             "Attestation",
             "CashflowEvent",
             "DocumentRef",
