@@ -20,6 +20,7 @@ from finharness.review_read import read_proposal_timeline
 from finharness.scaffold_candidate_preflight import (
     SCAFFOLD_CANDIDATE_PREFLIGHT_NON_CLAIMS,
     PreflightFinding,
+    ScaffoldCandidatePreflightReport,
     find_scaffold_revision_candidate,
     preflight_scaffold_revision_candidate,
 )
@@ -240,18 +241,24 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
     human_reason: str
     expected_candidate_receipt_ref: str
     expected_proposal_receipt_ref: str
+    expected_preflight_report_hash: str
     explicit_confirmation: bool
+    explicit_preflight_acknowledgement: bool = False
+    acknowledged_preflight_warning_codes: list[str] = Field(default_factory=list)
 
     @field_validator(
         "human_attester",
         "human_reason",
         "expected_candidate_receipt_ref",
         "expected_proposal_receipt_ref",
+        "expected_preflight_report_hash",
     )
     @classmethod
     def require_non_blank_text(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("candidate apply requires non-blank human context and receipts")
+            raise ValueError(
+                "candidate apply requires non-blank human context, receipts, and preflight hash"
+            )
         return value
 
     @field_validator("explicit_confirmation")
@@ -260,6 +267,11 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
         if value is not True:
             raise ValueError("candidate apply requires explicit_confirmation=true")
         return True
+
+    @field_validator("acknowledged_preflight_warning_codes")
+    @classmethod
+    def clean_warning_codes(cls, value: list[str]) -> list[str]:
+        return sorted({str(item).strip() for item in value if str(item).strip()})
 
 
 class ScaffoldRevisionCandidateApplyResponse(BaseModel):
@@ -357,6 +369,61 @@ def _preflight_finding_view(
         receipt_refs=finding.receipt_refs,
         blocks_apply=finding.blocks_apply,
     )
+
+
+def _preflight_warning_codes(findings: list[PreflightFinding]) -> set[str]:
+    return {finding.code for finding in findings if not finding.blocks_apply}
+
+
+def _enforce_scaffold_candidate_preflight_gate(
+    candidate_id: str,
+    *,
+    request: ScaffoldRevisionCandidateApplyRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ScaffoldCandidatePreflightReport:
+    preflight = preflight_scaffold_revision_candidate(
+        candidate_id,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
+    if preflight is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"scaffold revision candidate not found: {candidate_id}",
+        )
+    if preflight.report_hash != request.expected_preflight_report_hash.strip():
+        raise HTTPException(
+            status_code=409,
+            detail="preflight report hash does not match current system preflight",
+        )
+    if preflight.status == "block":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "preflight_blocked",
+                "findings": [
+                    _preflight_finding_view(finding).model_dump()
+                    for finding in preflight.findings
+                ],
+                "execution_allowed": False,
+                "authority_transition": False,
+            },
+        )
+    warning_codes = _preflight_warning_codes(preflight.findings)
+    if warning_codes:
+        acknowledged = set(request.acknowledged_preflight_warning_codes)
+        if not request.explicit_preflight_acknowledgement:
+            raise HTTPException(
+                status_code=422,
+                detail="preflight warnings require explicit acknowledgement",
+            )
+        if not warning_codes <= acknowledged:
+            raise HTTPException(
+                status_code=422,
+                detail="not all preflight warnings acknowledged",
+            )
+    return preflight
 
 
 def _proposal_revision_chain(
@@ -818,6 +885,12 @@ async def apply_scaffold_revision_candidate(
             status_code=409,
             detail="proposal receipt ref does not match expected_proposal_receipt_ref",
         )
+    preflight = _enforce_scaffold_candidate_preflight_gate(
+        candidate_id,
+        request=request,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
 
     try:
         scaffold_patch = _scaffold_patch_from_candidate(event=event, payload=payload)
@@ -839,8 +912,20 @@ async def apply_scaffold_revision_candidate(
                 "candidate_review_event_id": event.review_event_id,
                 "candidate_receipt_ref": candidate_receipt_ref,
                 "expected_proposal_receipt_ref": request.expected_proposal_receipt_ref.strip(),
+                "system_preflight_report_hash": preflight.report_hash,
+                "system_preflight_status": preflight.status,
+                "system_preflight_recomputed": True,
+                "system_preflight_finding_codes": [
+                    finding.code for finding in preflight.findings
+                ],
+                "acknowledged_preflight_warning_codes": (
+                    request.acknowledged_preflight_warning_codes
+                ),
                 "human_confirmed": True,
                 "explicit_confirmation": True,
+                "explicit_preflight_acknowledgement": (
+                    request.explicit_preflight_acknowledgement
+                ),
                 "authority_transition": False,
             },
             engine=engine,

@@ -79,10 +79,13 @@ Use this as a lookup page. For system ownership, read
   them. Applying the patch requires a later human-confirmed flow.
 - Human-confirmed scaffold candidate apply is a review-state transition:
   `POST /scaffold-revision-candidates/{candidate_id}/apply` requires a human
-  attester/reason, expected candidate receipt, expected proposal receipt, and
-  `explicit_confirmation=true`, then writes a normal proposal revision receipt
-  linked back to the candidate. It is not Agent auto-apply, approval,
-  attestation, or execution authorization.
+  attester/reason, expected candidate receipt, expected proposal receipt,
+  expected system preflight report hash, and `explicit_confirmation=true`.
+  The server recomputes preflight at apply time, rejects mismatched hashes,
+  hard-blocks blocking findings, and only allows warning findings when the human
+  explicitly acknowledges all warning codes. Successful apply writes a normal
+  proposal revision receipt linked back to the candidate and preflight evidence.
+  It is not Agent auto-apply, approval, attestation, or execution authorization.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register

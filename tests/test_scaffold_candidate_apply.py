@@ -4,11 +4,16 @@ import json
 import unittest
 from pathlib import Path
 
+from sqlmodel import Session, select
+
 from finharness.agent_tools import (
     draft_agent_scaffold_revision_apply_candidate_from_context_payload,
 )
 from finharness.api.app import create_app
-from finharness.statecore.models import Proposal
+from finharness.scaffold_candidate_preflight import (
+    preflight_scaffold_revision_candidate,
+)
+from finharness.statecore.models import Proposal, ReviewEvent
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import read_all
 from tests._scaffold import VALID_SCAFFOLD
@@ -65,12 +70,45 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
             receipt_root=self.receipt_root,
         )
 
+    def _preflight_hash(self) -> str:
+        report = preflight_scaffold_revision_candidate(
+            str(self.candidate["candidate_id"]),
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        self.assertIsNotNone(report)
+        return report.report_hash  # type: ignore[union-attr]
+
+    def _candidate_event(self) -> ReviewEvent:
+        with Session(self.engine) as session:
+            return session.exec(
+                select(ReviewEvent).where(
+                    ReviewEvent.review_event_id
+                    == str(self.candidate["review_event_id"])
+                )
+            ).one()
+
+    def _candidate_payload(self) -> dict[str, object]:
+        event = self._candidate_event()
+        payload = json.loads(event.text or "{}")
+        self.assertIsInstance(payload, dict)
+        return payload
+
+    def _replace_candidate_payload(self, payload: dict[str, object]) -> None:
+        with Session(self.engine) as session:
+            event = session.get(ReviewEvent, str(self.candidate["review_event_id"]))
+            self.assertIsNotNone(event)
+            event.text = json.dumps(payload, sort_keys=True)  # type: ignore[union-attr]
+            session.add(event)
+            session.commit()
+
     def _apply(self, **overrides: object):
         body = {
             "human_attester": "Jane Control",
             "human_reason": "Confirmed the candidate patch addresses the evidence gap.",
             "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
             "expected_proposal_receipt_ref": self.proposal_receipt_ref,
+            "expected_preflight_report_hash": self._preflight_hash(),
             "explicit_confirmation": True,
         }
         body.update(overrides)
@@ -80,7 +118,8 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         )
 
     def test_human_confirmed_apply_revises_scaffold_and_links_candidate_receipt(self) -> None:
-        response = self._apply()
+        report_hash = self._preflight_hash()
+        response = self._apply(expected_preflight_report_hash=report_hash)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -110,6 +149,11 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         self.assertEqual(context["source"], "agent_scaffold_revision_apply_candidate")
         self.assertEqual(context["candidate_id"], self.candidate["candidate_id"])
         self.assertEqual(context["candidate_receipt_ref"], self.candidate["receipt_ref"])
+        self.assertEqual(context["system_preflight_report_hash"], report_hash)
+        self.assertEqual(context["system_preflight_status"], "pass")
+        self.assertTrue(context["system_preflight_recomputed"])
+        self.assertEqual(context["system_preflight_finding_codes"], [])
+        self.assertEqual(context["acknowledged_preflight_warning_codes"], [])
         self.assertTrue(context["human_confirmed"])
         self.assertFalse(context["execution_allowed"])
 
@@ -128,6 +172,96 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         self.assertEqual(stale_proposal.status_code, 409)
         self.assertIn("proposal receipt ref", stale_proposal.json()["detail"])
 
+    def test_apply_requires_expected_preflight_report_hash(self) -> None:
+        response = self.client.post(
+            f"/scaffold-revision-candidates/{self.candidate['candidate_id']}/apply",
+            json={
+                "human_attester": "Jane Control",
+                "human_reason": "Missing preflight hash.",
+                "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
+                "expected_proposal_receipt_ref": self.proposal_receipt_ref,
+                "explicit_confirmation": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("expected_preflight_report_hash", response.text)
+
+    def test_apply_rejects_stale_preflight_report_hash(self) -> None:
+        response = self._apply(expected_preflight_report_hash="sha256:stale")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("preflight report hash", response.json()["detail"])
+
+    def test_apply_rejects_blocking_preflight(self) -> None:
+        payload = self._candidate_payload()
+        payload["proposed_scaffold"]["counter_evidence"] = "Agent payload drifted."
+        self._replace_candidate_payload(payload)
+
+        response = self._apply(expected_preflight_report_hash=self._preflight_hash())
+
+        self.assertEqual(response.status_code, 422)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["code"], "preflight_blocked")
+        self.assertFalse(detail["execution_allowed"])
+        self.assertFalse(detail["authority_transition"])
+        self.assertIn(
+            "candidate_proposed_scaffold_mismatch",
+            {finding["code"] for finding in detail["findings"]},
+        )
+
+    def test_apply_rejects_unacknowledged_preflight_warning(self) -> None:
+        payload = self._candidate_payload()
+        payload["risk_coverage"] = {"addressed": [], "unresolved": []}
+        self._replace_candidate_payload(payload)
+
+        response = self._apply(expected_preflight_report_hash=self._preflight_hash())
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("explicit acknowledgement", response.json()["detail"])
+
+    def test_apply_rejects_partially_acknowledged_preflight_warnings(self) -> None:
+        payload = self._candidate_payload()
+        payload["risk_coverage"] = {"addressed": [], "unresolved": []}
+        payload.pop("rollback_info", None)
+        self._replace_candidate_payload(payload)
+
+        response = self._apply(
+            expected_preflight_report_hash=self._preflight_hash(),
+            explicit_preflight_acknowledgement=True,
+            acknowledged_preflight_warning_codes=["risk_coverage_incomplete"],
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("not all preflight warnings acknowledged", response.json()["detail"])
+
+    def test_apply_allows_acknowledged_preflight_warning_and_records_context(self) -> None:
+        payload = self._candidate_payload()
+        payload["risk_coverage"] = {"addressed": [], "unresolved": []}
+        self._replace_candidate_payload(payload)
+        report_hash = self._preflight_hash()
+
+        response = self._apply(
+            expected_preflight_report_hash=report_hash,
+            explicit_preflight_acknowledgement=True,
+            acknowledged_preflight_warning_codes=["risk_coverage_incomplete"],
+        )
+
+        self.assertEqual(response.status_code, 200)
+        receipt = json.loads(Path(response.json()["receipt_ref"]).read_text(encoding="utf-8"))
+        context = receipt["revision_context"]
+        self.assertEqual(context["system_preflight_report_hash"], report_hash)
+        self.assertEqual(context["system_preflight_status"], "warn")
+        self.assertEqual(
+            context["system_preflight_finding_codes"],
+            ["risk_coverage_incomplete"],
+        )
+        self.assertEqual(
+            context["acknowledged_preflight_warning_codes"],
+            ["risk_coverage_incomplete"],
+        )
+        self.assertTrue(context["explicit_preflight_acknowledgement"])
+
     def test_apply_unknown_candidate_returns_404(self) -> None:
         response = self.client.post(
             "/scaffold-revision-candidates/missing/apply",
@@ -136,6 +270,7 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
                 "human_reason": "Trying a missing candidate.",
                 "expected_candidate_receipt_ref": "receipt://missing",
                 "expected_proposal_receipt_ref": self.proposal_receipt_ref,
+                "expected_preflight_report_hash": "sha256:missing",
                 "explicit_confirmation": True,
             },
         )

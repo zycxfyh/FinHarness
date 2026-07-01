@@ -115,9 +115,12 @@ domain model / read model / write(command) model / adapters / invariants
   markers,返回 pass/warn/block findings 与 deterministic report hash,但不应用
   patch、不授权 apply;
   `/scaffold-revision-candidates/{candidate_id}/apply` 是 human-confirmed apply
-  path,要求 human attester/reason、expected candidate/proposal receipts 和
-  explicit confirmation,然后调用 existing scaffold revision command 并把 proposal
-  revision receipt 链回 candidate receipt/review event;
+  path,要求 human attester/reason、expected candidate/proposal receipts、
+  expected preflight report hash 和 explicit confirmation;server 会在 apply 时
+  重新计算 preflight,hash 不匹配或 status=block 时拒绝,warn 只有在人类显式
+  ack 所有 warning codes 后才可继续;通过后调用 existing scaffold revision
+  command 并把 proposal revision receipt 链回 candidate receipt/review event 和
+  preflight evidence;
   proposal review surface 会暴露 created_by=agent、active profile、context/source
   refs、receipt ref、requires_human_review、execution_allowed=false;proposal queue
   checks 暴露 pass/warn/block、block code、blocked transition scope、recovery hint、

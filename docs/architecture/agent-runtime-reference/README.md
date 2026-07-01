@@ -182,11 +182,15 @@ execution. This follows the Hermes-style guardrail shape: the system produces a
 structured readiness decision, and a later runtime/apply layer may consume that
 decision explicitly.
 
-The next step should bind human-confirmed apply to that system report:
-`#76` should require the caller to present the expected preflight report hash
-for the candidate state being applied. That keeps #74's useful human-confirmed
-state transition, while preventing a human from applying a stale or drifted
-candidate without seeing that the system recomputation has changed.
+`#76` binds human-confirmed apply to that system report. Apply now requires the
+caller to present `expected_preflight_report_hash` for the candidate state being
+applied. The server recomputes preflight at apply time, rejects mismatched
+hashes, rejects `block` reports, permits `warn` reports only when the human
+explicitly acknowledges all non-blocking warning codes, and records preflight
+hash/status/finding codes/acknowledged warnings in the proposal revision
+context. This keeps #74's useful human-confirmed state transition while closing
+the time-of-check/time-of-use gap between "human saw a preflight report" and
+"system applied the candidate."
 
 After that, stronger autonomy should move through a product authority ladder
 rather than a single "Agent can trade" switch:
