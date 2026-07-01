@@ -137,3 +137,12 @@ candidates, but they do not mutate proposals; human-confirmed apply remains the
 next capability layer. In `#73`, preflight, risk coverage, and rollback fields
 are explicitly Agent-supplied candidate payload; later system preflight is a
 separate capability layer.
+
+`#74` adds the first real apply path for that Agent labor:
+`POST /scaffold-revision-candidates/{candidate_id}/apply` requires a human
+attester, human reason, expected candidate receipt, expected proposal receipt,
+and `explicit_confirmation=true`. The route then calls the existing
+`revise_governed_proposal_scaffold(...)` command, writes a normal proposal
+revision receipt, and links the revision context back to the candidate receipt
+and review event. This is a human-confirmed state transition, not Agent
+auto-apply, approval, attestation, or execution authorization.
