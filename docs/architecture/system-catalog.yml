@@ -115,18 +115,19 @@ systems:
   - id: capital_action_intent
     name: Capital Action Intent
     status: current
-    summary: Receipt-backed ActionIntentCandidate bridge from current proposal receipts to future capital action workflows; no order, broker action, simulation, or execution authority.
+    summary: Receipt-backed ActionIntentCandidate bridge plus read-only system preflight/impact report for future capital action workflows; no order, broker action, simulation, or execution authority.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
     runtime_roots:
       - src/finharness/statecore/action_intents.py
+      - src/finharness/action_intent_preflight.py
       - src/finharness/api/routes_action_intents.py
     mature_posture: OMS/EMS-style command-intent separation; define action intent before simulation, order tickets, or authority contracts.
     checks:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Action intents need system preflight, impact reports, paper execution, or authority contracts.
+    upgrade_trigger: Action intents need simulation, paper execution, order-ticket candidates, or authority contracts.
 
   - id: research_evidence
     name: Research Evidence

@@ -74,14 +74,17 @@ domain model / read model / write(command) model / adapters / invariants
 - **职责**:把当前 proposal/revision state 翻译成 candidate-only capital
   action intent,作为未来 preflight/simulation/order-ticket workflow 的入口。
 - **domain**:`statecore/action_intents.py`、`ActionIntent`、
-  `api/routes_action_intents.py`。
+  `action_intent_preflight.py`、`api/routes_action_intents.py`。
 - **write(command)**:`POST /proposals/{proposal_id}/action-intents` /
   `create_governed_action_intent`。
-- **read**:`GET /action-intents/{action_intent_id}`。
+- **read**:`GET /action-intents/{action_intent_id}`、
+  `GET /action-intents/{action_intent_id}/preflight`。
 - **invariants**:ActionIntentCandidate 不是 order ticket、broker action、
   simulation、approval、investment advice 或 execution authorization;创建时必须
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
-  authority markers,并写 `state_core_action_intent_candidate` receipt。
+  authority markers,并写 `state_core_action_intent_candidate` receipt;system
+  preflight 只读重算 freshness、scope、IPS policy、evidence、precondition、
+  v0 impact summary、risk posture 和 deterministic report hash,不写状态。
 
 ### 7. Research Evidence
 

@@ -13,6 +13,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import Session
 
+from finharness.action_intent_preflight import (
+    ACTION_INTENT_PREFLIGHT_NON_CLAIMS,
+    ActionIntentImpactSummary,
+    ActionIntentPreflightFinding,
+    preflight_action_intent,
+)
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
 from finharness.statecore.action_intents import (
     ACTION_INTENT_NON_CLAIMS,
@@ -76,6 +82,80 @@ class ActionIntentResponse(BaseModel):
     authority_transition: bool = False
 
 
+class ActionIntentPreflightFindingView(BaseModel):
+    code: str
+    severity: str
+    message: str
+    recovery_hint: str
+    source_refs: list[str]
+    receipt_refs: list[str]
+    blocks_progression: bool
+
+
+class ActionIntentImpactSummaryView(BaseModel):
+    affected_scope: dict[str, Any]
+    risk_direction: str
+    risk_posture: str
+    requires_simulation: bool
+    requires_human_review: bool
+    known_state_refs: list[str]
+    missing_data: list[str]
+    order_intent: None = None
+    notional_estimate: None = None
+
+
+class ActionIntentPreflightResponse(BaseModel):
+    action_intent_id: str
+    proposal_id: str
+    action_type: str
+    status: str
+    system_preflight_recomputed: bool
+    action_intent_receipt_ref: str | None
+    source_proposal_receipt_ref: str | None
+    current_proposal_receipt_ref: str | None
+    freshness_status: str
+    target_scope_status: str
+    policy_status: str
+    evidence_status: str
+    precondition_status: str
+    risk_posture: str
+    findings: list[ActionIntentPreflightFindingView]
+    impact_summary: ActionIntentImpactSummaryView
+    next_actions: list[str]
+    report_hash: str
+    non_claims: tuple[str, ...] = ACTION_INTENT_PREFLIGHT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+def _preflight_finding_view(
+    finding: ActionIntentPreflightFinding,
+) -> ActionIntentPreflightFindingView:
+    return ActionIntentPreflightFindingView(
+        code=finding.code,
+        severity=finding.severity,
+        message=finding.message,
+        recovery_hint=finding.recovery_hint,
+        source_refs=finding.source_refs,
+        receipt_refs=finding.receipt_refs,
+        blocks_progression=finding.blocks_progression,
+    )
+
+
+def _impact_summary_view(summary: ActionIntentImpactSummary) -> ActionIntentImpactSummaryView:
+    return ActionIntentImpactSummaryView(
+        affected_scope=summary.affected_scope,
+        risk_direction=summary.risk_direction,
+        risk_posture=summary.risk_posture,
+        requires_simulation=summary.requires_simulation,
+        requires_human_review=summary.requires_human_review,
+        known_state_refs=summary.known_state_refs,
+        missing_data=summary.missing_data,
+        order_intent=None,
+        notional_estimate=None,
+    )
+
+
 @router.post(
     "/proposals/{proposal_id}/action-intents",
     response_model=ActionIntentCreateResponse,
@@ -133,6 +213,44 @@ async def get_action_intent(
         )
     return ActionIntentResponse(
         action_intent=action_intent,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
+@router.get(
+    "/action-intents/{action_intent_id}/preflight",
+    response_model=ActionIntentPreflightResponse,
+)
+async def get_action_intent_preflight(
+    action_intent_id: str,
+    engine: EngineDependency,
+) -> ActionIntentPreflightResponse:
+    report = preflight_action_intent(action_intent_id, engine=engine)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent not found: {action_intent_id}",
+        )
+    return ActionIntentPreflightResponse(
+        action_intent_id=report.action_intent_id,
+        proposal_id=report.proposal_id,
+        action_type=report.action_type,
+        status=report.status,
+        system_preflight_recomputed=report.system_preflight_recomputed,
+        action_intent_receipt_ref=report.action_intent_receipt_ref,
+        source_proposal_receipt_ref=report.source_proposal_receipt_ref,
+        current_proposal_receipt_ref=report.current_proposal_receipt_ref,
+        freshness_status=report.freshness_status,
+        target_scope_status=report.target_scope_status,
+        policy_status=report.policy_status,
+        evidence_status=report.evidence_status,
+        precondition_status=report.precondition_status,
+        risk_posture=report.risk_posture,
+        findings=[_preflight_finding_view(finding) for finding in report.findings],
+        impact_summary=_impact_summary_view(report.impact_summary),
+        next_actions=report.next_actions,
+        report_hash=report.report_hash,
         execution_allowed=False,
         authority_transition=False,
     )

@@ -92,7 +92,11 @@ Use this as a lookup page. For system ownership, read
   `GET /action-intents/{action_intent_id}` retrieves it. The create path requires
   expected proposal receipt freshness, source refs, typed action intent, target
   scope, summary, and rationale; it rejects order/broker/execution/authority
-  fields. The object is not an order ticket, simulation, approval, broker action,
+  fields. `GET /action-intents/{action_intent_id}/preflight` recomputes whether
+  the candidate is fresh, structurally complete, IPS-compatible, and ready for
+  its expected next step. The report returns pass/warn/block findings, v0 impact
+  summary, risk posture, and a deterministic report hash. The object and
+  preflight report are not an order ticket, simulation, approval, broker action,
   or execution authorization.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the

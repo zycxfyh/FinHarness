@@ -129,6 +129,12 @@ def _forbidden_marker(value: Any) -> str | None:
     return None
 
 
+def forbidden_action_intent_marker(value: Any) -> str | None:
+    """Return the first order/broker/authority marker found in a candidate payload."""
+
+    return _forbidden_marker(value)
+
+
 def _require_candidate_payload_boundary(
     *,
     target_scope: dict[str, Any],

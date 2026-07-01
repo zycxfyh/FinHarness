@@ -301,6 +301,7 @@ class StateCoreApiTest(unittest.TestCase):
             "/scaffold-revision-candidates/{candidate_id}/apply": {"post"},
             "/proposals/{proposal_id}/action-intents": {"post"},
             "/action-intents/{action_intent_id}": {"get"},
+            "/action-intents/{action_intent_id}/preflight": {"get"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
