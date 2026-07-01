@@ -13,6 +13,7 @@ from finharness.ips import record_ips
 from finharness.statecore.models import (
     Account,
     ActionIntent,
+    ActionIntentSimulationReport,
     Position,
     Proposal,
     ReceiptIndex,
@@ -122,6 +123,41 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                 setattr(action_intent, key, value)
             session.add(action_intent)
             session.commit()
+
+    def _preflight(self, action_intent_id: str) -> dict[str, object]:
+        response = self.client.get(f"/action-intents/{action_intent_id}/preflight")
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _simulation_request(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "expected_action_intent_receipt_ref": intent["receipt_ref"],
+            "expected_action_preflight_report_hash": preflight["report_hash"],
+            "simulation_reason": "Describe downstream impact before any stronger artifact.",
+            "scenario_mode": "descriptive_v0",
+            "assumptions": {"scope": "qualitative"},
+            "source_refs": ["context://simulation_request"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_simulation(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        response = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(intent, preflight, **overrides),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
 
     def test_create_action_intent_candidate_writes_receipt_and_can_be_fetched(self) -> None:
         response = self.client.post(
@@ -369,6 +405,222 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         response = self.client.get("/action-intents/missing/preflight")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_preflight_bound_simulation_report_writes_receipt_and_can_be_fetched(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+
+        body = self._create_simulation(intent, preflight)
+
+        self.assertFalse(body["execution_allowed"])
+        self.assertFalse(body["authority_transition"])
+        report = body["simulation_report"]
+        self.assertEqual(report["action_intent_id"], intent["action_intent_id"])
+        self.assertEqual(report["proposal_id"], self.proposal_write.proposal.proposal_id)
+        self.assertEqual(report["source_action_intent_receipt_ref"], intent["receipt_ref"])
+        self.assertEqual(report["source_action_preflight_report_hash"], preflight["report_hash"])
+        self.assertEqual(report["source_action_preflight_status"], "pass")
+        self.assertEqual(report["simulation_status"], "complete")
+        self.assertEqual(report["risk_posture"], "defensive")
+        self.assertEqual(report["risk_direction"], "reduce")
+        self.assertEqual(report["source_action_preflight_finding_codes"], [])
+        self.assertFalse(report["execution_allowed"])
+        self.assertFalse(report["authority_transition"])
+        self.assertNotIn("broker", report)
+        self.assertNotIn("side", report)
+        self.assertNotIn("quantity", report)
+        self.assertNotIn("order_type", report)
+        for forbidden in ("broker", "side", "quantity", "order_type"):
+            self.assertNotIn(forbidden, report["numeric_impact"])
+
+        rows = read_all(ActionIntentSimulationReport, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipts = read_all(ReceiptIndex, engine=self.engine)
+        receipt = next(
+            row
+            for row in receipts
+            if row.kind == "state_core_action_intent_simulation_report"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt_payload["kind"], "state_core_action_intent_simulation_report")
+        self.assertEqual(
+            receipt_payload["source_action_preflight_report_hash"],
+            preflight["report_hash"],
+        )
+        self.assertFalse(receipt_payload["governance"]["execution_allowed"])
+        self.assertFalse(receipt_payload["governance"]["authority_transition"])
+        self.assertTrue(receipt_payload["governance"]["preflight_bound"])
+
+        fetched = self.client.get(
+            f"/action-intent-simulation-reports/{report['simulation_report_id']}"
+        )
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(
+            fetched.json()["simulation_report"]["receipt_ref"],
+            body["receipt_ref"],
+        )
+
+    def test_simulation_report_rejects_stale_preflight_hash(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+
+        response = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(
+                intent,
+                preflight,
+                expected_action_preflight_report_hash="sha256:stale",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(read_all(ActionIntentSimulationReport, engine=self.engine), [])
+
+    def test_simulation_report_rejects_stale_action_intent_receipt(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+
+        response = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(
+                intent,
+                preflight,
+                expected_action_intent_receipt_ref="data/receipts/stale.json",
+            ),
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(read_all(ActionIntentSimulationReport, engine=self.engine), [])
+
+    def test_simulation_report_rejects_blocking_preflight(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips(restricted_actions=["reduce_exposure"])
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+        self.assertEqual(preflight["status"], "block")
+
+        response = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(intent, preflight),
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"]["code"], "simulation_preflight_blocked")
+        self.assertIn("ips_restricted_action_type", response.json()["detail"]["finding_codes"])
+
+    def test_simulation_report_requires_warning_acknowledgement(self) -> None:
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+        self.assertEqual(preflight["status"], "warn")
+        warning_codes = sorted(
+            {
+                finding["code"]
+                for finding in preflight["findings"]
+                if finding["severity"] == "warning"
+            }
+        )
+        self.assertGreaterEqual(len(warning_codes), 2)
+
+        missing_ack = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(intent, preflight),
+        )
+        partial_ack = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(
+                intent,
+                preflight,
+                explicit_preflight_acknowledgement=True,
+                acknowledged_preflight_warning_codes=warning_codes[:1],
+            ),
+        )
+        full_ack = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(
+                intent,
+                preflight,
+                explicit_preflight_acknowledgement=True,
+                acknowledged_preflight_warning_codes=warning_codes,
+            ),
+        )
+
+        self.assertEqual(missing_ack.status_code, 422)
+        self.assertEqual(partial_ack.status_code, 422)
+        self.assertEqual(full_ack.status_code, 200, full_ack.text)
+        report = full_ack.json()["simulation_report"]
+        self.assertEqual(report["source_action_preflight_status"], "warn")
+        self.assertEqual(report["simulation_status"], "incomplete")
+        self.assertEqual(
+            sorted(report["acknowledged_preflight_warning_codes"]),
+            warning_codes,
+        )
+
+    def test_unknown_action_intent_simulation_report_targets_are_not_found(self) -> None:
+        response = self.client.post(
+            "/action-intents/missing/simulation-reports",
+            json={
+                "expected_action_intent_receipt_ref": "data/receipts/missing.json",
+                "expected_action_preflight_report_hash": "sha256:missing",
+                "simulation_reason": "Missing target.",
+            },
+        )
+        fetched = self.client.get("/action-intent-simulation-reports/missing")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(fetched.status_code, 404)
+
+    def test_simulation_report_maps_evidence_only_action_posture(self) -> None:
+        self._seed_ips()
+        intent = self._create_intent(
+            action_type="request_more_evidence",
+            target_scope={"scope_type": "proposal"},
+            intent_summary="Request more evidence before action planning.",
+            rationale="The reviewed proposal needs more support.",
+        )
+        preflight = self._preflight(intent["action_intent_id"])
+        warning_codes = [
+            finding["code"]
+            for finding in preflight["findings"]
+            if finding["severity"] == "warning"
+        ]
+
+        body = self._create_simulation(
+            intent,
+            preflight,
+            explicit_preflight_acknowledgement=True,
+            acknowledged_preflight_warning_codes=warning_codes,
+        )
+
+        report = body["simulation_report"]
+        self.assertEqual(report["risk_posture"], "evidence_only")
+        self.assertEqual(report["risk_direction"], "evidence_only")
+        self.assertIn("does not imply capital movement", report["qualitative_impact"]["summary"])
+
+    def test_simulation_report_rejects_authority_markers_in_assumptions(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        preflight = self._preflight(intent["action_intent_id"])
+
+        response = self.client.post(
+            f"/action-intents/{intent['action_intent_id']}/simulation-reports",
+            json=self._simulation_request(
+                intent,
+                preflight,
+                assumptions={"nested": {"execution-allowed": True}},
+            ),
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(ActionIntentSimulationReport, engine=self.engine), [])
 
 
 if __name__ == "__main__":

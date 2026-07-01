@@ -36,6 +36,16 @@ ACTION_INTENT_NEXT_STEPS: tuple[str, ...] = (
     "human_review",
     "discard",
 )
+ACTION_INTENT_SIMULATION_SCENARIO_MODES: tuple[str, ...] = (
+    "descriptive_v0",
+    "risk_posture_v0",
+    "exposure_context_v0",
+)
+ACTION_INTENT_SIMULATION_STATUSES: tuple[str, ...] = (
+    "complete",
+    "incomplete",
+    "blocked",
+)
 
 
 def utc_now_iso() -> str:
@@ -467,4 +477,85 @@ class ActionIntent(StateCoreBase, table=True):
     def reject_authority_transition(cls, value: bool) -> bool:
         if value:
             raise ValueError("action intents never carry authority transitions")
+        return False
+
+
+class ActionIntentSimulationReport(StateCoreBase, table=True):
+    """Preflight-bound qualitative simulation report for an ActionIntentCandidate.
+
+    The report records a downstream read of a specific action-intent receipt and
+    a specific system-recomputed action preflight hash. It is descriptive only:
+    no order ticket, broker instruction, approval, or execution authorization.
+    """
+
+    __tablename__ = "action_intent_simulation_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_action_intent_sim_reports_execution_allowed_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_action_intent_sim_reports_authority_transition_false",
+        ),
+        CheckConstraint(
+            "scenario_mode IN ("
+            + ", ".join(f"'{mode}'" for mode in ACTION_INTENT_SIMULATION_SCENARIO_MODES)
+            + ")",
+            name="ck_action_intent_sim_reports_scenario_mode_closed",
+        ),
+        CheckConstraint(
+            "simulation_status IN ("
+            + ", ".join(f"'{status}'" for status in ACTION_INTENT_SIMULATION_STATUSES)
+            + ")",
+            name="ck_action_intent_sim_reports_status_closed",
+        ),
+    )
+
+    simulation_report_id: str = Field(primary_key=True)
+    action_intent_id: str = Field(foreign_key="action_intents.action_intent_id", index=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id", index=True)
+    source_action_intent_receipt_ref: str
+    source_action_preflight_report_hash: str
+    source_action_preflight_status: str
+    source_action_preflight_finding_codes: list[str] = Field(
+        default_factory=list,
+        sa_column=json_list_column(),
+    )
+    acknowledged_preflight_warning_codes: list[str] = Field(
+        default_factory=list,
+        sa_column=json_list_column(),
+    )
+    scenario_mode: str = "descriptive_v0"
+    simulation_status: str = "complete"
+    risk_posture: str
+    risk_direction: str
+    affected_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    current_state_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    missing_data: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    assumptions: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    qualitative_impact: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    numeric_impact: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    next_actions: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "needs_human_confirm"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("simulation reports never carry execution authority")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("simulation reports never carry authority transitions")
         return False
