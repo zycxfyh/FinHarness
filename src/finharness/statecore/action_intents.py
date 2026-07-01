@@ -108,11 +108,15 @@ def _dedupe_text(values: list[str]) -> list[str]:
     return result
 
 
+def _normalized_marker_key(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def _forbidden_marker(value: Any) -> str | None:
     if isinstance(value, dict):
         for key, child in value.items():
             key_text = str(key).strip()
-            if key_text.lower() in FORBIDDEN_ACTION_INTENT_KEYS:
+            if _normalized_marker_key(key_text) in FORBIDDEN_ACTION_INTENT_KEYS:
                 return key_text
             marker = _forbidden_marker(child)
             if marker is not None:

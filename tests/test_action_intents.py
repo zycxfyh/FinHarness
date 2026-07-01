@@ -132,6 +132,21 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             ("quantity", self._request(target_scope={"symbol": "XYZ", "quantity": 10})),
             ("broker", self._request(constraints={"broker": "alpaca"})),
             ("execution_allowed", self._request(trigger_context={"execution_allowed": True})),
+            ("authority_transition", self._request(trigger_context={"authority_transition": True})),
+            ("execution-allowed", self._request(trigger_context={"execution-allowed": True})),
+        ):
+            with self.subTest(field=field):
+                response = self.client.post(
+                    f"/proposals/{self.proposal_write.proposal.proposal_id}/action-intents",
+                    json=payload,
+                )
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(ActionIntent, engine=self.engine), [])
+
+    def test_unknown_action_type_or_next_step_is_rejected(self) -> None:
+        for field, payload in (
+            ("action_type", self._request(action_type="market_order")),
+            ("expected_next_step", self._request(expected_next_step="order_ticket")),
         ):
             with self.subTest(field=field):
                 response = self.client.post(
