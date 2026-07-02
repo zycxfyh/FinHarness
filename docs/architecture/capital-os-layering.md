@@ -1,6 +1,6 @@
 # FinHarness 分层架构(Capital OS Layering)
 
-> 状态:current(2026-07-01)。这是 FinHarness **架构分层的单一事实源**,
+> 状态:current(2026-07-02)。这是 FinHarness **架构分层的单一事实源**,
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
@@ -24,10 +24,10 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L0A** | 个人资本数据 Personal Capital Data | 我有什么? | `beancount_adapter.py`、`personal_finance.py`、`snapshot_ingest`、`data_entry.py` | ✅ 有 |
 | **L0B** | 外部标的数据 External Instrument Data | 外部价格/财报/宏观是多少? | `data_entry.py`(yfinance)、`research_evidence.py` | 🟡 仅价格+证据;Instrument/财报/宏观分类待建 |
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
-| **L3** | IPS / 投资政策声明 | 这个状态适合我吗? | `ips.py`、`api/routes_ips.py`、`InvestmentPolicyStatement` | ✅ 有(v0;已接 L4 detector 阈值) |
+| **L3** | IPS / Policy / Capital Mandate | 这个状态适合我吗?未来授权必须站在哪个政策域内? | `ips.py`、`api/routes_ips.py`、`statecore/capital_mandates.py`、`api/routes_capital_mandates.py`、`InvestmentPolicyStatement`、`CapitalMandate` | ✅ 有(IPS v0 + CapitalMandate v0;IPS 接 L4 detector 阈值,CapitalMandate 不授权执行) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
 | **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_context_projection.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + context projection/budget + default read/explain profile + ToolEntry metadata + evidence provider registry + runtime pipeline + review-draft proposal drafts + review-note artifacts + scaffold apply candidates + review provenance + queue checks + review-task lifecycle |
-| **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | `statecore/action_intents.py`、`api/routes_action_intents.py` | 🟡 `ActionIntentCandidate` v0 已有;PreTradeImpactReport/模拟仍是 gap |
+| **L6** | Pre-/Post-trade 行动模拟与复盘 | 做这个动作会怎样?做完如何? | `statecore/action_intents.py`、`statecore/action_intent_simulations.py`、`statecore/trade_plan_candidates.py`、`action_intent_preflight.py`、`api/routes_action_intents.py` | 🟡 `ActionIntentCandidate` + system preflight + `ActionIntentSimulationReport` + `TradePlanCandidate` v0 已有;order ticket / broker command path 仍是 gap |
 | **L7** | Learning 长期记忆与学习 | 我从过去学到什么? | `annual_review.py`、`lesson_loop.py`、`rule_change_ledger.py` | 🟡 有闭环;Journal/Pattern 待建 |
 | **L8** | Cockpit / API 产品表面 | 用户怎么用这一切? | FastAPI(`api/app.py` + routers)、vanilla JS cockpit | ✅ 有 |
 
@@ -37,7 +37,9 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 ## 新版相对现状的增量
 
 现状文档(north-star 06-17/06-24、system-map 06-22)已覆盖 L0A/L1/L2/L4/L8。
-PR #51 已补上 L3 IPS v0。下一版增量按优先级:
+PR #51 已补上 L3 IPS v0;#91 补上 receipt-backed `CapitalMandate` v0,作为
+未来 AgentAuthorityGrant / AuthorityContract 之前的 human-attested policy
+domain,但它本身不授权执行、不授予 Agent identity。下一版增量按优先级:
 
 1. **L0B**:外部标的数据从"仅价格"扩成 Instrument / 财报 / 宏观分类。
 2. **L5**:把 context packs 用在更好的 Agent 解释/eval 中;review-draft profile
@@ -56,8 +58,15 @@ PR #51 已补上 L3 IPS v0。下一版增量按优先级:
    和 result budget。更强权限应通过 profile/tool/evidence/context/review contract
    毕业,不是靠 prompt 承诺。
 3. **L6**:`ActionIntentCandidate` 已提供 proposal → future capital action 的
-   candidate-only bridge;下一步是 `ActionIntentPreflight` / `PreTradeImpactReport`
-   (复用 `exposure.compute_exposure`,需先把它重构成可接受 hypothetical 持仓集的形态)。
+   candidate-only bridge;system preflight 会重算 freshness、policy、scope、
+   evidence、preconditions 和 risk posture;preflight-bound
+   `ActionIntentSimulationReport` 与 `TradePlanCandidate` 已能把动作意图推进到
+   描述性模拟和候选 pre-trade plan。下一步不是直接 broker adapter,而是
+   CapitalMandate 之后的 AgentAuthorityGrant / SuitabilityCheck /
+   AuthorityContract 设计,再决定是否需要 OrderTicketCandidate。
+4. **Authority path**:任何未来 AgentAuthorityGrant、SuitabilityCheck、
+   AuthorityContract 或 order-ticket path 必须先引用 active `CapitalMandate` 或
+   显式说明豁免;CapitalMandate 是政策域,不是授权对象。
 
 P5 follow-up 已有实现路径:高风险 proposal 若缺 `counter_evidence`,可以记录和拒绝;
 若之后要批准,先通过 proposal scaffold revision 补 `counter_evidence`,再走 human

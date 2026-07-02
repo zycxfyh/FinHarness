@@ -8,6 +8,12 @@
 > 「路线与成功指标」里"决策能否仅凭收据重建打分"的**治理形态**指标互补,不
 > 替代后者。配套文档:[产品命题](product/product-thesis.md)、
 > [产品路线](product/product-roadmap.md)。
+>
+> 修订(2026-07-02):把"AI 永不拥有执行权"收窄为更精确的产品边界:
+> **Agent 不默认拥有高后果身份或执行权**。未来若支持有限代理身份,必须由
+> 显式、可撤销、receipt-backed 的授权对象承载,并受 CapitalMandate、limits、
+> kill switch、review cadence 和人类 attestation 约束。CapitalMandate 本身
+> 仍不是授权、执行、order ticket 或 broker 指令。
 
 ## 一句话定位
 
@@ -68,7 +74,7 @@ predicates:
 | B2 decision discipline | 高风险操作控制 | 让候选行动进入人工复核,而不是冲动执行 |
 | B3 bounded loss | 风险约束 | 限制可控路径中的计划风险,并暴露不可控尾部风险 |
 | B4 compounding judgment ([glossary](reference/glossary.md)) | 长期学习机制 | 把复盘 lesson 变成可追溯的规则/检查表改动 |
-| B5 boundary | 永久 non-goal | AI 不拥有执行权,READY/PASS 不授权 live action |
+| B5 boundary | 永久 non-goal | AI 不默认拥有高后果身份或执行权;READY/PASS 不授权 live action |
 
 因此:治理、receipt、lesson-to-rule、risk gate 都是驾驶舱的刹车和证据层,
 不是用户每天打开 FinHarness 的理由。用户价值必须首先表现为"我现在怎么样、
@@ -77,7 +83,8 @@ predicates:
 ## 这不是什么
 
 - 不是 AI 炒股 app(那是危险且没有长期壁垒的方向)。
-- 不是自动交易机器人(执行权永远不归 AI)。
+- 不是默认授权的自动交易机器人(任何未来高后果代理身份都必须显式、可撤销、
+  receipt-backed,且不由 READY/PASS 推导)。
 - 不是问一句答一句的 chatbot(它是运行时,会主动巡检、提醒、生成待办)。
 
 ## 核心三件事(有依赖顺序,不是并列)
@@ -139,7 +146,9 @@ predicates:
 
 ## 硬工程原则(不可放松)
 
-- **默认只读。** AI 不拥有任何授权(交易、转账、报税提交、改风险上限……)。
+- **默认只读。** Agent 不默认拥有任何高后果授权(交易、转账、报税提交、改
+  风险上限……);任何未来有限代理身份都必须经专门授权对象、人类确认、limits、
+  kill switch、review cadence 和 receipt 约束。
 - 每个建议必须带 **evidence / assumptions / limitations / non-claims**。
 - 每个高风险动作必须有**人工确认**(fail-closed:没确认就停)。
 - 每个动作必须有 **receipt**(不可变文件证据)。

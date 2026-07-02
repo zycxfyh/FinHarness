@@ -1,6 +1,6 @@
 # FinHarness Framework Index
 
-状态:current(2026-07-01)。这是 FinHarness 的“不要每次重新理解一遍”索引。
+状态:current(2026-07-02)。这是 FinHarness 的“不要每次重新理解一遍”索引。
 
 本页只回答四件事:
 
@@ -18,19 +18,22 @@
 ## One Sentence
 
 FinHarness 是一个 local-first **personal capital governance framework**:
-把个人资本状态、IPS、证据、proposal/review、Agent explanation、receipt、governance
-checks 组织成可审计闭环。它不是 trading bot、stock picker、robo-advisor 或执行授权系统。
+把个人资本状态、IPS/CapitalMandate、证据、proposal/review、Agent explanation、
+receipt、governance checks 组织成可审计闭环。它不是 trading bot、stock picker、
+robo-advisor 或默认执行授权系统。
 
 ## Framework Shape
 
 ```text
-personal data -> state core -> capital map -> IPS/policy
+personal data -> state core -> capital map -> IPS/policy/capital mandate
 -> governed proposal -> human review -> receipt/lesson
 -> Agent explanation + cockpit
 
 EOS governance cuts across the whole loop.
 External/mature wheels are adapters, not authority.
 Archived live-trading code has no edge back into mainline.
+Future delegated authority must cite an explicit CapitalMandate and its own
+authority object; CapitalMandate itself is not execution.
 ```
 
 ## System Summary
@@ -40,7 +43,7 @@ Archived live-trading code has no edge back into mainline.
 | Product North Star | 产品类别和 non-claims:个人资本判断层,不是交易系统。 | `docs/product-north-star.md`, `docs/product/*` | README, cockpit copy | Diataxis + product north-star discipline | `task docs:current-check` |
 | State Core | receipt-backed 状态镜像;SQLite 可查,receipt 是证据根。 | `system-map.md`, `module-map.md`, `reference/interfaces.md` | `statecore/`, `api/routes_state.py` | Event/receipt sourcing ideas,但保留本地简洁实现 | `task test`, StateCore tests |
 | Capital Map | 把状态变成 exposure、daily brief、dashboard summary。 | `system-map.md`, `tutorials/golden-path.md` | `exposure.py`, `daily_brief.py`, `daily_change_brief.py` | 财务报表/BI read-model 思路;不替代 ledger | `task brief:daily`, `task decisions:scan` |
-| IPS / Policy | 用户自己的投资政策声明和描述性 compliance check。 | `capital-os-layering.md`, `system-map.md` | `ips.py`, `api/routes_ips.py` | IPS / policy-as-code 思路;暂不上 OPA/Cedar | `GOV-DOCS-003`, IPS tests |
+| IPS / Policy | 用户自己的投资政策声明、描述性 compliance check、以及未来授权前置的 human-attested CapitalMandate。 | `capital-os-layering.md`, `system-map.md`, `docs/adr/2026-07-02-capital-mandate-before-delegated-authority.md` | `ips.py`, `api/routes_ips.py`, `statecore/capital_mandates.py`, `api/routes_capital_mandates.py` | IPS / policy-as-code 思路;CapitalMandate 先用 receipt-backed local policy object,暂不上 OPA/Cedar | `GOV-DOCS-003`, IPS/capital-mandate tests |
 | Decision Workflow | exposure + IPS 阈值生成 governed proposal,默认不执行。 | `system-map.md`, `tutorials/golden-path.md` | `allocation.py`, `statecore/decision_scaffold.py`, `risk_classification.py` | RFC/decision record 风格;人类 review 是 authority | `task decisions:scan`, proposal tests |
 | Review System | append-only proposal review、scaffold revision、attestation、compare、annual review、lesson-to-rule、deterministic review queue triage、derived risk register v0。 | `system-map.md`, `engineering/system-directory-standard.md` | `statecore/proposals.py`, `review_read.py`, `risk_register.py`, `lesson_loop.py` | GitLab review discipline + risk/issue register;不把 attestation、queue priority 或 risk severity hint 当 execution | `GOV-REVIEW-001`, review/risk tests |
 | Capital Action Intent | receipt-backed `ActionIntentCandidate` 把当前 proposal receipt 翻译成 future capital action intent;system preflight/impact report 会重算 freshness、policy、scope、evidence 和 risk posture;preflight-bound simulation report 会绑定 current action intent receipt 和 current preflight hash;TradePlanCandidate 只描述 pre-trade plan,不生成 order ticket、不提交 broker、不授权 execution。 | `system-map.md`, `reference/interfaces.md` | `statecore/action_intents.py`, `statecore/action_intent_simulations.py`, `statecore/trade_plan_candidates.py`, `action_intent_preflight.py`, `api/routes_action_intents.py` | OMS/EMS 前置 action-intent / command-intent + pre-trade admission controller 分层;先定义动作意图,重算 admission checks,绑定 simulation evidence,再生成 candidate-only trade plan | action-intent tests |

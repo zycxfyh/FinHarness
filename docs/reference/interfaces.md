@@ -15,6 +15,7 @@ Use this as a lookup page. For system ownership, read
 | StateCoreInterface | SQLite / SQLModel | Queryable mirror, DecimalText money, receipt index, atomic writes | `statecore/`, [Receipt Reference](receipts.md) |
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
+| CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; requires human attester/reason/explicit confirmation and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
 | RiskRegisterInterface | Local deterministic read model | Derived risk register view over review queue signals; no risk acceptance, scoring, scenario generation, or writes | `/risk/register`, `risk_register.py` |
@@ -31,6 +32,11 @@ Use this as a lookup page. For system ownership, read
 - Every suggestion/proposal needs evidence, assumptions, limitations, non-claims,
   and `execution_allowed=false`.
 - Human attestation is review evidence, not execution authorization.
+- CapitalMandate is a policy-domain carrier future authority objects may cite.
+  It requires `human_attester`, `human_reason`, and `explicit_confirmation=true`;
+  it still has `execution_allowed=false` and `authority_transition=false`, and
+  it is not an Agent identity grant, AuthorityContract, order ticket, broker
+  instruction, or execution authorization.
 - Archived live-trading code is not a current interface.
 - Agent capability profiles are explicit product postures resolved through a
   runtime `AgentToolEntry` registry/factory, not permission bypasses; Agent tool

@@ -46,6 +46,13 @@ ACTION_INTENT_SIMULATION_STATUSES: tuple[str, ...] = (
     "incomplete",
     "blocked",
 )
+CAPITAL_MANDATE_STATUSES: tuple[str, ...] = ("active", "superseded")
+CAPITAL_MANDATE_AUTONOMY_LEVELS: tuple[str, ...] = (
+    "L0_read_only",
+    "L1_candidate_only",
+    "L2_human_confirmed_apply",
+    "L3_bounded_delegation_candidate",
+)
 TRADE_PLAN_CANDIDATE_DIRECTIONS: tuple[str, ...] = (
     "reduce",
     "increase",
@@ -424,6 +431,124 @@ class InvestmentPolicyStatement(StateCoreBase, table=True):
     def reject_execution_authority(cls, value: bool) -> bool:
         if value:
             raise ValueError("an investment policy statement never carries execution authority")
+        return False
+
+
+class CapitalMandate(StateCoreBase, table=True):
+    """Human-attested policy domain for future delegated capital authority.
+
+    A ``CapitalMandate`` sits above an IPS. It captures the user's profile,
+    objectives, risk boundaries, allowed assets/actions, limits, kill switches,
+    review cadence, and explicit human attestation that future authority objects
+    may reference. It is not an authority grant, order ticket, broker
+    instruction, or execution authorization.
+    """
+
+    __tablename__ = "capital_mandates"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN (" + ", ".join(f"'{status}'" for status in CAPITAL_MANDATE_STATUSES) + ")",
+            name="ck_capital_mandates_status_closed",
+        ),
+        CheckConstraint(
+            "autonomy_level IN ("
+            + ", ".join(f"'{level}'" for level in CAPITAL_MANDATE_AUTONOMY_LEVELS)
+            + ")",
+            name="ck_capital_mandates_autonomy_level_closed",
+        ),
+        CheckConstraint(
+            "explicit_confirmation = 1",
+            name="ck_capital_mandates_explicit_confirmation_true",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_capital_mandates_execution_allowed_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_capital_mandates_authority_transition_false",
+        ),
+    )
+
+    capital_mandate_id: str = Field(primary_key=True)
+    status: str = "active"
+    source_ips_id: str | None = Field(
+        default=None,
+        foreign_key="investment_policy_statements.ips_id",
+        index=True,
+    )
+    profile_snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    investment_objectives: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=json_dict_column(),
+    )
+    risk_profile: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    allowed_asset_classes: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    restricted_asset_classes: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    allowed_action_types: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    restricted_action_types: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    autonomy_level: str = "L1_candidate_only"
+    limit_book: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    kill_switch_rules: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=json_list_column(),
+    )
+    review_cadence: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    human_attester: str
+    human_reason: str
+    explicit_confirmation: bool = True
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "human_attested_policy"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("status")
+    @classmethod
+    def require_known_status(cls, value: str) -> str:
+        if value not in CAPITAL_MANDATE_STATUSES:
+            raise ValueError(f"capital mandate status must be one of {CAPITAL_MANDATE_STATUSES}")
+        return value
+
+    @field_validator("autonomy_level")
+    @classmethod
+    def require_known_autonomy_level(cls, value: str) -> str:
+        if value not in CAPITAL_MANDATE_AUTONOMY_LEVELS:
+            raise ValueError(
+                "capital mandate autonomy_level must be one of "
+                f"{CAPITAL_MANDATE_AUTONOMY_LEVELS}"
+            )
+        return value
+
+    @field_validator("human_attester", "human_reason")
+    @classmethod
+    def require_human_attestation(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("capital mandate requires human attester and written reason")
+        return value
+
+    @field_validator("explicit_confirmation")
+    @classmethod
+    def require_explicit_confirmation(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("capital mandate requires explicit human confirmation")
+        return True
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("capital mandates never carry execution authority")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("capital mandates never carry authority transitions")
         return False
 
 
