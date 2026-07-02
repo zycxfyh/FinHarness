@@ -23,13 +23,13 @@ from finharness.statecore.models import (
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
-    OrderTicketCandidate,
     Position,
     Proposal,
     ReceiptIndex,
     ReviewEvent,
     Snapshot,
     TaxEvent,
+    TradePlanCandidate,
 )
 
 STATE_CORE_DB_ENV_VAR = "FINHARNESS_STATE_CORE_DB_PATH"
@@ -39,7 +39,7 @@ StateCoreRecord = (
     Account
     | ActionIntent
     | ActionIntentSimulationReport
-    | OrderTicketCandidate
+    | TradePlanCandidate
     | Position
     | Liability
     | FinancialGoal

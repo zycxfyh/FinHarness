@@ -73,22 +73,22 @@ domain model / read model / write(command) model / adapters / invariants
 
 - **职责**:把当前 proposal/revision state 翻译成 candidate-only capital
   action intent,并把 system preflight 绑定到 qualitative simulation report,
-  再把 simulation evidence 转成 order-shaped candidate,作为未来 AuthorityContract
-  的输入。
+  再把 simulation evidence 转成 pre-trade plan candidate,作为未来
+  AuthorityContract 的输入。
 - **domain**:`statecore/action_intents.py`、`ActionIntent`、
-  `statecore/action_intent_simulations.py`、`statecore/order_ticket_candidates.py`、
+  `statecore/action_intent_simulations.py`、`statecore/trade_plan_candidates.py`、
   `action_intent_preflight.py`、`api/routes_action_intents.py`。
 - **write(command)**:`POST /proposals/{proposal_id}/action-intents` /
   `create_governed_action_intent`;
   `POST /action-intents/{action_intent_id}/simulation-reports` /
   `create_governed_action_intent_simulation_report`;
   `POST
-  /action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates` /
-  `create_governed_order_ticket_candidate`。
+  /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates` /
+  `create_governed_trade_plan_candidate`。
 - **read**:`GET /action-intents/{action_intent_id}`、
   `GET /action-intents/{action_intent_id}/preflight`、
   `GET /action-intent-simulation-reports/{simulation_report_id}`、
-  `GET /order-ticket-candidates/{order_ticket_candidate_id}`。
+  `GET /trade-plan-candidates/{trade_plan_candidate_id}`。
 - **invariants**:ActionIntentCandidate 不是 order ticket、broker action、
   simulation、approval、investment advice 或 execution authorization;创建时必须
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
@@ -99,11 +99,11 @@ domain model / read model / write(command) model / adapters / invariants
   acknowledge all warning codes,并写
   `state_core_action_intent_simulation_report` receipt;v0 simulation report
   仍不生成 order、broker action、approval 或 execution authorization;
-  OrderTicketCandidate 只允许 candidate-named order-shape fields,拒绝 exact
-  quantity、broker/execution/authority markers 和 stale simulation/preflight
-  evidence,写 `state_core_order_ticket_candidate` receipt,但
-  `submitted_to_broker=false`、`execution_status=not_submitted`,必须等待未来
-  AuthorityContract 才能进入任何执行路径。
+  TradePlanCandidate 只允许 plan direction/scope/cap/constraint fields,拒绝
+  exact quantity、broker/order-ready/execution/authority markers 和 stale
+  simulation/preflight evidence,写 `state_core_trade_plan_candidate` receipt,但
+  `submitted_to_broker=false`,必须等待未来 AuthorityContract 才能进入任何执行路径
+  或生成 order ticket。
 
 ### 7. Research Evidence
 

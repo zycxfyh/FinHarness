@@ -46,31 +46,17 @@ ACTION_INTENT_SIMULATION_STATUSES: tuple[str, ...] = (
     "incomplete",
     "blocked",
 )
-ORDER_TICKET_CANDIDATE_SIDES: tuple[str, ...] = (
-    "buy_candidate",
-    "sell_candidate",
-    "hold_candidate",
-    "reduce_candidate",
-    "increase_candidate",
-    "rebalance_candidate",
-    "hedge_candidate",
+TRADE_PLAN_CANDIDATE_DIRECTIONS: tuple[str, ...] = (
+    "reduce",
+    "increase",
+    "rebalance",
+    "hedge_review",
+    "raise_cash",
+    "defer",
+    "watchlist",
+    "request_more_evidence",
 )
-ORDER_TICKET_CANDIDATE_QUANTITY_MODES: tuple[str, ...] = (
-    "no_quantity_v0",
-    "notional_cap_only",
-    "percent_cap_only",
-)
-ORDER_TICKET_CANDIDATE_ORDER_TYPES: tuple[str, ...] = (
-    "market_candidate",
-    "limit_candidate",
-    "not_specified_v0",
-)
-ORDER_TICKET_CANDIDATE_TIME_IN_FORCE: tuple[str, ...] = (
-    "day_candidate",
-    "gtc_candidate",
-    "not_specified_v0",
-)
-ORDER_TICKET_CANDIDATE_STATUSES: tuple[str, ...] = (
+TRADE_PLAN_CANDIDATE_STATUSES: tuple[str, ...] = (
     "draft_candidate",
     "needs_authority_contract",
     "blocked_by_validation",
@@ -590,65 +576,43 @@ class ActionIntentSimulationReport(StateCoreBase, table=True):
         return False
 
 
-class OrderTicketCandidate(StateCoreBase, table=True):
-    """Order-shaped candidate derived from a preflight-bound simulation report.
+class TradePlanCandidate(StateCoreBase, table=True):
+    """Pre-trade plan candidate derived from a preflight-bound simulation report.
 
     This is not an order ticket, broker instruction, authority contract, or
-    execution authorization. It may describe a possible order shape for later
-    human/authority review, but it cannot be submitted.
+    execution authorization. It records plan direction, scope, caps, and
+    constraints for later human/authority review, but it cannot be submitted.
     """
 
-    __tablename__ = "order_ticket_candidates"
+    __tablename__ = "trade_plan_candidates"
     __table_args__ = (
         CheckConstraint(
             "execution_allowed = 0",
-            name="ck_order_ticket_candidates_execution_allowed_false",
+            name="ck_trade_plan_candidates_execution_allowed_false",
         ),
         CheckConstraint(
             "authority_transition = 0",
-            name="ck_order_ticket_candidates_authority_transition_false",
+            name="ck_trade_plan_candidates_authority_transition_false",
         ),
         CheckConstraint(
             "submitted_to_broker = 0",
-            name="ck_order_ticket_candidates_submitted_to_broker_false",
+            name="ck_trade_plan_candidates_submitted_to_broker_false",
         ),
         CheckConstraint(
-            "side_candidate IN ("
-            + ", ".join(f"'{side}'" for side in ORDER_TICKET_CANDIDATE_SIDES)
+            "plan_direction IN ("
+            + ", ".join(f"'{direction}'" for direction in TRADE_PLAN_CANDIDATE_DIRECTIONS)
             + ")",
-            name="ck_order_ticket_candidates_side_closed",
-        ),
-        CheckConstraint(
-            "quantity_mode IN ("
-            + ", ".join(f"'{mode}'" for mode in ORDER_TICKET_CANDIDATE_QUANTITY_MODES)
-            + ")",
-            name="ck_order_ticket_candidates_quantity_mode_closed",
-        ),
-        CheckConstraint(
-            "order_type_candidate IN ("
-            + ", ".join(f"'{kind}'" for kind in ORDER_TICKET_CANDIDATE_ORDER_TYPES)
-            + ")",
-            name="ck_order_ticket_candidates_order_type_closed",
-        ),
-        CheckConstraint(
-            "time_in_force_candidate IN ("
-            + ", ".join(f"'{tif}'" for tif in ORDER_TICKET_CANDIDATE_TIME_IN_FORCE)
-            + ")",
-            name="ck_order_ticket_candidates_time_in_force_closed",
+            name="ck_trade_plan_candidates_direction_closed",
         ),
         CheckConstraint(
             "candidate_status IN ("
-            + ", ".join(f"'{status}'" for status in ORDER_TICKET_CANDIDATE_STATUSES)
+            + ", ".join(f"'{status}'" for status in TRADE_PLAN_CANDIDATE_STATUSES)
             + ")",
-            name="ck_order_ticket_candidates_status_closed",
-        ),
-        CheckConstraint(
-            "execution_status = 'not_submitted'",
-            name="ck_order_ticket_candidates_execution_status_not_submitted",
+            name="ck_trade_plan_candidates_status_closed",
         ),
     )
 
-    order_ticket_candidate_id: str = Field(primary_key=True)
+    trade_plan_candidate_id: str = Field(primary_key=True)
     action_intent_id: str = Field(foreign_key="action_intents.action_intent_id", index=True)
     simulation_report_id: str = Field(
         foreign_key="action_intent_simulation_reports.simulation_report_id",
@@ -667,16 +631,16 @@ class OrderTicketCandidate(StateCoreBase, table=True):
         default_factory=list,
         sa_column=json_list_column(),
     )
-    candidate_reason: str
-    instrument_ref: str | None = None
-    symbol_candidate: str | None = None
-    side_candidate: str
-    quantity_mode: str = "no_quantity_v0"
-    notional_cap: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
-    order_type_candidate: str = "not_specified_v0"
-    time_in_force_candidate: str = "not_specified_v0"
+    plan_reason: str
+    plan_direction: str
+    target_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    instrument_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     account_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
-    risk_budget_ref: str | None = None
+    risk_constraints: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    notional_cap: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    percent_cap: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    time_window: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    required_authority_level: str = "authority_contract_required"
     candidate_status: str = "needs_authority_contract"
     validation_findings: list[dict[str, Any]] = Field(
         default_factory=list,
@@ -691,27 +655,25 @@ class OrderTicketCandidate(StateCoreBase, table=True):
     execution_allowed: bool = False
     authority_transition: bool = False
     submitted_to_broker: bool = False
-    broker_order_id: str | None = None
-    execution_status: str = "not_submitted"
     created_at_utc: str = Field(default_factory=utc_now_iso)
 
     @field_validator("execution_allowed")
     @classmethod
     def reject_execution_authority(cls, value: bool) -> bool:
         if value:
-            raise ValueError("order ticket candidates never carry execution authority")
+            raise ValueError("trade plan candidates never carry execution authority")
         return False
 
     @field_validator("authority_transition")
     @classmethod
     def reject_authority_transition(cls, value: bool) -> bool:
         if value:
-            raise ValueError("order ticket candidates never carry authority transitions")
+            raise ValueError("trade plan candidates never carry authority transitions")
         return False
 
     @field_validator("submitted_to_broker")
     @classmethod
     def reject_broker_submission(cls, value: bool) -> bool:
         if value:
-            raise ValueError("order ticket candidates are never submitted to brokers")
+            raise ValueError("trade plan candidates are never submitted to brokers")
         return False
