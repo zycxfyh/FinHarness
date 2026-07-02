@@ -98,6 +98,17 @@ Use this as a lookup page. For system ownership, read
   summary, risk posture, and a deterministic report hash. The object and
   preflight report are not an order ticket, simulation, approval, broker action,
   or execution authorization.
+- Preflight-bound action intent simulation reports are the first downstream
+  consumer of action preflight hashes:
+  `POST /action-intents/{action_intent_id}/simulation-reports` requires the
+  current action intent receipt ref, current system preflight report hash,
+  simulation reason, and explicit acknowledgement of all warning finding codes
+  when preflight is warn. The server recomputes preflight at create time,
+  rejects stale receipts or hashes, hard-blocks blocking findings, and writes a
+  `state_core_action_intent_simulation_report` receipt. `GET
+  /action-intent-simulation-reports/{simulation_report_id}` retrieves the
+  report. v0 reports are qualitative and descriptive; they do not size trades,
+  choose venues, create order tickets, approve actions, or authorize execution.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register

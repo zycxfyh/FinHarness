@@ -302,6 +302,8 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}/action-intents": {"post"},
             "/action-intents/{action_intent_id}": {"get"},
             "/action-intents/{action_intent_id}/preflight": {"get"},
+            "/action-intents/{action_intent_id}/simulation-reports": {"post"},
+            "/action-intent-simulation-reports/{simulation_report_id}": {"get"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
@@ -321,6 +323,7 @@ class StateCoreApiTest(unittest.TestCase):
         for model_name in (
             "Account",
             "ActionIntent",
+            "ActionIntentSimulationReport",
             "Attestation",
             "CashflowEvent",
             "DocumentRef",

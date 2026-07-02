@@ -20,6 +20,14 @@ from finharness.action_intent_preflight import (
     preflight_action_intent,
 )
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.statecore.action_intent_simulations import (
+    ACTION_INTENT_SIMULATION_NON_CLAIMS,
+    ActionIntentSimulationPreflightBlockedError,
+    ActionIntentSimulationScenarioMode,
+    ActionIntentSimulationStaleError,
+    ActionIntentSimulationValidationError,
+    create_governed_action_intent_simulation_report,
+)
 from finharness.statecore.action_intents import (
     ACTION_INTENT_NON_CLAIMS,
     ActionIntentCreator,
@@ -29,7 +37,7 @@ from finharness.statecore.action_intents import (
     ActionIntentValidationError,
     create_governed_action_intent,
 )
-from finharness.statecore.models import ActionIntent
+from finharness.statecore.models import ActionIntent, ActionIntentSimulationReport
 
 router = APIRouter(tags=["action-intents"])
 
@@ -124,6 +132,45 @@ class ActionIntentPreflightResponse(BaseModel):
     next_actions: list[str]
     report_hash: str
     non_claims: tuple[str, ...] = ACTION_INTENT_PREFLIGHT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ActionIntentSimulationCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_action_intent_receipt_ref: str
+    expected_action_preflight_report_hash: str
+    simulation_reason: str
+    explicit_preflight_acknowledgement: bool = False
+    acknowledged_preflight_warning_codes: list[str] = Field(default_factory=list)
+    scenario_mode: ActionIntentSimulationScenarioMode = "descriptive_v0"
+    assumptions: dict[str, Any] = Field(default_factory=dict)
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "expected_action_intent_receipt_ref",
+        "expected_action_preflight_report_hash",
+        "simulation_reason",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("simulation report requires receipt, preflight hash, and reason")
+        return value
+
+
+class ActionIntentSimulationCreateResponse(BaseModel):
+    simulation_report: ActionIntentSimulationReport
+    receipt_ref: str
+    non_claims: tuple[str, ...] = ACTION_INTENT_SIMULATION_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ActionIntentSimulationResponse(BaseModel):
+    simulation_report: ActionIntentSimulationReport
+    non_claims: tuple[str, ...] = ACTION_INTENT_SIMULATION_NON_CLAIMS
     execution_allowed: bool = False
     authority_transition: bool = False
 
@@ -251,6 +298,80 @@ async def get_action_intent_preflight(
         impact_summary=_impact_summary_view(report.impact_summary),
         next_actions=report.next_actions,
         report_hash=report.report_hash,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
+@router.post(
+    "/action-intents/{action_intent_id}/simulation-reports",
+    response_model=ActionIntentSimulationCreateResponse,
+)
+async def create_action_intent_simulation_report(
+    action_intent_id: str,
+    request: ActionIntentSimulationCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ActionIntentSimulationCreateResponse:
+    try:
+        write = create_governed_action_intent_simulation_report(
+            action_intent_id=action_intent_id,
+            expected_action_intent_receipt_ref=request.expected_action_intent_receipt_ref,
+            expected_action_preflight_report_hash=request.expected_action_preflight_report_hash,
+            simulation_reason=request.simulation_reason,
+            explicit_preflight_acknowledgement=request.explicit_preflight_acknowledgement,
+            acknowledged_preflight_warning_codes=(
+                request.acknowledged_preflight_warning_codes
+            ),
+            scenario_mode=request.scenario_mode,
+            assumptions=request.assumptions,
+            source_refs=request.source_refs,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent not found: {action_intent_id}",
+        ) from exc
+    except ActionIntentSimulationStaleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ActionIntentSimulationPreflightBlockedError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "simulation_preflight_blocked",
+                "message": str(exc),
+                "finding_codes": exc.codes,
+            },
+        ) from exc
+    except ActionIntentSimulationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ActionIntentSimulationCreateResponse(
+        simulation_report=write.simulation_report,
+        receipt_ref=write.receipt_ref,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
+@router.get(
+    "/action-intent-simulation-reports/{simulation_report_id}",
+    response_model=ActionIntentSimulationResponse,
+)
+async def get_action_intent_simulation_report(
+    simulation_report_id: str,
+    engine: EngineDependency,
+) -> ActionIntentSimulationResponse:
+    with Session(engine) as session:
+        simulation_report = session.get(ActionIntentSimulationReport, simulation_report_id)
+    if simulation_report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent simulation report not found: {simulation_report_id}",
+        )
+    return ActionIntentSimulationResponse(
+        simulation_report=simulation_report,
         execution_allowed=False,
         authority_transition=False,
     )
