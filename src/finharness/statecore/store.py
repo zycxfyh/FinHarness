@@ -15,6 +15,7 @@ from finharness.market_data import ROOT
 from finharness.statecore.models import (
     Account,
     ActionIntent,
+    ActionIntentSimulationReport,
     Attestation,
     CashflowEvent,
     DocumentRef,
@@ -36,6 +37,7 @@ DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-cor
 StateCoreRecord = (
     Account
     | ActionIntent
+    | ActionIntentSimulationReport
     | Position
     | Liability
     | FinancialGoal
