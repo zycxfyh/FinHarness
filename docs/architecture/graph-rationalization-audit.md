@@ -95,10 +95,10 @@ to be graphs.
 | `cognitive_graph.py` | task `workflow:cognitive`, docs | archive/downgrade candidate | Useful as idea-capture history, but likely not needed in core engineering path. |
 | `daily_evidence_graph.py` | task `workflow:daily-evidence`, tests | keep or downgrade after review | Bundles multiple evidence layers; may earn orchestration shape if used operationally. |
 
-### Already Archived / Do Not Resurrect
+### Already Removed / Do Not Resurrect
 
-`docs/archive/legacy-graphs/finance_graph.py` and `trade_graph.py` are correctly
-archived. Keep them as design history only. Do not re-expose them through
+`finance_graph.py` and `trade_graph.py` were deleted in the repo prune. The graph
+registry records their historical/archived status. Do not re-expose them through
 Taskfile, active scripts, tests, or cockpit.
 
 ## Deletion Test Findings
@@ -179,10 +179,10 @@ graphs (`repo_intelligence`, `quality_governance`, `release_preflight`) stay
 `downgrade_candidate`, and that every source `*_graph.py` is registered (no graph can enter
 unclassified).
 
-**Correction to "Already Archived" above:** `finance_graph` / `trade_graph` are recorded
-as `historical` / `archived`, but there is **no** `docs/archive/legacy-graphs/` directory —
-those files were deleted in the repo prune (commit `2166bba`), not archived to disk. The
-registry records the true state (no module file); the audit's earlier path claim is stale.
+**Correction to earlier path claims:** `finance_graph` / `trade_graph` are recorded
+as `historical` / `archived`, but there is no `docs/archive/legacy-graphs/`
+directory. Those files were deleted in the repo prune (commit `2166bba`), not
+archived to disk. The registry records the true state (no module file).
 
 ### R2: Downgrade One Low-Risk Support Graph
 

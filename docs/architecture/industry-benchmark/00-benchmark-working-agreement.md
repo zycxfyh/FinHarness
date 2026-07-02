@@ -2,7 +2,7 @@
 
 Author: Codex
 Parallel agent: Claude
-Status: draft
+Status: historical reference (downgraded 2026-07-02)
 Date: 2026-06-15
 Evidence policy: primary-source-first
 

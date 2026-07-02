@@ -1,13 +1,20 @@
-# Current State Of FinHarness
+# Current State Of FinHarness (Historical 2026-06-15 Snapshot)
 
 Author: Codex
 Parallel agent: Claude
-Status: draft
+Status: historical reference (downgraded 2026-07-02)
 Date: 2026-06-15
 Evidence policy: primary-source-first
 
-This document describes what FinHarness is today. It is intentionally descriptive:
-the industry comparison starts in
+This document describes what FinHarness looked like on 2026-06-15. It is
+intentionally descriptive historical evidence, not the current fact source.
+Current facts live in [Framework Index](../framework-index.md),
+[Capital OS Layering](../capital-os-layering.md), [System Map](../system-map.md),
+[Module Map](../module-map.md), and [System Catalog](../system-catalog.yml).
+Historical task names in this document must not be treated as current command
+guidance; use [Command Reference](../../reference/commands.md).
+
+The industry comparison starts in
 [02-industry-benchmark-map-codex.md](02-industry-benchmark-map-codex.md), and
 gap judgment starts in [03-gap-register-codex.md](03-gap-register-codex.md).
 
@@ -82,7 +89,7 @@ surface across paper fills.
 | Receipts | Field-level receipt reference exists across layer and direct JSON shapes. | [Receipt Reference](../../reference/receipts.md) | Production-shaped evidence discipline. |
 | Receipt usage | Receipt usage audit distinguishes durable consumed receipts, candidates, runtime output, and missing references. | [Receipt Usage Audit](../receipt-usage-audit.md) | Strong local governance. |
 | Hardening | Security scan and hardening tasks aggregate pip-audit, gitleaks, Trivy, and local boundary tests. | [Security docs](../../security/mvp-hardening-gate.md), `task security:scan`, `task hardening:gate` | Production-shaped for local project governance. |
-| Release/governance graphs | Quality, release, dashboard, and repo-intelligence graphs exist. | [Support Governance Graphs](../support-governance-graphs.md) | Useful but already heavier than the trading substance. |
+| Release/governance graphs | Quality, release, dashboard, and repo-intelligence graph lifecycle is tracked. | [Graph Rationalization Audit](../graph-rationalization-audit.md), `task governance:graphs` | Useful but already heavier than the trading substance. |
 
 Current limit: governance is ahead of the finance substance. Adding more
 governance graphs would not by itself improve research value or execution
