@@ -174,7 +174,7 @@ surfaces:
 
   - id: industry-benchmark-series
     type: historical_reference
-    status: downgraded
+    status: downgrade_candidate
     owner: eos
     source_of_truth: docs/architecture/industry-benchmark/README.md
     depends_on:
@@ -185,5 +185,5 @@ surfaces:
       - docs/architecture/system-catalog.yml
       - docs/governance/removal-ledger.yml
     review_due: "2026-08-15"
-    staleness_policy: do_not_use_as_current_fact_source
+    staleness_policy: downgrade_or_delete_if_current_fact_drift_recurs
     machine_checked: true
