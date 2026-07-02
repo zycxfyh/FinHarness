@@ -227,8 +227,6 @@ systems:
     docs:
       - docs/architecture/framework-index.md
       - docs/architecture/system-catalog.yml
-      - docs/architecture/support-surface-registry.yml
-      - docs/governance/removal-ledger.yml
       - docs/architecture/documentation-fact-governance.md
       - docs/architecture/scaffolding-inventory.md
       - docs/engineering/change-control.md
@@ -236,8 +234,6 @@ systems:
     runtime_roots:
       - tests/_policy_registry.py
       - tests/_graph_registry.py
-      - tests/test_support_surface_registry.py
-      - tests/test_removal_ledger.py
       - src/finharness/hardening.py
       - src/finharness/repo_intelligence.py
       - src/finharness/quality_governance_graph.py
