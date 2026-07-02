@@ -315,6 +315,9 @@ class StateCoreApiTest(unittest.TestCase):
             "/ips/current": {"get"},
             "/ips/draft": {"post"},
             "/ips/check": {"get"},
+            "/capital-mandates": {"post"},
+            "/capital-mandates/current": {"get"},
+            "/capital-mandates/{capital_mandate_id}": {"get"},
         }
         self.assertEqual(set(paths), set(allowed_methods))
         for path, methods in paths.items():

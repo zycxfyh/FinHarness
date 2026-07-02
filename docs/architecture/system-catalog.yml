@@ -61,18 +61,22 @@ systems:
   - id: ips_policy
     name: IPS / Policy
     status: current
-    summary: User-owned Investment Policy Statement and descriptive compliance checks.
+    summary: User-owned Investment Policy Statement, descriptive compliance checks, and human-attested CapitalMandate policy domains for future delegated authority boundaries.
     docs:
       - docs/architecture/capital-os-layering.md
       - docs/architecture/system-map.md
+      - docs/adr/2026-07-02-capital-mandate-before-delegated-authority.md
     runtime_roots:
       - src/finharness/ips.py
       - src/finharness/api/routes_ips.py
-    mature_posture: IPS and policy-as-code ideas; defer OPA/Cedar until rules outgrow Python.
+      - src/finharness/statecore/capital_mandates.py
+      - src/finharness/api/routes_capital_mandates.py
+    mature_posture: IPS and policy-as-code ideas; CapitalMandate stays a local receipt-backed policy object until rules outgrow Python.
     checks:
       - task governance:check
       - uv run python -m unittest tests.test_ips
-    upgrade_trigger: Policy rules become numerous, cross-language, or need external audit reports.
+      - uv run python -m unittest tests.test_capital_mandates
+    upgrade_trigger: Policy rules become numerous, cross-language, need external audit reports, or future AuthorityContract work needs formal policy evaluation.
 
   - id: decision_workflow
     name: Decision Workflow
@@ -223,12 +227,17 @@ systems:
     docs:
       - docs/architecture/framework-index.md
       - docs/architecture/system-catalog.yml
+      - docs/architecture/support-surface-registry.yml
+      - docs/governance/removal-ledger.yml
       - docs/architecture/documentation-fact-governance.md
       - docs/architecture/scaffolding-inventory.md
       - docs/engineering/change-control.md
       - docs/architecture/engineering-leverage-map.md
     runtime_roots:
       - tests/_policy_registry.py
+      - tests/_graph_registry.py
+      - tests/test_support_surface_registry.py
+      - tests/test_removal_ledger.py
       - src/finharness/hardening.py
       - src/finharness/repo_intelligence.py
       - src/finharness/quality_governance_graph.py
