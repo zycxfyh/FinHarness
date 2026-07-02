@@ -29,6 +29,7 @@ task docs:current-check
 | Framework summary | `docs/architecture/framework-index.md` | README, docs task map |
 | Engineering leverage layers | `docs/architecture/engineering-leverage-map.md` | framework-index, docs task map |
 | Machine-readable system catalog | `docs/architecture/system-catalog.yml` | framework-index, repo intelligence follow-up |
+| Support surface lifecycle | `docs/architecture/support-surface-registry.yml` | docs-current check, support sweep planning |
 | System placement | `docs/architecture/system-map.md` | proposals, mini-RFCs, module-map |
 | Live task names | `Taskfile.yml` | command reference, README, golden path |
 | Runtime config | `src/finharness/config.py`, direct env reads | config/env reference, `.env.example` |
@@ -54,11 +55,13 @@ For every non-trivial PR:
 3. If system ownership changed, update `docs/architecture/system-map.md`.
 4. If a system's one-line role or mature-solution posture changed, update
    `docs/architecture/framework-index.md` and `docs/architecture/system-catalog.yml`.
-5. If a future-tooling / mature-solution trigger changed, update
+5. If a long-lived support surface was added, retired, downgraded, or changed
+   ownership/review cadence, update `docs/architecture/support-surface-registry.yml`.
+6. If a future-tooling / mature-solution trigger changed, update
    `docs/architecture/engineering-leverage-map.md`.
-6. If layer status changed, update `docs/architecture/capital-os-layering.md`.
-7. If first-run behavior changed, update `README.md` and `docs/tutorials/golden-path.md`.
-8. Run `task docs:current-check`.
+7. If layer status changed, update `docs/architecture/capital-os-layering.md`.
+8. If first-run behavior changed, update `README.md` and `docs/tutorials/golden-path.md`.
+9. Run `task docs:current-check`.
 
 This is intentionally smaller than a release process. It is a fact sync habit.
 
@@ -99,6 +102,8 @@ Current checks:
 - current docs do not expose archived live-trading task prefixes;
 - Capital OS says IPS is implemented, not still the next gap;
 - module-map does not list retired ten-layer/live-trading modules as current.
+- support surface registry entries have closed statuses, owners, review due
+  dates, and existing source/dependency paths.
 
 Security docs have an adjacent focused guard:
 `tests/test_security_maturity_docs.py`. It checks the current threat model,
