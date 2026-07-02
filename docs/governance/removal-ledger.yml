@@ -15,4 +15,75 @@ allowed_statuses:
   - approved
   - done
   - reverted
-entries: []
+entries:
+  - id: delete-stale-support-governance-graphs-doc
+    target:
+      - docs/architecture/support-governance-graphs.md
+    action: delete
+    reason: >
+      The document claimed archived graphs lived under docs/archive/legacy-graphs,
+      but that path does not exist and the graph registry is now the source of
+      truth for graph lifecycle status. Keeping a stale current-looking support
+      doc creates support surface drift.
+    replacement:
+      - tests/_graph_registry.py
+      - docs/architecture/graph-rationalization-audit.md
+      - task governance:graphs
+    owner: eos
+    proposed_in_pr: unsubmitted
+    effective_pr: unsubmitted
+    status: done
+    remove_from_current_nav: true
+    checks_required:
+      - task docs:current-check
+      - uv run python -m unittest tests.test_removal_ledger
+  - id: downgrade-stale-operator-guide-to-pointer
+    target:
+      - docs/GUIDE.md
+    action: downgrade
+    reason: >
+      The old guide preserved useful operator context but occupied a current-looking
+      top-level path while describing archived commands, broker experiments, and
+      the retired ten-layer trading chain. Keeping the full stale guide in place
+      made onboarding and authority boundaries harder to trust.
+    replacement:
+      - docs/README.md
+      - docs/tutorials/golden-path.md
+      - docs/architecture/capital-os-layering.md
+      - docs/reference/commands.md
+      - docs/reference/interfaces.md
+      - docs/reference/receipts.md
+      - docs/archive/ten-layer-trading-chain
+    owner: eos
+    proposed_in_pr: unsubmitted
+    effective_pr: unsubmitted
+    status: done
+    remove_from_current_nav: true
+    checks_required:
+      - task docs:current-check
+      - uv run python -m unittest tests.test_removal_ledger
+  - id: downgrade-industry-benchmark-series-to-historical-reference
+    target:
+      - docs/architecture/industry-benchmark
+    action: downgrade
+    reason: >
+      The 2026-06-15 benchmark series contains useful planning analysis, but its
+      current-state and roadmap language predates the Capital OS re-layering,
+      ActionIntent/Simulation/TradePlan path, CapitalMandate, graph retirement,
+      and documentation support controls. Keeping it as an authoritative current
+      fact source would create architecture drift.
+    replacement:
+      - docs/architecture/framework-index.md
+      - docs/architecture/capital-os-layering.md
+      - docs/architecture/system-map.md
+      - docs/architecture/module-map.md
+      - docs/architecture/system-catalog.yml
+      - docs/reference/commands.md
+    owner: eos
+    proposed_in_pr: unsubmitted
+    effective_pr: unsubmitted
+    status: done
+    remove_from_current_nav: true
+    checks_required:
+      - task docs:current-check
+      - uv run python -m unittest tests.test_removal_ledger

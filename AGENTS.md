@@ -275,12 +275,10 @@ Archived workflow bindings:
 
 ```text
 finance_graph:
-  archived under docs/archive/legacy-graphs after the ten-layer chain became
-  authoritative.
+  deleted in the repo prune; recorded as historical in tests/_graph_registry.py.
 
 trade_graph:
-  archived under docs/archive/legacy-graphs after Layers 7-10 split proposal,
-  risk, execution, and post-trade responsibilities.
+  deleted in the repo prune; recorded as archived in tests/_graph_registry.py.
 ```
 
 Do not mark a goal complete just because the agent produced a convincing answer.

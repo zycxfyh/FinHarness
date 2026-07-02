@@ -1,17 +1,15 @@
-# Final Merged Plan (Authoritative)
+# Final Merged Plan (Historical)
 
 Author: Claude + Codex (reconciled)
-Status: draft, authoritative synthesis
+Status: historical reference (downgraded 2026-07-02)
 Date: 2026-06-15
 Evidence policy: primary-source-first
 
-This is the single authoritative output of the industry-benchmark effort. It
+This is the historical merged output of the 2026-06-15 industry-benchmark effort. It
 merges the Codex benchmark series (00–06) with Claude's parallel root analysis
 (state, gap, solution, roadmap). The parallel Claude root documents were folded
-in here and removed to keep one source of truth. Where the two converged, treat
-it as settled; the convergence of two independent analyses is itself the
-strongest signal in this folder, and a partial answer to the meta-governance gap
-(no independent reviewer) the critique raised.
+in here and removed inside this historical package. Where the two converged,
+treat it as useful historical signal, not as the current source of truth.
 
 This is a planning artifact. It does not authorize code, dependencies, live
 trading, or compliance.

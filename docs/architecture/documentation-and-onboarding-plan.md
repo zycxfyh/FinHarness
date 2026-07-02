@@ -1,5 +1,11 @@
 # Documentation & Onboarding Architecture Plan
 
+Status: historical plan. Current navigation lives in
+[docs/README.md](../README.md), current executable onboarding lives in
+[tutorials/golden-path.md](../tutorials/golden-path.md), and current docs drift
+checks live in
+[documentation-fact-governance.md](documentation-fact-governance.md).
+
 How FinHarness should structure its docs and onboarding, based on how top
 engineering orgs do it. Written after a full system dogfood exposed the real
 problem: the guidance is scattered, types are mixed, and some features have no
@@ -11,8 +17,10 @@ No external docs tool/site/generator is adopted without user approval.
 FinHarness is **heavy on explanation and light on the docs a newcomer needs**.
 The `docs/` tree concentrates in `architecture/`, `think/`, `adr/`, `notes/`
 (all "why" material), plus `reviews/`, `lessons/`, `operations/` (runtime
-evidence). Entry points (`README`, `AGENTS.md`, `CONTEXT.md`, `GUIDE.md`,
-`week-01.md`, `wheels.md`) overlap and mix purposes. There is:
+evidence). Older entry points (`README`, `AGENTS.md`, `CONTEXT.md`, the
+downgraded historical `GUIDE.md`, `week-01.md`, `wheels.md`) overlapped and mixed
+purposes before the current docs map and golden path existed. The original gap
+was:
 
 - no single, authoritative, end-to-end **golden path** a first-time user follows;
 - no **task-based** entry ("I want to X" → the one doc for X);
@@ -42,7 +50,7 @@ confusing documentation** — which is exactly the symptom here.
 
 | Diátaxis type | What FinHarness has | Gap |
 | --- | --- | --- |
-| Tutorial (learn) | `GUIDE.md` (partial golden path), `week-01.md` | No single first-run tutorial that is **executable and proven green** |
+| Tutorial (learn) | `docs/tutorials/golden-path.md`; historical pointer at `GUIDE.md`; older `week-01.md` | Keep the current golden path green and prevent old guides from re-entering current navigation |
 | How-to (do a task) | scattered in `README` task list, `notes/` | No per-job recipes ("run the gate", "add a wheel adapter", "do a safe paper trade") |
 | Reference (facts) | `Taskfile.yml`, `wheels.md`, `AGENTS.md`, `policy-contract.md` | No command reference, no interface/module reference, no receipt-schema reference |
 | Explanation (why) | `architecture/*`, `think/*`, `adr/*`, `notes/adopt-not-invent` | **Over-invested** — this is the project's strong (and crowded) area |
@@ -65,24 +73,16 @@ Existing explanation docs move (or are indexed) under `explanation/`. Runtime
 evidence (`reviews/`, `lessons/`, `operations/`, generated receipts) stays
 separate — it is artifacts, not authored documentation.
 
-## 5. The one Golden Path (highest priority)
+## 5. The one Golden Path (implemented)
 
-Define **one** supported end-to-end path and keep it green. It already exists as
-a proven sequence — the dogfood run on 2026-06-15:
+This plan originally proposed one supported first-run path based on a
+2026-06-15 dogfood sequence. The old sequence depended on retired graph tasks,
+so it is no longer reproduced here as current guidance.
 
-1. `task setup` / `task check` — install and verify.
-2. `task wheels:check` — confirm the mature wheels load.
-3. `task feature:macd` — pull real data, compute an indicator (TA-Lib + Pandera),
-   see `execution_allowed=false`.
-4. `task validation:graph` — research/backtest evidence (vectorbt), **human
-   review required before proposal**.
-5. `task risk-gate:graph` — mandate/cap checks, no live authority.
-6. `task execution:graph` — `blocked_before_submit`, live blocked.
-7. Read the receipt — claim / evidence / non-claim.
-
-Each step = a real command + its expected output + **the safety boundary it
-demonstrates**. Target audience: a first-time user. This tutorial doubles as a
-**regression check for the docs** (if the golden path drifts, the tutorial fails).
+The current executable onboarding source is
+[tutorials/golden-path.md](../tutorials/golden-path.md). Keeping that tutorial
+green is now part of the docs drift contract; historical command sequences
+should stay in dated reviews or archive docs, not in current-looking plans.
 
 ## 6. Engineering-progression model (so docs don't rot)
 

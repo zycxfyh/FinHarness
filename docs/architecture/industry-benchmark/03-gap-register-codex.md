@@ -2,12 +2,16 @@
 
 Author: Codex
 Parallel agent: Claude
-Status: draft
+Status: historical reference (downgraded 2026-07-02)
 Date: 2026-06-15
 Evidence policy: primary-source-first
 
-This register records gaps between FinHarness current state and mature methods.
-It is a planning artifact, not a claim that any gap is closed.
+This register records gaps between the 2026-06-15 FinHarness snapshot and mature
+methods. It is a historical planning artifact, not a current gap source and not
+a claim that any gap is closed. Current architecture facts live in
+[Framework Index](../framework-index.md), [Capital OS Layering](../capital-os-layering.md),
+[System Map](../system-map.md), [Module Map](../module-map.md), and
+[System Catalog](../system-catalog.yml).
 
 Parallel input read: [Gap Analysis](../gap-analysis.md).
 
@@ -32,7 +36,7 @@ Debt scale: A1 direct fix, A2 logic refinement, A3 system redesign, A4 formalize
 | G12 | Observability | [Ten Layer LangGraph Map](../ten-layer-langgraph-map.md), [Receipt Reference](../../reference/receipts.md) | OpenTelemetry traces/metrics/logs | Receipts exist, but runtime observability is not standardized for product/API use. | medium | A3 | OpenTelemetry-compatible trace IDs in workflows and future backend requests. | Trace IDs connect task run, snapshot, receipt, and UI request without replacing receipt semantics. | Trace is not a receipt. | Codex |
 | G13 | Lineage export | [Evidence Inventory](../evidence-inventory.md), [Receipt Reference](../../reference/receipts.md) | OpenLineage job/dataset lineage | Local lineage exists in receipts, but no export shape for external lineage tools. | low/medium | A4 | Evaluate OpenLineage-compatible export after receipt schema stabilizes. | Export maps job, inputs, outputs, receipt refs, and non-claims. | External lineage does not replace receipts. | Codex |
 | G14 | Records integrity | [Receipt Reference](../../reference/receipts.md), [SEC review](../../reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md) | Books/records retention, immutable audit trails | Receipts are mutable local JSON/Markdown files. | medium | A4 | Add checksum manifest and optional signing/append-only policy for live-adjacent receipts. | Manifest proves file set observed at a point in time and is itself reviewed. | Not legal records compliance. | Codex |
-| G15 | Governance over-investment | [Target State B](../../think/2026-06-12-target-state-b-and-loop-topology.md), [Support Governance Graphs](../support-governance-graphs.md) | Governance should support work, not replace it | Governance/evidence plane is more mature than research/execution substance. | low but strategic | A4 | Freeze new governance graph breadth unless it directly closes G01-G14. | Roadmap says "do not add governance breadth" and reviewers enforce it. | Does not delete existing governance. | Codex |
+| G15 | Governance over-investment | [Target State B](../../think/2026-06-12-target-state-b-and-loop-topology.md), [Graph Rationalization Audit](../graph-rationalization-audit.md), `task governance:graphs` | Governance should support work, not replace it | Governance/evidence plane is more mature than research/execution substance. | low but strategic | A4 | Freeze new governance graph breadth unless it directly closes G01-G14. | Roadmap says "do not add governance breadth" and reviewers enforce it. | Does not delete existing governance. | Codex |
 
 ## Priority Bands
 
