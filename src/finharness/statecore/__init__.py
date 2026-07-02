@@ -3,6 +3,7 @@
 from finharness.statecore.diff import SnapshotDiff, diff_snapshots
 from finharness.statecore.models import (
     Account,
+    ActionIntentSimulationReport,
     Attestation,
     Position,
     Proposal,
@@ -26,6 +27,7 @@ from finharness.statecore.store import (
 
 __all__ = [
     "Account",
+    "ActionIntentSimulationReport",
     "Attestation",
     "Observation",
     "ObservationThresholds",
