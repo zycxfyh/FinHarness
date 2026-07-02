@@ -318,6 +318,9 @@ class StateCoreApiTest(unittest.TestCase):
             "/capital-mandates": {"post"},
             "/capital-mandates/current": {"get"},
             "/capital-mandates/{capital_mandate_id}": {"get"},
+            "/agent-authority-grants": {"get", "post"},
+            "/agent-authority-grants/{grant_id}": {"get"},
+            "/agent-authority-grants/{grant_id}/validate": {"post"},
         }
         self.assertEqual(set(paths), set(allowed_methods))
         for path, methods in paths.items():
@@ -337,6 +340,8 @@ class StateCoreApiTest(unittest.TestCase):
             "Account",
             "ActionIntent",
             "ActionIntentSimulationReport",
+            "AgentAuthorityGrant",
+            "AgentAuthorityGrantValidationResult",
             "Attestation",
             "CashflowEvent",
             "DocumentRef",

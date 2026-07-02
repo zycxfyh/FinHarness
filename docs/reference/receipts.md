@@ -59,6 +59,7 @@ separately below so they are not mistaken for current authority.
 | Market data | `DataReceipt` | `market_data_ingestion` | `eight_layer_map` | `MarketDataSnapshot` | none |
 | Investment Policy Statement | direct JSON dictionary | `state_core_ips` | n/a | `InvestmentPolicyStatement` | n/a |
 | Capital mandate | direct JSON dictionary | `state_core_capital_mandate` | n/a | `CapitalMandate` | n/a |
+| Agent authority grant | direct JSON dictionary | `state_core_agent_authority_grant` | n/a | `AgentAuthorityGrant` | n/a |
 | Action intent candidate | direct JSON dictionary | `state_core_action_intent_candidate` | n/a | `ActionIntent` | n/a |
 | Action intent simulation report | direct JSON dictionary | `state_core_action_intent_simulation_report` | n/a | `ActionIntentSimulationReport` | n/a |
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
@@ -187,6 +188,30 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `governance_boundary.not_agent_identity_grant` | `bool` | It does not grant Agent identity. |
 | `governance_boundary.not_authority_contract` | `bool` | It is not an AuthorityContract. |
 | `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
+| `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
+
+### Agent Authority Grant Receipt
+
+Location: `data/receipts/state-core/agent-authority-grants/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | AgentAuthorityGrant receipt id. |
+| `kind` | `str` | `state_core_agent_authority_grant`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `agent_authority_grant` | `AgentAuthorityGrant` | Mandate-bound authority credential payload. |
+| `source_capital_mandate` | `CapitalMandate` | Linked mandate snapshot at grant creation time. |
+| `creation_validation` | `AgentAuthorityGrantValidationResult` | Structured create-time validation result. |
+| `governance_boundary.execution_allowed` | `bool` | Always false. |
+| `governance_boundary.authority_transition` | `bool` | Always false. |
+| `governance_boundary.mandate_bound_authority_credential` | `bool` | True; the grant must cite a mandate. |
+| `governance_boundary.dynamic_validation_required` | `bool` | True; use-time validation must re-check current grant and mandate state. |
+| `governance_boundary.not_authentication` | `bool` | It is not login/authentication identity. |
+| `governance_boundary.not_trade_plan_approval` | `bool` | It does not approve a trade plan. |
+| `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
+| `governance_boundary.not_broker_submission` | `bool` | It does not submit to a broker. |
+| `governance_boundary.not_preflight_bypass` | `bool` | It does not bypass preflight. |
+| `governance_boundary.not_execution_authorization` | `bool` | It does not authorize execution. |
 | `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
 ### Action Intent Candidate Receipt

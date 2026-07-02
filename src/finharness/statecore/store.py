@@ -16,6 +16,7 @@ from finharness.statecore.models import (
     Account,
     ActionIntent,
     ActionIntentSimulationReport,
+    AgentAuthorityGrant,
     Attestation,
     CapitalMandate,
     CashflowEvent,
@@ -40,6 +41,7 @@ StateCoreRecord = (
     Account
     | ActionIntent
     | ActionIntentSimulationReport
+    | AgentAuthorityGrant
     | CapitalMandate
     | TradePlanCandidate
     | Position

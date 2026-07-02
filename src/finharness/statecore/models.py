@@ -53,6 +53,7 @@ CAPITAL_MANDATE_AUTONOMY_LEVELS: tuple[str, ...] = (
     "L2_human_confirmed_apply",
     "L3_bounded_delegation_candidate",
 )
+AGENT_AUTHORITY_GRANT_STATUSES: tuple[str, ...] = ("active", "revoked", "suspended")
 TRADE_PLAN_CANDIDATE_DIRECTIONS: tuple[str, ...] = (
     "reduce",
     "increase",
@@ -549,6 +550,89 @@ class CapitalMandate(StateCoreBase, table=True):
     def reject_authority_transition(cls, value: bool) -> bool:
         if value:
             raise ValueError("capital mandates never carry authority transitions")
+        return False
+
+
+class AgentAuthorityGrant(StateCoreBase, table=True):
+    """Mandate-bound authority credential for an Agent.
+
+    A grant gives an Agent a bounded authority credential under a currently
+    active ``CapitalMandate``. It is dynamically validated at use time and never
+    approves trade plans, submits orders, bypasses preflight, creates broker
+    authority, or authorizes execution.
+    """
+
+    __tablename__ = "agent_authority_grants"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ("
+            + ", ".join(f"'{status}'" for status in AGENT_AUTHORITY_GRANT_STATUSES)
+            + ")",
+            name="ck_agent_authority_grants_status_closed",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_agent_authority_grants_execution_allowed_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_agent_authority_grants_authority_transition_false",
+        ),
+    )
+
+    agent_authority_grant_id: str = Field(primary_key=True)
+    capital_mandate_id: str = Field(
+        foreign_key="capital_mandates.capital_mandate_id",
+        index=True,
+    )
+    agent_id: str = Field(index=True)
+    agent_profile_name: str | None = None
+    status: str = "active"
+    grant_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    issued_by: str
+    issued_reason: str
+    issued_against_mandate_receipt_ref: str | None = None
+    expires_at_utc: str | None = None
+    revoked_at_utc: str | None = None
+    revoked_reason: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "mandate_bound_authority_credential"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("status")
+    @classmethod
+    def require_known_status(cls, value: str) -> str:
+        if value not in AGENT_AUTHORITY_GRANT_STATUSES:
+            raise ValueError(
+                "agent authority grant status must be one of "
+                f"{AGENT_AUTHORITY_GRANT_STATUSES}"
+            )
+        return value
+
+    @field_validator("agent_id", "issued_by", "issued_reason")
+    @classmethod
+    def require_written_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("agent authority grant requires agent, issuer, and reason")
+        return value
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("agent authority grants never carry execution authority")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("agent authority grants never carry authority transitions")
         return False
 
 

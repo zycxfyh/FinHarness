@@ -14,6 +14,11 @@
 > 显式、可撤销、receipt-backed 的授权对象承载,并受 CapitalMandate、limits、
 > kill switch、review cadence 和人类 attestation 约束。CapitalMandate 本身
 > 仍不是授权、执行、order ticket 或 broker 指令。
+>
+> 修订(2026-07-03):`AgentAuthorityGrant` 是第一个有限代理 authority credential:
+> 它必须引用 active CapitalMandate,验证时动态重查当前 grant 与 mandate 状态,
+> 并返回闭集 deny reasons。它不是 authentication、trade-plan approval、
+> preflight bypass、broker submit 或 execution authorization。
 
 ## 一句话定位
 
