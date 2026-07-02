@@ -266,6 +266,7 @@ tasks:
     cmds:
       - uv run python -m unittest tests.test_docs_current_facts
       - uv run python -m unittest tests.test_system_catalog
+      - uv run python -m unittest tests.test_support_surface_registry
 
   vocab:lint:
     desc: Advisory controlled-vocabulary lint for formal docs and code strings
