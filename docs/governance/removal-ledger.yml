@@ -1,0 +1,18 @@
+schema: finharness.removal_ledger.v1
+status: current
+updated: "2026-07-02"
+description: >
+  Governed ledger for delete, archive, deprecate, and downgrade decisions.
+  Deletion is not an invisible cleanup action: every non-trivial removal records
+  target, action, reason, replacement, owner, status, and required checks.
+allowed_actions:
+  - delete
+  - archive
+  - deprecate
+  - downgrade
+allowed_statuses:
+  - proposed
+  - approved
+  - done
+  - reverted
+entries: []
