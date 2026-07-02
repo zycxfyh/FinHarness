@@ -37,7 +37,18 @@ from finharness.statecore.action_intents import (
     ActionIntentValidationError,
     create_governed_action_intent,
 )
-from finharness.statecore.models import ActionIntent, ActionIntentSimulationReport
+from finharness.statecore.models import (
+    ActionIntent,
+    ActionIntentSimulationReport,
+    OrderTicketCandidate,
+)
+from finharness.statecore.order_ticket_candidates import (
+    ORDER_TICKET_CANDIDATE_NON_CLAIMS,
+    OrderTicketCandidatePreflightBlockedError,
+    OrderTicketCandidateStaleError,
+    OrderTicketCandidateValidationError,
+    create_governed_order_ticket_candidate,
+)
 
 router = APIRouter(tags=["action-intents"])
 
@@ -173,6 +184,50 @@ class ActionIntentSimulationResponse(BaseModel):
     non_claims: tuple[str, ...] = ACTION_INTENT_SIMULATION_NON_CLAIMS
     execution_allowed: bool = False
     authority_transition: bool = False
+
+
+class OrderTicketCandidateCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_action_intent_receipt_ref: str
+    expected_action_preflight_report_hash: str
+    expected_simulation_report_receipt_ref: str
+    candidate_reason: str
+    explicit_preflight_acknowledgement: bool = False
+    acknowledged_preflight_warning_codes: list[str] = Field(default_factory=list)
+    order_shape: dict[str, Any]
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "expected_action_intent_receipt_ref",
+        "expected_action_preflight_report_hash",
+        "expected_simulation_report_receipt_ref",
+        "candidate_reason",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError(
+                "order ticket candidate requires receipt refs, preflight hash, and reason"
+            )
+        return value
+
+
+class OrderTicketCandidateCreateResponse(BaseModel):
+    order_ticket_candidate: OrderTicketCandidate
+    receipt_ref: str
+    non_claims: tuple[str, ...] = ORDER_TICKET_CANDIDATE_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
+
+
+class OrderTicketCandidateResponse(BaseModel):
+    order_ticket_candidate: OrderTicketCandidate
+    non_claims: tuple[str, ...] = ORDER_TICKET_CANDIDATE_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
 
 
 def _preflight_finding_view(
@@ -374,4 +429,82 @@ async def get_action_intent_simulation_report(
         simulation_report=simulation_report,
         execution_allowed=False,
         authority_transition=False,
+    )
+
+
+@router.post(
+    "/action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates",
+    response_model=OrderTicketCandidateCreateResponse,
+)
+async def create_order_ticket_candidate(
+    simulation_report_id: str,
+    request: OrderTicketCandidateCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> OrderTicketCandidateCreateResponse:
+    try:
+        write = create_governed_order_ticket_candidate(
+            simulation_report_id=simulation_report_id,
+            expected_action_intent_receipt_ref=request.expected_action_intent_receipt_ref,
+            expected_action_preflight_report_hash=request.expected_action_preflight_report_hash,
+            expected_simulation_report_receipt_ref=(
+                request.expected_simulation_report_receipt_ref
+            ),
+            candidate_reason=request.candidate_reason,
+            explicit_preflight_acknowledgement=request.explicit_preflight_acknowledgement,
+            acknowledged_preflight_warning_codes=(
+                request.acknowledged_preflight_warning_codes
+            ),
+            order_shape=request.order_shape,
+            source_refs=request.source_refs,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent simulation report not found: {simulation_report_id}",
+        ) from exc
+    except OrderTicketCandidateStaleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OrderTicketCandidatePreflightBlockedError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "order_ticket_candidate_preflight_blocked",
+                "message": str(exc),
+                "finding_codes": exc.codes,
+            },
+        ) from exc
+    except OrderTicketCandidateValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return OrderTicketCandidateCreateResponse(
+        order_ticket_candidate=write.order_ticket_candidate,
+        receipt_ref=write.receipt_ref,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
+    )
+
+
+@router.get(
+    "/order-ticket-candidates/{order_ticket_candidate_id}",
+    response_model=OrderTicketCandidateResponse,
+)
+async def get_order_ticket_candidate(
+    order_ticket_candidate_id: str,
+    engine: EngineDependency,
+) -> OrderTicketCandidateResponse:
+    with Session(engine) as session:
+        order_ticket_candidate = session.get(OrderTicketCandidate, order_ticket_candidate_id)
+    if order_ticket_candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"order ticket candidate not found: {order_ticket_candidate_id}",
+        )
+    return OrderTicketCandidateResponse(
+        order_ticket_candidate=order_ticket_candidate,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
     )

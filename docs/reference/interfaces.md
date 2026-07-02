@@ -109,16 +109,29 @@ Use this as a lookup page. For system ownership, read
   /action-intent-simulation-reports/{simulation_report_id}` retrieves the
   report. v0 reports are qualitative and descriptive; they do not size trades,
   choose venues, create order tickets, approve actions, or authorize execution.
+- Preflight-bound order ticket candidates are order-shaped candidate artifacts:
+  `POST
+  /action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates`
+  requires the current simulation report receipt, current action intent receipt,
+  current action preflight hash, candidate reason, order-shape candidate fields,
+  and explicit acknowledgement of all current warning finding codes when
+  preflight is warn. The server recomputes preflight at create time, rejects
+  stale receipts or hashes, rejects simulation reports not bound to the current
+  preflight hash, hard-blocks blocking findings, rejects exact quantity fields
+  in v0, and writes a `state_core_order_ticket_candidate` receipt. `GET
+  /order-ticket-candidates/{order_ticket_candidate_id}` retrieves the candidate.
+  OrderTicketCandidate may describe a possible order shape, but only a future
+  AuthorityContract can authorize any execution path.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register
   items, scaffold forcing rules, changed fields, receipt freshness, and forbidden
   authority markers. It returns pass/warn/block findings and a deterministic
   report hash, but it does not mutate proposals or authorize apply.
-- There is no current Agent approval, live order, fund transfer, broker write API,
-  or receipt deletion/overwrite interface. Those are future capability candidates
-  only if they receive purpose-built runtime profiles, command paths, receipts,
-  review/approval surfaces, and failure modes.
+- There is no current Agent approval, live order, fund transfer, broker submit API,
+  authority contract, or receipt deletion/overwrite interface. Those are future
+  capability candidates only if they receive purpose-built runtime profiles,
+  command paths, receipts, review/approval surfaces, and failure modes.
 - Any new production dependency still needs explicit user approval before being
   added.
 

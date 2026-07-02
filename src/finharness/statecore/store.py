@@ -23,6 +23,7 @@ from finharness.statecore.models import (
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
+    OrderTicketCandidate,
     Position,
     Proposal,
     ReceiptIndex,
@@ -38,6 +39,7 @@ StateCoreRecord = (
     Account
     | ActionIntent
     | ActionIntentSimulationReport
+    | OrderTicketCandidate
     | Position
     | Liability
     | FinancialGoal
