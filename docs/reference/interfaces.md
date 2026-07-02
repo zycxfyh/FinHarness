@@ -109,19 +109,21 @@ Use this as a lookup page. For system ownership, read
   /action-intent-simulation-reports/{simulation_report_id}` retrieves the
   report. v0 reports are qualitative and descriptive; they do not size trades,
   choose venues, create order tickets, approve actions, or authorize execution.
-- Preflight-bound order ticket candidates are order-shaped candidate artifacts:
+- Preflight-bound trade plan candidates are pre-trade plan artifacts:
   `POST
-  /action-intent-simulation-reports/{simulation_report_id}/order-ticket-candidates`
+  /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates`
   requires the current simulation report receipt, current action intent receipt,
-  current action preflight hash, candidate reason, order-shape candidate fields,
+  current action preflight hash, plan reason, plan-direction/scope/cap fields,
   and explicit acknowledgement of all current warning finding codes when
   preflight is warn. The server recomputes preflight at create time, rejects
   stale receipts or hashes, rejects simulation reports not bound to the current
-  preflight hash, hard-blocks blocking findings, rejects exact quantity fields
-  in v0, and writes a `state_core_order_ticket_candidate` receipt. `GET
-  /order-ticket-candidates/{order_ticket_candidate_id}` retrieves the candidate.
-  OrderTicketCandidate may describe a possible order shape, but only a future
-  AuthorityContract can authorize any execution path.
+  preflight hash, hard-blocks blocking findings, rejects exact quantity and
+  broker/order-ready fields in v0, and writes a
+  `state_core_trade_plan_candidate` receipt. `GET
+  /trade-plan-candidates/{trade_plan_candidate_id}` retrieves the candidate.
+  TradePlanCandidate may describe a possible pre-trade plan, but only a future
+  AuthorityContract can authorize any execution path or transform it into an
+  order ticket.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register

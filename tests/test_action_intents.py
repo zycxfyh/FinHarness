@@ -14,11 +14,11 @@ from finharness.statecore.models import (
     Account,
     ActionIntent,
     ActionIntentSimulationReport,
-    OrderTicketCandidate,
     Position,
     Proposal,
     ReceiptIndex,
     Snapshot,
+    TradePlanCandidate,
 )
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core, read_all, write_records
@@ -160,7 +160,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    def _order_ticket_request(
+    def _trade_plan_request(
         self,
         intent: dict[str, object],
         preflight: dict[str, object],
@@ -171,24 +171,24 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             "expected_action_intent_receipt_ref": intent["receipt_ref"],
             "expected_action_preflight_report_hash": preflight["report_hash"],
             "expected_simulation_report_receipt_ref": simulation_report["receipt_ref"],
-            "candidate_reason": "Shape a candidate for later authority review.",
-            "order_shape": {
-                "instrument_ref": "instrument://XYZ",
-                "symbol_candidate": "XYZ",
-                "side_candidate": "reduce_candidate",
-                "quantity_mode": "notional_cap_only",
-                "notional_cap": {"currency": "USD", "max_amount": "1000"},
-                "order_type_candidate": "not_specified_v0",
-                "time_in_force_candidate": "not_specified_v0",
+            "plan_reason": "Shape a pre-trade plan for later authority review.",
+            "plan_scope": {
+                "plan_direction": "reduce",
+                "target_scope": {"scope_type": "single_instrument", "symbol": "XYZ"},
+                "instrument_scope": {"instrument_ref": "instrument://XYZ", "symbol": "XYZ"},
                 "account_scope": {"scope_type": "portfolio_review"},
-                "risk_budget_ref": "risk-budget://concentration",
+                "risk_constraints": {"risk_budget_ref": "risk-budget://concentration"},
+                "notional_cap": {"currency": "USD", "max_amount": "1000"},
+                "percent_cap": {"max_percent": "5"},
+                "time_window": {"review_by": "2026-07-10"},
+                "required_authority_level": "authority_contract_required",
             },
-            "source_refs": ["context://order_ticket_candidate"],
+            "source_refs": ["context://trade_plan_candidate"],
         }
         payload.update(overrides)
         return payload
 
-    def _create_order_ticket_candidate(
+    def _create_trade_plan_candidate(
         self,
         intent: dict[str, object],
         preflight: dict[str, object],
@@ -197,8 +197,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
     ) -> dict[str, object]:
         response = self.client.post(
             "/action-intent-simulation-reports/"
-            f"{simulation_report['simulation_report_id']}/order-ticket-candidates",
-            json=self._order_ticket_request(intent, preflight, simulation_report, **overrides),
+            f"{simulation_report['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(intent, preflight, simulation_report, **overrides),
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
@@ -666,19 +666,19 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(read_all(ActionIntentSimulationReport, engine=self.engine), [])
 
-    def test_order_ticket_candidate_writes_receipt_and_can_be_fetched(self) -> None:
+    def test_trade_plan_candidate_writes_receipt_and_can_be_fetched(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
 
-        body = self._create_order_ticket_candidate(intent, preflight, simulation)
+        body = self._create_trade_plan_candidate(intent, preflight, simulation)
 
         self.assertFalse(body["execution_allowed"])
         self.assertFalse(body["authority_transition"])
         self.assertFalse(body["submitted_to_broker"])
-        candidate = body["order_ticket_candidate"]
+        candidate = body["trade_plan_candidate"]
         self.assertEqual(candidate["action_intent_id"], intent["action_intent_id"])
         self.assertEqual(candidate["simulation_report_id"], simulation["simulation_report_id"])
         self.assertEqual(candidate["proposal_id"], self.proposal_write.proposal.proposal_id)
@@ -692,62 +692,67 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             simulation["receipt_ref"],
         )
         self.assertEqual(candidate["candidate_status"], "needs_authority_contract")
-        self.assertEqual(candidate["side_candidate"], "reduce_candidate")
-        self.assertEqual(candidate["quantity_mode"], "notional_cap_only")
-        self.assertEqual(candidate["order_type_candidate"], "not_specified_v0")
-        self.assertEqual(candidate["time_in_force_candidate"], "not_specified_v0")
-        self.assertEqual(candidate["execution_status"], "not_submitted")
+        self.assertEqual(candidate["plan_direction"], "reduce")
+        self.assertEqual(candidate["instrument_scope"]["symbol"], "XYZ")
+        self.assertEqual(candidate["notional_cap"]["max_amount"], "1000")
+        self.assertEqual(candidate["percent_cap"]["max_percent"], "5")
+        self.assertEqual(
+            candidate["required_authority_level"],
+            "authority_contract_required",
+        )
         self.assertFalse(candidate["execution_allowed"])
         self.assertFalse(candidate["authority_transition"])
         self.assertFalse(candidate["submitted_to_broker"])
-        self.assertIsNone(candidate["broker_order_id"])
+        self.assertNotIn("broker_order_id", candidate)
+        self.assertNotIn("execution_status", candidate)
         self.assertEqual(candidate["preflight_refs"], [preflight["report_hash"]])
         self.assertNotIn(preflight["report_hash"], candidate["receipt_refs"])
 
-        rows = read_all(OrderTicketCandidate, engine=self.engine)
+        rows = read_all(TradePlanCandidate, engine=self.engine)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
         receipt = next(
             row
             for row in read_all(ReceiptIndex, engine=self.engine)
-            if row.kind == "state_core_order_ticket_candidate"
+            if row.kind == "state_core_trade_plan_candidate"
         )
         self.assertEqual(receipt.path, body["receipt_ref"])
         receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
-        self.assertEqual(receipt_payload["kind"], "state_core_order_ticket_candidate")
-        self.assertTrue(receipt_payload["governance"]["not_order"])
+        self.assertEqual(receipt_payload["kind"], "state_core_trade_plan_candidate")
+        self.assertTrue(receipt_payload["governance"]["not_order_ticket"])
         self.assertTrue(receipt_payload["governance"]["requires_authority_contract"])
         self.assertFalse(receipt_payload["governance"]["execution_allowed"])
         self.assertFalse(receipt_payload["governance"]["authority_transition"])
         self.assertFalse(receipt_payload["governance"]["submitted_to_broker"])
-        self.assertEqual(receipt_payload["governance"]["execution_status"], "not_submitted")
+        self.assertNotIn("broker_order_id", receipt_payload["governance"])
+        self.assertNotIn("execution_status", receipt_payload["governance"])
 
         fetched = self.client.get(
-            f"/order-ticket-candidates/{candidate['order_ticket_candidate_id']}"
+            f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
         )
         self.assertEqual(fetched.status_code, 200)
         self.assertEqual(
-            fetched.json()["order_ticket_candidate"]["receipt_ref"],
+            fetched.json()["trade_plan_candidate"]["receipt_ref"],
             body["receipt_ref"],
         )
 
-    def test_order_ticket_candidate_rejects_missing_simulation_report(self) -> None:
+    def test_trade_plan_candidate_rejects_missing_simulation_report(self) -> None:
         response = self.client.post(
-            "/action-intent-simulation-reports/missing/order-ticket-candidates",
+            "/action-intent-simulation-reports/missing/trade-plan-candidates",
             json={
                 "expected_action_intent_receipt_ref": "data/receipts/missing_action.json",
                 "expected_action_preflight_report_hash": "sha256:missing",
                 "expected_simulation_report_receipt_ref": "data/receipts/missing_sim.json",
-                "candidate_reason": "Missing simulation report.",
-                "order_shape": {"side_candidate": "reduce_candidate"},
+                "plan_reason": "Missing simulation report.",
+                "plan_scope": {"plan_direction": "reduce"},
             },
         )
-        fetched = self.client.get("/order-ticket-candidates/missing")
+        fetched = self.client.get("/trade-plan-candidates/missing")
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(fetched.status_code, 404)
 
-    def test_order_ticket_candidate_rejects_stale_receipts_and_hashes(self) -> None:
+    def test_trade_plan_candidate_rejects_stale_receipts_and_hashes(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
@@ -772,8 +777,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             with self.subTest(name=name):
                 response = self.client.post(
                     "/action-intent-simulation-reports/"
-                    f"{simulation['simulation_report_id']}/order-ticket-candidates",
-                    json=self._order_ticket_request(
+                    f"{simulation['simulation_report_id']}/trade-plan-candidates",
+                    json=self._trade_plan_request(
                         intent,
                         preflight,
                         simulation,
@@ -781,9 +786,9 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(response.status_code, 409)
-        self.assertEqual(read_all(OrderTicketCandidate, engine=self.engine), [])
+        self.assertEqual(read_all(TradePlanCandidate, engine=self.engine), [])
 
-    def test_order_ticket_candidate_rejects_simulation_bound_to_stale_preflight(self) -> None:
+    def test_trade_plan_candidate_rejects_simulation_bound_to_stale_preflight(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
@@ -801,8 +806,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
 
         response = self.client.post(
             "/action-intent-simulation-reports/"
-            f"{simulation['simulation_report_id']}/order-ticket-candidates",
-            json=self._order_ticket_request(
+            f"{simulation['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(
                 intent,
                 current_preflight,
                 simulation,
@@ -813,7 +818,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn("simulation report", response.json()["detail"])
 
-    def test_order_ticket_candidate_rejects_blocking_current_preflight(self) -> None:
+    def test_trade_plan_candidate_rejects_blocking_current_preflight(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
@@ -836,8 +841,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
 
         response = self.client.post(
             "/action-intent-simulation-reports/"
-            f"{simulation['simulation_report_id']}/order-ticket-candidates",
-            json=self._order_ticket_request(
+            f"{simulation['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(
                 intent,
                 blocked_preflight,
                 simulation,
@@ -848,10 +853,10 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
             response.json()["detail"]["code"],
-            "order_ticket_candidate_preflight_blocked",
+            "trade_plan_candidate_preflight_blocked",
         )
 
-    def test_order_ticket_candidate_requires_warning_acknowledgement(self) -> None:
+    def test_trade_plan_candidate_requires_warning_acknowledgement(self) -> None:
         intent = self._create_intent(expected_next_step="simulation")
         preflight = self._preflight(intent["action_intent_id"])
         warning_codes = sorted(
@@ -870,13 +875,13 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
 
         missing_ack = self.client.post(
             "/action-intent-simulation-reports/"
-            f"{simulation['simulation_report_id']}/order-ticket-candidates",
-            json=self._order_ticket_request(intent, preflight, simulation),
+            f"{simulation['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(intent, preflight, simulation),
         )
         partial_ack = self.client.post(
             "/action-intent-simulation-reports/"
-            f"{simulation['simulation_report_id']}/order-ticket-candidates",
-            json=self._order_ticket_request(
+            f"{simulation['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(
                 intent,
                 preflight,
                 simulation,
@@ -884,7 +889,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                 acknowledged_preflight_warning_codes=warning_codes[:1],
             ),
         )
-        full_ack = self._create_order_ticket_candidate(
+        full_ack = self._create_trade_plan_candidate(
             intent,
             preflight,
             simulation,
@@ -894,7 +899,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
 
         self.assertEqual(missing_ack.status_code, 422)
         self.assertEqual(partial_ack.status_code, 422)
-        candidate = full_ack["order_ticket_candidate"]
+        candidate = full_ack["trade_plan_candidate"]
         self.assertEqual(candidate["source_action_preflight_status"], "warn")
         self.assertEqual(
             sorted(candidate["acknowledged_preflight_warning_codes"]),
@@ -902,22 +907,30 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         )
         self.assertEqual(candidate["candidate_status"], "needs_authority_contract")
 
-    def test_order_ticket_candidate_rejects_markers_and_exact_quantity(self) -> None:
+    def test_trade_plan_candidate_rejects_markers_and_exact_quantity(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
-        base_shape = self._order_ticket_request(intent, preflight, simulation)["order_shape"]
+        base_scope = self._trade_plan_request(intent, preflight, simulation)["plan_scope"]
         cases = (
-            ("exact_quantity", {"order_shape": {**base_shape, "quantity": 100}}),
+            ("exact_quantity", {"plan_scope": {**base_scope, "quantity": 100}}),
             (
                 "broker_marker",
-                {"order_shape": {**base_shape, "account_scope": {"broker": "alpaca"}}},
+                {"plan_scope": {**base_scope, "account_scope": {"broker": "alpaca"}}},
             ),
             (
                 "execution_marker",
-                {"order_shape": {**base_shape, "notional_cap": {"execution_allowed": True}}},
+                {"plan_scope": {**base_scope, "notional_cap": {"execution_allowed": True}}},
+            ),
+            (
+                "order_ready_side",
+                {"plan_scope": {**base_scope, "side": "sell"}},
+            ),
+            (
+                "submitted_to_broker",
+                {"plan_scope": {**base_scope, "submitted_to_broker": True}},
             ),
             (
                 "source_ref_marker",
@@ -929,8 +942,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             with self.subTest(name=name):
                 response = self.client.post(
                     "/action-intent-simulation-reports/"
-                    f"{simulation['simulation_report_id']}/order-ticket-candidates",
-                    json=self._order_ticket_request(
+                    f"{simulation['simulation_report_id']}/trade-plan-candidates",
+                    json=self._trade_plan_request(
                         intent,
                         preflight,
                         simulation,
@@ -938,35 +951,29 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(response.status_code, 422)
-        self.assertEqual(read_all(OrderTicketCandidate, engine=self.engine), [])
+        self.assertEqual(read_all(TradePlanCandidate, engine=self.engine), [])
 
-    def test_order_ticket_candidate_rejects_unknown_closed_set_values(self) -> None:
+    def test_trade_plan_candidate_rejects_unknown_closed_set_values(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
         intent = self._create_intent(expected_next_step="simulation")
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
-        base_shape = self._order_ticket_request(intent, preflight, simulation)["order_shape"]
+        base_scope = self._trade_plan_request(intent, preflight, simulation)["plan_scope"]
 
-        for field, value in (
-            ("side_candidate", "sell"),
-            ("quantity_mode", "exact_quantity"),
-            ("order_type_candidate", "market"),
-            ("time_in_force_candidate", "day"),
-        ):
-            with self.subTest(field=field):
-                response = self.client.post(
-                    "/action-intent-simulation-reports/"
-                    f"{simulation['simulation_report_id']}/order-ticket-candidates",
-                    json=self._order_ticket_request(
-                        intent,
-                        preflight,
-                        simulation,
-                        order_shape={**base_shape, field: value},
-                    ),
-                )
-                self.assertEqual(response.status_code, 422)
-        self.assertEqual(read_all(OrderTicketCandidate, engine=self.engine), [])
+        response = self.client.post(
+            "/action-intent-simulation-reports/"
+            f"{simulation['simulation_report_id']}/trade-plan-candidates",
+            json=self._trade_plan_request(
+                intent,
+                preflight,
+                simulation,
+                plan_scope={**base_scope, "plan_direction": "sell"},
+            ),
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(TradePlanCandidate, engine=self.engine), [])
 
 
 if __name__ == "__main__":

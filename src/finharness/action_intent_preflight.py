@@ -446,7 +446,7 @@ def _evidence_findings(
                 ),
                 recovery_hint=(
                     "Import or mirror current portfolio state before "
-                    "simulation or order-ticket work."
+                    "simulation or trade-plan work."
                 ),
                 source_refs=source_refs,
                 receipt_refs=receipt_refs,
@@ -512,7 +512,7 @@ def _simulation_findings(
             code="simulation_recommended",
             severity="warning",
             message="Increase-exposure intents should normally progress through simulation.",
-            recovery_hint="Route the intent to simulation before any future order-ticket work.",
+            recovery_hint="Route the intent to simulation before any future trade-plan work.",
             source_refs=source_refs,
             receipt_refs=receipt_refs,
             blocks_progression=False,
