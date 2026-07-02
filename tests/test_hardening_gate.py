@@ -499,8 +499,12 @@ class HardeningGateTest(unittest.TestCase):
         self.assertIn("task redteam:dryrun-config-check", workflow)
         self.assertIn("task eval:redteam-boundary", workflow)
         self.assertIn("github/codeql-action/init", workflow)
-        self.assertIn("gitleaks/gitleaks-action", workflow)
-        self.assertIn("GITLEAKS_CONFIG: .gitleaks.toml", workflow)
+        self.assertNotIn("gitleaks/gitleaks-action", workflow)
+        self.assertIn("GITLEAKS_VERSION: \"8.28.0\"", workflow)
+        self.assertIn(
+            "gitleaks detect --source . --config .gitleaks.toml --redact --verbose",
+            workflow,
+        )
         self.assertIn("aquasecurity/trivy-action", workflow)
 
     def test_promptfoo_redteam_dryrun_contract_is_static_and_bounded(self) -> None:
