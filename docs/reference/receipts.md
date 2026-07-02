@@ -48,11 +48,28 @@ Most snapshots use the following evidence fields:
 | `execution_allowed` | `bool` | Usually `false`; evidence does not become execution authority. |
 | `review_questions` | `list[str]` | Human review prompts where applicable. |
 
-## Receipt Envelope By Surface
+## Current Receipt Envelope By Surface
+
+These are the current receipt families a maintainer should expect on the active
+Capital OS path. Archived trading-chain and live-broker experiments are listed
+separately below so they are not mistaken for current authority.
 
 | Surface | Receipt model / shape | `kind` | Stage field | Snapshot field | Status |
 | --- | --- | --- | --- | --- | --- |
 | Market data | `DataReceipt` | `market_data_ingestion` | `eight_layer_map` | `MarketDataSnapshot` | none |
+| Investment Policy Statement | direct JSON dictionary | `state_core_ips` | n/a | `InvestmentPolicyStatement` | n/a |
+| Capital mandate | direct JSON dictionary | `state_core_capital_mandate` | n/a | `CapitalMandate` | n/a |
+| Action intent candidate | direct JSON dictionary | `state_core_action_intent_candidate` | n/a | `ActionIntent` | n/a |
+| Action intent simulation report | direct JSON dictionary | `state_core_action_intent_simulation_report` | n/a | `ActionIntentSimulationReport` | n/a |
+| Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
+
+## Historical / Archived Receipt Envelope By Surface
+
+These receipt families are retained for audit/history or archived evidence
+reading. They are not the current product route for delegated authority.
+
+| Surface | Receipt model / shape | `kind` | Stage field | Snapshot field | Status |
+| --- | --- | --- | --- | --- | --- |
 | Indicators | `IndicatorReceipt` | `indicator_processing` | `stage_flow` | `IndicatorSnapshot` | none |
 | Events | `EventReceipt` | `event_ingestion` | `stage_flow` | `EventSnapshot` | `ok | warning | failed` |
 | Interpretation | `InterpretationReceipt` | `interpretation_processing` | `stage_flow` | `InterpretationSnapshot` | `ok | warning | failed` |
@@ -66,7 +83,11 @@ Most snapshots use the following evidence fields:
 | Control owner | n/a | `control_owner_certification` | `lineage` | `ControlCertification` | `certified | not_certified` |
 | Market access ledger | n/a | `market_access_consumption` | n/a | `LedgerEntry` | n/a |
 
-## Snapshot Schemas
+## Typed Evidence Snapshot Schemas
+
+Most schemas below belong to the historical ten-layer evidence chain. Market
+data remains a current L0B building block; the other chain snapshots are kept so
+old receipts stay readable.
 
 | Snapshot | Fields |
 | --- | --- |
@@ -130,6 +151,136 @@ Most snapshots use the following evidence fields:
 
 Some receipts are written as direct JSON dictionaries rather than the common
 Pydantic envelope.
+
+### State Core IPS Receipt
+
+Location: `data/receipts/state-core/ips/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | IPS receipt id. |
+| `kind` | `str` | `state_core_ips`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `ips` | `InvestmentPolicyStatement` | Queryable IPS mirror payload. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.not_execution_authorization` | `bool` | Explicit non-authorization flag. |
+| `governance.not_investment_advice` | `bool` | Explicit non-advice flag. |
+| `governance.user_set_policy` | `bool` | IPS is user-owned policy. |
+
+### Capital Mandate Receipt
+
+Location: `data/receipts/state-core/capital-mandates/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | CapitalMandate receipt id. |
+| `kind` | `str` | `state_core_capital_mandate`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `capital_mandate` | `CapitalMandate` | Human-attested policy-domain payload. |
+| `source_ips` | `InvestmentPolicyStatement \| None` | Source IPS snapshot when one is linked. |
+| `governance_boundary.execution_allowed` | `bool` | Always false. |
+| `governance_boundary.authority_transition` | `bool` | Always false. |
+| `governance_boundary.explicit_confirmation` | `bool` | True for a valid mandate write. |
+| `governance_boundary.human_attested_policy_domain` | `bool` | Mandate is human-attested policy. |
+| `governance_boundary.future_authority_basis` | `bool` | Future authority objects may cite it. |
+| `governance_boundary.not_execution_authorization` | `bool` | It does not authorize execution. |
+| `governance_boundary.not_agent_identity_grant` | `bool` | It does not grant Agent identity. |
+| `governance_boundary.not_authority_contract` | `bool` | It is not an AuthorityContract. |
+| `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
+| `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
+
+### Action Intent Candidate Receipt
+
+Location: `data/receipts/state-core/action-intents/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<action_intent_id>`. |
+| `kind` | `str` | `state_core_action_intent_candidate`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `proposal_id` | `str` | Source proposal id. |
+| `source_proposal_receipt_ref` | `str` | Current proposal receipt consumed by the write. |
+| `source_revision_receipt_ref` | `str \| None` | Optional proposal revision receipt consumed by the write. |
+| `action_intent` | `ActionIntent` | Candidate-only future capital action intent. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.authority_transition` | `bool` | Always false. |
+| `governance.candidate_only` | `bool` | True. |
+| `governance.not_order` | `bool` | True; not an order ticket. |
+| `governance.not_broker_execution` | `bool` | True; not broker execution. |
+| `governance.not_execution_authorization` | `bool` | True. |
+| `governance.not_investment_advice` | `bool` | True. |
+| `governance.non_claims` | `list[str]` | Explicit action-intent non-claims. |
+
+### Action Intent Simulation Report Receipt
+
+Location: `data/receipts/state-core/action-intent-simulations/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<simulation_report_id>`. |
+| `kind` | `str` | `state_core_action_intent_simulation_report`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `action_intent_id` | `str` | Source action intent id. |
+| `proposal_id` | `str` | Source proposal id. |
+| `source_action_intent_receipt_ref` | `str` | Current action intent receipt consumed by the write. |
+| `source_action_preflight_report_hash` | `str` | Current recomputed preflight hash consumed by the write. |
+| `source_action_preflight_status` | `str` | Current preflight status. |
+| `source_action_preflight_finding_codes` | `list[str]` | Current preflight finding codes. |
+| `simulation_report` | `ActionIntentSimulationReport` | Descriptive, preflight-bound downstream report. |
+| `preflight_snapshot.status` | `str` | Recomputed preflight status. |
+| `preflight_snapshot.report_hash` | `str` | Recomputed preflight report hash. |
+| `preflight_snapshot.finding_codes` | `list[str]` | Recomputed preflight finding codes. |
+| `preflight_snapshot.impact_summary` | `dict[str, Any]` | Qualitative impact summary used by the report. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.authority_transition` | `bool` | Always false. |
+| `governance.preflight_bound` | `bool` | True. |
+| `governance.not_order_ticket` | `bool` | True. |
+| `governance.not_execution_authorization` | `bool` | True. |
+| `governance.not_investment_advice` | `bool` | True. |
+| `governance.non_claims` | `list[str]` | Explicit simulation-report non-claims. |
+
+### Trade Plan Candidate Receipt
+
+Location: `data/receipts/state-core/trade-plan-candidates/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<trade_plan_candidate_id>`. |
+| `kind` | `str` | `state_core_trade_plan_candidate`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `trade_plan_candidate_id` | `str` | Candidate id. |
+| `action_intent_id` | `str` | Source action intent id. |
+| `simulation_report_id` | `str` | Source simulation report id. |
+| `proposal_id` | `str` | Source proposal id. |
+| `source_action_intent_receipt_ref` | `str` | Current action intent receipt consumed by the write. |
+| `source_action_preflight_report_hash` | `str` | Current recomputed preflight hash consumed by the write. |
+| `source_simulation_report_receipt_ref` | `str` | Current simulation report receipt consumed by the write. |
+| `source_action_preflight_status` | `str` | Current preflight status. |
+| `source_action_preflight_finding_codes` | `list[str]` | Current preflight finding codes. |
+| `acknowledged_preflight_warning_codes` | `list[str]` | Caller-acknowledged warn findings. |
+| `plan_scope_snapshot` | `dict[str, Any]` | Direction, target/account/instrument scope, caps, constraints, and required authority level. |
+| `candidate_status` | `str` | Local candidate status. |
+| `validation_findings` | `list[str]` | Validation notes generated during the write. |
+| `trade_plan_candidate` | `TradePlanCandidate` | Candidate-only pre-trade plan payload. |
+| `preflight_snapshot.status` | `str` | Recomputed preflight status. |
+| `preflight_snapshot.report_hash` | `str` | Recomputed preflight report hash. |
+| `preflight_snapshot.warning_codes` | `list[str]` | Non-blocking warn codes present at write time. |
+| `preflight_snapshot.finding_codes` | `list[str]` | Recomputed preflight finding codes. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.authority_transition` | `bool` | Always false. |
+| `governance.submitted_to_broker` | `bool` | Always false. |
+| `governance.candidate_only` | `bool` | True. |
+| `governance.not_order_ticket` | `bool` | True. |
+| `governance.not_broker_instruction` | `bool` | True. |
+| `governance.not_execution_authorization` | `bool` | True. |
+| `governance.requires_authority_contract` | `bool` | True for any future execution path. |
+| `governance.non_claims` | `list[str]` | Explicit trade-plan non-claims. |
+
+## Historical Live-Trading Experiment Receipts
+
+The following receipts are retained to read archived OKX/Alpaca/market-access
+experiments. They are not current mainline command paths and do not authorize
+future delegated authority.
 
 ### OKX Live Attempt Receipt
 
@@ -368,25 +519,30 @@ do not grant live trading authority.
 | Layer/surface | Normalized output | Receipt output | Notes |
 | --- | --- | --- | --- |
 | Market data | `data/normalized/market-data/` | `data/receipts/market-data/` | Captures raw/normalized hashes and quality backend. |
-| Indicators | `data/normalized/indicators/` | `data/receipts/indicators/` | Feature evidence only. |
-| Events | `data/normalized/events/` | `data/receipts/events/` | Event evidence only. |
-| Interpretation | `data/normalized/interpretations/` | `data/receipts/interpretations/` | Source-backed interpretation only. |
-| Hypotheses | `data/normalized/hypotheses/` | `data/receipts/hypotheses/` | Falsifiable hypothesis evidence only. |
-| Validation | `data/normalized/validations/` | `data/receipts/validations/` | Proposal handoff still requires human review. |
-| Proposal | `data/normalized/proposals/` | `data/receipts/proposals/` | Structured candidates, no execution authority. |
-| Risk Gate | `data/normalized/risk-gates/` | `data/receipts/risk-gates/` | Paper review decision, no live authority or final sizing. |
-| Execution | `data/normalized/executions/` | `data/receipts/executions/` | Order lifecycle evidence, live blocked in MVP. |
-| Post trade | `data/normalized/post-trade/` | `data/receipts/post-trade/` | Reconciliation evidence, no order creation. |
-| Daily evidence | `data/normalized/daily-evidence/` | `data/receipts/daily-evidence/` | First-four-layer evidence bundle, no execution authority. |
-| OKX live attempts | n/a | `data/receipts/okx-live/` | Writes receipts for blocked, errored, and executed attempts. |
+| State Core IPS | n/a | `data/receipts/state-core/ips/` | Current user-owned policy statement evidence. |
+| Capital mandates | n/a | `data/receipts/state-core/capital-mandates/` | Current human-attested policy domain; not authority. |
+| Action intents | n/a | `data/receipts/state-core/action-intents/` | Current candidate-only capital action bridge. |
+| Action intent simulations | n/a | `data/receipts/state-core/action-intent-simulations/` | Current preflight-bound descriptive simulation evidence. |
+| Trade plan candidates | n/a | `data/receipts/state-core/trade-plan-candidates/` | Current candidate-only pre-trade plan evidence. |
 | Lesson drafts | `docs/lessons/drafts/` | `data/receipts/lessons/` | Drafts only; human promotion required. |
 | Rule changes | `data/state/rule-changes/` | `data/receipts/rule-changes/` | Human-promoted lesson-to-rule lineage. |
 | Market cockpit | n/a | `data/receipts/market-cockpit/` | Operator dashboard evidence only. |
 | Project governance adapter | n/a | `data/receipts/project-governance-adapter/` | Project-governance compatibility evidence. |
 | Repository governance | n/a | `data/receipts/repository-governance/` | Repository safety/governance evidence. |
 | Engineering delivery | n/a | `data/receipts/engineering-delivery/` | Delivery receipts for scoped engineering work. |
-| Alpaca paper DCA | n/a | `data/receipts/alpaca-paper-dca/` | Paper DCA workflow evidence. |
-| Alpaca paper LangGraph | n/a | `data/receipts/alpaca-paper-langgraph/` | Paper LangGraph workflow evidence. |
+| Indicators | `data/normalized/indicators/` | `data/receipts/indicators/` | Historical ten-layer feature evidence. |
+| Events | `data/normalized/events/` | `data/receipts/events/` | Historical ten-layer event evidence. |
+| Interpretation | `data/normalized/interpretations/` | `data/receipts/interpretations/` | Historical ten-layer interpretation evidence. |
+| Hypotheses | `data/normalized/hypotheses/` | `data/receipts/hypotheses/` | Historical ten-layer hypothesis evidence. |
+| Validation | `data/normalized/validations/` | `data/receipts/validations/` | Historical ten-layer validation evidence. |
+| Proposal | `data/normalized/proposals/` | `data/receipts/proposals/` | Historical ten-layer proposal evidence. |
+| Risk Gate | `data/normalized/risk-gates/` | `data/receipts/risk-gates/` | Historical ten-layer risk-gate evidence. |
+| Execution | `data/normalized/executions/` | `data/receipts/executions/` | Historical ten-layer order lifecycle evidence. |
+| Post trade | `data/normalized/post-trade/` | `data/receipts/post-trade/` | Historical ten-layer reconciliation evidence. |
+| Daily evidence | `data/normalized/daily-evidence/` | `data/receipts/daily-evidence/` | Historical ten-layer bundle evidence. |
+| OKX live attempts | n/a | `data/receipts/okx-live/` | Archived live-trading experiment evidence. |
+| Alpaca paper DCA | n/a | `data/receipts/alpaca-paper-dca/` | Archived paper DCA workflow evidence. |
+| Alpaca paper LangGraph | n/a | `data/receipts/alpaca-paper-langgraph/` | Archived paper LangGraph workflow evidence. |
 | Legacy rust receipt | n/a | `data/receipts/rust/` | Archived Rust-era receipt shape; retained for audit history. |
 
 ## Receipt Reading Checklist

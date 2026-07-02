@@ -1,6 +1,6 @@
 # FinHarness System Map
 
-状态:current(2026-06-30)。目的:把 FinHarness 从"很多安全小块"看成几个
+状态:current(2026-07-02)。目的:把 FinHarness 从"很多安全小块"看成几个
 deep modules。每个 system 有固定形状:
 
 ```text
@@ -34,12 +34,20 @@ domain model / read model / write(command) model / adapters / invariants
 ### 3. IPS / Policy
 
 - **职责**:用户自己的 Investment Policy Statement,把 L2 状态映射到 L4 detector
-  的个性化阈值与 policy compliance check。
-- **domain**:`ips.py`、`InvestmentPolicyStatement`。
-- **read**:`GET /ips/current`、`GET /ips/check`。
-- **write(command)**:`POST /ips/draft` / `record_ips` 写 receipt-backed policy。
+  的个性化阈值与 policy compliance check;CapitalMandate 则在 IPS 之上记录
+  human-attested policy domain,供未来 delegated authority 对象引用。
+- **domain**:`ips.py`、`InvestmentPolicyStatement`、`statecore/capital_mandates.py`、
+  `CapitalMandate`。
+- **read**:`GET /ips/current`、`GET /ips/check`、`GET /capital-mandates/current`、
+  `GET /capital-mandates/{capital_mandate_id}`。
+- **write(command)**:`POST /ips/draft` / `record_ips` 写 receipt-backed policy;
+  `POST /capital-mandates` / `record_capital_mandate` 写 receipt-backed
+  human-attested mandate。
 - **invariants**:IPS 是用户政策,不是投资建议;`execution_allowed=false`;
-  compliance check 是描述性检查,不是交易建议。
+  compliance check 是描述性检查,不是交易建议。CapitalMandate 不是授权对象,
+  不授予 Agent identity,不创建 order ticket 或 broker instruction;它要求
+  `human_attester`、`human_reason`、`explicit_confirmation=true`,且
+  `execution_allowed=false`、`authority_transition=false`。
 
 ### 4. Decision Workflow
 
