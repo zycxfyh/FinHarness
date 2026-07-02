@@ -31,23 +31,33 @@ domain model / read model / write(command) model / adapters / invariants
 - **write(command)**:`task brief:daily`、`task cockpit:daily` 写 receipt/Markdown。
 - **invariants**:描述状态,不授权动作;数据缺口必须显式披露,不能编出完整性。
 
-### 3. IPS / Policy
+### 3. IPS / Policy / Authority Credentials
 
 - **职责**:用户自己的 Investment Policy Statement,把 L2 状态映射到 L4 detector
   的个性化阈值与 policy compliance check;CapitalMandate 则在 IPS 之上记录
-  human-attested policy domain,供未来 delegated authority 对象引用。
+  human-attested policy domain,供未来 delegated authority 对象引用;
+  AgentAuthorityGrant 在 active CapitalMandate 下授予 Agent 受限 authority
+  credential,并提供 dynamic validator。
 - **domain**:`ips.py`、`InvestmentPolicyStatement`、`statecore/capital_mandates.py`、
-  `CapitalMandate`。
+  `CapitalMandate`、`statecore/agent_authority_grants.py`、`AgentAuthorityGrant`。
 - **read**:`GET /ips/current`、`GET /ips/check`、`GET /capital-mandates/current`、
-  `GET /capital-mandates/{capital_mandate_id}`。
+  `GET /capital-mandates/{capital_mandate_id}`、`GET /agent-authority-grants`、
+  `GET /agent-authority-grants/{grant_id}`。
 - **write(command)**:`POST /ips/draft` / `record_ips` 写 receipt-backed policy;
   `POST /capital-mandates` / `record_capital_mandate` 写 receipt-backed
-  human-attested mandate。
+  human-attested mandate;`POST /agent-authority-grants` /
+  `record_agent_authority_grant` 写 receipt-backed mandate-bound credential;
+  `POST /agent-authority-grants/{grant_id}/validate` 动态重查 grant 与 mandate
+  当前状态并返回 structured deny reasons。
 - **invariants**:IPS 是用户政策,不是投资建议;`execution_allowed=false`;
   compliance check 是描述性检查,不是交易建议。CapitalMandate 不是授权对象,
   不授予 Agent identity,不创建 order ticket 或 broker instruction;它要求
   `human_attester`、`human_reason`、`explicit_confirmation=true`,且
-  `execution_allowed=false`、`authority_transition=false`。
+  `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
+  是 mandate-bound authority credential,不是 authentication、trade-plan
+  approval、preflight bypass、broker submission 或 execution authorization;
+  没有 active CapitalMandate 时 default-deny,grant validation 必须 use-time
+  重查当前 grant/mandate/scope。
 
 ### 4. Decision Workflow
 

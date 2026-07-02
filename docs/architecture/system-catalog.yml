@@ -1,6 +1,6 @@
 schema: finharness.system_catalog.v1
 status: current
-updated: "2026-07-01"
+updated: "2026-07-03"
 source_docs:
   framework_index: docs/architecture/framework-index.md
   system_map: docs/architecture/system-map.md
@@ -59,24 +59,28 @@ systems:
     upgrade_trigger: Repeated dashboard-specific calculations should move behind shared read models.
 
   - id: ips_policy
-    name: IPS / Policy
+    name: IPS / Policy / Authority Credentials
     status: current
-    summary: User-owned Investment Policy Statement, descriptive compliance checks, and human-attested CapitalMandate policy domains for future delegated authority boundaries.
+    summary: User-owned Investment Policy Statement, descriptive compliance checks, human-attested CapitalMandate policy domains, and mandate-bound AgentAuthorityGrant credentials with dynamic validation and closed deny reasons.
     docs:
       - docs/architecture/capital-os-layering.md
       - docs/architecture/system-map.md
       - docs/adr/2026-07-02-capital-mandate-before-delegated-authority.md
+      - docs/adr/2026-07-03-agent-authority-grants-are-mandate-bound-credentials.md
     runtime_roots:
       - src/finharness/ips.py
       - src/finharness/api/routes_ips.py
       - src/finharness/statecore/capital_mandates.py
       - src/finharness/api/routes_capital_mandates.py
-    mature_posture: IPS and policy-as-code ideas; CapitalMandate stays a local receipt-backed policy object until rules outgrow Python.
+      - src/finharness/statecore/agent_authority_grants.py
+      - src/finharness/api/routes_agent_authority_grants.py
+    mature_posture: IPS and policy-as-code ideas; CapitalMandate and AgentAuthorityGrant stay local receipt-backed objects with Python validation until rules outgrow the current closed-scope checks.
     checks:
       - task governance:check
       - uv run python -m unittest tests.test_ips
       - uv run python -m unittest tests.test_capital_mandates
-    upgrade_trigger: Policy rules become numerous, cross-language, need external audit reports, or future AuthorityContract work needs formal policy evaluation.
+      - uv run python -m unittest tests.test_agent_authority_grants
+    upgrade_trigger: Policy or grant rules become numerous, cross-language, need external audit reports, or future AuthorityContract work needs formal policy evaluation.
 
   - id: decision_workflow
     name: Decision Workflow
@@ -207,7 +211,7 @@ systems:
   - id: cockpit_api
     name: Cockpit / API
     status: current
-    summary: Local read/review product surface for state, proposals, review, IPS, and cockpit views.
+    summary: Local read/review product surface for state, proposals, review, IPS, capital mandates, agent authority grant validation, and cockpit views.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
