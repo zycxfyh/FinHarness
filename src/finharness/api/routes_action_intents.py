@@ -141,6 +141,9 @@ class ActionIntentPreflightResponse(BaseModel):
     source_proposal_receipt_ref: str | None
     current_proposal_receipt_ref: str | None
     freshness_status: str
+    authority_status: str
+    authority_binding_id: str | None
+    authority_binding_receipt_ref: str | None
     target_scope_status: str
     policy_status: str
     evidence_status: str
@@ -386,6 +389,9 @@ async def get_action_intent_preflight(
         source_proposal_receipt_ref=report.source_proposal_receipt_ref,
         current_proposal_receipt_ref=report.current_proposal_receipt_ref,
         freshness_status=report.freshness_status,
+        authority_status=report.authority_status,
+        authority_binding_id=report.authority_binding_id,
+        authority_binding_receipt_ref=report.authority_binding_receipt_ref,
         target_scope_status=report.target_scope_status,
         policy_status=report.policy_status,
         evidence_status=report.evidence_status,

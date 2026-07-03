@@ -10,6 +10,11 @@ from sqlmodel import Session
 
 from finharness.api.app import create_app
 from finharness.ips import record_ips
+from finharness.statecore.action_intent_authority_bindings import (
+    create_action_intent_authority_binding,
+)
+from finharness.statecore.agent_authority_grants import record_agent_authority_grant
+from finharness.statecore.capital_mandates import record_capital_mandate
 from finharness.statecore.models import (
     Account,
     ActionIntent,
@@ -112,6 +117,75 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             max_single_holding_pct="0.40",
             restricted_actions=restricted_actions or [],
             source_refs=["data/receipts/state-core/ips/receipt_policy_seed.json"],
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+
+    def _authority_scope(self, *, action: str = "reduce_exposure") -> dict[str, object]:
+        return {
+            "allowed_asset_classes": ["cash", "equity"],
+            "allowed_action_types": [action],
+            "autonomy_level": "L1_candidate_only",
+        }
+
+    def _record_mandate(self, *, mandate_id: str = "mandate_action_preflight") -> str:
+        mandate = record_capital_mandate(
+            capital_mandate_id=mandate_id,
+            profile_snapshot={"profile": "balanced"},
+            investment_objectives={"primary": "risk_control"},
+            risk_profile={"max_drawdown_pct": 0.10},
+            allowed_asset_classes=["cash", "equity"],
+            restricted_asset_classes=["crypto_leverage"],
+            allowed_action_types=["reduce_exposure", "rebalance", "raise_cash"],
+            restricted_action_types=["open_margin"],
+            autonomy_level="L1_candidate_only",
+            human_attester="owner@example.com",
+            human_reason="Attest mandate scope for action preflight tests.",
+            explicit_confirmation=True,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        return mandate.capital_mandate_id
+
+    def _record_grant(
+        self,
+        *,
+        grant_id: str = "grant_action_preflight",
+        action: str = "reduce_exposure",
+        agent_id: str = "agent:research",
+    ) -> str:
+        grant = record_agent_authority_grant(
+            agent_authority_grant_id=grant_id,
+            capital_mandate_id=self._record_mandate(),
+            agent_id=agent_id,
+            agent_profile_name="review-note",
+            grant_scope=self._authority_scope(action=action),
+            issued_by="owner@example.com",
+            issued_reason="Allow candidate-only action intents for preflight tests.",
+            source_refs=["docs/product-north-star.md"],
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        return grant.agent_authority_grant_id
+
+    def _bind_authority(
+        self,
+        action_intent_id: str,
+        *,
+        author_type: str = "agent",
+        author_id: str = "agent:research",
+        grant_id: str | None = None,
+        action: str = "reduce_exposure",
+        source_rule_ref: str | None = None,
+    ):
+        return create_action_intent_authority_binding(
+            action_intent_id=action_intent_id,
+            author_type=author_type,  # type: ignore[arg-type]
+            author_id=author_id,
+            agent_authority_grant_id=grant_id,
+            requested_scope=self._authority_scope(action=action),
+            source_rule_ref=source_rule_ref,
+            source_refs=["context://preflight_authority_binding"],
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
@@ -317,6 +391,8 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(body["status"], "pass")
         self.assertTrue(body["system_preflight_recomputed"])
         self.assertEqual(body["freshness_status"], "fresh")
+        self.assertEqual(body["authority_status"], "not_required")
+        self.assertIsNone(body["authority_binding_id"])
         self.assertEqual(body["target_scope_status"], "valid")
         self.assertEqual(body["policy_status"], "not_restricted")
         self.assertEqual(body["risk_posture"], "defensive")
@@ -327,6 +403,106 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertIsNone(body["impact_summary"]["notional_estimate"])
         self.assertFalse(body["execution_allowed"])
         self.assertFalse(body["authority_transition"])
+
+    def test_agent_action_intent_preflight_blocks_without_authority_binding(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(created_by="agent", active_profile="review-note")
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "block")
+        self.assertEqual(body["authority_status"], "missing")
+        self.assertIn(
+            "missing_action_intent_authority_binding",
+            {finding["code"] for finding in body["findings"]},
+        )
+
+    def test_agent_action_intent_preflight_consumes_allowed_authority_binding(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(created_by="agent", active_profile="review-note")
+        grant_id = self._record_grant()
+        binding = self._bind_authority(intent["action_intent_id"], grant_id=grant_id).binding
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "pass")
+        self.assertEqual(body["authority_status"], "allowed")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
+        self.assertEqual(body["authority_binding_receipt_ref"], binding.receipt_ref)
+
+    def test_agent_action_intent_preflight_blocks_denied_authority_binding(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(created_by="agent", active_profile="review-note")
+        grant_id = self._record_grant(action="rebalance")
+        binding = self._bind_authority(
+            intent["action_intent_id"],
+            grant_id=grant_id,
+            action="rebalance",
+        ).binding
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "block")
+        self.assertEqual(body["authority_status"], "denied")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
+        finding = next(
+            item
+            for item in body["findings"]
+            if item["code"] == "action_intent_authority_binding_denied"
+        )
+        self.assertIn("action_intent_scope_mismatch", finding["recovery_hint"])
+        self.assertIn(binding.receipt_ref, finding["receipt_refs"])
+
+    def test_action_intent_preflight_blocks_stale_authority_binding_receipt(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(created_by="agent", active_profile="review-note")
+        grant_id = self._record_grant()
+        binding = self._bind_authority(intent["action_intent_id"], grant_id=grant_id).binding
+        self._set_action_intent_fields(
+            intent["action_intent_id"],
+            receipt_ref="data/receipts/state-core/action-intents/receipt_newer.json",
+        )
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "block")
+        self.assertEqual(body["authority_status"], "stale")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
+        self.assertIn(
+            "stale_action_intent_authority_binding",
+            {finding["code"] for finding in body["findings"]},
+        )
+
+    def test_human_action_intent_preflight_accepts_allowed_human_binding(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        binding = self._bind_authority(
+            intent["action_intent_id"],
+            author_type="human",
+            author_id="owner@example.com",
+            grant_id=None,
+        ).binding
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "pass")
+        self.assertEqual(body["authority_status"], "allowed")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
 
     def test_action_intent_preflight_missing_ips_warns_without_blocking(self) -> None:
         self._seed_portfolio_snapshot()

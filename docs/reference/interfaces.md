@@ -119,11 +119,16 @@ Use this as a lookup page. For system ownership, read
   expected proposal receipt freshness, source refs, typed action intent, target
   scope, summary, and rationale; it rejects order/broker/execution/authority
   fields. `GET /action-intents/{action_intent_id}/preflight` recomputes whether
-  the candidate is fresh, structurally complete, IPS-compatible, and ready for
-  its expected next step. The report returns pass/warn/block findings, v0 impact
-  summary, risk posture, and a deterministic report hash. The object and
-  preflight report are not an order ticket, simulation, approval, broker action,
-  or execution authorization.
+  the candidate is fresh, authority-admitted where required, structurally
+  complete, IPS-compatible, and ready for its expected next step. Agent-authored
+  intents block unless the latest/current `ActionIntentAuthorityBinding` is
+  allowed, matches the current action-intent receipt, and preserves grant
+  validation evidence. Human/system intents may omit a binding, but if a binding
+  exists preflight consumes its allowed/denied state and receipt refs. The
+  report returns pass/warn/block findings, `authority_status`, authority binding
+  refs, v0 impact summary, risk posture, and a deterministic report hash. The
+  object and preflight report are not an order ticket, simulation, approval,
+  broker action, or execution authorization.
 - Action intent authority bindings are the admission fact between
   AgentAuthorityGrant and downstream action checks:
   `POST /action-intents/{action_intent_id}/authority-bindings` writes
@@ -133,7 +138,9 @@ Use this as a lookup page. For system ownership, read
   `binding` vs `grant_validation` deny reason sources, linked action intent
   receipt, linked grant/mandate refs when present, and non-claims. Denied
   bindings are persisted so downstream gates can read structured refusal
-  evidence instead of reinterpreting AgentAuthorityGrant semantics.
+  evidence instead of reinterpreting AgentAuthorityGrant semantics. Action
+  intent preflight consumes the latest binding result rather than revalidating
+  grants itself.
 - Preflight-bound action intent simulation reports are the first downstream
   consumer of action preflight hashes:
   `POST /action-intents/{action_intent_id}/simulation-reports` requires the
