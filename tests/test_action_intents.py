@@ -504,6 +504,52 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(body["authority_status"], "allowed")
         self.assertEqual(body["authority_binding_id"], binding.binding_id)
 
+    def test_human_action_intent_preflight_blocks_denied_human_binding(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent()
+        binding = self._bind_authority(
+            intent["action_intent_id"],
+            author_type="human",
+            author_id="owner@example.com",
+            grant_id=None,
+            action="rebalance",
+        ).binding
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "block")
+        self.assertEqual(body["authority_status"], "denied")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
+        self.assertIn(
+            "action_intent_authority_binding_denied",
+            {finding["code"] for finding in body["findings"]},
+        )
+
+    def test_action_intent_preflight_prioritizes_author_mismatch_status(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(created_by="agent", active_profile="review-note")
+        binding = self._bind_authority(
+            intent["action_intent_id"],
+            author_type="human",
+            author_id="owner@example.com",
+            grant_id=None,
+        ).binding
+
+        response = self.client.get(f"/action-intents/{intent['action_intent_id']}/preflight")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "block")
+        self.assertEqual(body["authority_status"], "mismatched")
+        self.assertEqual(body["authority_binding_id"], binding.binding_id)
+        finding_codes = {finding["code"] for finding in body["findings"]}
+        self.assertIn("action_intent_authority_binding_author_mismatch", finding_codes)
+        self.assertIn("action_intent_authority_binding_denied", finding_codes)
+
     def test_action_intent_preflight_missing_ips_warns_without_blocking(self) -> None:
         self._seed_portfolio_snapshot()
         intent = self._create_intent()

@@ -331,7 +331,6 @@ def _authority_findings(
         return "not_required", []
 
     findings: list[ActionIntentPreflightFinding] = []
-    status = "allowed" if authority_binding.allowed else "denied"
     if authority_binding.source_action_intent_receipt_ref != action_intent.receipt_ref:
         findings.append(
             _finding(
@@ -349,7 +348,6 @@ def _authority_findings(
                 receipt_refs=receipt_refs,
             )
         )
-        status = "stale"
     if authority_binding.author_type != action_intent.created_by:
         findings.append(
             _finding(
@@ -367,7 +365,6 @@ def _authority_findings(
                 receipt_refs=receipt_refs,
             )
         )
-        status = "mismatched"
     if not authority_binding.allowed:
         findings.append(
             _finding(
@@ -386,7 +383,6 @@ def _authority_findings(
                 receipt_refs=receipt_refs,
             )
         )
-        status = "denied"
     if (
         action_intent.created_by == "agent"
         and authority_binding.allowed
@@ -408,8 +404,27 @@ def _authority_findings(
                 receipt_refs=receipt_refs,
             )
         )
-        status = "invalid"
-    return status, findings
+    return _authority_status_from_findings(
+        authority_binding=authority_binding,
+        findings=findings,
+    ), findings
+
+
+def _authority_status_from_findings(
+    *,
+    authority_binding: ActionIntentAuthorityBinding,
+    findings: list[ActionIntentPreflightFinding],
+) -> str:
+    codes = {finding.code for finding in findings}
+    if "stale_action_intent_authority_binding" in codes:
+        return "stale"
+    if "action_intent_authority_binding_author_mismatch" in codes:
+        return "mismatched"
+    if "agent_authority_binding_missing_grant_validation" in codes:
+        return "invalid"
+    if "action_intent_authority_binding_denied" in codes:
+        return "denied"
+    return "allowed" if authority_binding.allowed else "denied"
 
 
 def _closed_set_findings(
