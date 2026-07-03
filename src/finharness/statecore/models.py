@@ -36,6 +36,7 @@ ACTION_INTENT_NEXT_STEPS: tuple[str, ...] = (
     "human_review",
     "discard",
 )
+ACTION_INTENT_AUTHORS: tuple[str, ...] = ("agent", "human", "system")
 ACTION_INTENT_SIMULATION_SCENARIO_MODES: tuple[str, ...] = (
     "descriptive_v0",
     "risk_posture_v0",
@@ -663,6 +664,12 @@ class ActionIntent(StateCoreBase, table=True):
             + ")",
             name="ck_action_intents_next_step_closed",
         ),
+        CheckConstraint(
+            "created_by IN ("
+            + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS)
+            + ")",
+            name="ck_action_intents_created_by_closed",
+        ),
     )
 
     action_intent_id: str = Field(primary_key=True)
@@ -701,6 +708,99 @@ class ActionIntent(StateCoreBase, table=True):
     def reject_authority_transition(cls, value: bool) -> bool:
         if value:
             raise ValueError("action intents never carry authority transitions")
+        return False
+
+
+class ActionIntentAuthorityBinding(StateCoreBase, table=True):
+    """Receipt-backed authority admission result for an ActionIntentCandidate.
+
+    A binding proves whether an author may admit an action intent into the next
+    capital-action governance step. It is not preflight, approval, an order
+    ticket, broker submission, or execution authorization.
+    """
+
+    __tablename__ = "action_intent_authority_bindings"
+    __table_args__ = (
+        CheckConstraint(
+            "author_type IN ("
+            + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS)
+            + ")",
+            name="ck_action_intent_authority_bindings_author_type_closed",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_action_intent_authority_bindings_execution_allowed_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_action_intent_authority_bindings_authority_transition_false",
+        ),
+    )
+
+    binding_id: str = Field(primary_key=True)
+    action_intent_id: str = Field(foreign_key="action_intents.action_intent_id", index=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id", index=True)
+    source_action_intent_receipt_ref: str | None = None
+    author_type: str
+    author_id: str
+    source_rule_ref: str | None = None
+    agent_authority_grant_id: str | None = Field(
+        default=None,
+        foreign_key="agent_authority_grants.agent_authority_grant_id",
+        index=True,
+    )
+    capital_mandate_id: str | None = Field(
+        default=None,
+        foreign_key="capital_mandates.capital_mandate_id",
+        index=True,
+    )
+    requested_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    validated_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    allowed: bool = False
+    deny_reasons: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    binding_deny_reasons: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    grant_deny_reasons: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    warnings: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    grant_validation_result: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=json_dict_column(),
+    )
+    grant_receipt_ref: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "authority_admission"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("author_type")
+    @classmethod
+    def require_known_author_type(cls, value: str) -> str:
+        if value not in ACTION_INTENT_AUTHORS:
+            raise ValueError(f"author_type must be one of {ACTION_INTENT_AUTHORS}")
+        return value
+
+    @field_validator("author_id")
+    @classmethod
+    def require_author_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("authority binding requires author_id")
+        return value
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("authority bindings never carry execution authority")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("authority bindings never carry authority transitions")
         return False
 
 

@@ -20,6 +20,13 @@ from finharness.action_intent_preflight import (
     preflight_action_intent,
 )
 from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.statecore.action_intent_authority_bindings import (
+    ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS,
+    ActionIntentAuthorityBindingResult,
+    ActionIntentAuthorityBindingValidationError,
+    ActionIntentAuthorType,
+    create_action_intent_authority_binding,
+)
 from finharness.statecore.action_intent_simulations import (
     ACTION_INTENT_SIMULATION_NON_CLAIMS,
     ActionIntentSimulationPreflightBlockedError,
@@ -39,6 +46,7 @@ from finharness.statecore.action_intents import (
 )
 from finharness.statecore.models import (
     ActionIntent,
+    ActionIntentAuthorityBinding,
     ActionIntentSimulationReport,
     TradePlanCandidate,
 )
@@ -143,6 +151,40 @@ class ActionIntentPreflightResponse(BaseModel):
     next_actions: list[str]
     report_hash: str
     non_claims: tuple[str, ...] = ACTION_INTENT_PREFLIGHT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ActionIntentAuthorityBindingCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    author_type: ActionIntentAuthorType
+    author_id: str
+    agent_authority_grant_id: str | None = None
+    requested_scope: dict[str, Any]
+    source_rule_ref: str | None = None
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator("author_id")
+    @classmethod
+    def require_author_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("authority binding requires author_id")
+        return value
+
+
+class ActionIntentAuthorityBindingCreateResponse(BaseModel):
+    authority_binding: ActionIntentAuthorityBinding
+    binding_result: ActionIntentAuthorityBindingResult
+    receipt_ref: str
+    non_claims: tuple[str, ...] = ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class ActionIntentAuthorityBindingResponse(BaseModel):
+    authority_binding: ActionIntentAuthorityBinding
+    non_claims: tuple[str, ...] = ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS
     execution_allowed: bool = False
     authority_transition: bool = False
 
@@ -353,6 +395,66 @@ async def get_action_intent_preflight(
         impact_summary=_impact_summary_view(report.impact_summary),
         next_actions=report.next_actions,
         report_hash=report.report_hash,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
+@router.post(
+    "/action-intents/{action_intent_id}/authority-bindings",
+    response_model=ActionIntentAuthorityBindingCreateResponse,
+)
+async def create_action_intent_authority_binding_endpoint(
+    action_intent_id: str,
+    request: ActionIntentAuthorityBindingCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> ActionIntentAuthorityBindingCreateResponse:
+    try:
+        write = create_action_intent_authority_binding(
+            action_intent_id=action_intent_id,
+            author_type=request.author_type,
+            author_id=request.author_id,
+            agent_authority_grant_id=request.agent_authority_grant_id,
+            requested_scope=request.requested_scope,
+            source_rule_ref=request.source_rule_ref,
+            source_refs=request.source_refs,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent not found: {action_intent_id}",
+        ) from exc
+    except ActionIntentAuthorityBindingValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ActionIntentAuthorityBindingCreateResponse(
+        authority_binding=write.binding,
+        binding_result=write.result,
+        receipt_ref=write.receipt_ref,
+        execution_allowed=False,
+        authority_transition=False,
+    )
+
+
+@router.get(
+    "/action-intent-authority-bindings/{binding_id}",
+    response_model=ActionIntentAuthorityBindingResponse,
+)
+async def get_action_intent_authority_binding(
+    binding_id: str,
+    engine: EngineDependency,
+) -> ActionIntentAuthorityBindingResponse:
+    with Session(engine) as session:
+        binding = session.get(ActionIntentAuthorityBinding, binding_id)
+    if binding is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"action intent authority binding not found: {binding_id}",
+        )
+    return ActionIntentAuthorityBindingResponse(
+        authority_binding=binding,
         execution_allowed=False,
         authority_transition=False,
     )

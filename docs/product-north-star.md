@@ -104,6 +104,9 @@ predicates:
 2. **治理是状态的一个属性,不是独立模块。**
    每一条状态、每一个动作都自带授权级别:`read_only` / `needs_human_confirm`
    / `never_auto`。"安全与授权"不是第六个驾驶舱,是渗透在每条状态里的一列。
+   对资本动作链,每一层只授予进入下一层治理步骤的资格,不授予越级执行能力:
+   grant 不推 action,action admission 不等于 preflight,preflight 不等于 trade
+   approval,trade plan 不等于 order 或 broker execution。
 
 3. **运行时是作用在状态上的循环。**
    它盯住"**相对上次变了什么**",主动浮出:现金流异常、税务节点、风险集中、

@@ -302,6 +302,8 @@ class StateCoreApiTest(unittest.TestCase):
             "/proposals/{proposal_id}/action-intents": {"post"},
             "/action-intents/{action_intent_id}": {"get"},
             "/action-intents/{action_intent_id}/preflight": {"get"},
+            "/action-intents/{action_intent_id}/authority-bindings": {"post"},
+            "/action-intent-authority-bindings/{binding_id}": {"get"},
             "/action-intents/{action_intent_id}/simulation-reports": {"post"},
             "/action-intent-simulation-reports/{simulation_report_id}": {"get"},
             "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates": {
@@ -339,6 +341,8 @@ class StateCoreApiTest(unittest.TestCase):
         for model_name in (
             "Account",
             "ActionIntent",
+            "ActionIntentAuthorityBinding",
+            "ActionIntentAuthorityBindingResult",
             "ActionIntentSimulationReport",
             "AgentAuthorityGrant",
             "AgentAuthorityGrantValidationResult",

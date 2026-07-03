@@ -90,14 +90,19 @@ domain model / read model / write(command) model / adapters / invariants
 ### 6. Capital Action Intent
 
 - **职责**:把当前 proposal/revision state 翻译成 candidate-only capital
-  action intent,并把 system preflight 绑定到 qualitative simulation report,
-  再把 simulation evidence 转成 pre-trade plan candidate,作为未来
-  AuthorityContract 的输入。
+  action intent,用 authority binding 记录 agent/human/system author 是否可被
+  admitted into downstream checks,并把 system preflight 绑定到 qualitative
+  simulation report,再把 simulation evidence 转成 pre-trade plan candidate,
+  作为未来 AuthorityContract 的输入。
 - **domain**:`statecore/action_intents.py`、`ActionIntent`、
-  `statecore/action_intent_simulations.py`、`statecore/trade_plan_candidates.py`、
-  `action_intent_preflight.py`、`api/routes_action_intents.py`。
+  `statecore/action_intent_authority_bindings.py`、
+  `ActionIntentAuthorityBinding`、`statecore/action_intent_simulations.py`、
+  `statecore/trade_plan_candidates.py`、`action_intent_preflight.py`、
+  `api/routes_action_intents.py`。
 - **write(command)**:`POST /proposals/{proposal_id}/action-intents` /
   `create_governed_action_intent`;
+  `POST /action-intents/{action_intent_id}/authority-bindings` /
+  `create_action_intent_authority_binding`;
   `POST /action-intents/{action_intent_id}/simulation-reports` /
   `create_governed_action_intent_simulation_report`;
   `POST
@@ -105,6 +110,7 @@ domain model / read model / write(command) model / adapters / invariants
   `create_governed_trade_plan_candidate`。
 - **read**:`GET /action-intents/{action_intent_id}`、
   `GET /action-intents/{action_intent_id}/preflight`、
+  `GET /action-intent-authority-bindings/{binding_id}`、
   `GET /action-intent-simulation-reports/{simulation_report_id}`、
   `GET /trade-plan-candidates/{trade_plan_candidate_id}`。
 - **invariants**:ActionIntentCandidate 不是 order ticket、broker action、
@@ -112,7 +118,15 @@ domain model / read model / write(command) model / adapters / invariants
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
   authority markers,并写 `state_core_action_intent_candidate` receipt;system
   preflight 只读重算 freshness、scope、IPS policy、evidence、precondition、
-  v0 impact summary、risk posture 和 deterministic report hash;simulation report
+  v0 impact summary、risk posture 和 deterministic report hash;
+  ActionIntentAuthorityBinding 只授予进入 downstream checks 的资格,不授予越级
+  execution authority;agent-authored ActionIntent 必须引用
+  `agent_authority_grant_id`,server use-time validate grant 并保留 binding 与
+  grant_validation 两类 deny reasons,denied binding 也写 receipt 供下游读取;
+  human-authored ActionIntent 可不引用 grant,system-authored ActionIntent 可不引用
+  grant 但必须记录 source rule;binding allowed 仍不等于 preflight pass、trade-plan
+  approval、order ticket、broker submission、preflight bypass 或 execution
+  authorization;simulation report
   创建时必须重新计算并匹配 current preflight hash,block 则拒绝,warn 必须显式
   acknowledge all warning codes,并写
   `state_core_action_intent_simulation_report` receipt;v0 simulation report

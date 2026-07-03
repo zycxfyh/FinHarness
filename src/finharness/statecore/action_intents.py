@@ -46,7 +46,7 @@ ActionIntentType = Literal[
     "watchlist",
     "request_more_evidence",
 ]
-ActionIntentCreator = Literal["human", "system"]
+ActionIntentCreator = Literal["agent", "human", "system"]
 ActionIntentNextStep = Literal["action_preflight", "simulation", "human_review", "discard"]
 
 ACTION_INTENT_NON_CLAIMS: tuple[str, ...] = (
@@ -195,8 +195,10 @@ def create_governed_action_intent(
     receipt_root: str | Path,
 ) -> GovernedActionIntentWrite:
     """Persist a proposal-bound ActionIntentCandidate with a receipt."""
-    if created_by not in {"human", "system"}:
-        raise ActionIntentValidationError("action intent creator must be human or system")
+    if created_by not in {"agent", "human", "system"}:
+        raise ActionIntentValidationError(
+            "action intent creator must be agent, human, or system"
+        )
     if action_type not in ACTION_INTENT_TYPES:
         raise ActionIntentValidationError(f"unknown action intent type: {action_type}")
     if expected_next_step not in ACTION_INTENT_NEXT_STEPS:
