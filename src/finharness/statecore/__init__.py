@@ -11,6 +11,7 @@ from finharness.statecore.models import (
     ReceiptIndex,
     Snapshot,
     TradePlanCandidate,
+    TradePlanReviewGate,
 )
 from finharness.statecore.observations import (
     Observation,
@@ -41,6 +42,7 @@ __all__ = [
     "SnapshotDiff",
     "StateCoreStoreError",
     "TradePlanCandidate",
+    "TradePlanReviewGate",
     "build_observations",
     "diff_snapshots",
     "init_state_core",

@@ -93,11 +93,14 @@ domain model / read model / write(command) model / adapters / invariants
   action intent,用 authority binding 记录 agent/human/system author 是否可被
   admitted into downstream checks,并把 system preflight 绑定到 qualitative
   simulation report,再把 simulation evidence 转成 pre-trade plan candidate,
-  作为未来 AuthorityContract 的输入。
+  并用 human `TradePlanReviewGate` 决定是否可进入未来
+  order-ticket-candidate staging。
 - **domain**:`statecore/action_intents.py`、`ActionIntent`、
   `statecore/action_intent_authority_bindings.py`、
   `ActionIntentAuthorityBinding`、`statecore/action_intent_simulations.py`、
-  `statecore/trade_plan_candidates.py`、`action_intent_preflight.py`、
+  `statecore/trade_plan_candidates.py`、`TradePlanCandidate`、
+  `statecore/trade_plan_review_gates.py`、`TradePlanReviewGate`、
+  `action_intent_preflight.py`、
   `api/routes_action_intents.py`。
 - **write(command)**:`POST /proposals/{proposal_id}/action-intents` /
   `create_governed_action_intent`;
@@ -107,12 +110,15 @@ domain model / read model / write(command) model / adapters / invariants
   `create_governed_action_intent_simulation_report`;
   `POST
   /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates` /
-  `create_governed_trade_plan_candidate`。
+  `create_governed_trade_plan_candidate`;
+  `POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates` /
+  `create_governed_trade_plan_review_gate`。
 - **read**:`GET /action-intents/{action_intent_id}`、
   `GET /action-intents/{action_intent_id}/preflight`、
   `GET /action-intent-authority-bindings/{binding_id}`、
   `GET /action-intent-simulation-reports/{simulation_report_id}`、
-  `GET /trade-plan-candidates/{trade_plan_candidate_id}`。
+  `GET /trade-plan-candidates/{trade_plan_candidate_id}`、
+  `GET /trade-plan-review-gates/{review_gate_id}`。
 - **invariants**:ActionIntentCandidate 不是 order ticket、broker action、
   simulation、approval、investment advice 或 execution authorization;创建时必须
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
@@ -137,8 +143,12 @@ domain model / read model / write(command) model / adapters / invariants
   TradePlanCandidate 只允许 plan direction/scope/cap/constraint fields,拒绝
   exact quantity、broker/order-ready/execution/authority markers 和 stale
   simulation/preflight evidence,写 `state_core_trade_plan_candidate` receipt,但
-  `submitted_to_broker=false`,必须等待未来 AuthorityContract 才能进入任何执行路径
-  或生成 order ticket。
+  `submitted_to_broker=false`;TradePlanReviewGate 只记录 human reviewer 对当前
+  candidate/simulation/action/preflight evidence 的 allow/deny,允许结果仅表示可进入未来
+  order-ticket-candidate staging,写 `state_core_trade_plan_review_gate` receipt,
+  但 `creates_order_ticket=false`,`submitted_to_broker=false`,
+  `execution_allowed=false`,且不是 suitability certification、AuthorityContract
+  或 broker instruction。
 
 ### 7. Research Evidence
 

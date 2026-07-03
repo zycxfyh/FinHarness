@@ -64,6 +64,7 @@ separately below so they are not mistaken for current authority.
 | Action intent authority binding | direct JSON dictionary | `state_core_action_intent_authority_binding` | n/a | `ActionIntentAuthorityBinding` | n/a |
 | Action intent simulation report | direct JSON dictionary | `state_core_action_intent_simulation_report` | n/a | `ActionIntentSimulationReport` | n/a |
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
+| Trade plan review gate | direct JSON dictionary | `state_core_trade_plan_review_gate` | n/a | `TradePlanReviewGate` | n/a |
 
 ## Historical / Archived Receipt Envelope By Surface
 
@@ -327,6 +328,47 @@ Location: `data/receipts/state-core/trade-plan-candidates/`
 | `governance.not_execution_authorization` | `bool` | True. |
 | `governance.requires_authority_contract` | `bool` | True for any future execution path. |
 | `governance.non_claims` | `list[str]` | Explicit trade-plan non-claims. |
+
+### Trade Plan Review Gate Receipts
+
+Location: `data/receipts/state-core/trade-plan-review-gates/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<review_gate_id>`. |
+| `kind` | `str` | `state_core_trade_plan_review_gate`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `review_gate_id` | `str` | Review gate id. |
+| `trade_plan_candidate_id` | `str` | Reviewed candidate id. |
+| `action_intent_id` | `str` | Source action intent id. |
+| `simulation_report_id` | `str` | Source simulation report id. |
+| `proposal_id` | `str` | Source proposal id. |
+| `source_trade_plan_candidate_receipt_ref` | `str` | Current trade plan candidate receipt consumed by the write. |
+| `source_action_intent_receipt_ref` | `str` | Current action intent receipt consumed by the write. |
+| `source_action_preflight_report_hash` | `str` | Current recomputed preflight hash consumed by the write. |
+| `source_simulation_report_receipt_ref` | `str` | Current simulation report receipt consumed by the write. |
+| `review_decision` | `str` | `allow_order_ticket_candidate_staging` or `deny_order_ticket_candidate_staging`. |
+| `reviewer.reviewer_type` | `str` | `human` in v0. |
+| `reviewer.reviewer_id` | `str` | Human reviewer identifier. |
+| `review_context` | `dict[str, Any]` | Review context with order-ready/broker/execution fields rejected. |
+| `review_findings` | `list[dict[str, Any]]` | Non-blocking review notes/findings. |
+| `deny_reasons` | `list[str]` | Structured denial reasons when denied. |
+| `candidate_validation_finding_codes` | `list[str]` | Warning/validation codes carried by the candidate. |
+| `may_enter_order_ticket_candidate_staging` | `bool` | True only for an allowed gate; this is staging eligibility only. |
+| `trade_plan_review_gate` | `TradePlanReviewGate` | Review-gate payload. |
+| `evidence_snapshot` | `dict[str, Any]` | Candidate status, current receipts, and preflight hash. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.authority_transition` | `bool` | Always false. |
+| `governance.submitted_to_broker` | `bool` | Always false. |
+| `governance.creates_order_ticket` | `bool` | Always false. |
+| `governance.may_enter_order_ticket_candidate_staging` | `bool` | Mirrors staging eligibility. |
+| `governance.review_gate_only` | `bool` | True. |
+| `governance.not_order_ticket` | `bool` | True. |
+| `governance.not_broker_submission` | `bool` | True. |
+| `governance.not_execution_authorization` | `bool` | True. |
+| `governance.not_suitability_certification` | `bool` | True. |
+| `governance.not_authority_contract` | `bool` | True. |
+| `governance.non_claims` | `list[str]` | Explicit review-gate non-claims. |
 
 ## Historical Live-Trading Experiment Receipts
 

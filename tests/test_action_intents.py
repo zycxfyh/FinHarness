@@ -24,6 +24,7 @@ from finharness.statecore.models import (
     ReceiptIndex,
     Snapshot,
     TradePlanCandidate,
+    TradePlanReviewGate,
 )
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core, read_all, write_records
@@ -273,6 +274,63 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             "/action-intent-simulation-reports/"
             f"{simulation_report['simulation_report_id']}/trade-plan-candidates",
             json=self._trade_plan_request(intent, preflight, simulation_report, **overrides),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _trade_plan_review_gate_request(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "expected_trade_plan_candidate_receipt_ref": trade_plan_candidate[
+                "receipt_ref"
+            ],
+            "expected_action_intent_receipt_ref": intent["receipt_ref"],
+            "expected_action_preflight_report_hash": preflight["report_hash"],
+            "expected_simulation_report_receipt_ref": simulation_report["receipt_ref"],
+            "review_decision": "allow_order_ticket_candidate_staging",
+            "reviewer_type": "human",
+            "reviewer_id": "owner@example.com",
+            "review_reason": (
+                "Reviewed preflight, simulation, and plan scope for candidate "
+                "staging only."
+            ),
+            "review_context": {"review_surface": "trade_plan_review_gate_v0"},
+            "review_findings": [
+                {
+                    "code": "candidate_scope_reviewed",
+                    "severity": "info",
+                    "source": "human_review",
+                }
+            ],
+            "source_refs": ["context://trade_plan_review_gate"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_trade_plan_review_gate(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        response = self.client.post(
+            f"/trade-plan-candidates/{trade_plan_candidate['trade_plan_candidate_id']}"
+            "/review-gates",
+            json=self._trade_plan_review_gate_request(
+                intent,
+                preflight,
+                simulation_report,
+                trade_plan_candidate,
+                **overrides,
+            ),
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
@@ -957,6 +1015,205 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             fetched.json()["trade_plan_candidate"]["receipt_ref"],
             body["receipt_ref"],
         )
+
+    def test_trade_plan_review_gate_writes_allow_receipt_and_can_be_fetched(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+
+        body = self._create_trade_plan_review_gate(intent, preflight, simulation, candidate)
+
+        self.assertFalse(body["execution_allowed"])
+        self.assertFalse(body["authority_transition"])
+        self.assertFalse(body["submitted_to_broker"])
+        self.assertFalse(body["creates_order_ticket"])
+        gate = body["review_gate"]
+        self.assertEqual(gate["trade_plan_candidate_id"], candidate["trade_plan_candidate_id"])
+        self.assertEqual(gate["action_intent_id"], intent["action_intent_id"])
+        self.assertEqual(gate["simulation_report_id"], simulation["simulation_report_id"])
+        self.assertEqual(
+            gate["source_trade_plan_candidate_receipt_ref"],
+            candidate["receipt_ref"],
+        )
+        self.assertEqual(gate["source_action_intent_receipt_ref"], intent["receipt_ref"])
+        self.assertEqual(
+            gate["source_action_preflight_report_hash"],
+            preflight["report_hash"],
+        )
+        self.assertEqual(
+            gate["source_simulation_report_receipt_ref"],
+            simulation["receipt_ref"],
+        )
+        self.assertEqual(
+            gate["review_decision"],
+            "allow_order_ticket_candidate_staging",
+        )
+        self.assertEqual(gate["reviewer_type"], "human")
+        self.assertTrue(gate["may_enter_order_ticket_candidate_staging"])
+        self.assertFalse(gate["execution_allowed"])
+        self.assertFalse(gate["authority_transition"])
+        self.assertFalse(gate["submitted_to_broker"])
+        self.assertFalse(gate["creates_order_ticket"])
+        self.assertEqual(gate["preflight_refs"], [preflight["report_hash"]])
+        self.assertNotIn(preflight["report_hash"], gate["receipt_refs"])
+
+        rows = read_all(TradePlanReviewGate, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_trade_plan_review_gate"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt_payload["kind"], "state_core_trade_plan_review_gate")
+        self.assertTrue(receipt_payload["governance"]["review_gate_only"])
+        self.assertTrue(receipt_payload["governance"]["not_order_ticket"])
+        self.assertTrue(receipt_payload["governance"]["not_authority_contract"])
+        self.assertTrue(receipt_payload["governance"]["may_enter_order_ticket_candidate_staging"])
+        self.assertFalse(receipt_payload["governance"]["creates_order_ticket"])
+        self.assertFalse(receipt_payload["governance"]["submitted_to_broker"])
+        self.assertFalse(receipt_payload["governance"]["execution_allowed"])
+        self.assertFalse(receipt_payload["governance"]["authority_transition"])
+
+        fetched = self.client.get(f"/trade-plan-review-gates/{gate['review_gate_id']}")
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(fetched.json()["review_gate"]["receipt_ref"], body["receipt_ref"])
+        self.assertFalse(fetched.json()["creates_order_ticket"])
+
+    def test_trade_plan_review_gate_persists_denial_evidence(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+
+        body = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            review_decision="deny_order_ticket_candidate_staging",
+            deny_reasons=["scope_requires_more_evidence"],
+            review_reason="Candidate scope needs more evidence before staging.",
+        )
+
+        gate = body["review_gate"]
+        self.assertEqual(gate["review_decision"], "deny_order_ticket_candidate_staging")
+        self.assertFalse(gate["may_enter_order_ticket_candidate_staging"])
+        self.assertEqual(gate["deny_reasons"], ["scope_requires_more_evidence"])
+        self.assertEqual(len(read_all(TradePlanReviewGate, engine=self.engine)), 1)
+
+    def test_trade_plan_review_gate_rejects_stale_evidence(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        cases = (
+            (
+                "candidate_receipt",
+                {
+                    "expected_trade_plan_candidate_receipt_ref": (
+                        "data/receipts/stale_candidate.json"
+                    )
+                },
+            ),
+            (
+                "action_receipt",
+                {"expected_action_intent_receipt_ref": "data/receipts/stale_action.json"},
+            ),
+            (
+                "preflight_hash",
+                {"expected_action_preflight_report_hash": "sha256:stale"},
+            ),
+            (
+                "simulation_receipt",
+                {
+                    "expected_simulation_report_receipt_ref": (
+                        "data/receipts/stale_simulation.json"
+                    )
+                },
+            ),
+        )
+
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+                    "/review-gates",
+                    json=self._trade_plan_review_gate_request(
+                        intent,
+                        preflight,
+                        simulation,
+                        candidate,
+                        **overrides,
+                    ),
+                )
+                self.assertEqual(response.status_code, 409)
+        self.assertEqual(read_all(TradePlanReviewGate, engine=self.engine), [])
+
+    def test_trade_plan_review_gate_rejects_order_ready_fields(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        cases = (
+            ("quantity", {"review_context": {"quantity": 10}}),
+            ("broker", {"review_context": {"broker": "alpaca"}}),
+            (
+                "execution_allowed",
+                {"review_findings": [{"code": "x", "execution_allowed": True}]},
+            ),
+            (
+                "blocking_finding",
+                {
+                    "review_findings": [
+                        {"code": "needs_more_evidence", "severity": "blocking"}
+                    ]
+                },
+            ),
+            ("agent_reviewer", {"reviewer_type": "agent"}),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+                    "/review-gates",
+                    json=self._trade_plan_review_gate_request(
+                        intent,
+                        preflight,
+                        simulation,
+                        candidate,
+                        **overrides,
+                    ),
+                )
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(TradePlanReviewGate, engine=self.engine), [])
 
     def test_trade_plan_candidate_rejects_missing_simulation_report(self) -> None:
         response = self.client.post(

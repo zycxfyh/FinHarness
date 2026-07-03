@@ -310,6 +310,8 @@ class StateCoreApiTest(unittest.TestCase):
                 "post"
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}": {"get"},
+            "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates": {"post"},
+            "/trade-plan-review-gates/{review_gate_id}": {"get"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},

@@ -33,6 +33,7 @@ from finharness.statecore.models import (
     Snapshot,
     TaxEvent,
     TradePlanCandidate,
+    TradePlanReviewGate,
 )
 
 STATE_CORE_DB_ENV_VAR = "FINHARNESS_STATE_CORE_DB_PATH"
@@ -46,6 +47,7 @@ StateCoreRecord = (
     | AgentAuthorityGrant
     | CapitalMandate
     | TradePlanCandidate
+    | TradePlanReviewGate
     | Position
     | Liability
     | FinancialGoal
