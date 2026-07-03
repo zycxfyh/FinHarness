@@ -9,6 +9,7 @@ Current reference surfaces:
   task list.
 - Interfaces: [Interface Reference](interfaces.md).
 - Receipts: [Receipt Reference](receipts.md).
+- Financial terminology map: [Financial Terminology Map](financial-terminology-map.md).
 - Config and environment variables: [Config And Environment Reference](config-env.md).
 - Engineering collaboration roles: [Engineering Roles Cheat Sheet](engineering-roles.md).
 - Wheels: [../wheels.md](../wheels.md).

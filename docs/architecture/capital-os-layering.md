@@ -4,6 +4,9 @@
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
+> 金融行业词与 FinHarness 原语的对应关系见
+> [Financial Terminology Map](../reference/financial-terminology-map.md);
+> 该映射是 design analogy,不是 regulatory status claim。
 >
 > modular monolith,不是微服务。新功能**先选归属层**(见 [system-map](system-map.md) 的 deep modules),再实现。
 
