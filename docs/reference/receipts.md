@@ -61,6 +61,7 @@ separately below so they are not mistaken for current authority.
 | Capital mandate | direct JSON dictionary | `state_core_capital_mandate` | n/a | `CapitalMandate` | n/a |
 | Agent authority grant | direct JSON dictionary | `state_core_agent_authority_grant` | n/a | `AgentAuthorityGrant` | n/a |
 | Action intent candidate | direct JSON dictionary | `state_core_action_intent_candidate` | n/a | `ActionIntent` | n/a |
+| Action intent authority binding | direct JSON dictionary | `state_core_action_intent_authority_binding` | n/a | `ActionIntentAuthorityBinding` | n/a |
 | Action intent simulation report | direct JSON dictionary | `state_core_action_intent_simulation_report` | n/a | `ActionIntentSimulationReport` | n/a |
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
 
@@ -235,6 +236,32 @@ Location: `data/receipts/state-core/action-intents/`
 | `governance.not_execution_authorization` | `bool` | True. |
 | `governance.not_investment_advice` | `bool` | True. |
 | `governance.non_claims` | `list[str]` | Explicit action-intent non-claims. |
+
+### Action Intent Authority Binding Receipt
+
+Location: `data/receipts/state-core/action-intent-authority-bindings/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<binding_id>`. |
+| `kind` | `str` | `state_core_action_intent_authority_binding`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `action_intent_id` | `str` | Source action intent id. |
+| `source_action_intent_receipt_ref` | `str \| None` | Current action intent receipt consumed by the write. |
+| `action_intent_authority_binding` | `ActionIntentAuthorityBinding` | Receipt-backed admission artifact. |
+| `binding_result` | `ActionIntentAuthorityBindingResult` | Structured allow/deny result. |
+| `binding_result.source.binding` | `list[str]` | Binding-layer deny reasons such as missing grant or author mismatch. |
+| `binding_result.source.grant_validation` | `list[str]` | Preserved AgentAuthorityGrant validation deny reasons. |
+| `governance_boundary.execution_allowed` | `bool` | Always false. |
+| `governance_boundary.authority_transition` | `bool` | Always false. |
+| `governance_boundary.authority_admission_only` | `bool` | True; allowed only admits the intent into downstream checks. |
+| `governance_boundary.not_action_preflight` | `bool` | It is not preflight. |
+| `governance_boundary.not_trade_plan_approval` | `bool` | It does not approve a trade plan. |
+| `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
+| `governance_boundary.not_broker_submission` | `bool` | It does not submit to a broker. |
+| `governance_boundary.not_preflight_bypass` | `bool` | It does not bypass preflight. |
+| `governance_boundary.not_execution_authorization` | `bool` | It does not authorize execution. |
+| `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
 ### Action Intent Simulation Report Receipt
 

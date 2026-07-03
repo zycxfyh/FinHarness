@@ -17,6 +17,7 @@ Use this as a lookup page. For system ownership, read
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
 | CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; requires human attester/reason/explicit confirmation and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
 | AgentAuthorityGrantInterface | Mandate-bound authority credential | Receipt-backed AgentAuthorityGrant plus dynamic validator with closed deny reasons; requires active CapitalMandate and never approves trade plans, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate` |
+| ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
 | RiskRegisterInterface | Local deterministic read model | Derived risk register view over review queue signals; no risk acceptance, scoring, scenario generation, or writes | `/risk/register`, `risk_register.py` |
@@ -45,6 +46,17 @@ Use this as a lookup page. For system ownership, read
   `requested_scope_exceeds_grant`, and forbidden execution/approval/broker/
   preflight-bypass semantics. It does not approve trade plans, bypass preflight,
   submit orders, create broker authority, or authorize execution.
+- ActionIntentAuthorityBinding is the authority admission layer for capital
+  action intents. `POST /action-intents/{action_intent_id}/authority-bindings`
+  records whether an `agent`, `human`, or `system` author may admit the intent
+  into downstream capital-action checks. Agent-authored intents must reference
+  `agent_authority_grant_id`; the server validates that grant at use time and
+  preserves grant deny reasons separately from binding deny reasons. Human
+  intents may omit grants, and system intents may omit grants only when a source
+  rule is recorded. Binding `allowed=true` is only admission into downstream
+  checks; it is not preflight, trade-plan approval, order-ticket creation,
+  broker submission, preflight bypass, authentication, AuthorityContract, or
+  execution authorization.
 - Archived live-trading code is not a current interface.
 - Agent capability profiles are explicit product postures resolved through a
   runtime `AgentToolEntry` registry/factory, not permission bypasses; Agent tool
@@ -112,6 +124,16 @@ Use this as a lookup page. For system ownership, read
   summary, risk posture, and a deterministic report hash. The object and
   preflight report are not an order ticket, simulation, approval, broker action,
   or execution authorization.
+- Action intent authority bindings are the admission fact between
+  AgentAuthorityGrant and downstream action checks:
+  `POST /action-intents/{action_intent_id}/authority-bindings` writes
+  `state_core_action_intent_authority_binding`, and
+  `GET /action-intent-authority-bindings/{binding_id}` retrieves it. v0 stores
+  author type/id, requested scope, validated scope, allow/deny result,
+  `binding` vs `grant_validation` deny reason sources, linked action intent
+  receipt, linked grant/mandate refs when present, and non-claims. Denied
+  bindings are persisted so downstream gates can read structured refusal
+  evidence instead of reinterpreting AgentAuthorityGrant semantics.
 - Preflight-bound action intent simulation reports are the first downstream
   consumer of action preflight hashes:
   `POST /action-intents/{action_intent_id}/simulation-reports` requires the
