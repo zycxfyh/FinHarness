@@ -123,7 +123,7 @@ systems:
   - id: capital_action_intent
     name: Capital Action Intent
     status: current
-    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, system preflight-bound qualitative simulation reports, and pre-trade plan candidates for future capital action workflows; no order ticket, broker submission, approval, authority contract, or execution authority.
+    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, and pre-trade plan candidates for future capital action workflows; no order ticket, broker submission, approval, authority contract, or execution authority.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
@@ -135,7 +135,7 @@ systems:
       - src/finharness/statecore/trade_plan_candidates.py
       - src/finharness/action_intent_preflight.py
       - src/finharness/api/routes_action_intents.py
-    mature_posture: OMS/EMS-style command-intent separation with authority admission, pre-trade controls, and preflight-bound downstream artifacts; define action intent, bind actor authority, recompute checks, bind simulation evidence, then create pre-trade plan candidates before any authority contract or order ticket.
+    mature_posture: OMS/EMS-style command-intent separation with authority admission, pre-trade controls, and preflight-bound downstream artifacts; define action intent, bind actor authority, let preflight consume latest/current binding evidence, bind simulation evidence, then create pre-trade plan candidates before any authority contract or order ticket.
     checks:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_action_intent_authority_bindings

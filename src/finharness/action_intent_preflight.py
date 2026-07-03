@@ -17,11 +17,15 @@ from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
 from finharness.ips import current_ips
+from finharness.statecore.action_intent_authority_bindings import (
+    latest_action_intent_authority_binding,
+)
 from finharness.statecore.action_intents import forbidden_action_intent_marker
 from finharness.statecore.models import (
     ACTION_INTENT_NEXT_STEPS,
     ACTION_INTENT_TYPES,
     ActionIntent,
+    ActionIntentAuthorityBinding,
     Position,
     Proposal,
     Snapshot,
@@ -92,6 +96,9 @@ class ActionIntentPreflightReport:
     source_proposal_receipt_ref: str | None
     current_proposal_receipt_ref: str | None
     freshness_status: str
+    authority_status: str
+    authority_binding_id: str | None
+    authority_binding_receipt_ref: str | None
     target_scope_status: str
     policy_status: str
     evidence_status: str
@@ -120,9 +127,18 @@ def preflight_action_intent(
         proposal = session.get(Proposal, action_intent.proposal_id)
         portfolio_snapshot = _latest_portfolio_snapshot(session)
         portfolio_refs = _portfolio_refs(session, portfolio_snapshot)
+        authority_binding = latest_action_intent_authority_binding(
+            action_intent.action_intent_id,
+            engine=engine,
+        )
     ips = current_ips(engine)
 
     source_refs = _dedupe([*action_intent.source_refs])
+    authority_binding_receipt_refs = (
+        [authority_binding.receipt_ref]
+        if authority_binding and authority_binding.receipt_ref
+        else []
+    )
     receipt_refs = _dedupe(
         [
             *action_intent.receipt_refs,
@@ -130,11 +146,18 @@ def preflight_action_intent(
             *([proposal.receipt_ref] if proposal and proposal.receipt_ref else []),
             *(portfolio_refs if portfolio_snapshot else []),
             *([ips.receipt_ref] if ips and ips.receipt_ref else []),
+            *authority_binding_receipt_refs,
         ]
     )
     freshness_status, freshness_findings = _freshness_findings(
         action_intent=action_intent,
         proposal=proposal,
+        source_refs=source_refs,
+        receipt_refs=receipt_refs,
+    )
+    authority_status, authority_findings = _authority_findings(
+        action_intent=action_intent,
+        authority_binding=authority_binding,
         source_refs=source_refs,
         receipt_refs=receipt_refs,
     )
@@ -167,6 +190,7 @@ def preflight_action_intent(
             source_refs=source_refs,
             receipt_refs=receipt_refs,
         ),
+        *authority_findings,
         *target_findings,
         *policy_findings,
         *evidence_findings,
@@ -198,6 +222,8 @@ def preflight_action_intent(
         action_intent=action_intent,
         proposal=proposal,
         freshness_status=freshness_status,
+        authority_status=authority_status,
+        authority_binding=authority_binding,
         target_scope_status=target_scope_status,
         policy_status=policy_status,
         evidence_status=evidence_status,
@@ -275,6 +301,130 @@ def _freshness_findings(
         )
         status = "stale"
     return status, findings
+
+
+def _authority_findings(
+    *,
+    action_intent: ActionIntent,
+    authority_binding: ActionIntentAuthorityBinding | None,
+    source_refs: list[str],
+    receipt_refs: list[str],
+) -> tuple[str, list[ActionIntentPreflightFinding]]:
+    if authority_binding is None:
+        if action_intent.created_by == "agent":
+            return "missing", [
+                _finding(
+                    code="missing_action_intent_authority_binding",
+                    severity="blocking",
+                    message=(
+                        "Agent-authored ActionIntentCandidate has no "
+                        "ActionIntentAuthorityBinding."
+                    ),
+                    recovery_hint=(
+                        "Create an allowed authority binding before preflight "
+                        "can admit this agent-authored intent."
+                    ),
+                    source_refs=source_refs,
+                    receipt_refs=receipt_refs,
+                )
+            ]
+        return "not_required", []
+
+    findings: list[ActionIntentPreflightFinding] = []
+    if authority_binding.source_action_intent_receipt_ref != action_intent.receipt_ref:
+        findings.append(
+            _finding(
+                code="stale_action_intent_authority_binding",
+                severity="blocking",
+                message=(
+                    "Latest ActionIntentAuthorityBinding was created against "
+                    "a stale ActionIntentCandidate receipt."
+                ),
+                recovery_hint=(
+                    "Recreate the authority binding against the current "
+                    "ActionIntentCandidate receipt."
+                ),
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    if authority_binding.author_type != action_intent.created_by:
+        findings.append(
+            _finding(
+                code="action_intent_authority_binding_author_mismatch",
+                severity="blocking",
+                message=(
+                    "Latest ActionIntentAuthorityBinding author_type does not "
+                    "match the ActionIntentCandidate author."
+                ),
+                recovery_hint=(
+                    "Create a new authority binding with an author_type that "
+                    "matches the ActionIntentCandidate."
+                ),
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    if not authority_binding.allowed:
+        findings.append(
+            _finding(
+                code="action_intent_authority_binding_denied",
+                severity="blocking",
+                message=(
+                    "Latest ActionIntentAuthorityBinding denied authority "
+                    "admission for this intent."
+                ),
+                recovery_hint=(
+                    "Resolve binding deny reasons before downstream preflight "
+                    "can progress: "
+                    + ", ".join(authority_binding.deny_reasons)
+                ),
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    if (
+        action_intent.created_by == "agent"
+        and authority_binding.allowed
+        and not authority_binding.grant_validation_result
+    ):
+        findings.append(
+            _finding(
+                code="agent_authority_binding_missing_grant_validation",
+                severity="blocking",
+                message=(
+                    "Allowed agent authority binding does not preserve a grant "
+                    "validation result."
+                ),
+                recovery_hint=(
+                    "Recreate the authority binding so preflight can consume "
+                    "grant validation evidence."
+                ),
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    return _authority_status_from_findings(
+        authority_binding=authority_binding,
+        findings=findings,
+    ), findings
+
+
+def _authority_status_from_findings(
+    *,
+    authority_binding: ActionIntentAuthorityBinding,
+    findings: list[ActionIntentPreflightFinding],
+) -> str:
+    codes = {finding.code for finding in findings}
+    if "stale_action_intent_authority_binding" in codes:
+        return "stale"
+    if "action_intent_authority_binding_author_mismatch" in codes:
+        return "mismatched"
+    if "agent_authority_binding_missing_grant_validation" in codes:
+        return "invalid"
+    if "action_intent_authority_binding_denied" in codes:
+        return "denied"
+    return "allowed" if authority_binding.allowed else "denied"
 
 
 def _closed_set_findings(
@@ -632,6 +782,8 @@ def _report(
     action_intent: ActionIntent,
     proposal: Proposal | None,
     freshness_status: str,
+    authority_status: str,
+    authority_binding: ActionIntentAuthorityBinding | None,
     target_scope_status: str,
     policy_status: str,
     evidence_status: str,
@@ -657,6 +809,13 @@ def _report(
         source_proposal_receipt_ref=action_intent.source_proposal_receipt_ref,
         current_proposal_receipt_ref=proposal.receipt_ref if proposal else None,
         freshness_status=freshness_status,
+        authority_status=authority_status,
+        authority_binding_id=(
+            authority_binding.binding_id if authority_binding is not None else None
+        ),
+        authority_binding_receipt_ref=(
+            authority_binding.receipt_ref if authority_binding is not None else None
+        ),
         target_scope_status=target_scope_status,
         policy_status=policy_status,
         evidence_status=evidence_status,
@@ -688,6 +847,9 @@ def _report_hash(report: ActionIntentPreflightReport) -> str:
         "source_proposal_receipt_ref": report.source_proposal_receipt_ref,
         "current_proposal_receipt_ref": report.current_proposal_receipt_ref,
         "freshness_status": report.freshness_status,
+        "authority_status": report.authority_status,
+        "authority_binding_id": report.authority_binding_id,
+        "authority_binding_receipt_ref": report.authority_binding_receipt_ref,
         "target_scope_status": report.target_scope_status,
         "policy_status": report.policy_status,
         "evidence_status": report.evidence_status,

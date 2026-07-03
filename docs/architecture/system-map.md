@@ -117,8 +117,8 @@ domain model / read model / write(command) model / adapters / invariants
   simulation、approval、investment advice 或 execution authorization;创建时必须
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
   authority markers,并写 `state_core_action_intent_candidate` receipt;system
-  preflight 只读重算 freshness、scope、IPS policy、evidence、precondition、
-  v0 impact summary、risk posture 和 deterministic report hash;
+  preflight 只读重算 authority binding、freshness、scope、IPS policy、evidence、
+  precondition、v0 impact summary、risk posture 和 deterministic report hash;
   ActionIntentAuthorityBinding 只授予进入 downstream checks 的资格,不授予越级
   execution authority;agent-authored ActionIntent 必须引用
   `agent_authority_grant_id`,server use-time validate grant 并保留 binding 与
@@ -126,7 +126,10 @@ domain model / read model / write(command) model / adapters / invariants
   human-authored ActionIntent 可不引用 grant,system-authored ActionIntent 可不引用
   grant 但必须记录 source rule;binding allowed 仍不等于 preflight pass、trade-plan
   approval、order ticket、broker submission、preflight bypass 或 execution
-  authorization;simulation report
+  authorization;action preflight 消费 latest/current binding 而不重写 grant 语义:
+  agent-authored intent 缺 allowed binding、binding denied、binding receipt stale
+  或缺 grant validation evidence 时 block;human/system 无 binding 可继续走现有
+  preflight,但已有 binding 的 denied/stale 状态会被消费并 block;simulation report
   创建时必须重新计算并匹配 current preflight hash,block 则拒绝,warn 必须显式
   acknowledge all warning codes,并写
   `state_core_action_intent_simulation_report` receipt;v0 simulation report
