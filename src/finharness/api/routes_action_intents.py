@@ -49,6 +49,7 @@ from finharness.statecore.models import (
     ActionIntentAuthorityBinding,
     ActionIntentSimulationReport,
     TradePlanCandidate,
+    TradePlanReviewGate,
 )
 from finharness.statecore.trade_plan_candidates import (
     TRADE_PLAN_CANDIDATE_NON_CLAIMS,
@@ -56,6 +57,14 @@ from finharness.statecore.trade_plan_candidates import (
     TradePlanCandidateStaleError,
     TradePlanCandidateValidationError,
     create_governed_trade_plan_candidate,
+)
+from finharness.statecore.trade_plan_review_gates import (
+    TRADE_PLAN_REVIEW_GATE_NON_CLAIMS,
+    TradePlanReviewGateDecision,
+    TradePlanReviewGateReviewerType,
+    TradePlanReviewGateStaleError,
+    TradePlanReviewGateValidationError,
+    create_governed_trade_plan_review_gate,
 )
 
 router = APIRouter(tags=["action-intents"])
@@ -273,6 +282,56 @@ class TradePlanCandidateResponse(BaseModel):
     execution_allowed: bool = False
     authority_transition: bool = False
     submitted_to_broker: bool = False
+
+
+class TradePlanReviewGateCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_trade_plan_candidate_receipt_ref: str
+    expected_action_intent_receipt_ref: str
+    expected_action_preflight_report_hash: str
+    expected_simulation_report_receipt_ref: str
+    review_decision: TradePlanReviewGateDecision
+    reviewer_type: TradePlanReviewGateReviewerType = "human"
+    reviewer_id: str
+    review_reason: str
+    review_context: dict[str, Any] = Field(default_factory=dict)
+    review_findings: list[dict[str, Any]] = Field(default_factory=list)
+    deny_reasons: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "expected_trade_plan_candidate_receipt_ref",
+        "expected_action_intent_receipt_ref",
+        "expected_action_preflight_report_hash",
+        "expected_simulation_report_receipt_ref",
+        "reviewer_id",
+        "review_reason",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("trade plan review gate requires current evidence and reason")
+        return value
+
+
+class TradePlanReviewGateCreateResponse(BaseModel):
+    review_gate: TradePlanReviewGate
+    receipt_ref: str
+    non_claims: tuple[str, ...] = TRADE_PLAN_REVIEW_GATE_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
+    creates_order_ticket: bool = False
+
+
+class TradePlanReviewGateResponse(BaseModel):
+    review_gate: TradePlanReviewGate
+    non_claims: tuple[str, ...] = TRADE_PLAN_REVIEW_GATE_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
+    creates_order_ticket: bool = False
 
 
 def _preflight_finding_view(
@@ -615,4 +674,81 @@ async def get_trade_plan_candidate(
         execution_allowed=False,
         authority_transition=False,
         submitted_to_broker=False,
+    )
+
+
+@router.post(
+    "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates",
+    response_model=TradePlanReviewGateCreateResponse,
+)
+async def create_trade_plan_review_gate(
+    trade_plan_candidate_id: str,
+    request: TradePlanReviewGateCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> TradePlanReviewGateCreateResponse:
+    try:
+        write = create_governed_trade_plan_review_gate(
+            trade_plan_candidate_id=trade_plan_candidate_id,
+            expected_trade_plan_candidate_receipt_ref=(
+                request.expected_trade_plan_candidate_receipt_ref
+            ),
+            expected_action_intent_receipt_ref=request.expected_action_intent_receipt_ref,
+            expected_action_preflight_report_hash=(
+                request.expected_action_preflight_report_hash
+            ),
+            expected_simulation_report_receipt_ref=(
+                request.expected_simulation_report_receipt_ref
+            ),
+            review_decision=request.review_decision,
+            reviewer_type=request.reviewer_type,
+            reviewer_id=request.reviewer_id,
+            review_reason=request.review_reason,
+            review_context=request.review_context,
+            review_findings=request.review_findings,
+            deny_reasons=request.deny_reasons,
+            source_refs=request.source_refs,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"trade plan candidate not found: {trade_plan_candidate_id}",
+        ) from exc
+    except TradePlanReviewGateStaleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TradePlanReviewGateValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return TradePlanReviewGateCreateResponse(
+        review_gate=write.review_gate,
+        receipt_ref=write.receipt_ref,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
+        creates_order_ticket=False,
+    )
+
+
+@router.get(
+    "/trade-plan-review-gates/{review_gate_id}",
+    response_model=TradePlanReviewGateResponse,
+)
+async def get_trade_plan_review_gate(
+    review_gate_id: str,
+    engine: EngineDependency,
+) -> TradePlanReviewGateResponse:
+    with Session(engine) as session:
+        review_gate = session.get(TradePlanReviewGate, review_gate_id)
+    if review_gate is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"trade plan review gate not found: {review_gate_id}",
+        )
+    return TradePlanReviewGateResponse(
+        review_gate=review_gate,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
+        creates_order_ticket=False,
     )

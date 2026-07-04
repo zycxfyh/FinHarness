@@ -167,6 +167,18 @@ Use this as a lookup page. For system ownership, read
   TradePlanCandidate may describe a possible pre-trade plan, but only a future
   AuthorityContract can authorize any execution path or transform it into an
   order ticket.
+- Trade plan review gates are human review results over current plan evidence:
+  `POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates` requires
+  the current trade plan candidate receipt, current simulation report receipt,
+  current action intent receipt, current action preflight hash, a human reviewer,
+  and an allow/deny decision for order-ticket-candidate staging. The server
+  recomputes current preflight at create time, rejects stale receipts or hashes,
+  persists allow and deny results as `state_core_trade_plan_review_gate`
+  receipts, and rejects broker/order-ready/execution fields. `GET
+  /trade-plan-review-gates/{review_gate_id}` retrieves the gate. An allowed
+  gate means the candidate may enter future order-ticket-candidate staging; it
+  does not create an order ticket, submit to a broker, certify suitability,
+  create an AuthorityContract, or authorize execution.
 - System scaffold candidate preflight is a read-only recomputation surface:
   `GET /scaffold-revision-candidates/{candidate_id}/preflight` checks the
   candidate payload against current proposal state, current active risk register
