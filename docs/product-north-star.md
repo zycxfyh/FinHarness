@@ -26,6 +26,13 @@
 > uncertainty 和 next safe path,帮助用户理解候选动作是否服务长期资本目标。它
 > 不是 investment advice、suitability certification、trade-plan approval、order
 > ticket、broker submission 或 execution authorization。
+>
+> 修订(2026-07-04):FinHarness 的 agentic development 也遵循同一产品哲学:
+> 中型和主线 PR 应先识别 unknowns、产品形态风险、conservative defaults 和
+> stop conditions,再实现。这不是流程仪式,而是防止 Agent 在地图缺失处把个人
+> capital agency workbench 推向 permission firewall、premature order pipeline、
+> advice/approval system 或 execution-shaped workflow。工程协议见
+> [Agentic Unknowns Protocol](engineering/agentic-unknowns-protocol.md)。
 
 ## 一句话定位
 
