@@ -64,6 +64,7 @@ separately below so they are not mistaken for current authority.
 | Action intent authority binding | direct JSON dictionary | `state_core_action_intent_authority_binding` | n/a | `ActionIntentAuthorityBinding` | n/a |
 | Action intent simulation report | direct JSON dictionary | `state_core_action_intent_simulation_report` | n/a | `ActionIntentSimulationReport` | n/a |
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
+| Capital objective fit | direct JSON dictionary | `state_core_capital_objective_fit` | n/a | `CapitalObjectiveFit` | n/a |
 | Trade plan review gate | direct JSON dictionary | `state_core_trade_plan_review_gate` | n/a | `TradePlanReviewGate` | n/a |
 
 ## Historical / Archived Receipt Envelope By Surface
@@ -328,6 +329,53 @@ Location: `data/receipts/state-core/trade-plan-candidates/`
 | `governance.not_execution_authorization` | `bool` | True. |
 | `governance.requires_authority_contract` | `bool` | True for any future execution path. |
 | `governance.non_claims` | `list[str]` | Explicit trade-plan non-claims. |
+
+### Capital Objective Fit Receipts
+
+Location: `data/receipts/state-core/capital-objective-fits/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | `receipt_<capital_objective_fit_id>`. |
+| `kind` | `str` | `state_core_capital_objective_fit`. |
+| `created_at_utc` | `str` | Creation timestamp. |
+| `capital_objective_fit_id` | `str` | Objective-fit id. |
+| `trade_plan_candidate_id` | `str` | Source candidate id. |
+| `action_intent_id` | `str` | Source action intent id. |
+| `simulation_report_id` | `str` | Source simulation report id. |
+| `proposal_id` | `str` | Source proposal id. |
+| `source_trade_plan_candidate_receipt_ref` | `str` | Current trade plan candidate receipt consumed by the write. |
+| `source_action_intent_receipt_ref` | `str` | Current action intent receipt consumed by the write. |
+| `source_action_preflight_report_hash` | `str` | Current recomputed preflight hash consumed by the write. |
+| `source_simulation_report_receipt_ref` | `str` | Current simulation report receipt consumed by the write. |
+| `objective_alignment` | `str` | `aligned`, `unclear`, or `conflicted`. |
+| `objective_basis` | `dict[str, Any]` | Objective/mandate/IPS context cited by the fit. |
+| `benefit_thesis` | `str` | Human-readable thesis for how the candidate may help or fail the objective. |
+| `risk_budget_impact` | `dict[str, Any]` | Risk-budget impact summary. |
+| `liquidity_impact` | `dict[str, Any]` | Liquidity impact summary. |
+| `concentration_impact` | `dict[str, Any]` | Concentration impact summary. |
+| `reversibility` | `dict[str, Any]` | Reversibility / staged-path assessment. |
+| `opportunity_cost` | `dict[str, Any]` | Costs of acting, waiting, or choosing another path. |
+| `alternatives_considered` | `list[dict[str, Any]]` | Safer or competing paths considered. |
+| `major_uncertainties` | `list[str]` | Main unresolved uncertainties. |
+| `user_questions` | `list[str]` | Questions for human review. |
+| `recommended_next_safe_path` | `str` | Constructive next step that does not bypass governance. |
+| `capital_objective_fit` | `CapitalObjectiveFit` | Objective-fit payload. |
+| `evidence_snapshot` | `dict[str, Any]` | Candidate status, current receipts, simulation status, and preflight hash. |
+| `governance.execution_allowed` | `bool` | Always false. |
+| `governance.authority_transition` | `bool` | Always false. |
+| `governance.submitted_to_broker` | `bool` | Always false. |
+| `governance.creates_order_ticket` | `bool` | Always false. |
+| `governance.suitability_certified` | `bool` | Always false. |
+| `governance.approval_granted` | `bool` | Always false. |
+| `governance.objective_fit_only` | `bool` | True. |
+| `governance.not_investment_advice` | `bool` | True. |
+| `governance.not_trade_plan_approval` | `bool` | True. |
+| `governance.not_order_ticket` | `bool` | True. |
+| `governance.not_broker_submission` | `bool` | True. |
+| `governance.not_execution_authorization` | `bool` | True. |
+| `governance.not_suitability_certification` | `bool` | True. |
+| `governance.non_claims` | `list[str]` | Explicit objective-fit non-claims. |
 
 ### Trade Plan Review Gate Receipts
 

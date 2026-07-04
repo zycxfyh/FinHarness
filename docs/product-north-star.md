@@ -19,6 +19,13 @@
 > 它必须引用 active CapitalMandate,验证时动态重查当前 grant 与 mandate 状态,
 > 并返回闭集 deny reasons。它不是 authentication、trade-plan approval、
 > preflight bypass、broker submit 或 execution authorization。
+>
+> 修订(2026-07-04):资本动作链不能只发展成 permission firewall。`CapitalObjectiveFit`
+> 是 review gate 前的用户利益解释层:它把 TradePlanCandidate 绑定到 objective
+> alignment、benefit thesis、risk/liquidity/concentration impact、alternatives、
+> uncertainty 和 next safe path,帮助用户理解候选动作是否服务长期资本目标。它
+> 不是 investment advice、suitability certification、trade-plan approval、order
+> ticket、broker submission 或 execution authorization。
 
 ## 一句话定位
 

@@ -19,6 +19,7 @@ from finharness.statecore.models import (
     Account,
     ActionIntent,
     ActionIntentSimulationReport,
+    CapitalObjectiveFit,
     Position,
     Proposal,
     ReceiptIndex,
@@ -274,6 +275,72 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             "/action-intent-simulation-reports/"
             f"{simulation_report['simulation_report_id']}/trade-plan-candidates",
             json=self._trade_plan_request(intent, preflight, simulation_report, **overrides),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _capital_objective_fit_request(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "expected_trade_plan_candidate_receipt_ref": trade_plan_candidate[
+                "receipt_ref"
+            ],
+            "expected_action_intent_receipt_ref": intent["receipt_ref"],
+            "expected_action_preflight_report_hash": preflight["report_hash"],
+            "expected_simulation_report_receipt_ref": simulation_report["receipt_ref"],
+            "objective_alignment": "aligned",
+            "objective_basis": {
+                "capital_mandate_ref": "capital-mandate://risk-control",
+                "objective": "reduce concentration risk while preserving liquidity",
+            },
+            "benefit_thesis": (
+                "Candidate may reduce concentration risk while preserving staged review."
+            ),
+            "risk_budget_impact": {"direction": "risk_reduction"},
+            "liquidity_impact": {"expected_effect": "neutral_to_positive"},
+            "concentration_impact": {"single_name_exposure": "lower"},
+            "reversibility": {"path": "staged_review_before_next_gate"},
+            "opportunity_cost": {"main_cost": "possible upside foregone"},
+            "alternatives_considered": [
+                {
+                    "path": "watchlist",
+                    "reason": "defer until more evidence is available",
+                }
+            ],
+            "major_uncertainties": ["future price path remains unknown"],
+            "user_questions": ["Is reducing exposure aligned with the IPS objective?"],
+            "recommended_next_safe_path": (
+                "Use this objective fit as review evidence before any staging gate."
+            ),
+            "source_refs": ["context://capital_objective_fit"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_capital_objective_fit(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        response = self.client.post(
+            f"/trade-plan-candidates/{trade_plan_candidate['trade_plan_candidate_id']}"
+            "/capital-objective-fits",
+            json=self._capital_objective_fit_request(
+                intent,
+                preflight,
+                simulation_report,
+                trade_plan_candidate,
+                **overrides,
+            ),
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
@@ -1015,6 +1082,190 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             fetched.json()["trade_plan_candidate"]["receipt_ref"],
             body["receipt_ref"],
         )
+
+    def test_capital_objective_fit_writes_receipt_and_can_be_fetched(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+
+        body = self._create_capital_objective_fit(intent, preflight, simulation, candidate)
+
+        self.assertFalse(body["execution_allowed"])
+        self.assertFalse(body["authority_transition"])
+        self.assertFalse(body["submitted_to_broker"])
+        self.assertFalse(body["creates_order_ticket"])
+        self.assertFalse(body["suitability_certified"])
+        self.assertFalse(body["approval_granted"])
+        objective_fit = body["objective_fit"]
+        self.assertEqual(
+            objective_fit["trade_plan_candidate_id"],
+            candidate["trade_plan_candidate_id"],
+        )
+        self.assertEqual(objective_fit["action_intent_id"], intent["action_intent_id"])
+        self.assertEqual(
+            objective_fit["simulation_report_id"],
+            simulation["simulation_report_id"],
+        )
+        self.assertEqual(
+            objective_fit["source_trade_plan_candidate_receipt_ref"],
+            candidate["receipt_ref"],
+        )
+        self.assertEqual(objective_fit["source_action_intent_receipt_ref"], intent["receipt_ref"])
+        self.assertEqual(
+            objective_fit["source_action_preflight_report_hash"],
+            preflight["report_hash"],
+        )
+        self.assertEqual(
+            objective_fit["source_simulation_report_receipt_ref"],
+            simulation["receipt_ref"],
+        )
+        self.assertEqual(objective_fit["objective_alignment"], "aligned")
+        self.assertEqual(objective_fit["risk_budget_impact"]["direction"], "risk_reduction")
+        self.assertEqual(objective_fit["preflight_refs"], [preflight["report_hash"]])
+        self.assertNotIn(preflight["report_hash"], objective_fit["receipt_refs"])
+
+        rows = read_all(CapitalObjectiveFit, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_capital_objective_fit"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt_payload["kind"], "state_core_capital_objective_fit")
+        self.assertTrue(receipt_payload["governance"]["objective_fit_only"])
+        self.assertTrue(receipt_payload["governance"]["not_investment_advice"])
+        self.assertTrue(receipt_payload["governance"]["not_trade_plan_approval"])
+        self.assertTrue(receipt_payload["governance"]["not_order_ticket"])
+        self.assertFalse(receipt_payload["governance"]["suitability_certified"])
+        self.assertFalse(receipt_payload["governance"]["approval_granted"])
+        self.assertFalse(receipt_payload["governance"]["execution_allowed"])
+
+        fetched = self.client.get(
+            f"/capital-objective-fits/{objective_fit['capital_objective_fit_id']}"
+        )
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(fetched.json()["objective_fit"]["receipt_ref"], body["receipt_ref"])
+        self.assertFalse(fetched.json()["approval_granted"])
+
+    def test_capital_objective_fit_rejects_stale_evidence(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        cases = (
+            (
+                "candidate_receipt",
+                {
+                    "expected_trade_plan_candidate_receipt_ref": (
+                        "data/receipts/stale_candidate.json"
+                    )
+                },
+            ),
+            (
+                "action_receipt",
+                {"expected_action_intent_receipt_ref": "data/receipts/stale_action.json"},
+            ),
+            (
+                "preflight_hash",
+                {"expected_action_preflight_report_hash": "sha256:stale"},
+            ),
+            (
+                "simulation_receipt",
+                {
+                    "expected_simulation_report_receipt_ref": (
+                        "data/receipts/stale_simulation.json"
+                    )
+                },
+            ),
+        )
+
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+                    "/capital-objective-fits",
+                    json=self._capital_objective_fit_request(
+                        intent,
+                        preflight,
+                        simulation,
+                        candidate,
+                        **overrides,
+                    ),
+                )
+                self.assertEqual(response.status_code, 409)
+        self.assertEqual(read_all(CapitalObjectiveFit, engine=self.engine), [])
+
+    def test_capital_objective_fit_rejects_advice_and_order_markers(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        cases = (
+            ("advice", {"objective_basis": {"investment_advice": "buy"}}),
+            ("approval", {"risk_budget_impact": {"approval_granted": True}}),
+            ("order_alias", {"alternatives_considered": [{"shares": 10}]}),
+            (
+                "benefit_text_advice",
+                {
+                    "benefit_thesis": (
+                        "This is investment advice to buy 100 shares."
+                    )
+                },
+            ),
+            (
+                "next_path_broker_order",
+                {"recommended_next_safe_path": "Submit broker order now."},
+            ),
+            (
+                "source_ref_broker",
+                {"source_refs": ["broker://unsafe-order-ticket"]},
+            ),
+            (
+                "unclear_without_questions",
+                {
+                    "objective_alignment": "unclear",
+                    "major_uncertainties": [],
+                    "user_questions": [],
+                },
+            ),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+                    "/capital-objective-fits",
+                    json=self._capital_objective_fit_request(
+                        intent,
+                        preflight,
+                        simulation,
+                        candidate,
+                        **overrides,
+                    ),
+                )
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(CapitalObjectiveFit, engine=self.engine), [])
 
     def test_trade_plan_review_gate_writes_allow_receipt_and_can_be_fetched(self) -> None:
         self._seed_portfolio_snapshot()

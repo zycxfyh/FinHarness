@@ -310,6 +310,8 @@ class StateCoreApiTest(unittest.TestCase):
                 "post"
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}": {"get"},
+            "/trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits": {"post"},
+            "/capital-objective-fits/{capital_objective_fit_id}": {"get"},
             "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates": {"post"},
             "/trade-plan-review-gates/{review_gate_id}": {"get"},
             "/review/retrospective": {"get"},
@@ -349,6 +351,7 @@ class StateCoreApiTest(unittest.TestCase):
             "AgentAuthorityGrant",
             "AgentAuthorityGrantValidationResult",
             "Attestation",
+            "CapitalObjectiveFit",
             "CashflowEvent",
             "DocumentRef",
             "FinancialGoal",
