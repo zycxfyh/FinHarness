@@ -44,10 +44,18 @@ from finharness.statecore.action_intents import (
     ActionIntentValidationError,
     create_governed_action_intent,
 )
+from finharness.statecore.capital_objective_fits import (
+    CAPITAL_OBJECTIVE_FIT_NON_CLAIMS,
+    CapitalObjectiveAlignment,
+    CapitalObjectiveFitStaleError,
+    CapitalObjectiveFitValidationError,
+    create_governed_capital_objective_fit,
+)
 from finharness.statecore.models import (
     ActionIntent,
     ActionIntentAuthorityBinding,
     ActionIntentSimulationReport,
+    CapitalObjectiveFit,
     TradePlanCandidate,
     TradePlanReviewGate,
 )
@@ -282,6 +290,65 @@ class TradePlanCandidateResponse(BaseModel):
     execution_allowed: bool = False
     authority_transition: bool = False
     submitted_to_broker: bool = False
+
+
+class CapitalObjectiveFitCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_trade_plan_candidate_receipt_ref: str
+    expected_action_intent_receipt_ref: str
+    expected_action_preflight_report_hash: str
+    expected_simulation_report_receipt_ref: str
+    objective_alignment: CapitalObjectiveAlignment
+    objective_basis: dict[str, Any] = Field(default_factory=dict)
+    benefit_thesis: str
+    risk_budget_impact: dict[str, Any] = Field(default_factory=dict)
+    liquidity_impact: dict[str, Any] = Field(default_factory=dict)
+    concentration_impact: dict[str, Any] = Field(default_factory=dict)
+    reversibility: dict[str, Any] = Field(default_factory=dict)
+    opportunity_cost: dict[str, Any] = Field(default_factory=dict)
+    alternatives_considered: list[dict[str, Any]] = Field(default_factory=list)
+    major_uncertainties: list[str] = Field(default_factory=list)
+    user_questions: list[str] = Field(default_factory=list)
+    recommended_next_safe_path: str
+    source_refs: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "expected_trade_plan_candidate_receipt_ref",
+        "expected_action_intent_receipt_ref",
+        "expected_action_preflight_report_hash",
+        "expected_simulation_report_receipt_ref",
+        "benefit_thesis",
+        "recommended_next_safe_path",
+    )
+    @classmethod
+    def require_non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("capital objective fit requires current evidence and thesis")
+        return value
+
+
+class CapitalObjectiveFitCreateResponse(BaseModel):
+    objective_fit: CapitalObjectiveFit
+    receipt_ref: str
+    non_claims: tuple[str, ...] = CAPITAL_OBJECTIVE_FIT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
+    creates_order_ticket: bool = False
+    suitability_certified: bool = False
+    approval_granted: bool = False
+
+
+class CapitalObjectiveFitResponse(BaseModel):
+    objective_fit: CapitalObjectiveFit
+    non_claims: tuple[str, ...] = CAPITAL_OBJECTIVE_FIT_NON_CLAIMS
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    submitted_to_broker: bool = False
+    creates_order_ticket: bool = False
+    suitability_certified: bool = False
+    approval_granted: bool = False
 
 
 class TradePlanReviewGateCreateRequest(BaseModel):
@@ -674,6 +741,92 @@ async def get_trade_plan_candidate(
         execution_allowed=False,
         authority_transition=False,
         submitted_to_broker=False,
+    )
+
+
+@router.post(
+    "/trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits",
+    response_model=CapitalObjectiveFitCreateResponse,
+)
+async def create_capital_objective_fit(
+    trade_plan_candidate_id: str,
+    request: CapitalObjectiveFitCreateRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+) -> CapitalObjectiveFitCreateResponse:
+    try:
+        write = create_governed_capital_objective_fit(
+            trade_plan_candidate_id=trade_plan_candidate_id,
+            expected_trade_plan_candidate_receipt_ref=(
+                request.expected_trade_plan_candidate_receipt_ref
+            ),
+            expected_action_intent_receipt_ref=request.expected_action_intent_receipt_ref,
+            expected_action_preflight_report_hash=(
+                request.expected_action_preflight_report_hash
+            ),
+            expected_simulation_report_receipt_ref=(
+                request.expected_simulation_report_receipt_ref
+            ),
+            objective_alignment=request.objective_alignment,
+            objective_basis=request.objective_basis,
+            benefit_thesis=request.benefit_thesis,
+            risk_budget_impact=request.risk_budget_impact,
+            liquidity_impact=request.liquidity_impact,
+            concentration_impact=request.concentration_impact,
+            reversibility=request.reversibility,
+            opportunity_cost=request.opportunity_cost,
+            alternatives_considered=request.alternatives_considered,
+            major_uncertainties=request.major_uncertainties,
+            user_questions=request.user_questions,
+            recommended_next_safe_path=request.recommended_next_safe_path,
+            source_refs=request.source_refs,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"trade plan candidate not found: {trade_plan_candidate_id}",
+        ) from exc
+    except CapitalObjectiveFitStaleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CapitalObjectiveFitValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CapitalObjectiveFitCreateResponse(
+        objective_fit=write.objective_fit,
+        receipt_ref=write.receipt_ref,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
+        creates_order_ticket=False,
+        suitability_certified=False,
+        approval_granted=False,
+    )
+
+
+@router.get(
+    "/capital-objective-fits/{capital_objective_fit_id}",
+    response_model=CapitalObjectiveFitResponse,
+)
+async def get_capital_objective_fit(
+    capital_objective_fit_id: str,
+    engine: EngineDependency,
+) -> CapitalObjectiveFitResponse:
+    with Session(engine) as session:
+        objective_fit = session.get(CapitalObjectiveFit, capital_objective_fit_id)
+    if objective_fit is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"capital objective fit not found: {capital_objective_fit_id}",
+        )
+    return CapitalObjectiveFitResponse(
+        objective_fit=objective_fit,
+        execution_allowed=False,
+        authority_transition=False,
+        submitted_to_broker=False,
+        creates_order_ticket=False,
+        suitability_certified=False,
+        approval_granted=False,
     )
 
 

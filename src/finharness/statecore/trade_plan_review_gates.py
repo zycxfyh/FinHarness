@@ -59,19 +59,25 @@ TRADE_PLAN_REVIEW_GATE_NON_CLAIMS: tuple[str, ...] = (
 ORDER_READY_REVIEW_KEYS: frozenset[str] = frozenset(
     {
         "broker_order_id",
+        "contracts",
         "execution_allowed",
         "execution_status",
+        "exact_quantity",
         "fix_tags",
         "limit_price",
         "market_order",
         "order_submit_payload",
         "order_type",
         "quantity",
+        "qty",
         "route",
+        "share_count",
+        "shares",
         "side",
         "stop_price",
         "submitted_to_broker",
         "time_in_force",
+        "units",
         "venue",
     }
 )
@@ -152,9 +158,7 @@ def create_governed_trade_plan_review_gate(
         trade_plan_candidate=trade_plan_candidate,
         action_intent=action_intent,
         simulation_report=simulation_report,
-        expected_trade_plan_candidate_receipt_ref=(
-            expected_trade_plan_candidate_receipt_ref
-        ),
+        expected_trade_plan_candidate_receipt_ref=(expected_trade_plan_candidate_receipt_ref),
         expected_action_intent_receipt_ref=expected_action_intent_receipt_ref,
         expected_action_preflight_report_hash=expected_action_preflight_report_hash,
         expected_simulation_report_receipt_ref=expected_simulation_report_receipt_ref,
@@ -409,12 +413,8 @@ def _receipt_payload(
             review_gate.source_trade_plan_candidate_receipt_ref
         ),
         "source_action_intent_receipt_ref": review_gate.source_action_intent_receipt_ref,
-        "source_action_preflight_report_hash": (
-            review_gate.source_action_preflight_report_hash
-        ),
-        "source_simulation_report_receipt_ref": (
-            review_gate.source_simulation_report_receipt_ref
-        ),
+        "source_action_preflight_report_hash": (review_gate.source_action_preflight_report_hash),
+        "source_simulation_report_receipt_ref": (review_gate.source_simulation_report_receipt_ref),
         "review_decision": review_gate.review_decision,
         "reviewer": {
             "reviewer_type": review_gate.reviewer_type,
@@ -423,9 +423,7 @@ def _receipt_payload(
         "review_context": review_gate.review_context,
         "review_findings": review_gate.review_findings,
         "deny_reasons": review_gate.deny_reasons,
-        "candidate_validation_finding_codes": (
-            review_gate.candidate_validation_finding_codes
-        ),
+        "candidate_validation_finding_codes": (review_gate.candidate_validation_finding_codes),
         "may_enter_order_ticket_candidate_staging": (
             review_gate.may_enter_order_ticket_candidate_staging
         ),

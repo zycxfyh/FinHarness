@@ -123,20 +123,22 @@ systems:
   - id: capital_action_intent
     name: Capital Action Intent
     status: current
-    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, pre-trade plan candidates, and human trade-plan review gates for future capital action workflows; no order ticket, broker submission, suitability certification, authority contract, or execution authority.
+    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, pre-trade plan candidates, objective-fit benefit cases, and human trade-plan review gates for future capital action workflows; no investment advice, order ticket, broker submission, suitability certification, authority contract, or execution authority.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
       - docs/adr/2026-07-03-action-intent-authority-bindings-admit-only-to-next-governance-step.md
+      - docs/adr/2026-07-04-capital-objective-fit-before-order-ticket.md
     runtime_roots:
       - src/finharness/statecore/action_intents.py
       - src/finharness/statecore/action_intent_authority_bindings.py
       - src/finharness/statecore/action_intent_simulations.py
       - src/finharness/statecore/trade_plan_candidates.py
+      - src/finharness/statecore/capital_objective_fits.py
       - src/finharness/statecore/trade_plan_review_gates.py
       - src/finharness/action_intent_preflight.py
       - src/finharness/api/routes_action_intents.py
-    mature_posture: OMS/EMS-style command-intent separation with authority admission, pre-trade controls, preflight-bound downstream artifacts, and supervisory review gates; define action intent, bind actor authority, let preflight consume latest/current binding evidence, bind simulation evidence, create pre-trade plan candidates, then record human allow/deny review before any authority contract or order ticket.
+    mature_posture: OMS/EMS-style command-intent separation with authority admission, pre-trade controls, preflight-bound downstream artifacts, objective-fit benefit cases, and supervisory review gates; define action intent, bind actor authority, let preflight consume latest/current binding evidence, bind simulation evidence, create pre-trade plan candidates, explain objective alignment and next safe paths, then record human allow/deny review before any authority contract or order ticket.
     checks:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_action_intent_authority_bindings

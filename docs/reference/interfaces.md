@@ -167,6 +167,21 @@ Use this as a lookup page. For system ownership, read
   TradePlanCandidate may describe a possible pre-trade plan, but only a future
   AuthorityContract can authorize any execution path or transform it into an
   order ticket.
+- Capital objective fits are objective/benefit review evidence over current
+  plan evidence: `POST
+  /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits`
+  requires the current trade plan candidate receipt, current simulation report
+  receipt, current action intent receipt, current action preflight hash,
+  objective alignment, benefit thesis, impact summaries, alternatives,
+  uncertainties, and a recommended next safe path. The server recomputes
+  current preflight at create time, rejects stale receipts or hashes, persists a
+  `state_core_capital_objective_fit` receipt, and rejects advice/approval/
+  suitability/order/broker/execution fields. `GET
+  /capital-objective-fits/{capital_objective_fit_id}` retrieves the fit.
+  CapitalObjectiveFit helps review whether a candidate appears aligned,
+  unclear, or conflicted with user capital objectives; it is not investment
+  advice, suitability certification, trade-plan approval, an order ticket,
+  broker submission, or execution authorization.
 - Trade plan review gates are human review results over current plan evidence:
   `POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates` requires
   the current trade plan candidate receipt, current simulation report receipt,
