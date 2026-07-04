@@ -27,6 +27,10 @@ from finharness.statecore.models import (
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
+    PaperAccount,
+    PaperExecutionReceipt,
+    PaperOrderTicketCandidate,
+    PaperPosition,
     Position,
     Proposal,
     ReceiptIndex,
@@ -57,6 +61,10 @@ StateCoreRecord = (
     | TaxEvent
     | InsurancePolicy
     | DocumentRef
+    | PaperAccount
+    | PaperExecutionReceipt
+    | PaperOrderTicketCandidate
+    | PaperPosition
     | Snapshot
     | ReceiptIndex
     | Proposal

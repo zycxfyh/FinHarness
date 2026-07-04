@@ -20,6 +20,10 @@ from finharness.statecore.models import (
     ActionIntent,
     ActionIntentSimulationReport,
     CapitalObjectiveFit,
+    PaperAccount,
+    PaperExecutionReceipt,
+    PaperOrderTicketCandidate,
+    PaperPosition,
     Position,
     Proposal,
     ReceiptIndex,
@@ -264,6 +268,19 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def _increase_plan_scope(self) -> dict[str, object]:
+        return {
+            "plan_direction": "increase",
+            "target_scope": {"scope_type": "single_instrument", "symbol": "XYZ"},
+            "instrument_scope": {"instrument_ref": "instrument://XYZ", "symbol": "XYZ"},
+            "account_scope": {"scope_type": "portfolio_review"},
+            "risk_constraints": {"risk_budget_ref": "risk-budget://concentration"},
+            "notional_cap": {"currency": "USD", "max_amount": "1000"},
+            "percent_cap": {"max_percent": "5"},
+            "time_window": {"review_by": "2026-07-10"},
+            "required_authority_level": "authority_contract_required",
+        }
+
     def _create_trade_plan_candidate(
         self,
         intent: dict[str, object],
@@ -401,6 +418,124 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
+
+    def _paper_order_ticket_request(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        review_gate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "review_gate_id": review_gate["review_gate_id"],
+            "expected_trade_plan_candidate_receipt_ref": trade_plan_candidate[
+                "receipt_ref"
+            ],
+            "expected_review_gate_receipt_ref": review_gate["receipt_ref"],
+            "expected_action_intent_receipt_ref": intent["receipt_ref"],
+            "expected_action_preflight_report_hash": preflight["report_hash"],
+            "expected_simulation_report_receipt_ref": simulation_report["receipt_ref"],
+            "ticket": {
+                "environment": "paper",
+                "paper_account_ref": "paper-account://simulated",
+                "instrument_ref": "instrument://XYZ",
+                "symbol": "XYZ",
+                "side": "sell",
+                "order_type": "limit",
+                "time_in_force": "day",
+                "quantity": "2",
+                "limit_price": "101.25",
+                "currency": "USD",
+                "ticket_rationale": "Paper-validate the reviewed reduction plan.",
+            },
+            "source_refs": ["paper://ticket-candidate/request"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_paper_order_ticket(
+        self,
+        intent: dict[str, object],
+        preflight: dict[str, object],
+        simulation_report: dict[str, object],
+        trade_plan_candidate: dict[str, object],
+        review_gate: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        response = self.client.post(
+            f"/trade-plan-candidates/{trade_plan_candidate['trade_plan_candidate_id']}"
+            "/paper-order-ticket-candidates",
+            json=self._paper_order_ticket_request(
+                intent,
+                preflight,
+                simulation_report,
+                trade_plan_candidate,
+                review_gate,
+                **overrides,
+            ),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _paper_execution_request(
+        self,
+        paper_ticket: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "expected_paper_order_ticket_receipt_ref": paper_ticket["receipt_ref"],
+            "execution_status": "simulated_filled",
+            "fill_price": "101.10",
+            "simulator_ref": "paper-simulator://local/v0",
+            "fees": "0.25",
+            "execution_notes": ["local deterministic paper fill"],
+            "source_refs": ["paper://execution/request"],
+        }
+        payload.update(overrides)
+        return payload
+
+    def _create_paper_execution(
+        self,
+        paper_ticket: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        response = self.client.post(
+            f"/paper-order-ticket-candidates/{paper_ticket['paper_order_ticket_id']}"
+            "/simulated-executions",
+            json=self._paper_execution_request(paper_ticket, **overrides),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _create_paper_account(self, **overrides: object) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "display_name": "Local paper account",
+            "starting_cash": "10000",
+            "currency": "USD",
+            "source_refs": ["paper://account/request"],
+        }
+        payload.update(overrides)
+        response = self.client.post("/paper-accounts", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _paper_account_application_request(
+        self,
+        paper_account: dict[str, object],
+        paper_execution: dict[str, object],
+        **overrides: object,
+    ) -> dict[str, object]:
+        execution = paper_execution["paper_execution"]
+        payload: dict[str, object] = {
+            "paper_execution_id": execution["paper_execution_id"],
+            "expected_paper_account_receipt_ref": paper_account["receipt_ref"],
+            "expected_paper_execution_receipt_ref": paper_execution["receipt_ref"],
+            "source_refs": ["paper://account/application/request"],
+        }
+        payload.update(overrides)
+        return payload
 
     def test_create_action_intent_candidate_writes_receipt_and_can_be_fetched(self) -> None:
         response = self.client.post(
@@ -1016,7 +1151,12 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
     def test_trade_plan_candidate_writes_receipt_and_can_be_fetched(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
-        intent = self._create_intent(expected_next_step="simulation")
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
 
@@ -1086,13 +1226,19 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
     def test_capital_objective_fit_writes_receipt_and_can_be_fetched(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
-        intent = self._create_intent(expected_next_step="simulation")
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
         candidate = self._create_trade_plan_candidate(
             intent,
             preflight,
             simulation,
+            plan_scope=self._increase_plan_scope(),
         )["trade_plan_candidate"]
 
         body = self._create_capital_objective_fit(intent, preflight, simulation, candidate)
@@ -1160,13 +1306,19 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
     def test_capital_objective_fit_rejects_stale_evidence(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
-        intent = self._create_intent(expected_next_step="simulation")
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
         candidate = self._create_trade_plan_candidate(
             intent,
             preflight,
             simulation,
+            plan_scope=self._increase_plan_scope(),
         )["trade_plan_candidate"]
         cases = (
             (
@@ -1221,6 +1373,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             intent,
             preflight,
             simulation,
+            plan_scope=self._increase_plan_scope(),
         )["trade_plan_candidate"]
         cases = (
             ("advice", {"objective_basis": {"investment_advice": "buy"}}),
@@ -1270,13 +1423,19 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
     def test_trade_plan_review_gate_writes_allow_receipt_and_can_be_fetched(self) -> None:
         self._seed_portfolio_snapshot()
         self._seed_ips()
-        intent = self._create_intent(expected_next_step="simulation")
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
         preflight = self._preflight(intent["action_intent_id"])
         simulation = self._create_simulation(intent, preflight)["simulation_report"]
         candidate = self._create_trade_plan_candidate(
             intent,
             preflight,
             simulation,
+            plan_scope=self._increase_plan_scope(),
         )["trade_plan_candidate"]
 
         body = self._create_trade_plan_review_gate(intent, preflight, simulation, candidate)
@@ -1339,6 +1498,503 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(fetched.status_code, 200)
         self.assertEqual(fetched.json()["review_gate"]["receipt_ref"], body["receipt_ref"])
         self.assertFalse(fetched.json()["creates_order_ticket"])
+
+    def test_paper_order_ticket_candidate_writes_order_shaped_paper_receipt(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+
+        body = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )
+
+        self.assertEqual(body["environment"], "paper")
+        self.assertFalse(body["live_execution_allowed"])
+        self.assertFalse(body["real_cash_at_risk"])
+        self.assertFalse(body["submitted_to_broker"])
+        ticket = body["paper_order_ticket"]
+        self.assertEqual(ticket["environment"], "paper")
+        self.assertEqual(ticket["trade_plan_candidate_id"], candidate["trade_plan_candidate_id"])
+        self.assertEqual(ticket["review_gate_id"], gate["review_gate_id"])
+        self.assertEqual(ticket["symbol"], "XYZ")
+        self.assertEqual(ticket["side"], "sell")
+        self.assertEqual(ticket["order_type"], "limit")
+        self.assertEqual(ticket["quantity"], "2")
+        self.assertEqual(ticket["limit_price"], "101.25")
+        self.assertFalse(ticket["live_execution_allowed"])
+        self.assertFalse(ticket["real_cash_at_risk"])
+        self.assertFalse(ticket["submitted_to_broker"])
+
+        rows = read_all(PaperOrderTicketCandidate, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_paper_order_ticket_candidate"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(
+            receipt_payload["kind"],
+            "state_core_paper_order_ticket_candidate",
+        )
+        self.assertTrue(receipt_payload["governance"]["order_fields_allowed_in_this_artifact"])
+        self.assertEqual(receipt_payload["governance"]["environment"], "paper")
+        self.assertFalse(receipt_payload["governance"]["live_execution_allowed"])
+        self.assertFalse(receipt_payload["governance"]["real_cash_at_risk"])
+        self.assertFalse(receipt_payload["governance"]["submitted_to_broker"])
+
+        fetched = self.client.get(
+            f"/paper-order-ticket-candidates/{ticket['paper_order_ticket_id']}"
+        )
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(
+            fetched.json()["paper_order_ticket"]["receipt_ref"],
+            body["receipt_ref"],
+        )
+
+    def test_paper_order_ticket_candidate_requires_allowed_review_gate(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        denied_gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            review_decision="deny_order_ticket_candidate_staging",
+            deny_reasons=["scope_requires_more_evidence"],
+            review_reason="Candidate scope needs more evidence before staging.",
+        )["review_gate"]
+
+        response = self.client.post(
+            f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+            "/paper-order-ticket-candidates",
+            json=self._paper_order_ticket_request(
+                intent,
+                preflight,
+                simulation,
+                candidate,
+                denied_gate,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("requires an allowed", response.text)
+        self.assertEqual(read_all(PaperOrderTicketCandidate, engine=self.engine), [])
+
+    def test_paper_order_ticket_candidate_rejects_live_or_submit_markers(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        base_ticket = self._paper_order_ticket_request(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["ticket"]
+        cases = (
+            ("live_environment", {"ticket": {**base_ticket, "environment": "live"}}),
+            (
+                "submitted_to_broker",
+                {"ticket": {**base_ticket, "submitted_to_broker": True}},
+            ),
+            (
+                "real_cash_at_risk",
+                {"ticket": {**base_ticket, "real_cash_at_risk": True}},
+            ),
+            (
+                "live_source_ref",
+                {"source_refs": ["live://broker/order"]},
+            ),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+                    "/paper-order-ticket-candidates",
+                    json=self._paper_order_ticket_request(
+                        intent,
+                        preflight,
+                        simulation,
+                        candidate,
+                        gate,
+                        **overrides,
+                    ),
+                )
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(PaperOrderTicketCandidate, engine=self.engine), [])
+
+    def test_paper_execution_receipt_records_simulated_fill(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        paper_ticket = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["paper_order_ticket"]
+
+        body = self._create_paper_execution(paper_ticket)
+
+        self.assertEqual(body["environment"], "paper")
+        self.assertFalse(body["live_execution_allowed"])
+        self.assertFalse(body["real_cash_at_risk"])
+        self.assertFalse(body["submitted_to_broker"])
+        execution = body["paper_execution"]
+        self.assertEqual(execution["paper_order_ticket_id"], paper_ticket["paper_order_ticket_id"])
+        self.assertEqual(execution["execution_status"], "simulated_filled")
+        self.assertEqual(execution["symbol"], "XYZ")
+        self.assertEqual(execution["side"], "sell")
+        self.assertEqual(execution["quantity"], "2")
+        self.assertEqual(execution["fill_price"], "101.10")
+        self.assertEqual(execution["gross_notional"], "202.20")
+        self.assertEqual(execution["fees"], "0.25")
+        self.assertFalse(execution["live_execution_allowed"])
+        self.assertFalse(execution["real_cash_at_risk"])
+        self.assertFalse(execution["submitted_to_broker"])
+
+        rows = read_all(PaperExecutionReceipt, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_paper_execution_receipt"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt_payload["kind"], "state_core_paper_execution_receipt")
+        self.assertTrue(receipt_payload["governance"]["simulator_result"])
+        self.assertFalse(receipt_payload["governance"]["live_execution_allowed"])
+        self.assertFalse(receipt_payload["governance"]["real_cash_at_risk"])
+        self.assertFalse(receipt_payload["governance"]["submitted_to_broker"])
+
+        fetched = self.client.get(
+            f"/paper-execution-receipts/{execution['paper_execution_id']}"
+        )
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(
+            fetched.json()["paper_execution"]["receipt_ref"],
+            body["receipt_ref"],
+        )
+
+    def test_paper_execution_receipt_rejects_stale_or_live_markers(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        paper_ticket = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["paper_order_ticket"]
+        cases = (
+            (
+                "stale_ticket_receipt",
+                {"expected_paper_order_ticket_receipt_ref": "data/receipts/stale.json"},
+                409,
+            ),
+            ("live_simulator_ref", {"simulator_ref": "live://broker/simulator"}, 422),
+            ("live_source_ref", {"source_refs": ["live://broker/fill"]}, 422),
+            ("negative_fee", {"fees": "-1"}, 422),
+        )
+        for name, overrides, status_code in cases:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    f"/paper-order-ticket-candidates/{paper_ticket['paper_order_ticket_id']}"
+                    "/simulated-executions",
+                    json=self._paper_execution_request(paper_ticket, **overrides),
+                )
+                self.assertEqual(response.status_code, status_code)
+        self.assertEqual(read_all(PaperExecutionReceipt, engine=self.engine), [])
+
+    def test_paper_account_writes_paper_only_receipt(self) -> None:
+        body = self._create_paper_account()
+
+        self.assertEqual(body["environment"], "paper")
+        self.assertFalse(body["live_execution_allowed"])
+        self.assertFalse(body["real_cash_at_risk"])
+        self.assertFalse(body["submitted_to_broker"])
+        account = body["paper_account"]
+        self.assertEqual(account["environment"], "paper")
+        self.assertEqual(account["display_name"], "Local paper account")
+        self.assertEqual(account["cash_balance"], "10000")
+        self.assertEqual(account["realized_pnl"], "0")
+        self.assertFalse(account["live_execution_allowed"])
+        self.assertFalse(account["real_cash_at_risk"])
+        self.assertFalse(account["submitted_to_broker"])
+
+        rows = read_all(PaperAccount, engine=self.engine)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_paper_account"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt_payload["kind"], "state_core_paper_account")
+        self.assertEqual(receipt_payload["governance"]["environment"], "paper")
+        self.assertFalse(receipt_payload["governance"]["live_execution_allowed"])
+        self.assertFalse(receipt_payload["governance"]["real_cash_at_risk"])
+        self.assertFalse(receipt_payload["governance"]["submitted_to_broker"])
+
+        fetched = self.client.get(f"/paper-accounts/{account['paper_account_id']}")
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(fetched.json()["paper_account"]["receipt_ref"], body["receipt_ref"])
+
+    def test_paper_account_application_updates_cash_and_position(self) -> None:
+        paper_account_body = self._create_paper_account()
+        paper_account = paper_account_body["paper_account"]
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+            plan_scope=self._increase_plan_scope(),
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        base_ticket = self._paper_order_ticket_request(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["ticket"]
+        paper_ticket = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+            ticket={
+                **base_ticket,
+                "paper_account_ref": paper_account["paper_account_id"],
+                "side": "buy",
+                "quantity": "2",
+                "limit_price": "101.25",
+                "ticket_rationale": "Paper-validate the reviewed buy plan.",
+            },
+        )["paper_order_ticket"]
+        paper_execution_body = self._create_paper_execution(paper_ticket)
+
+        response = self.client.post(
+            f"/paper-accounts/{paper_account['paper_account_id']}/execution-applications",
+            json=self._paper_account_application_request(
+                paper_account_body,
+                paper_execution_body,
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["environment"], "paper")
+        self.assertFalse(body["live_execution_allowed"])
+        self.assertFalse(body["real_cash_at_risk"])
+        self.assertFalse(body["submitted_to_broker"])
+        account = body["paper_account"]
+        position = body["paper_position"]
+        self.assertEqual(account["cash_balance"], "9797.55")
+        self.assertEqual(account["realized_pnl"], "0")
+        self.assertEqual(
+            account["applied_paper_execution_ids"],
+            [paper_execution_body["paper_execution"]["paper_execution_id"]],
+        )
+        self.assertEqual(position["symbol"], "XYZ")
+        self.assertEqual(position["quantity"], "2")
+        self.assertEqual(position["average_cost"], "101.225")
+        self.assertEqual(position["last_price"], "101.10")
+        self.assertEqual(position["market_value"], "202.20")
+
+        account_rows = read_all(PaperAccount, engine=self.engine)
+        position_rows = read_all(PaperPosition, engine=self.engine)
+        self.assertEqual(len(account_rows), 1)
+        self.assertEqual(len(position_rows), 1)
+        self.assertEqual(account_rows[0].receipt_ref, body["receipt_ref"])
+        self.assertEqual(position_rows[0].receipt_ref, body["receipt_ref"])
+        receipt = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.kind == "state_core_paper_account_execution_application"
+        )
+        self.assertEqual(receipt.path, body["receipt_ref"])
+        receipt_payload = json.loads(Path(body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(
+            receipt_payload["kind"],
+            "state_core_paper_account_execution_application",
+        )
+        self.assertEqual(receipt_payload["before"]["account"]["cash_balance"], "10000")
+        self.assertEqual(receipt_payload["after"]["account"]["cash_balance"], "9797.55")
+        self.assertFalse(receipt_payload["governance"]["real_cash_at_risk"])
+
+    def test_paper_account_application_rejects_stale_replay_and_live_markers(self) -> None:
+        paper_account_body = self._create_paper_account()
+        paper_account = paper_account_body["paper_account"]
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(
+            action_type="increase_exposure",
+            intent_summary="Consider increasing single-name exposure.",
+            rationale="Reviewed proposal indicates a paper buy plan should be validated.",
+            expected_next_step="simulation",
+        )
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+            plan_scope=self._increase_plan_scope(),
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        base_ticket = self._paper_order_ticket_request(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["ticket"]
+        paper_ticket = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+            ticket={
+                **base_ticket,
+                "paper_account_ref": paper_account["paper_account_id"],
+                "side": "buy",
+            },
+        )["paper_order_ticket"]
+        paper_execution_body = self._create_paper_execution(paper_ticket)
+
+        stale_response = self.client.post(
+            f"/paper-accounts/{paper_account['paper_account_id']}/execution-applications",
+            json=self._paper_account_application_request(
+                paper_account_body,
+                paper_execution_body,
+                expected_paper_account_receipt_ref="data/receipts/stale.json",
+            ),
+        )
+        self.assertEqual(stale_response.status_code, 409)
+        live_response = self.client.post(
+            f"/paper-accounts/{paper_account['paper_account_id']}/execution-applications",
+            json=self._paper_account_application_request(
+                paper_account_body,
+                paper_execution_body,
+                source_refs=["live://broker/account-apply"],
+            ),
+        )
+        self.assertEqual(live_response.status_code, 422)
+
+        applied_response = self.client.post(
+            f"/paper-accounts/{paper_account['paper_account_id']}/execution-applications",
+            json=self._paper_account_application_request(
+                paper_account_body,
+                paper_execution_body,
+            ),
+        )
+        self.assertEqual(applied_response.status_code, 200, applied_response.text)
+        replay_response = self.client.post(
+            f"/paper-accounts/{paper_account['paper_account_id']}/execution-applications",
+            json=self._paper_account_application_request(
+                {
+                    **paper_account_body,
+                    "receipt_ref": applied_response.json()["receipt_ref"],
+                },
+                paper_execution_body,
+            ),
+        )
+        self.assertEqual(replay_response.status_code, 409)
 
     def test_trade_plan_review_gate_persists_denial_evidence(self) -> None:
         self._seed_portfolio_snapshot()
