@@ -33,6 +33,13 @@
 > capital agency workbench 推向 permission firewall、premature order pipeline、
 > advice/approval system 或 execution-shaped workflow。工程协议见
 > [Agentic Unknowns Protocol](engineering/agentic-unknowns-protocol.md)。
+>
+> 修订(2026-07-04):FinHarness 不应被一句话定义成"交易型"或"反交易型"。
+> 它是 permission-aware、consequence-aware 的个人投资与交易工作台:默认层可
+> anti-trading,教育/研究层应 pro-learning / pro-analysis,计划层可
+> trade-oriented,审查层 anti-unaudited,执行层只能 controlled execution。金融
+> 教育应保留真实金融语言;runtime 层负责防止低权限对象冒充建议、审批、订单或
+> 执行。能力地图见 [Financial Judgment Curriculum](product/financial-judgment-curriculum.md)。
 
 ## 一句话定位
 
