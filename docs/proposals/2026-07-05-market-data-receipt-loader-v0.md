@@ -89,13 +89,18 @@ after this change. All existing tests pass.
 
 ## 9. Release Decision
 
-Keep draft pending independent review.
+Merge now.
 
 Reason:
-- Product value: engineering hygiene — eliminates duplicate receipt parsing
-  without changing any user-visible behavior.
-- Boundary safety: no API, frontend, policy, or contract changes.
-- Test confidence: all existing catalog/gaps/quality tests preserved; new
-  loader tests added.
-- Future maintainability: single-parsing path makes future receipt extensions
-  (e.g., contract-backed loading) simpler.
+- Engineering value: removes duplicate market-data receipt scanning/validation
+  from Data Catalog while preserving user-visible behavior.
+- Boundary safety: no API, OpenAPI, DataQuality policy, StateCore, frontend,
+  Agent, Scenario, Paper, Broker, or live execution changes.
+- Contract confidence: `build_data_catalog()`, `/data/catalog`, `/data/quality`,
+  and `/data/gaps` preserve existing behavior and response shape.
+- Test confidence: 741 tests pass; loader tests cover valid receipts, malformed
+  JSON, deterministic receipt ordering, deterministic source_refs ordering,
+  missing directory, and discover wrapper compatibility.
+- Future maintainability: one market-data loading path now produces valid
+  receipts and load issues, reducing extension risk for future Data Contract /
+  Research evidence work.
