@@ -206,6 +206,26 @@ class DataCatalogDiscoveryTest(unittest.TestCase):
             self.assertEqual(entry.dataset_key, "yfinance/ohlcv_history/SPY")
             self.assertFalse(entry.execution_allowed)
 
+    def test_catalog_entry_includes_quality_freshness_fields(self) -> None:
+        payload = _make_receipt_json()
+        self._write_receipt("receipt_mds_20260701T000000Z_00000001.json", payload)
+
+        view = build_data_catalog(self.receipt_root)
+        entry = next(e for e in view.catalog_entries if e.provider == "yfinance")
+
+        self.assertIn(entry.freshness_status, ("fresh", "stale", "critically_stale", "unknown"))
+        self.assertIn(entry.quality_status, ("ok", "degraded", "unknown"))
+        self.assertIn(entry.bias_status, ("controlled", "uncontrolled"))
+        self.assertIn(
+            entry.readiness_status,
+            ("usable", "usable_with_warnings", "not_ready"),
+        )
+        self.assertIsInstance(entry.findings, list)
+        self.assertIsInstance(entry.blocks, list)
+        # Data from 2026-07-01 is ~4 days old → below 5-day stale threshold → fresh.
+        self.assertEqual(entry.freshness_status, "fresh")
+        self.assertEqual(entry.readiness_status, "usable_with_warnings")
+
     def test_malformed_receipt_becomes_data_gap(self) -> None:
         bad_path = self.receipt_root / "receipt_mds_20260701T000000Z_bad.json"
         bad_path.write_text("not valid json {{{", encoding="utf-8")

@@ -14,6 +14,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from finharness.data_quality_policy import (
+    DataQualityFinding,
+    build_quality_report,
+)
 from finharness.market_data import (
     RECEIPT_ROOT,
     DataReceipt,
@@ -73,6 +77,12 @@ class DataCatalogEntry(BaseModel):
     reconciliation_status: str = "single_source_unreconciled"
     bias_controls: list[str] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
+    freshness_status: str = "unknown"
+    quality_status: str = "unknown"
+    bias_status: str = "uncontrolled"
+    readiness_status: str = "not_ready"
+    findings: list[DataQualityFinding] = Field(default_factory=list)
+    blocks: list[str] = Field(default_factory=list)
     execution_allowed: bool = False
 
 
@@ -205,6 +215,15 @@ def _receipt_to_catalog_entry(receipt: DataReceipt) -> DataCatalogEntry:
     except (AttributeError, TypeError):
         bias_controls = []
 
+    qr = build_quality_report(
+        dataset_key=key,
+        as_of_utc=snapshot.as_of_utc,
+        latest_receipt_ref=snapshot.receipt_ref,
+        quality=quality,
+        reconciliation_status=reconciliation_status,
+        bias_controls=bias_controls,
+    )
+
     return DataCatalogEntry(
         dataset_key=key,
         data_source_id=f"{source.provider}_{source.asset_class}",
@@ -221,6 +240,12 @@ def _receipt_to_catalog_entry(receipt: DataReceipt) -> DataCatalogEntry:
         reconciliation_status=reconciliation_status,
         bias_controls=bias_controls,
         data_gaps=entry_gaps,
+        freshness_status=qr.freshness_status,
+        quality_status=qr.quality_status,
+        bias_status=qr.bias_status,
+        readiness_status=qr.readiness_status,
+        findings=qr.findings,
+        blocks=qr.blocks,
     )
 
 

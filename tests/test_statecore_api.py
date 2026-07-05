@@ -379,6 +379,7 @@ class StateCoreApiTest(unittest.TestCase):
             "CatalogListResponse",
             "DataCatalogEntry",
             "DataGap",
+            "DataQualityFinding",
             "DataSourceRegistryEntry",
             "DocumentRef",
             "FinancialGoal",
