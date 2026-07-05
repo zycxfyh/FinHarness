@@ -87,6 +87,15 @@ class FreshnessAssessmentTest(unittest.TestCase):
         self.assertEqual(status, "stale")
         self.assertEqual(findings[0].severity, "warning")
 
+    def test_future_as_of_utc_returns_critical_finding_and_blocks(self) -> None:
+        future = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+        status, findings, blocks = assess_freshness(future)
+        self.assertEqual(status, "unknown")
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, "critical")
+        self.assertEqual(findings[0].code, "future_timestamp")
+        self.assertIn("freshness_assessment", blocks)
+
 
 class QualityAssessmentTest(unittest.TestCase):
     def test_ok_quality_returns_ok(self) -> None:
@@ -168,6 +177,10 @@ class ReadinessTest(unittest.TestCase):
         status = compute_readiness(
             "critically_stale", "ok", "controlled", "reconciled"
         )
+        self.assertEqual(status, "not_ready")
+
+    def test_unknown_freshness_returns_not_ready(self) -> None:
+        status = compute_readiness("unknown", "ok", "controlled", "reconciled")
         self.assertEqual(status, "not_ready")
 
     def test_degraded_quality_returns_usable_with_warnings(self) -> None:

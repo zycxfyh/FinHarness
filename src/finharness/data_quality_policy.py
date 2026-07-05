@@ -130,6 +130,23 @@ def assess_freshness(
             ["freshness_assessment"],
         )
 
+    if days < 0:
+        idx += 1
+        return (
+            "unknown",
+            [
+                DataQualityFinding(
+                    finding_id=_finding_id("fresh", idx),
+                    severity="critical",
+                    code="future_timestamp",
+                    message="Data as_of_utc is in the future; freshness cannot be trusted.",
+                    source_ref=as_of_utc,
+                    blocks=["freshness_assessment", "research", "backtest", "risk"],
+                )
+            ],
+            ["freshness_assessment", "research", "backtest", "risk"],
+        )
+
     pol = policy or FreshnessPolicy()
 
     if days > pol.critical_after_days:
@@ -268,7 +285,7 @@ def compute_readiness(
     reconciliation_status: str,
 ) -> ReadinessStatus:
     """Compute composite readiness from individual statuses."""
-    if freshness_status == "critically_stale":
+    if freshness_status in {"critically_stale", "unknown"}:
         return "not_ready"
     if quality_status == "degraded":
         return "usable_with_warnings"
