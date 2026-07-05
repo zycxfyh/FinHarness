@@ -157,6 +157,82 @@ class DataCatalogUnitTest(unittest.TestCase):
         self.assertFalse(entry.execution_allowed)
 
 
+class ReceiptLoaderTest(unittest.TestCase):
+    """Tests for the single-pass market-data receipt loader."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.receipt_root = Path(self.tmp.name) / "receipts"
+        self.receipt_root.mkdir(parents=True)
+        self.addCleanup(self.tmp.cleanup)
+
+    def _write_receipt_file(self, filename: str, content: str) -> Path:
+        path = self.receipt_root / filename
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_valid_receipts_returned(self) -> None:
+        from finharness.data_receipt_loader import load_market_data_receipts
+
+        payload = _make_receipt_json(snapshot_id="mds_valid")
+        self._write_receipt_file(
+            "receipt_mds_valid.json", json.dumps(payload)
+        )
+
+        result = load_market_data_receipts(self.receipt_root)
+        self.assertEqual(len(result.receipts), 1)
+        self.assertEqual(len(result.issues), 0)
+
+    def test_malformed_json_returns_issue(self) -> None:
+        from finharness.data_receipt_loader import load_market_data_receipts
+
+        self._write_receipt_file("receipt_mds_bad.json", "not valid {{{")
+
+        result = load_market_data_receipts(self.receipt_root)
+        self.assertEqual(len(result.receipts), 0)
+        self.assertEqual(len(result.issues), 1)
+        self.assertEqual(result.issues[0].error_type, "json_decode_error")
+
+    def test_deterministic_sorted_order(self) -> None:
+        from finharness.data_receipt_loader import load_market_data_receipts
+
+        payload_a = _make_receipt_json(snapshot_id="a")
+        payload_z = _make_receipt_json(snapshot_id="z")
+        self._write_receipt_file("receipt_mds_z.json", json.dumps(payload_z))
+        self._write_receipt_file("receipt_mds_a.json", json.dumps(payload_a))
+
+        result = load_market_data_receipts(self.receipt_root)
+        ids = [r.snapshot.snapshot_id for r in result.receipts]
+        self.assertEqual(ids, ["a", "z"], "receipts must be sorted by path")
+        self.assertEqual(
+            result.source_refs,
+            (
+                str(self.receipt_root / "receipt_mds_a.json"),
+                str(self.receipt_root / "receipt_mds_z.json"),
+            ),
+        )
+
+    def test_missing_directory_returns_empty(self) -> None:
+        from finharness.data_receipt_loader import load_market_data_receipts
+
+        nonexistent = Path(self.tmp.name) / "nonexistent"
+        result = load_market_data_receipts(nonexistent)
+        self.assertEqual(len(result.receipts), 0)
+        self.assertEqual(len(result.issues), 0)
+
+    def test_discover_wrapper_returns_only_valid(self) -> None:
+        from finharness.data_catalog import discover_market_data_receipts
+
+        payload = _make_receipt_json()
+        self._write_receipt_file(
+            "receipt_mds_ok.json", json.dumps(payload)
+        )
+        self._write_receipt_file("receipt_mds_bad.json", "bad json")
+
+        receipts = discover_market_data_receipts(self.receipt_root)
+        self.assertEqual(len(receipts), 1)
+
+
 class DataCatalogDiscoveryTest(unittest.TestCase):
     """Tests that exercise receipt discovery with temp directories."""
 
