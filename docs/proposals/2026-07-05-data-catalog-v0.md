@@ -172,10 +172,17 @@ This slice does not claim:
 
 ## 10. Release Decision
 
-- merge now;
-- keep draft;
-- split PR;
-- request changes;
-- abandon.
+Merge now.
 
-Decision must cite product value, boundary safety, test confidence, and future maintainability.
+Reason:
+- Product value: exposes known data sources, local market-data receipts, quality
+  summaries, reconciliation status, bias controls, and data gaps as a read-only
+  catalog surface.
+- Boundary safety: all API routes are GET-only, catalog reads do not trigger
+  network calls, and all responses keep `execution_allowed=false`.
+- Test confidence: unit, discovery, API, and OpenAPI whitelist tests cover
+  registry, receipt discovery, malformed receipt handling, data gaps, read-only
+  endpoints, and schema exposure.
+- Future maintainability: accepted debt is explicitly deferred to #105
+  DataQualityReport / FreshnessPolicy, #106 expanded API/data gaps, and #107
+  cockpit Data Catalog / Data Gaps page.
