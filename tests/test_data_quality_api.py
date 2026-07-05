@@ -200,6 +200,10 @@ class DataQualityApiTest(unittest.TestCase):
         response = self.client.post("/data/quality", json={})
         self.assertEqual(response.status_code, 405)
 
+    def test_quality_patch_returns_405(self) -> None:
+        response = self.client.patch("/data/quality", json={})
+        self.assertEqual(response.status_code, 405)
+
     def test_gaps_severity_filter(self) -> None:
         """Malformed receipt produces critical gaps; filter matches."""
         bad_path = self.receipt_root / "receipt_mds_20260701T000000Z_bad.json"

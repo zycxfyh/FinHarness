@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from finharness.api.dependencies import MarketDataReceiptRootDependency
-from finharness.data_catalog import build_data_catalog, get_catalog_entry
+from finharness.data_catalog import DataGap, build_data_catalog, get_catalog_entry
 from finharness.data_quality_policy import DataQualityReport
 
 router = APIRouter(tags=["data"])
@@ -47,7 +47,7 @@ class DataQualityListResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     reports: list[DataQualityReport]
-    data_gaps: list
+    data_gaps: list[DataGap]
     source_refs: tuple[str, ...]
     non_claims: tuple[str, ...] = DATA_QUALITY_NON_CLAIMS
     execution_allowed: bool = False
@@ -65,7 +65,7 @@ class DataQualityDetailResponse(BaseModel):
 class DataGapsResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    data_gaps: list
+    data_gaps: list[DataGap]
     severity_filter: str | None = None
     blocks_filter: str | None = None
     non_claims: tuple[str, ...] = DATA_QUALITY_NON_CLAIMS
