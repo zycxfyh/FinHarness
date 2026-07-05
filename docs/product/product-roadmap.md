@@ -25,7 +25,7 @@ acceptance criteria, not the product headline.
 | Layer | Product capability | Current status | Next outcome |
 | --- | --- | --- | --- |
 | L0 Data Ingestion & Connectors | Bring in personal, market, research, macro, receipt, and agent-run data. | Thin imports and mature-wheel adapters exist. | DataSourceRegistry and connector inventory. |
-| L1 Data Lake / Catalog / Quality | Know source, freshness, coverage, lineage, and whether data is usable. | Data-quality helpers exist, but no product catalog. | DataCatalog, DataQualityReport, freshness policy, data-gaps API. |
+| L1 Data Lake / Catalog / Quality | Know source, freshness, coverage, lineage, and whether data is usable. | DataCatalog, DataQualityReport, FreshnessPolicy, Data Quality API, Cockpit Data Trust Console shipped (#104–#108). | Data Contracts, per-dataset policy registry, lineage evidence. |
 | L2 State Core / Capital Graph | Query personal capital state as accounts, assets, positions, liabilities, goals, documents, receipts, and exposures. | State Core and Capital Map are current. | PersonalCapitalGraph language and richer capital-state read models. |
 | L3 Research Workspace | Organize instrument/macro questions into evidence packs, memos, filings, events, valuation snapshots, factors, and gaps. | Research evidence exists as backend contract. | EvidencePack, ResearchMemo, InstrumentProfile, research API/page. |
 | L4 Scenario / What-if Engine | Compare candidate actions against a do-nothing baseline. | Action simulation is qualitative. | Scenario, WhatIfRun, PortfolioDelta, RiskImpactReport, ScenarioComparison. |
@@ -39,7 +39,7 @@ acceptance criteria, not the product headline.
 | Phase | Goal | PR shape |
 | --- | --- | --- |
 | Phase 0 | Reframe current docs around the Capital Workbench roadmap. | Pure docs/architecture PR. |
-| Phase 1 | Data foundation. | DataSourceRegistry, DataCatalog, quality/freshness, APIs, Data Gaps page. |
+| Phase 1 | Data foundation. ✅ Shipped (#104–#108). | DataSourceRegistry, DataCatalog, DataQualityReport, FreshnessPolicy, Data Quality API, Cockpit Data Trust Console. |
 | Phase 2 | Research Workspace v1. | InstrumentProfile, EvidencePack, ResearchMemo, research API/page, agent memo draft. |
 | Phase 3 | Scenario Engine v1. | Scenario/WhatIfRun, PortfolioDelta, RiskImpactReport, DoNothingBaseline, ScenarioComparison. |
 | Phase 4 | Paper Performance Loop. | PaperPerformanceReview, PnL series, scenario-vs-paper comparison, lesson candidates. |

@@ -75,33 +75,18 @@ Target artifacts:
 
 Goal: know whether data can be used.
 
-Target artifacts:
+**Current shipped capability (#104–#108):**
 
-- `DataCatalog`
-- `DataQualityReport`
-- `FieldSchema`
-- `FreshnessPolicy`
-- `LineageGraph`
-- `ProviderFallback`
-- `PointInTimeFlag`
-- `BiasControlFlag`
+- `DataSourceRegistry` — known data sources with bias controls and limitations
+- `DataCatalog` / `DataCatalogEntry` — catalog built from local market-data receipts
+- `DataQualityReport` / `FreshnessPolicy` — structured freshness, quality, bias, reconciliation, readiness assessment
+- `DataQualityFinding` — severity-coded findings with blocks
+- `/data/catalog`, `/data/quality`, `/data/gaps` GET-only API surface
+- `Cockpit Data Trust Console` — Summary, Catalog, Quality Reports, Data Gaps panels
+- Market-data receipt loading is single-pass via `load_market_data_receipts()`
+- All surfaces: read-only, no network, no provider refresh, execution_allowed=false
 
-Important fields:
-
-- `source`
-- `provider`
-- `fetched_at`
-- `as_of`
-- `coverage`
-- `latency`
-- `quality_score`
-- `missing_fields`
-- `adjustment_mode`
-- `survivorship_bias_control`
-- `point_in_time_safety`
-
-This layer exists because agents must not treat stale, biased, incomplete, or
-future-leaking data as fact.
+**Next outcome:** Data Contracts, per-dataset policy registry, lineage evidence.
 
 ## L2 — State Core / Capital Graph
 
@@ -261,17 +246,11 @@ be reviewed or learned from.
 
 Goal: make FinHarness usable without reading receipt files.
 
-Target pages:
+Current tabs: Overview, Exposure, Policy, Proposals, Timeline, Retrospective, Compare, Data Trust.
 
-1. Home / Daily Brief
-2. Portfolio / Capital Map
-3. Research
-4. Scenarios
-5. Decisions
-6. Paper Validation
-7. Agent Tasks
-8. Data Catalog
-9. Settings
+Data Trust tab (shipped #107) shows: Summary, Data Catalog, Quality Reports, Data Gaps.
+
+Target pages beyond Data Trust:
 
 The short-term UI can stay vanilla while the information architecture is
 validated. A typed frontend stack should wait until the API shape stabilizes.
