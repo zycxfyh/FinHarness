@@ -186,14 +186,15 @@ This slice does not claim:
 
 ## 10. Release Decision
 
-Keep draft pending independent review.
+Merge now.
 
 Reason:
 - Product value: structured freshness, quality, bias, and readiness assessment
   replaces free-form data_gaps strings with machine-actionable findings.
 - Boundary safety: no new endpoints, no network calls, no downstream behavior
   changes, all new fields are additive to existing DataCatalogEntry.
-- Test confidence: pending independent review of future timestamp and unknown
-  freshness handling.
+- Test confidence: independent review passed; unit tests cover all freshness
+  tiers, future timestamps, unknown freshness, quality states, bias controls,
+  reconciliation, composite readiness, and model invariants.
 - Future maintainability: assessment logic is isolated in data_quality_policy.py;
   catalog integration is a single call site in _receipt_to_catalog_entry.
