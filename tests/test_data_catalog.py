@@ -204,6 +204,13 @@ class ReceiptLoaderTest(unittest.TestCase):
         result = load_market_data_receipts(self.receipt_root)
         ids = [r.snapshot.snapshot_id for r in result.receipts]
         self.assertEqual(ids, ["a", "z"], "receipts must be sorted by path")
+        self.assertEqual(
+            result.source_refs,
+            (
+                str(self.receipt_root / "receipt_mds_a.json"),
+                str(self.receipt_root / "receipt_mds_z.json"),
+            ),
+        )
 
     def test_missing_directory_returns_empty(self) -> None:
         from finharness.data_receipt_loader import load_market_data_receipts

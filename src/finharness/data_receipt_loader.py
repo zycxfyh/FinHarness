@@ -58,10 +58,12 @@ def load_market_data_receipts(
 
     receipts: list[DataReceipt] = []
     issues: list[ReceiptLoadIssue] = []
+    source_refs: list[str] = []
 
     for path in sorted(root.glob("receipt_mds_*.json")):
         if not path.is_file():
             continue
+        source_refs.append(str(path))
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             receipts.append(DataReceipt.model_validate(payload))
@@ -82,12 +84,8 @@ def load_market_data_receipts(
                 )
             )
 
-    source_refs = tuple(
-        sorted({str(path) for path in root.glob("receipt_mds_*.json") if path.is_file()})
-    )
-
     return ReceiptLoadResult(
         receipts=tuple(receipts),
         issues=tuple(issues),
-        source_refs=source_refs,
+        source_refs=tuple(source_refs),
     )
