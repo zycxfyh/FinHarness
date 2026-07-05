@@ -8,7 +8,6 @@ Malformed or missing receipts become data gaps, not unhandled exceptions.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from finharness.data_quality_policy import (
     DataQualityFinding,
     build_quality_report,
+)
+from finharness.data_receipt_loader import (
+    load_market_data_receipts,
 )
 from finharness.market_data import (
     RECEIPT_ROOT,
@@ -165,27 +167,12 @@ def default_data_source_registry() -> list[DataSourceRegistryEntry]:
 def discover_market_data_receipts(
     receipt_root: Path | None = None,
 ) -> list[DataReceipt]:
-    """Discover market-data receipts from the local filesystem.
+    """Compatibility wrapper: return only valid receipts from the loader.
 
-    No network calls. Missing directory returns empty list.
-    Malformed JSON becomes a data gap, not an exception — callers should
-    inspect returned data_gaps alongside receipts.
+    Prefer load_market_data_receipts() for new callers that also need issues.
     """
     root = receipt_root or RECEIPT_ROOT
-    if not root.is_dir():
-        return []
-
-    receipts: list[DataReceipt] = []
-    for path in sorted(root.glob("receipt_mds_*.json")):
-        if not path.is_file():
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            receipts.append(DataReceipt.model_validate(payload))
-        except (json.JSONDecodeError, ValueError):
-            # Malformed receipt — skip here; build_data_catalog surfaces the gap.
-            continue
-    return receipts
+    return list(load_market_data_receipts(root).receipts)
 
 
 def _receipt_to_catalog_entry(receipt: DataReceipt) -> DataCatalogEntry:
@@ -249,33 +236,6 @@ def _receipt_to_catalog_entry(receipt: DataReceipt) -> DataCatalogEntry:
     )
 
 
-def _surface_malformed_as_gaps(
-    root: Path,
-    gap_idx: int,
-) -> tuple[list[DataGap], int]:
-    """Surface receipts that failed to parse as data gaps."""
-    gaps: list[DataGap] = []
-    for path in sorted(root.glob("receipt_mds_*.json")):
-        if not path.is_file():
-            continue
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            DataReceipt.model_validate(payload)
-        except (json.JSONDecodeError, ValueError):
-            gap_idx += 1
-            gaps.append(
-                DataGap(
-                    gap_id=f"dg_{gap_idx:04d}",
-                    severity="critical",
-                    scope="receipt_parse",
-                    message="Malformed receipt JSON — cannot load.",
-                    source_ref=str(path),
-                    blocks=["catalog_population", "quality_inspection"],
-                )
-            )
-    return gaps, gap_idx
-
-
 def _surface_registry_coverage_gaps(
     registry: list[DataSourceRegistryEntry],
     discovered_dataset_keys: set[str],
@@ -307,11 +267,10 @@ def build_data_catalog(
 ) -> DataCatalogView:
     """Build the read-only data catalog from local receipts and the default registry.
 
-    Reads receipts from disk only — no network calls.
+    Reads receipts from disk only via the single-pass loader.
     Missing or malformed receipts produce data gaps, not exceptions.
     """
     registry = default_data_source_registry()
-    receipts = discover_market_data_receipts(receipt_root)
     root = receipt_root or RECEIPT_ROOT
 
     gaps: list[DataGap] = []
@@ -336,6 +295,9 @@ def build_data_catalog(
             source_refs=(),
         )
 
+    load_result = load_market_data_receipts(root)
+    receipts = load_result.receipts
+
     if not receipts:
         gap_idx += 1
         gaps.append(
@@ -349,7 +311,7 @@ def build_data_catalog(
             )
         )
 
-    # Build catalog entries from receipts.
+    # Build catalog entries from valid receipts.
     entries: dict[str, DataCatalogEntry] = {}
     for receipt in receipts:
         entry = _receipt_to_catalog_entry(receipt)
@@ -358,9 +320,21 @@ def build_data_catalog(
         if existing is None or entry.latest_as_of_utc > existing.latest_as_of_utc:
             entries[key] = entry
 
-    # Surface malformed receipts and registry coverage as gaps.
-    malformed_gaps, gap_idx = _surface_malformed_as_gaps(root, gap_idx)
-    gaps.extend(malformed_gaps)
+    # Surface loader issues as malformed-receipt gaps.
+    for issue in load_result.issues:
+        gap_idx += 1
+        gaps.append(
+            DataGap(
+                gap_id=f"dg_{gap_idx:04d}",
+                severity="critical",
+                scope="receipt_parse",
+                message=f"Malformed receipt JSON — cannot load: {issue.message}",
+                source_ref=str(issue.path),
+                blocks=["catalog_population", "quality_inspection"],
+            )
+        )
+
+    # Registry coverage gaps.
     registry_gaps, gap_idx = _surface_registry_coverage_gaps(
         registry, set(entries.keys()), gap_idx
     )
