@@ -16,6 +16,7 @@ from finharness.api.routes_agent_authority_grants import (
 from finharness.api.routes_capital_mandates import router as capital_mandate_router
 from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_data_catalog import router as data_catalog_router
+from finharness.api.routes_data_quality import router as data_quality_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
 from finharness.api.routes_proposals import router as proposal_router
@@ -116,6 +117,7 @@ def create_app(
     api.include_router(capital_mandate_router)
     api.include_router(ips_router)
     api.include_router(data_catalog_router)
+    api.include_router(data_quality_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():
         api.mount(

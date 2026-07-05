@@ -54,14 +54,6 @@ class CatalogDetailResponse(BaseModel):
     execution_allowed: bool = False
 
 
-class GapsResponse(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    data_gaps: list[DataGap]
-    non_claims: tuple[str, ...] = DATA_CATALOG_NON_CLAIMS
-    execution_allowed: bool = False
-
-
 @router.get("/data/sources", response_model=SourcesResponse)
 async def list_sources(
     receipt_root: MarketDataReceiptRootDependency,
@@ -94,12 +86,3 @@ async def get_catalog(
     if entry is None:
         raise HTTPException(status_code=404, detail=f"catalog entry not found: {dataset_key}")
     return CatalogDetailResponse(entry=entry)
-
-
-@router.get("/data/gaps", response_model=GapsResponse)
-async def list_gaps(
-    receipt_root: MarketDataReceiptRootDependency,
-) -> GapsResponse:
-    """List all data gaps discovered from local receipts."""
-    view = build_data_catalog(receipt_root)
-    return GapsResponse(data_gaps=view.data_gaps)
