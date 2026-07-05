@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 from sqlalchemy import Engine
 
+from finharness.market_data import RECEIPT_ROOT as DEFAULT_MARKET_DATA_RECEIPT_ROOT
 from finharness.market_data import ROOT
 from finharness.statecore.store import ensure_state_core_schema, open_state_core
 
@@ -37,3 +38,16 @@ async def get_state_core_receipt_root(request: Request) -> Path:
 
 EngineDependency = Annotated[Engine, Depends(get_state_core_engine)]
 ReceiptRootDependency = Annotated[Path, Depends(get_state_core_receipt_root)]
+
+
+async def get_market_data_receipt_root(request: Request) -> Path:
+    return Path(
+        getattr(
+            request.app.state,
+            "market_data_receipt_root",
+            DEFAULT_MARKET_DATA_RECEIPT_ROOT,
+        )
+    )
+
+
+MarketDataReceiptRootDependency = Annotated[Path, Depends(get_market_data_receipt_root)]

@@ -15,6 +15,7 @@ from finharness.api.routes_agent_authority_grants import (
 )
 from finharness.api.routes_capital_mandates import router as capital_mandate_router
 from finharness.api.routes_cockpit import router as cockpit_router
+from finharness.api.routes_data_catalog import router as data_catalog_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
 from finharness.api.routes_proposals import router as proposal_router
@@ -34,6 +35,7 @@ def create_app(
     *,
     state_core_engine: Engine | None = None,
     receipt_root: str | None = None,
+    market_data_receipt_root: str | None = None,
 ) -> FastAPI:
     api = FastAPI(
         title="FinHarness State API",
@@ -45,6 +47,8 @@ def create_app(
         api.state.state_core_engine = state_core_engine
     if receipt_root is not None:
         api.state.state_core_receipt_root = receipt_root
+    if market_data_receipt_root is not None:
+        api.state.market_data_receipt_root = market_data_receipt_root
 
     @api.middleware("http")
     async def log_request(request: Request, call_next):
@@ -111,6 +115,7 @@ def create_app(
     api.include_router(agent_authority_grant_router)
     api.include_router(capital_mandate_router)
     api.include_router(ips_router)
+    api.include_router(data_catalog_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():
         api.mount(
