@@ -26,6 +26,7 @@
       <button class="tab" type="button" data-view="timeline">Timeline</button>
       <button class="tab" type="button" data-view="retrospective">Retrospective</button>
       <button class="tab" type="button" data-view="compare">Compare</button>
+      <button class="tab" type="button" data-view="data-trust">Data Trust</button>
     </nav>
 
     <main>
@@ -119,6 +120,27 @@
         <section class="panel" aria-labelledby="compare-panel-title">
           <h3 id="compare-panel-title">Compare-marked candidates (read-only)</h3>
           <div id="compare-block" class="data-block"></div>
+        </section>
+      </section>
+
+      <section id="data-trust-view" class="view" aria-labelledby="data-trust-title">
+        <h2 id="data-trust-title">Data Trust</h2>
+        <p id="data-trust-boundary" class="boundary-tag">Read-only Data Trust surface. No provider refresh. No repair action. No execution authorization. No investment advice. execution_allowed=false.</p>
+        <section class="panel" aria-labelledby="data-trust-summary-title">
+          <h3 id="data-trust-summary-title">Summary</h3>
+          <div id="data-trust-summary" class="summary-grid"></div>
+        </section>
+        <section class="panel" aria-labelledby="data-trust-catalog-title">
+          <h3 id="data-trust-catalog-title">Data Catalog</h3>
+          <div id="data-trust-catalog" class="item-list"></div>
+        </section>
+        <section class="panel" aria-labelledby="data-trust-quality-title">
+          <h3 id="data-trust-quality-title">Quality Reports</h3>
+          <div id="data-trust-quality" class="item-list"></div>
+        </section>
+        <section class="panel" aria-labelledby="data-trust-gaps-title">
+          <h3 id="data-trust-gaps-title">Data Gaps</h3>
+          <div id="data-trust-gaps" class="item-list"></div>
         </section>
       </section>
     </main>

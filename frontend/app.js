@@ -22,6 +22,7 @@ const selectors = {
     timeline: document.querySelector("#timeline-view"),
     retrospective: document.querySelector("#retrospective-view"),
     compare: document.querySelector("#compare-view"),
+    "data-trust": document.querySelector("#data-trust-view"),
   },
   summaryGrid: document.querySelector("#summary-grid"),
   dailyBriefHeadline: document.querySelector("#daily-brief-headline"),
@@ -42,6 +43,10 @@ const selectors = {
   compareBlock: document.querySelector("#compare-block"),
   emptyTemplate: document.querySelector("#empty-template"),
   boundaryLine: document.querySelector("#boundary-line"),
+  dataTrustSummary: document.querySelector("#data-trust-summary"),
+  dataTrustCatalog: document.querySelector("#data-trust-catalog"),
+  dataTrustQuality: document.querySelector("#data-trust-quality"),
+  dataTrustGaps: document.querySelector("#data-trust-gaps"),
 };
 
 function setStatus(text, tone = "") {
@@ -1284,6 +1289,111 @@ async function renderTimeline() {
   }
 }
 
+async function renderDataTrust() {
+  const [catalogResp, qualityResp] = await Promise.all([
+    apiGet("/data/catalog"),
+    apiGet("/data/quality"),
+  ]);
+
+  const catalogEntries = catalogResp.catalog_entries || [];
+  const qualityReports = qualityResp.reports || [];
+  const allGaps = qualityResp.data_gaps || [];
+
+  // Summary
+  let notReady = 0;
+  let usableWarn = 0;
+  for (const report of qualityReports) {
+    if (report.readiness_status === "not_ready") notReady += 1;
+    if (report.readiness_status === "usable_with_warnings") usableWarn += 1;
+  }
+  const criticalGaps = allGaps.filter((g) => g.severity === "critical").length;
+  const warningGaps = allGaps.filter((g) => g.severity === "warning").length;
+
+  clear(selectors.dataTrustSummary);
+  selectors.dataTrustSummary.append(
+    metric("Catalog entries", catalogEntries.length),
+    metric("Quality reports", qualityReports.length),
+    metric("Critical gaps", criticalGaps),
+    metric("Warning gaps", warningGaps),
+    metric("Not ready", notReady),
+    metric("Warnings", usableWarn),
+    metric("Execution", "false"),
+  );
+
+  // Data Catalog
+  clear(selectors.dataTrustCatalog);
+  if (!catalogEntries.length) {
+    selectors.dataTrustCatalog.append(emptyNode());
+  }
+  for (const entry of catalogEntries) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.append(textElement("span", "item-title", entry.dataset_key || "Unknown"));
+    const metaItems = [
+      ["Provider", entry.provider],
+      ["Asset class", entry.asset_class],
+      ["Dataset", entry.dataset],
+      ["Symbols", entry.symbols && entry.symbols.length ? entry.symbols.join(", ") : "N/A"],
+      ["Freshness", entry.freshness_status || "unknown"],
+      ["Readiness", entry.readiness_status || "unknown"],
+      ["Source ref", entry.latest_receipt_ref],
+    ];
+    for (const [key, val] of metaItems) {
+      if (val !== undefined && val !== null) {
+        item.append(textElement("span", "item-meta", `${key}: ${formatValue(val)}`));
+      }
+    }
+    selectors.dataTrustCatalog.append(item);
+  }
+  if (catalogResp.non_claims) {
+    renderNonClaims(selectors.dataTrustCatalog, catalogResp.non_claims);
+  }
+
+  // Quality Reports
+  clear(selectors.dataTrustQuality);
+  if (!qualityReports.length) {
+    selectors.dataTrustQuality.append(emptyNode());
+  }
+  for (const report of qualityReports) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.append(textElement("span", "item-title", report.dataset_key || "Unknown"));
+    const statusTag = (label, value) => textElement("span", `tag ${value}`, `${label}: ${value}`);
+    item.append(statusTag("freshness", report.freshness_status || "unknown"));
+    item.append(statusTag("quality", report.quality_status || "unknown"));
+    item.append(statusTag("bias", report.bias_status || "unknown"));
+    item.append(statusTag("recon", report.reconciliation_status || "unknown"));
+    item.append(statusTag("ready", report.readiness_status || "unknown"));
+    item.append(textElement("span", "item-meta", `Findings: ${(report.findings || []).length}`));
+    const blocksText = (report.blocks || []).join(", ") || "none";
+    item.append(textElement("span", "item-meta", `Blocks: ${blocksText}`));
+    item.append(textElement("span", "item-meta", `Receipt: ${report.latest_receipt_ref || "N/A"}`));
+    selectors.dataTrustQuality.append(item);
+  }
+  if (qualityResp.non_claims) {
+    renderNonClaims(selectors.dataTrustQuality, qualityResp.non_claims);
+  }
+
+  // Data Gaps
+  clear(selectors.dataTrustGaps);
+  if (!allGaps.length) {
+    selectors.dataTrustGaps.append(emptyNode());
+  }
+  for (const gap of allGaps) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.append(textElement("span", `tag ${gap.severity}`, gap.severity || "unknown"));
+    item.append(textElement("span", "item-title", gap.scope || ""));
+    item.append(textElement("span", "item-meta", gap.message || ""));
+    if (gap.source_ref) {
+      item.append(textElement("span", "item-meta", `Source: ${gap.source_ref}`));
+    }
+    const blocksText = (gap.blocks || []).join(", ") || "none";
+    item.append(textElement("span", "item-meta", `Blocks: ${blocksText}`));
+    selectors.dataTrustGaps.append(item);
+  }
+}
+
 const renderers = {
   overview: renderOverview,
   exposure: renderExposure,
@@ -1292,6 +1402,7 @@ const renderers = {
   timeline: renderTimeline,
   retrospective: renderRetrospective,
   compare: renderCompare,
+  "data-trust": renderDataTrust,
 };
 
 const errorTargets = {
@@ -1302,6 +1413,7 @@ const errorTargets = {
   timeline: () => selectors.timelineList,
   retrospective: () => selectors.retrospectiveBlock,
   compare: () => selectors.compareBlock,
+  "data-trust": () => selectors.dataTrustSummary,
 };
 
 async function refresh() {
