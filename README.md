@@ -14,6 +14,7 @@ better financial judgment; it must not pretend any claim is a guaranteed edge.
 
 > **Product direction:** [Product Thesis](docs/product/product-thesis.md) ·
 > [Product Roadmap](docs/product/product-roadmap.md) ·
+> [Capital Workbench Roadmap](docs/product/capital-workbench-roadmap.md) ·
 > [North Star](docs/product-north-star.md).
 >
 > **New here?** Start with the [docs task map](docs/README.md), then run the

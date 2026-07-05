@@ -1,111 +1,80 @@
-# FinHarness 产品路线草案(Product Roadmap)
+# FinHarness Product Roadmap
 
-> 状态:草案(2026-06-24)。性质:方向序列,不是排期。它从属于
-> [产品北极星](../product-north-star.md) 与 [产品命题](product-thesis.md)。
-> 这是**产品交付线**,与北极星的"五阶段能力路线"是**不同的轴**:北极星按
-> 能力/治理分阶段,本文按用户能感知的产品入口分阶段。下表给出映射,避免
-> 两条线互相打架。
+> Status: current planning draft (2026-07-05). This is a product sequencing
+> document, not a promise of dates. It follows the [Product North Star](../product-north-star.md),
+> the [Product Thesis](product-thesis.md), and the deeper
+> [Capital Workbench Roadmap](capital-workbench-roadmap.md).
 
-## 轴的区分(重要)
+## Direction
 
-- 北极星五阶段路线 = **能力地基**怎么长(研究证据系统 → 只读驾驶舱 →
-  决策工作流 → 人机 cockpit → 有限自动化)。
-- 本产品路线 = **用户每天打开看到什么**怎么长。
+FinHarness is moving from a governance skeleton into an AI-native Personal
+Capital Workbench:
 
-| 产品阶段 | 北极星能力阶段映射 | 用户感知 | 交付状态 |
+```text
+data in -> capital state -> research packs -> scenario comparison
+-> paper validation -> agent task runtime -> cockpit -> review and learning
+```
+
+The next work should be named after user-visible capabilities: data catalog,
+research memo workspace, scenario comparison, paper performance review, agent
+task timeline. Receipts, gates, permission checks, and API allowlists remain
+acceptance criteria, not the product headline.
+
+## Eight-Layer Roadmap
+
+| Layer | Product capability | Current status | Next outcome |
 | --- | --- | --- | --- |
-| P1 Product Thesis | 阶段 1(地基,文档先行) | 方向钉进仓库 | shipped |
-| P2 Daily Financial Brief v1 | 阶段 2(只读驾驶舱) | 每天看清状态/风险 | shipped(#43) |
-| P3 Decision Journal / Proposal Scaffold | 阶段 3(决策工作流) | 决策前写 thesis | shipped(#47;forcing gate)|
-| P4 Post-Loss Attribution v0 | 阶段 3–4(工作流 + 复核) | 亏损后结构化归因 | 未开始 |
-| P5 Leverage Warning Gate v0 | 阶段 2/3 的 risk 属性 | 高风险动作前强解释 | 未开始 |
+| L0 Data Ingestion & Connectors | Bring in personal, market, research, macro, receipt, and agent-run data. | Thin imports and mature-wheel adapters exist. | DataSourceRegistry and connector inventory. |
+| L1 Data Lake / Catalog / Quality | Know source, freshness, coverage, lineage, and whether data is usable. | Data-quality helpers exist, but no product catalog. | DataCatalog, DataQualityReport, freshness policy, data-gaps API. |
+| L2 State Core / Capital Graph | Query personal capital state as accounts, assets, positions, liabilities, goals, documents, receipts, and exposures. | State Core and Capital Map are current. | PersonalCapitalGraph language and richer capital-state read models. |
+| L3 Research Workspace | Organize instrument/macro questions into evidence packs, memos, filings, events, valuation snapshots, factors, and gaps. | Research evidence exists as backend contract. | EvidencePack, ResearchMemo, InstrumentProfile, research API/page. |
+| L4 Scenario / What-if Engine | Compare candidate actions against a do-nothing baseline. | Action simulation is qualitative. | Scenario, WhatIfRun, PortfolioDelta, RiskImpactReport, ScenarioComparison. |
+| L5 Paper Validation Runtime | Validate reviewed plans in isolated paper state. | Runtime v0 shipped in #102. | PaperPerformanceReview, PaperPnLSeries, ScenarioVsPaperComparison. |
+| L6 Agent Task Runtime | Make agents traceable, resumable, checkpointed task executors. | Agent explanation/runtime v0 exists. | AgentTask, AgentStep, AgentToolRun, HumanHandoff, task artifacts. |
+| L7 Cockpit / Frontend Workbench | Let users operate without reading receipt files. | Cockpit v0 is read/review focused. | Home, Portfolio, Research, Scenarios, Decisions, Paper, Agent Tasks, Data Catalog. |
+| L8 Review / Learning / Governance | Preserve receipts, attestation, lessons, rule candidates, policy updates, risk register, audit trail, and permission boundaries. | Strong current layer. | Keep as cross-cutting system property rather than the roadmap headline. |
 
-> 交付状态按**产品轴**编号(P2=Daily Brief、P3=Decision Scaffold)。注意它与
-> 工程 slice 编号错位:工程线把 Daily Brief 记为 P3(#43)、Decision Scaffold
-> 记为 P4(#47)。本表只在能诚实声明时标 shipped,P4 Post-Loss Attribution
-> 尚未动工,不标 done。
+## Execution Phases
 
-## P1 — Product Thesis(本轮)
+| Phase | Goal | PR shape |
+| --- | --- | --- |
+| Phase 0 | Reframe current docs around the Capital Workbench roadmap. | Pure docs/architecture PR. |
+| Phase 1 | Data foundation. | DataSourceRegistry, DataCatalog, quality/freshness, APIs, Data Gaps page. |
+| Phase 2 | Research Workspace v1. | InstrumentProfile, EvidencePack, ResearchMemo, research API/page, agent memo draft. |
+| Phase 3 | Scenario Engine v1. | Scenario/WhatIfRun, PortfolioDelta, RiskImpactReport, DoNothingBaseline, ScenarioComparison. |
+| Phase 4 | Paper Performance Loop. | PaperPerformanceReview, PnL series, scenario-vs-paper comparison, lesson candidates. |
+| Phase 5 | Agent Task Runtime. | AgentTask/Step/Artifact, tool-run tracing, human handoff, first task workflows. |
+| Phase 6 | Frontend Workbench upgrade. | Iterative cockpit pages, then typed client / richer UI when the API surface stabilizes. |
 
-C0/C1 纯文档。产物:本路线 + [product-thesis.md](product-thesis.md) + 北极星
-新增 `Financial Decision Clarity` 指标块。**不写功能代码。** 目的:在加任何
-产品功能前,先把"为什么存在"钉进仓库,挡住"偷偷重建交易产品"的漂移。
+## Recommended PR Order
 
-## P2 — Daily Financial Brief v1
+| PR | Title shape | Capability |
+| --- | --- | --- |
+| 103 | `docs: reframe FinHarness as capital workbench roadmap` | Positive product roadmap and 8-layer map. |
+| 104 | `data: add DataSourceRegistry and DataCatalog` | Register data sources and catalog artifacts. |
+| 105 | `data: add DataQualityReport and freshness policy` | Track quality, missing fields, age, and data usability. |
+| 106 | `api: expose data catalog and data gaps` | Product API for data source and quality inspection. |
+| 107 | `cockpit: add Data Catalog and Data Gaps page` | First user-visible data-quality surface. |
+| 108 | `research: add EvidencePack and ResearchMemo` | Research artifacts users and agents can review. |
+| 109 | `cockpit: add Research workspace v1` | Instrument/question page with evidence and gaps. |
+| 110 | `scenario: add Scenario and WhatIfRun` | Scenario inputs and persisted runs. |
+| 111 | `scenario: add PortfolioDelta and ScenarioComparison` | Compare candidate consequences. |
+| 112 | `paper: add PaperPerformanceReview and scenario comparison` | Close paper validation into review. |
+| 113 | `agent: add AgentTask, AgentStep, and AgentArtifact` | Stateful task runtime primitives. |
+| 114 | `agent: add ResearchBriefTask workflow` | First traceable multi-step financial task. |
+| 115 | `cockpit: add Agent Task timeline` | User sees agent state, artifacts, and handoffs. |
 
-强化 `task brief:daily`,输出**固定结构**(每一项都是状态核心上的 view,不是
-新竖线):
+## PR Principles
 
-```text
-1. Net worth snapshot        净资产快照
-2. Cash / liquidity status   现金/流动性安全垫
-3. Exposure map              风险暴露地图(因子级,不只是资产名)
-4. Concentration risks       集中度风险
-5. Leverage / liquidation    杠杆/爆仓预警(见 P5)
-6. Market context            与持仓相关的市场变化(历史描述,非预测)
-7. Candidate decisions       候选动作(governed proposal)
-8. Do-nothing option         不行动选项(永远显式列出)
-9. Behavioral warnings       行为风险(追涨/恐慌/加杠杆/过度集中/忽视税务)
-10. Review prompts           复盘提示
-```
+1. One PR advances one product capability.
+2. Governance is an acceptance condition, not the product headline.
+3. Build in this order where possible: state model -> API -> tests -> cockpit -> agent tool -> agent workflow.
+4. Every agent workflow must produce a durable artifact such as `ResearchMemo`, `EvidencePack`, `ScenarioComparison`, `PaperPerformanceReview`, or `LessonCandidate`.
+5. Data quality beats model complexity: wrong timestamps, stale fields, missing cashflows, bad currency, survivorship bias, or future leakage must surface before agents treat data as fact.
 
-边界:只读;市场上下文必须带证据等级、用历史描述而非预测;候选记录为
-governed proposal,不出现买卖按钮。
+## Near-Term Exclusions
 
-## P3 — Decision Journal / Proposal Scaffold
-
-每个 proposal 增加结构化字段,把冲动变成**可审查对象**(不是阻止):
-
-```text
-decision_intent   thesis           evidence_refs    counter_evidence
-alternatives      do_nothing_case  risk_if_wrong    position_impact
-tax_consideration review_date      emotion_flag
-```
-
-复用现有 Proposal / Attestation / ReviewEvent,不另起对象。
-
-## P4 — Post-Loss Attribution v0
-
-亏损复盘模板,做**结构化归因**而非情绪叙事("庄家割我/运气差"):
-
-```text
-market_beta  sector_rotation  rate_change  earnings_event
-valuation_compression  position_size_error  leverage_error
-timing_error  behavioral_error  unknown
-```
-
-输出进入 lesson;够格的 lesson 进入 rule candidate(复用 lesson→rule)。
-
-## P5 — Leverage Warning Gate v0
-
-高风险动作(加杠杆/集中加仓)前**强解释 + 冷静期**,不是硬阻止:
-
-```text
-- liquidation estimate         爆仓价与距当前价格的距离
-- historical volatility compare 标的历史波动 vs 本次杠杆
-- prior similar decision outcome 上次同类决策的最大回撤与复盘结论
-- max drawdown memory          行为记忆
-- written thesis required      必须有书面 thesis
-- cool-down prompt             冷静期(如 30 分钟)确认
-```
-
-fail-closed:没人工确认就停;确认动作本身产生 receipt。
-
-## 北极星指标对齐
-
-每个产品阶段都要能映射到 [Financial Decision Clarity](../product-north-star.md)
-的七维(有状态/有解释/有风险/有对照/有复盘/有学习/有行为改善)。一个阶段
-若无法说清自己推进了哪一维,就先不做。
-
-## 路线外/后续阶段
-
-- 复杂策略执行、自动配置和收益预测先不作为 B0/B1 主线;它们必须等状态、review、
-  paper validation、授权对象、limits、kill switch、receipt 和复盘链路成熟后再评估。
-- 多租户 / 服务他人 / 机构级合规重量属于后续阶段;北极星仍坚持"先自用、后服务他人"。
-
-## 工程债如何穿插
-
-工程债(安全台账、CVE、change-control 收口)**穿插进行,不抢主线命名**,且
-**不和产品文档/功能混进同一个 PR**(除非是同一轮收口后的纯文档整理)。
-例:#37/#38 合并后的 C0 台账收口(security register open count、change-control
-活页漂移)应是独立 PR。
+Complex strategy automation, automated allocation, and high-consequence execution
+are not B0/B1 work. They require mature state, review, paper validation,
+authority objects, limits, kill switches, receipts, and post-action review before
+they can be evaluated as controlled capital-action surfaces.

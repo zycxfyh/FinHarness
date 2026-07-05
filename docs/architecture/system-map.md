@@ -162,7 +162,30 @@ domain model / read model / write(command) model / adapters / invariants
   `execution_allowed=false`,且不是 suitability certification、AuthorityContract
   或 broker instruction。
 
-### 7. Research Evidence
+### 7. Paper Validation Runtime
+
+- **职责**:把 human-allowed TradePlanCandidate 放入 isolated paper state,用
+  paper order ticket、simulated execution、paper account/position 和 receipt
+  验证计划后果。
+- **domain**:`statecore/paper_order_tickets.py`、`PaperOrderTicketCandidate`;
+  `statecore/paper_executions.py`、`PaperExecutionReceipt`;
+  `statecore/paper_accounts.py`、`PaperAccount`、`PaperPosition`。
+- **API**:`api/routes_paper_validation.py`;
+  `POST /trade-plan-candidates/{id}/paper-order-ticket-candidates`;
+  `POST /paper-order-ticket-candidates/{id}/simulated-executions`;
+  `POST /paper-accounts/{id}/execution-applications`;
+  `GET /paper-order-ticket-candidates`;
+  `GET /paper-execution-receipts`;
+  `GET /paper-accounts`;
+  `GET /paper-accounts/{id}/positions`。
+- **invariants**:paper ticket 必须引用 current trade plan、review gate、action
+  intent、preflight hash、simulation receipt 和 active matching paper account;
+  rejected paper execution 没有 fill/notional/fees 且必须有 rejection reason;
+  application 只接受 `simulated_filled`,拒绝 stale account/execution receipt、
+  replay、insufficient cash/position 和 live/broker markers;所有对象保持
+  `environment=paper`,不更新真实账户、不提交 broker。
+
+### 8. Research Evidence
 
 - **职责**:为某个 candidate 拉取只读、历史描述性证据;不预测、不优化、不写状态。
 - **domain**:`research_evidence.py`、`research_history_provider.py`、
@@ -171,7 +194,7 @@ domain model / read model / write(command) model / adapters / invariants
 - **invariants**:默认不联网;provider 失败变成 data gap;证据只能挂在 candidate
   下,不能反向驱动 cockpit 或产生行动指令。
 
-### 8. Agent Explanation
+### 9. Agent Explanation
 
 - **职责**:把 Agent 团队放进个人资本办公室的治理运行时:解释状态、IPS policy、
   proposal/review timeline、风险笔记和工具结果,并通过显式 profile/tool/evidence/
@@ -235,7 +258,7 @@ domain model / read model / write(command) model / adapters / invariants
   不是 approval、recommendation 或 execution authorization;default profile 不写核心状态;
   没有 live order、transfer、broker write API、receipt 删除/覆盖或 Agent approval。
 
-### 9. Cockpit / Product API
+### 10. Cockpit / Product API
 
 - **职责**:产品表面,让人阅读、比较、复核、拒绝、确认、归档。
 - **adapters**:`api/app.py`、`api/routes_cockpit.py`、`api/routes_proposals.py`、
@@ -243,7 +266,7 @@ domain model / read model / write(command) model / adapters / invariants
 - **invariants**:`execution_allowed=false` 常显;前端只能展示和复核边界,不能放松
   后端边界;不无限加顶级 tab。
 
-### 10. EOS Governance / Quality
+### 11. EOS Governance / Quality
 
 - **职责**:怎么安全变更、怎么证明边界、怎么阻止 docs/facts drift。
 - **assets**:`tests/_policy_registry.py`、`tests/test_governance_invariants.py`、
@@ -252,7 +275,7 @@ domain model / read model / write(command) model / adapters / invariants
   `receipt_usage_audit.py`。
 - **invariants**:机器检查只管当前事实和当前入口;历史 notes/reviews 不被改写。
 
-### 11. Archived Live-Trading Legacy
+### 12. Archived Live-Trading Legacy
 
 - **职责**:历史参考,非 mainline runtime。
 - **location**:`experiments/archive/live_trading_legacy/`。

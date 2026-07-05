@@ -143,7 +143,25 @@ systems:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_action_intent_authority_bindings
       - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Action intents need numeric simulation engines, authority contracts, paper execution, or broker adapters.
+    upgrade_trigger: Action intents need numeric simulation engines, authority contracts, or broker adapters.
+
+  - id: paper_validation_runtime
+    name: Paper Validation Runtime
+    status: current
+    summary: "Paper-only runtime v0 for reviewed trade plans: paper order ticket candidates, simulated execution receipts, isolated paper accounts, paper positions, and account execution applications."
+    docs:
+      - docs/architecture/system-map.md
+      - docs/product/capital-workbench-roadmap.md
+    runtime_roots:
+      - src/finharness/statecore/paper_order_tickets.py
+      - src/finharness/statecore/paper_executions.py
+      - src/finharness/statecore/paper_accounts.py
+      - src/finharness/api/routes_paper_validation.py
+    mature_posture: Paper-state validation loop inspired by order/account/reality-model separation, but scoped to isolated local paper state before performance review or broker adapters.
+    checks:
+      - uv run python -m unittest tests.test_action_intents
+      - uv run python -m unittest tests.test_statecore_api
+    upgrade_trigger: Paper validation needs performance review, mark-to-market PnL, scenario-vs-paper comparison, or cockpit paper pages.
 
   - id: research_evidence
     name: Research Evidence
