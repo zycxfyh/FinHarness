@@ -1,7 +1,8 @@
 # Gate Checklists
 
 减少"每次临场想该查什么"。三道门职责分离:**author 机械自查 → independent gate 创造性对抗 →
-release 收口**。配合 [change-control.md](./change-control.md) 与 [mini-rfc 模板](../templates/mini-rfc.md)。
+release 收口**。配合 [operating model](./operating-model.md)、[change-control.md](./change-control.md)
+与 [mini-rfc 模板](../templates/mini-rfc.md)。
 
 职责切分(详见 [engineering-roles.md](../reference/engineering-roles.md)):
 - **Author**:负责机械自查——surface inventory、traceability、schema coverage、默认路径不回归。
@@ -12,7 +13,7 @@ release 收口**。配合 [change-control.md](./change-control.md) 与 [mini-rfc
 
 ## Author 自查(交 gate 前必须自己过)
 
-- [ ] mini-RFC 8 节填全(C2/C3),Surface Inventory + Traceability Matrix 完整。
+- [ ] mini-RFC 必填小节填全(C2/C3),Surface Inventory + Traceability Matrix 完整。
 - [ ] **Default Path Invariant**:有测试证明默认行为不变(快照/逐字段相等)。
 - [ ] 每条设计承诺都有对应测试 + gate 探针(traceability 无空行)。
 - [ ] schema / 红线覆盖:新增输出字段都分配了 policy;无 Pydantic 对象泄漏。
@@ -48,7 +49,9 @@ release 收口**。配合 [change-control.md](./change-control.md) 与 [mini-rfc
 - [ ] 工作树:只 stage 本 slice 文件(含 untracked 显式按文件名 add)。
 - [ ] `git diff --check` 干净;`task check` REAL_EXIT=0。
 - [ ] commit message 含 gate 结论 + 证据(测试数 / REAL_EXIT);按规范带 Co-Authored-By。
-- [ ] **Receipt Boundary**:claim / not claimed / remaining debt 写清(对应 mini-RFC 第 8 节)。
+- [ ] **Receipt Boundary**:claim / not claimed / remaining debt 写清(对应 mini-RFC Not claimed / Debt)。
+- [ ] **Merge Decision**:merge now / keep draft / split / request changes / abandon,并写明 product value、
+      boundary safety、test confidence、future maintainability。
 
 ---
 

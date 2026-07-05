@@ -9,8 +9,9 @@ planning, paper validation, review, and eventually tightly controlled execution
 surfaces. The research / evidence / risk **harness** underneath is the engine
 room, not the product surface: every meaningful suggestion carries claims with
 evidence, assumptions, limitations, and review state, then produces a receipt.
-FinHarness is allowed to advise, explain, simulate, and help the operator build
-better financial judgment; it must not pretend any claim is a guaranteed edge.
+FinHarness is allowed to explain, compare, simulate, validate, and help the
+operator form and review financial judgment; it must not pretend any claim is a
+guaranteed edge.
 
 > **Product direction:** [Product Thesis](docs/product/product-thesis.md) ·
 > [Product Roadmap](docs/product/product-roadmap.md) ·

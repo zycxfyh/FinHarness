@@ -12,6 +12,7 @@ evidence, validate safely, and learn from outcomes.
 ## Start Here
 
 - Understand the product direction and category: [Product Thesis](product/product-thesis.md), [Product Roadmap](product/product-roadmap.md), [Capital Workbench Roadmap](product/capital-workbench-roadmap.md), [North Star](product-north-star.md)
+- Understand how work should advance: [Operating Model](engineering/operating-model.md), [Change Control](engineering/change-control.md), [Gate Checklists](engineering/gate-checklists.md)
 - Need the framework in one screen: [Framework Index](architecture/framework-index.md)
 - Need the engineering leverage / future-tooling map: [Engineering Leverage Map](architecture/engineering-leverage-map.md)
 - New to the project: [Golden Path Tutorial](tutorials/golden-path.md)
@@ -25,6 +26,7 @@ evidence, validate safely, and learn from outcomes.
 | --- | --- |
 | Run the first safe end-to-end flow | [Golden Path Tutorial](tutorials/golden-path.md) |
 | See every system's core summary | [Framework Index](architecture/framework-index.md) |
+| Shape and release a bounded PR | [Operating Model](engineering/operating-model.md), [mini-RFC template](templates/mini-rfc.md) |
 | See which engineering layers prevent future drag | [Engineering Leverage Map](architecture/engineering-leverage-map.md) |
 | Understand current architecture layering | [Capital OS Layering](architecture/capital-os-layering.md) |
 | Add a mature-wheel adapter | [Add A Mature-Wheel Adapter](how-to/add-mature-wheel-adapter.md) |

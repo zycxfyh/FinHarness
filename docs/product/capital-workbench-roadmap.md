@@ -297,6 +297,11 @@ the workbench rather than replace the workbench.
 
 ## Immediate Roadmap
 
+Execution discipline is defined in the [Operating Model](../engineering/operating-model.md):
+each capability slice should have shaping, an RFC/pitch, architecture review,
+capability-specific verification, product surface review, release decision, and
+retrospective when needed.
+
 The next PR sequence should be:
 
 ```text
