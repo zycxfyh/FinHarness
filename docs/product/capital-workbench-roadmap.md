@@ -250,7 +250,13 @@ Current tabs: Overview, Exposure, Policy, Proposals, Timeline, Retrospective, Co
 
 Data Trust tab (shipped #107) shows: Summary, Data Catalog, Quality Reports, Data Gaps.
 
-Target pages beyond Data Trust:
+Target pages beyond current cockpit:
+
+1. Research Workspace
+2. Scenarios
+3. Paper Validation Review
+4. Agent Tasks
+5. Settings / Configuration
 
 The short-term UI can stay vanilla while the information architecture is
 validated. A typed frontend stack should wait until the API shape stabilizes.
