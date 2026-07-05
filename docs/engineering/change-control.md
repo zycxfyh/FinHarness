@@ -20,6 +20,7 @@
 | **C3** | 财务 / 投资 / 税务 / 联网 / 自动化 / 安全边界 | mini-RFC + threat/surface inventory + **independent** gate + CI hardening。 |
 
 > C2/C3 必须走 [mini-RFC 模板](../templates/mini-rfc.md),并交 [gate checklist](./gate-checklists.md)。
+> 端到端推进纪律见 [Operating Model](./operating-model.md)。
 > C0/C1 不必。
 
 ## 触发器:出现任一即至少 C2

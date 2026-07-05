@@ -49,14 +49,12 @@ domain model / read model / write(command) model / adapters / invariants
   `record_agent_authority_grant` 写 receipt-backed mandate-bound credential;
   `POST /agent-authority-grants/{grant_id}/validate` 动态重查 grant 与 mandate
   当前状态并返回 structured deny reasons。
-- **invariants**:IPS 是用户政策,不是投资建议;`execution_allowed=false`;
-  compliance check 是描述性检查,不是交易建议。CapitalMandate 不是授权对象,
-  不授予 Agent identity,不创建 order ticket 或 broker instruction;它要求
+- **invariants**:IPS 是用户政策;`execution_allowed=false`;
+  compliance check 是描述性检查。CapitalMandate 要求
   `human_attester`、`human_reason`、`explicit_confirmation=true`,且
   `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
-  是 mandate-bound authority credential,不是 authentication、trade-plan
-  approval、preflight bypass、broker submission 或 execution authorization;
-  没有 active CapitalMandate 时 default-deny,grant validation 必须 use-time
+  是 mandate-bound authority credential,没有 active CapitalMandate 时
+  default-deny,grant validation 必须 use-time
   重查当前 grant/mandate/scope。
 
 ### 4. Decision Workflow
@@ -125,14 +123,12 @@ domain model / read model / write(command) model / adapters / invariants
   `GET /trade-plan-candidates/{trade_plan_candidate_id}`、
   `GET /capital-objective-fits/{capital_objective_fit_id}`、
   `GET /trade-plan-review-gates/{review_gate_id}`。
-- **invariants**:ActionIntentCandidate 不是 order ticket、broker action、
-  simulation、approval、investment advice 或 execution authorization;创建时必须
+- **invariants**:ActionIntentCandidate 只记录待审 capital action intent;创建时必须
   绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
   authority markers,并写 `state_core_action_intent_candidate` receipt;system
   preflight 只读重算 authority binding、freshness、scope、IPS policy、evidence、
   precondition、v0 impact summary、risk posture 和 deterministic report hash;
-  ActionIntentAuthorityBinding 只授予进入 downstream checks 的资格,不授予越级
-  execution authority;agent-authored ActionIntent 必须引用
+  ActionIntentAuthorityBinding 只授予进入 downstream checks 的资格;agent-authored ActionIntent 必须引用
   `agent_authority_grant_id`,server use-time validate grant 并保留 binding 与
   grant_validation 两类 deny reasons,denied binding 也写 receipt 供下游读取;
   human-authored ActionIntent 可不引用 grant,system-authored ActionIntent 可不引用
@@ -145,7 +141,7 @@ domain model / read model / write(command) model / adapters / invariants
   创建时必须重新计算并匹配 current preflight hash,block 则拒绝,warn 必须显式
   acknowledge all warning codes,并写
   `state_core_action_intent_simulation_report` receipt;v0 simulation report
-  仍不生成 order、broker action、approval 或 execution authorization;
+  仍是 qualitative downstream evidence;
   TradePlanCandidate 只允许 plan direction/scope/cap/constraint fields,拒绝
   exact quantity、broker/order-ready/execution/authority markers 和 stale
   simulation/preflight evidence,写 `state_core_trade_plan_candidate` receipt,但
@@ -162,7 +158,30 @@ domain model / read model / write(command) model / adapters / invariants
   `execution_allowed=false`,且不是 suitability certification、AuthorityContract
   或 broker instruction。
 
-### 7. Research Evidence
+### 7. Paper Validation Runtime
+
+- **职责**:把 human-allowed TradePlanCandidate 放入 isolated paper state,用
+  paper order ticket、simulated execution、paper account/position 和 receipt
+  验证计划后果。
+- **domain**:`statecore/paper_order_tickets.py`、`PaperOrderTicketCandidate`;
+  `statecore/paper_executions.py`、`PaperExecutionReceipt`;
+  `statecore/paper_accounts.py`、`PaperAccount`、`PaperPosition`。
+- **API**:`api/routes_paper_validation.py`;
+  `POST /trade-plan-candidates/{id}/paper-order-ticket-candidates`;
+  `POST /paper-order-ticket-candidates/{id}/simulated-executions`;
+  `POST /paper-accounts/{id}/execution-applications`;
+  `GET /paper-order-ticket-candidates`;
+  `GET /paper-execution-receipts`;
+  `GET /paper-accounts`;
+  `GET /paper-accounts/{id}/positions`。
+- **invariants**:paper ticket 必须引用 current trade plan、review gate、action
+  intent、preflight hash、simulation receipt 和 active matching paper account;
+  rejected paper execution 没有 fill/notional/fees 且必须有 rejection reason;
+  application 只接受 `simulated_filled`,拒绝 stale account/execution receipt、
+  replay、insufficient cash/position 和 live/broker markers;所有对象保持
+  `environment=paper`,不更新真实账户、不提交 broker。
+
+### 8. Research Evidence
 
 - **职责**:为某个 candidate 拉取只读、历史描述性证据;不预测、不优化、不写状态。
 - **domain**:`research_evidence.py`、`research_history_provider.py`、
@@ -171,7 +190,7 @@ domain model / read model / write(command) model / adapters / invariants
 - **invariants**:默认不联网;provider 失败变成 data gap;证据只能挂在 candidate
   下,不能反向驱动 cockpit 或产生行动指令。
 
-### 8. Agent Explanation
+### 9. Agent Explanation
 
 - **职责**:把 Agent 团队放进个人资本办公室的治理运行时:解释状态、IPS policy、
   proposal/review timeline、风险笔记和工具结果,并通过显式 profile/tool/evidence/
@@ -231,11 +250,11 @@ domain model / read model / write(command) model / adapters / invariants
   evidence envelope、测试和 receipt-backed command path 变成 active capabilities,
   而不是靠 prompt 承诺。
 - **invariants**:Agent 只通过 profile-selected tools 和最小上下文读数据;不裸读全库;
-  capability profiles 不是 permission bypass;Agent draft proposal 是 review object,
-  不是 approval、recommendation 或 execution authorization;default profile 不写核心状态;
+  capability profiles 不是 permission bypass;Agent draft proposal 是 review object;
+  default profile 不写核心状态;
   没有 live order、transfer、broker write API、receipt 删除/覆盖或 Agent approval。
 
-### 9. Cockpit / Product API
+### 10. Cockpit / Product API
 
 - **职责**:产品表面,让人阅读、比较、复核、拒绝、确认、归档。
 - **adapters**:`api/app.py`、`api/routes_cockpit.py`、`api/routes_proposals.py`、
@@ -243,7 +262,7 @@ domain model / read model / write(command) model / adapters / invariants
 - **invariants**:`execution_allowed=false` 常显;前端只能展示和复核边界,不能放松
   后端边界;不无限加顶级 tab。
 
-### 10. EOS Governance / Quality
+### 11. EOS Governance / Quality
 
 - **职责**:怎么安全变更、怎么证明边界、怎么阻止 docs/facts drift。
 - **assets**:`tests/_policy_registry.py`、`tests/test_governance_invariants.py`、
@@ -252,7 +271,7 @@ domain model / read model / write(command) model / adapters / invariants
   `receipt_usage_audit.py`。
 - **invariants**:机器检查只管当前事实和当前入口;历史 notes/reviews 不被改写。
 
-### 11. Archived Live-Trading Legacy
+### 12. Archived Live-Trading Legacy
 
 - **职责**:历史参考,非 mainline runtime。
 - **location**:`experiments/archive/live_trading_legacy/`。

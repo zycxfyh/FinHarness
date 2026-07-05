@@ -1,19 +1,21 @@
 # FinHarness Lab
 
 FinHarness is an **AI-native personal financial judgment layer**: it helps an
-individual see their financial state, risk exposure, and decision rationale —
-and review what actually happened afterward — instead of telling them what to buy.
+individual see their financial state, risk exposure, decision rationale,
+reviewable action options, and what actually happened afterward.
 
-It is **not** a trading bot, **not** an AI stock picker or robo-advisor, and
-**not** an execution authority. The research / evidence / risk **harness**
-underneath is the engine room, not the product surface: every suggestion carries
-claims with evidence, assumptions, limitations, and non-claims, goes through human
-review, and produces a receipt. `execution_allowed=false` unless a layer
-explicitly proves otherwise. FinHarness is allowed to advise; it is not allowed to
-pretend its advice is a guaranteed edge or an execution authorization.
+The product is meant to move step by step from situational awareness to governed
+planning, paper validation, review, and eventually tightly controlled execution
+surfaces. The research / evidence / risk **harness** underneath is the engine
+room, not the product surface: every meaningful suggestion carries claims with
+evidence, assumptions, limitations, and review state, then produces a receipt.
+FinHarness is allowed to explain, compare, simulate, validate, and help the
+operator form and review financial judgment; it must not pretend any claim is a
+guaranteed edge.
 
 > **Product direction:** [Product Thesis](docs/product/product-thesis.md) ·
 > [Product Roadmap](docs/product/product-roadmap.md) ·
+> [Capital Workbench Roadmap](docs/product/capital-workbench-roadmap.md) ·
 > [North Star](docs/product-north-star.md).
 >
 > **New here?** Start with the [docs task map](docs/README.md), then run the
@@ -113,7 +115,7 @@ runtime, API routes, Agent tools, or Taskfile tasks.
 | Part | What it owns | Start here |
 | --- | --- | --- |
 | State Core + Capital Map | Queryable personal capital state, exposure, daily brief, receipt-backed facts | [Framework Index](docs/architecture/framework-index.md), [Module Map](docs/architecture/module-map.md) |
-| IPS + Decision Workflow | User policy, candidate detection, governed proposals, no execution authority | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Golden Path](docs/tutorials/golden-path.md) |
+| IPS + Decision Workflow | User policy, candidate detection, governed proposals, and review gates | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Golden Path](docs/tutorials/golden-path.md) |
 | Review System | Human attestation, compare, archive/reopen, annual review, lesson-to-rule | [System Map](docs/architecture/system-map.md) |
 | Research Evidence + Mature Wheels | Cite-only evidence and mature adapters; external tools are inputs, not authority | [Research Assets](docs/research/README.md), [Mature Wheel Control Plane](docs/architecture/mature-wheel-control-plane.md) |
 | Cockpit/API + Agent Explanation | Local read/review product surface and tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md) |
@@ -135,8 +137,8 @@ task api:serve
 
 The browser surface shows Overview, Exposure, Proposals, and Timeline views.
 Proposal details include candidate evidence, options, attestations, and revision
-history. Human attestations are governance evidence, not execution authorization
-(`execution_allowed=false` everywhere).
+history. Human attestations are governance evidence recorded with
+`execution_allowed=false`.
 
 Personal-finance state can be mirrored without making FinHarness the ledger.
 There are two read-only adapters:
@@ -174,8 +176,8 @@ round-trip through float): personal-finance amounts and `Position`
 quantity/market value/cost basis. Snapshot diffs and observations aggregate in
 `Decimal` and present `float` at the receipt/API layer.
 
-Human attestation is fail-closed everywhere: an attestation is review evidence,
-not execution authorization. High-risk proposal approval requires
+Human attestation is fail-closed everywhere: an attestation is review evidence
+recorded with `execution_allowed=false`. High-risk proposal approval requires
 counter-evidence; rejection remains allowed so the review queue never pressures
 the system into fabricating a rationale.
 

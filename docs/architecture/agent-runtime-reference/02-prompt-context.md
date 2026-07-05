@@ -29,7 +29,7 @@ FinHarness should make Agent prompts inspectable as parts:
 
 | Prompt part | Role |
 | --- | --- |
-| `governance_floor` | FinHarness is not an execution authority; receipt/source boundaries |
+| `governance_floor` | authority boundaries derived from active profile, capability state, receipts, and sources |
 | `active_profile` | visible capabilities and absent capabilities |
 | `tool_guidance` | only for tools visible to the active profile |
 | `context_pack_summary` | source refs, receipt refs, age, and limitations |
@@ -38,10 +38,10 @@ FinHarness should make Agent prompts inspectable as parts:
 
 The active profile should shape both tool visibility and prompt language:
 
-- default profile should not advertise draft, review, approval, or execution authority;
+- default profile advertises read/explain scopes only;
 - review-draft style profile may describe append-only governed proposal drafting;
-- no profile should advertise approval, attestation, order placement, fund movement, or
-  receipt rewrite.
+- write-capable profiles must name their explicit append-only artifact and runtime
+  handler.
 
 ## Context Injection Rules
 
