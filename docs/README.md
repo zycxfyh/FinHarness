@@ -3,10 +3,11 @@
 This is the task map for FinHarness documentation. Start with the job you are
 trying to do, not with the architecture.
 
-FinHarness is not a trading bot. It is a personal capital governance harness:
-state, IPS, proposal/review, evidence, Agent explanation, and cockpit read
-surfaces. The docs should make the safe path easy and the unsafe path visibly
-blocked.
+FinHarness is a personal capital governance harness: state, IPS,
+proposal/review, evidence, Agent explanation, cockpit surfaces, and the staged
+path toward paper validation and controlled capital-action workflows. The docs
+should make the product path concrete: understand state, form candidates, review
+evidence, validate safely, and learn from outcomes.
 
 ## Start Here
 

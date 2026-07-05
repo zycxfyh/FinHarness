@@ -10,7 +10,7 @@ systems:
   - id: product_north_star
     name: Product North Star
     status: current
-    summary: Product category and non-claims; FinHarness is a personal capital governance framework, not an execution authority.
+    summary: Product category and staged capability path; FinHarness is a personal capital governance framework moving from awareness and review toward paper validation and controlled capital-action workflows.
     docs:
       - README.md
       - docs/product-north-star.md
@@ -123,7 +123,7 @@ systems:
   - id: capital_action_intent
     name: Capital Action Intent
     status: current
-    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, pre-trade plan candidates, objective-fit benefit cases, and human trade-plan review gates for future capital action workflows; no investment advice, order ticket, broker submission, suitability certification, authority contract, or execution authority.
+    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, pre-trade plan candidates, objective-fit benefit cases, and human trade-plan review gates for staged capital action workflows.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md

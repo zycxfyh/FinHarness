@@ -21,8 +21,8 @@ FinHarness 原语的对应关系看
 
 FinHarness 是一个 local-first **personal capital governance framework**:
 把个人资本状态、IPS/CapitalMandate、证据、proposal/review、Agent explanation、
-receipt、governance checks 组织成可审计闭环。它不是 trading bot、stock picker、
-robo-advisor 或默认执行授权系统。
+receipt、governance checks、paper validation 和未来受控资本动作能力组织成
+可审计闭环。
 
 ## Framework Shape
 
@@ -43,7 +43,7 @@ authority object; CapitalMandate and AgentAuthorityGrant are not execution.
 
 | Part | Core summary | Primary docs | Runtime roots | Mature pattern / tool posture | Check / receipt |
 | --- | --- | --- | --- | --- | --- |
-| Product North Star | 产品类别和 non-claims:个人资本判断层,不是交易系统。 | `docs/product-north-star.md`, `docs/product/*` | README, cockpit copy | Diataxis + product north-star discipline | `task docs:current-check` |
+| Product North Star | 产品类别和推进路线:个人资本判断层,从 awareness/review 逐步走向 paper validation 与受控资本动作。 | `docs/product-north-star.md`, `docs/product/*` | README, cockpit copy | Diataxis + product north-star discipline | `task docs:current-check` |
 | State Core | receipt-backed 状态镜像;SQLite 可查,receipt 是证据根。 | `system-map.md`, `module-map.md`, `reference/interfaces.md` | `statecore/`, `api/routes_state.py` | Event/receipt sourcing ideas,但保留本地简洁实现 | `task test`, StateCore tests |
 | Capital Map | 把状态变成 exposure、daily brief、dashboard summary。 | `system-map.md`, `tutorials/golden-path.md` | `exposure.py`, `daily_brief.py`, `daily_change_brief.py` | 财务报表/BI read-model 思路;不替代 ledger | `task brief:daily`, `task decisions:scan` |
 | IPS / Policy / Authority Credentials | 用户自己的投资政策声明、描述性 compliance check、未来授权前置的 human-attested CapitalMandate,以及 mandate-bound AgentAuthorityGrant credential。 | `capital-os-layering.md`, `system-map.md`, `docs/reference/financial-terminology-map.md`, `docs/adr/2026-07-02-capital-mandate-before-delegated-authority.md`, `docs/adr/2026-07-03-agent-authority-grants-are-mandate-bound-credentials.md` | `ips.py`, `api/routes_ips.py`, `statecore/capital_mandates.py`, `api/routes_capital_mandates.py`, `statecore/agent_authority_grants.py`, `api/routes_agent_authority_grants.py` | IPS / policy-as-code 思路;CapitalMandate 与 AgentAuthorityGrant 先用 receipt-backed local objects + dynamic validator,暂不上 OPA/Cedar;金融术语映射只作 design analogy,不是 compliance claim | `GOV-DOCS-003`, IPS/capital-mandate/agent-authority-grant tests |

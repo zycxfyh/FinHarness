@@ -4,12 +4,12 @@
 
 | Role | 负责什么 | 适合激活时机 | FinHarness 关注点 |
 | --- | --- | --- | --- |
-| Product Owner | 北极星、用户价值、范围取舍、优先级 | 判断该做什么、不做什么 | 守住个人财务驾驶舱，不滑向交易所或自动投顾 |
+| Product Owner | 北极星、用户价值、范围取舍、优先级 | 判断该做什么、不做什么 | 把个人财务驾驶舱、review、paper validation 和受控资本动作排成清晰路线 |
 | Project Manager | 阶段计划、任务拆分、依赖、done condition | 目标模糊、任务太散 | 串起目标、需求、架构、实现、测试、发布、复盘 |
 | Architect | 系统边界、模块关系、技术路线 | 设计新模块或选型 | 成熟方案优先，state core、receipt、proposal、execution 分权 |
 | Tech Lead | 实现质量、复杂度、代码风格、债务控制 | 方案要落地时 | 保持小步可验收，避免治理表演或过度抽象 |
 | Backend Engineer | API、业务逻辑、数据读写、权限边界 | 写服务端功能 | FastAPI、state core、import adapters、proposal、brief |
-| Frontend Engineer | UI、交互、信息层级、用户工作流 | 做 cockpit 或页面 | 把数据变成态势，不用交易所式订单簿界面 |
+| Frontend Engineer | UI、交互、信息层级、用户工作流 | 做 cockpit 或页面 | 把数据变成态势、候选项、证据和复盘入口 |
 | UX / Product Design | 用户心智、信息架构、视觉优先级 | 页面能跑但不好用 | 一屏说明有什么、变了什么、风险在哪、今天看什么 |
 | Data Engineer | 数据源、schema、清洗、幂等、血缘 | 接入账本、CSV、券商数据 | Beancount、CSV、source refs、hash、重复导入、数据质量 |
 | QA / Test Engineer | 测试策略、验收用例、回归风险 | 功能声称完成前 | 单测、API smoke、前端 smoke、重建性测试、边界用例 |
@@ -20,7 +20,7 @@
 | Release Manager | 发布门禁、变更摘要、回滚 | 合并或发布前 | `task check`、dependency approval、release preflight、rollback |
 | Incident Commander | 事故止血、分工、沟通、恢复 | 出现导入错账、DB 损坏、误导性输出 | 先止血，再定位，再恢复，不在事故中扩大变更 |
 | Postmortem Owner | 根因分析、行动项、规则沉淀 | 事故或阶段结束后 | 把失败写进 tests、docs、ADR、runbook，而不是只靠记忆 |
-| Compliance / Risk | 声明边界、审计证据、权限隔离 | 金融语言或流程变更 | 不伪装成投顾、交易所、机构合规或自动理财许可 |
+| Compliance / Risk | 声明边界、审计证据、权限隔离 | 金融语言或流程变更 | 确保建议、候选、review、授权、执行和复盘各自有清楚证据与权限边界 |
 | Dependency Owner | 依赖采用、许可证、锁文件、漏洞、替代方案 | 新增或升级依赖 | Beancount、beanquery、Riskfolio、QuantStats、FastAPI 等 |
 | Technical Writer | 文档、ADR、how-to、runbook、知识沉淀 | 决策需要复盘 | docs/proposals、module map、commands、import how-to |
 | Customer Success | 用户验收、真实任务、可用性结果 | 判断产品是否真的有用 | 不是“有几张表”，而是用户是否更清楚自己的财务状态 |

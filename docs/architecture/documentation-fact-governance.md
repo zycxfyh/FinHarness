@@ -44,7 +44,7 @@ task docs:current-check
 | Layer drift | A shipped module is still described as a gap. | Update Capital OS and module-map. |
 | Boundary drift | Archived live-trading code appears as mainline. | Move the mention to history/archive lane. |
 | Config drift | Env reference lists secrets for archived runtime. | Remove from current reference; link archive if needed. |
-| Product drift | Text implies trading bot / stock picker / execution authority. | Rewrite against North Star non-claims. |
+| Product drift | Text defines the product mainly by defensive category denial instead of the staged judgment/review/paper-validation/execution roadmap. | Rewrite against the North Star capability path. |
 
 ## Tiny Operating Loop
 

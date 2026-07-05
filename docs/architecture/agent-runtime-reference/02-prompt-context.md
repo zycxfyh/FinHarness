@@ -29,7 +29,7 @@ FinHarness should make Agent prompts inspectable as parts:
 
 | Prompt part | Role |
 | --- | --- |
-| `governance_floor` | FinHarness is not an execution authority; receipt/source boundaries |
+| `governance_floor` | authority boundaries derived from active profile, capability state, receipts, and sources |
 | `active_profile` | visible capabilities and absent capabilities |
 | `tool_guidance` | only for tools visible to the active profile |
 | `context_pack_summary` | source refs, receipt refs, age, and limitations |
