@@ -107,12 +107,18 @@ git diff --check
 
 ## 9. Release Decision
 
-Keep draft pending independent review.
+Merge now.
 
 Reason:
-- Documentation value: eliminates drift between roadmap and shipped capability.
-- Boundary safety: zero runtime changes; only .md files modified.
-- Test confidence: docs-current-check passes; no backend or frontend test
-  regression possible since only docs changed.
-- Future maintainability: next PRs can reference accurate current-state docs
-  instead of reconstructing from PR history.
+- Documentation value: aligns product roadmap and capital workbench roadmap
+  with the shipped #104–#108 Data Trust backend-to-cockpit loop.
+- Boundary safety: docs-only change; no runtime, API, frontend, test, policy,
+  StateCore, Agent, Scenario, Paper, Broker, or execution changes.
+- Current-state confidence: L1 Data Trust shipped state, current Data API
+  surface, cockpit Data Trust tab, and single-pass market-data receipt loading
+  are documented without overstating future capabilities.
+- Roadmap confidence: next work is clearly directed toward #110 ResearchArtifact
+  / EvidencePack / ResearchMemo v0, then Research Workspace, Scenario, and
+  Paper review.
+- Validation confidence: docs-current-check passes, git diff is clean, and
+  GitHub checks are green.
