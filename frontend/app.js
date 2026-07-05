@@ -1290,14 +1290,18 @@ async function renderTimeline() {
 }
 
 async function renderDataTrust() {
-  const [catalogResp, qualityResp] = await Promise.all([
+  const [catalogResp, qualityResp, criticalGapsResp, warningGapsResp] = await Promise.all([
     apiGet("/data/catalog"),
     apiGet("/data/quality"),
+    apiGet("/data/gaps?severity=critical"),
+    apiGet("/data/gaps?severity=warning"),
   ]);
 
   const catalogEntries = catalogResp.catalog_entries || [];
   const qualityReports = qualityResp.reports || [];
-  const allGaps = qualityResp.data_gaps || [];
+  const criticalGaps = criticalGapsResp.data_gaps || [];
+  const warningGaps = warningGapsResp.data_gaps || [];
+  const allGaps = [...criticalGaps, ...warningGaps];
 
   // Summary
   let notReady = 0;
@@ -1306,15 +1310,13 @@ async function renderDataTrust() {
     if (report.readiness_status === "not_ready") notReady += 1;
     if (report.readiness_status === "usable_with_warnings") usableWarn += 1;
   }
-  const criticalGaps = allGaps.filter((g) => g.severity === "critical").length;
-  const warningGaps = allGaps.filter((g) => g.severity === "warning").length;
 
   clear(selectors.dataTrustSummary);
   selectors.dataTrustSummary.append(
     metric("Catalog entries", catalogEntries.length),
     metric("Quality reports", qualityReports.length),
-    metric("Critical gaps", criticalGaps),
-    metric("Warning gaps", warningGaps),
+    metric("Critical gaps", criticalGaps.length),
+    metric("Warning gaps", warningGaps.length),
     metric("Not ready", notReady),
     metric("Warnings", usableWarn),
     metric("Execution", "false"),

@@ -79,9 +79,14 @@ assert.ok(document.querySelector("#data-trust-gaps"), "gaps panel must exist");
 const jsSource = fs.readFileSync(path.join(frontendDir, "app.js"), "utf-8");
 assert.ok(jsSource.includes("/data/catalog"), "app.js must reference /data/catalog");
 assert.ok(jsSource.includes("/data/quality"), "app.js must reference /data/quality");
-// Gaps are sourced from the /data/quality response (data_gaps field),
-// not a separate /data/gaps API call in this view.
-assert.ok(jsSource.includes("data_gaps"), "app.js must reference data_gaps field");
+assert.ok(
+  jsSource.includes("/data/gaps?severity=critical"),
+  "app.js must reference /data/gaps?severity=critical"
+);
+assert.ok(
+  jsSource.includes("/data/gaps?severity=warning"),
+  "app.js must reference /data/gaps?severity=warning"
+);
 
 // 7. No forbidden text in JS source
 const forbiddenPatterns = [
