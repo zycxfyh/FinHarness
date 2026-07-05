@@ -412,5 +412,5 @@ Backtests are not live edge.
 
 Paper trades are not proof of performance.
 
-No agent should own live execution authority. Live write paths require explicit
-environment gates, risk gates, allowlists, and receipts.
+Future live write paths require explicit environment gates, risk gates,
+allowlists, and receipts.

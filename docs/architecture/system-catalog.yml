@@ -85,7 +85,7 @@ systems:
   - id: decision_workflow
     name: Decision Workflow
     status: current
-    summary: Turns exposure and IPS thresholds into governed proposals with no execution authority.
+    summary: Turns exposure and IPS thresholds into governed proposal review objects.
     docs:
       - docs/architecture/system-map.md
       - docs/tutorials/golden-path.md

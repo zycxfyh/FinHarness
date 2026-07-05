@@ -17,8 +17,8 @@
 >
 > 修订(2026-07-03):`AgentAuthorityGrant` 是第一个有限代理 authority credential:
 > 它必须引用 active CapitalMandate,验证时动态重查当前 grant 与 mandate 状态,
-> 并返回闭集 deny reasons。它不是 authentication、trade-plan approval、
-> preflight bypass、broker submit 或 execution authorization。
+> 并返回闭集 deny reasons。它只参与 scope validation、evidence binding 和
+> downstream preflight 输入。
 >
 > 修订(2026-07-04):资本动作链不能只发展成 permission firewall。`CapitalObjectiveFit`
 > 是 review gate 前的用户利益解释层:它把 TradePlanCandidate 绑定到 objective

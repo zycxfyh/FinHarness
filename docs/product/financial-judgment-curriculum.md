@@ -38,10 +38,10 @@ posture = f(permission_level, consequence_level, evidence_quality, review_state)
 | Layer | Posture | Allows | Does not allow |
 | --- | --- | --- | --- |
 | Default / no authorization | anti-trading | learning, explanation, records, reminders | trade plan, order, broker submission |
-| Education / curriculum | pro-learning | real finance language, examples, training tasks | personalized execution authority |
+| Education / curriculum | pro-learning | real finance language, examples, training tasks | personalized capital instructions |
 | Research / report | pro-analysis | thesis, Buy / Hold / Sell as research rating language, valuation range, target-price logic, counter-evidence | suitability claim, personal advice, approval |
 | Planning | trade-oriented | trade idea, risk budget, position sizing candidate, stop-loss logic, TradePlanCandidate | order ticket, broker instruction |
-| Review | anti-unaudited | allow / deny / defer / request more evidence for next stage | execution authorization by implication |
+| Review | anti-unaudited | allow / deny / defer / request more evidence for next stage | hidden stage escalation |
 | Execution candidate | anti-unauthorized execution | order candidate staging under explicit constraints | broker submission |
 | Explicit execution | controlled execution | limited broker submission under explicit authorization, limits, kill switch, receipt, post-review | default automation, unlimited authority |
 | Post-action | pro-learning / anti-repeat-error | attribution, lesson, rule candidate, behavior review | treating outcome as proof of correctness |
@@ -57,7 +57,7 @@ These statements are stronger than any slogan:
 - research cannot masquerade as personalized suitability or approval;
 - valuation cannot masquerade as certainty;
 - a plan cannot masquerade as an order;
-- review cannot masquerade as execution authorization;
+- review can only promote the next explicitly modeled stage;
 - paper trading or simulation cannot masquerade as live execution;
 - receipt evidence cannot masquerade as correctness;
 - agent output cannot masquerade as human responsibility;
@@ -414,4 +414,3 @@ candidate, or learning surfaces.
 
 It is not an API contract, a broker integration plan, a suitability framework,
 or a commitment to implement every module named here.
-

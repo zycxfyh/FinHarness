@@ -136,8 +136,8 @@ task api:serve
 
 The browser surface shows Overview, Exposure, Proposals, and Timeline views.
 Proposal details include candidate evidence, options, attestations, and revision
-history. Human attestations are governance evidence, not execution authorization
-(`execution_allowed=false` everywhere).
+history. Human attestations are governance evidence recorded with
+`execution_allowed=false`.
 
 Personal-finance state can be mirrored without making FinHarness the ledger.
 There are two read-only adapters:
@@ -175,8 +175,8 @@ round-trip through float): personal-finance amounts and `Position`
 quantity/market value/cost basis. Snapshot diffs and observations aggregate in
 `Decimal` and present `float` at the receipt/API layer.
 
-Human attestation is fail-closed everywhere: an attestation is review evidence,
-not execution authorization. High-risk proposal approval requires
+Human attestation is fail-closed everywhere: an attestation is review evidence
+recorded with `execution_allowed=false`. High-risk proposal approval requires
 counter-evidence; rejection remains allowed so the review queue never pressures
 the system into fabricating a rationale.
 
