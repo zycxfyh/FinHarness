@@ -140,12 +140,19 @@ application surface as portfolio state, policy, proposals, and timeline.
 
 ## 10. Release Decision
 
-Keep draft pending independent review.
+Merge now.
 
 Reason:
-- Product value: closes the #104–#106 backend-to-user data trust loop.
-- Boundary safety: no backend changes, no new endpoints, read-only rendering.
-- Test confidence: jsdom DOM test + updated browser golden path cover view
-  presence, boundary text, and API endpoint references.
-- Future maintainability: minimal additive change following existing cockpit
-  shell patterns; no framework introduction.
+- Product value: closes the #104–#106 backend-to-user Data Trust loop by making
+  dataset readiness, quality findings, and gaps visible in the cockpit.
+- Boundary safety: cockpit surface is read-only; no backend changes, no new
+  endpoints, no provider refresh, no repair workflow, no Agent action, and no
+  broker/live execution.
+- Contract confidence: the view explicitly consumes existing GET surfaces
+  `/data/catalog`, `/data/quality`, `/data/gaps?severity=critical`, and
+  `/data/gaps?severity=warning`.
+- Test confidence: backend tests, jsdom Data Trust test, frontend tests, docs
+  check, and browser golden paths pass; tests now verify the severity-filtered
+  gaps endpoints.
+- Future maintainability: minimal additive cockpit change following the existing
+  shell pattern; no frontend framework introduction.
