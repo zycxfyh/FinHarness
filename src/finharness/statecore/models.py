@@ -1466,6 +1466,14 @@ class PaperExecutionReceipt(StateCoreBase, table=True):
             name="ck_paper_execution_receipts_fill_price_non_negative",
         ),
         CheckConstraint(
+            "execution_status != 'simulated_rejected' OR fill_price = 0",
+            name="ck_paper_execution_receipts_rejected_fill_zero",
+        ),
+        CheckConstraint(
+            "execution_status != 'simulated_rejected' OR gross_notional = 0",
+            name="ck_paper_execution_receipts_rejected_notional_zero",
+        ),
+        CheckConstraint(
             "live_execution_allowed = 0",
             name="ck_paper_execution_receipts_live_execution_false",
         ),
@@ -1519,6 +1527,7 @@ class PaperExecutionReceipt(StateCoreBase, table=True):
     gross_notional: Decimal = Field(sa_column=money_column())
     fees: Decimal = Field(default=Decimal("0"), sa_column=money_column())
     currency: str = "USD"
+    rejection_reason: str | None = None
     executed_at_utc: str = Field(default_factory=utc_now_iso)
     execution_notes: list[str] = Field(default_factory=list, sa_column=json_list_column())
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())

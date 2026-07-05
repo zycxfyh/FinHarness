@@ -24,6 +24,7 @@ from finharness.statecore.models import (
     PAPER_ORDER_TICKET_TIFS,
     ActionIntent,
     ActionIntentSimulationReport,
+    PaperAccount,
     PaperOrderTicketCandidate,
     ReceiptIndex,
     TradePlanCandidate,
@@ -123,10 +124,13 @@ def create_paper_order_ticket_candidate(
             ActionIntentSimulationReport,
             trade_plan_candidate.simulation_report_id,
         )
+        paper_account = session.get(PaperAccount, parsed["paper_account_ref"])
     if action_intent is None:
         raise KeyError(trade_plan_candidate.action_intent_id)
     if simulation_report is None:
         raise KeyError(trade_plan_candidate.simulation_report_id)
+    if paper_account is None:
+        raise KeyError(parsed["paper_account_ref"])
 
     _require_current_reviewed_evidence(
         trade_plan_candidate=trade_plan_candidate,
@@ -141,6 +145,7 @@ def create_paper_order_ticket_candidate(
         engine=engine,
     )
     _require_ticket_consistent_with_plan(parsed, trade_plan_candidate)
+    _require_ticket_consistent_with_paper_account(parsed, paper_account)
 
     created_at = _now_utc()
     paper_order_ticket_id = _safe_id(
@@ -276,6 +281,16 @@ def _parse_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
         raise PaperOrderTicketValidationError("paper order quantity must be positive")
     limit_price = _optional_decimal(ticket.get("limit_price"), "limit_price")
     stop_price = _optional_decimal(ticket.get("stop_price"), "stop_price")
+    notional_estimate = _optional_decimal(
+        ticket.get("notional_estimate"),
+        "notional_estimate",
+    )
+    if limit_price is not None and limit_price <= 0:
+        raise PaperOrderTicketValidationError("ticket.limit_price must be positive")
+    if stop_price is not None and stop_price <= 0:
+        raise PaperOrderTicketValidationError("ticket.stop_price must be positive")
+    if notional_estimate is not None and notional_estimate < 0:
+        raise PaperOrderTicketValidationError("ticket.notional_estimate must be non-negative")
     if order_type in {"limit", "stop_limit"} and limit_price is None:
         raise PaperOrderTicketValidationError(f"{order_type} paper orders require limit_price")
     if order_type in {"stop", "stop_limit"} and stop_price is None:
@@ -290,10 +305,7 @@ def _parse_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
         "quantity": quantity,
         "limit_price": limit_price,
         "stop_price": stop_price,
-        "notional_estimate": _optional_decimal(
-            ticket.get("notional_estimate"),
-            "notional_estimate",
-        ),
+        "notional_estimate": notional_estimate,
         "currency": _string(ticket, "currency", default="USD").upper(),
         "ticket_rationale": _string(ticket, "ticket_rationale", required=True),
     }
@@ -357,6 +369,20 @@ def _require_ticket_consistent_with_plan(
     if trade_plan_candidate.plan_direction == "increase" and parsed["side"] != "buy":
         raise PaperOrderTicketValidationError(
             "increase plans require a buy-side paper ticket"
+        )
+
+
+def _require_ticket_consistent_with_paper_account(
+    parsed: dict[str, Any],
+    paper_account: PaperAccount,
+) -> None:
+    if paper_account.environment != "paper":
+        raise PaperOrderTicketValidationError("paper ticket account must be paper environment")
+    if paper_account.status != "active":
+        raise PaperOrderTicketValidationError("paper ticket account must be active")
+    if paper_account.currency != parsed["currency"]:
+        raise PaperOrderTicketValidationError(
+            "paper ticket currency must match paper account currency"
         )
 
 

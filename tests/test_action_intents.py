@@ -428,6 +428,10 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         review_gate: dict[str, object],
         **overrides: object,
     ) -> dict[str, object]:
+        paper_account_id = getattr(self, "_default_paper_account_id", "")
+        if not paper_account_id:
+            paper_account = self._create_paper_account()["paper_account"]
+            paper_account_id = paper_account["paper_account_id"]
         payload: dict[str, object] = {
             "review_gate_id": review_gate["review_gate_id"],
             "expected_trade_plan_candidate_receipt_ref": trade_plan_candidate[
@@ -439,7 +443,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             "expected_simulation_report_receipt_ref": simulation_report["receipt_ref"],
             "ticket": {
                 "environment": "paper",
-                "paper_account_ref": "paper-account://simulated",
+                "paper_account_ref": paper_account_id,
                 "instrument_ref": "instrument://XYZ",
                 "symbol": "XYZ",
                 "side": "sell",
@@ -519,7 +523,9 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         payload.update(overrides)
         response = self.client.post("/paper-accounts", json=payload)
         self.assertEqual(response.status_code, 200, response.text)
-        return response.json()
+        body = response.json()
+        self._default_paper_account_id = body["paper_account"]["paper_account_id"]
+        return body
 
     def _paper_account_application_request(
         self,
@@ -1570,6 +1576,12 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             fetched.json()["paper_order_ticket"]["receipt_ref"],
             body["receipt_ref"],
         )
+        listed = self.client.get("/paper-order-ticket-candidates")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(
+            listed.json()["paper_order_tickets"][0]["paper_order_ticket_id"],
+            ticket["paper_order_ticket_id"],
+        )
 
     def test_paper_order_ticket_candidate_requires_allowed_review_gate(self) -> None:
         self._seed_portfolio_snapshot()
@@ -1646,6 +1658,21 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                 "live_source_ref",
                 {"source_refs": ["live://broker/order"]},
             ),
+            ("zero_limit_price", {"ticket": {**base_ticket, "limit_price": "0"}}),
+            (
+                "negative_stop_price",
+                {
+                    "ticket": {
+                        **base_ticket,
+                        "order_type": "stop_limit",
+                        "stop_price": "-1",
+                    }
+                },
+            ),
+            (
+                "negative_notional_estimate",
+                {"ticket": {**base_ticket, "notional_estimate": "-1"}},
+            ),
         )
         for name, overrides in cases:
             with self.subTest(name=name):
@@ -1662,6 +1689,61 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(response.status_code, 422)
+        self.assertEqual(read_all(PaperOrderTicketCandidate, engine=self.engine), [])
+
+    def test_paper_order_ticket_candidate_validates_paper_account(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        base_ticket = self._paper_order_ticket_request(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["ticket"]
+
+        missing_account = self.client.post(
+            f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+            "/paper-order-ticket-candidates",
+            json=self._paper_order_ticket_request(
+                intent,
+                preflight,
+                simulation,
+                candidate,
+                gate,
+                ticket={**base_ticket, "paper_account_ref": "paper_account_missing"},
+            ),
+        )
+        self.assertEqual(missing_account.status_code, 404)
+
+        currency_mismatch = self.client.post(
+            f"/trade-plan-candidates/{candidate['trade_plan_candidate_id']}"
+            "/paper-order-ticket-candidates",
+            json=self._paper_order_ticket_request(
+                intent,
+                preflight,
+                simulation,
+                candidate,
+                gate,
+                ticket={**base_ticket, "currency": "EUR"},
+            ),
+        )
+        self.assertEqual(currency_mismatch.status_code, 422)
+        self.assertIn("currency", currency_mismatch.text)
         self.assertEqual(read_all(PaperOrderTicketCandidate, engine=self.engine), [])
 
     def test_paper_execution_receipt_records_simulated_fill(self) -> None:
@@ -1732,6 +1814,12 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             fetched.json()["paper_execution"]["receipt_ref"],
             body["receipt_ref"],
         )
+        listed = self.client.get("/paper-execution-receipts")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(
+            listed.json()["paper_executions"][0]["paper_execution_id"],
+            execution["paper_execution_id"],
+        )
 
     def test_paper_execution_receipt_rejects_stale_or_live_markers(self) -> None:
         self._seed_portfolio_snapshot()
@@ -1777,6 +1865,62 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
                 self.assertEqual(response.status_code, status_code)
         self.assertEqual(read_all(PaperExecutionReceipt, engine=self.engine), [])
 
+    def test_paper_execution_receipt_records_rejection_without_fill(self) -> None:
+        self._seed_portfolio_snapshot()
+        self._seed_ips()
+        intent = self._create_intent(expected_next_step="simulation")
+        preflight = self._preflight(intent["action_intent_id"])
+        simulation = self._create_simulation(intent, preflight)["simulation_report"]
+        candidate = self._create_trade_plan_candidate(
+            intent,
+            preflight,
+            simulation,
+        )["trade_plan_candidate"]
+        gate = self._create_trade_plan_review_gate(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+        )["review_gate"]
+        paper_ticket = self._create_paper_order_ticket(
+            intent,
+            preflight,
+            simulation,
+            candidate,
+            gate,
+        )["paper_order_ticket"]
+
+        body = self._create_paper_execution(
+            paper_ticket,
+            execution_status="simulated_rejected",
+            fill_price=None,
+            fees="0",
+            rejection_reason="paper simulator rejected the ticket for insufficient position.",
+        )
+
+        execution = body["paper_execution"]
+        self.assertEqual(execution["execution_status"], "simulated_rejected")
+        self.assertEqual(execution["fill_price"], "0")
+        self.assertEqual(execution["gross_notional"], "0")
+        self.assertEqual(execution["fees"], "0")
+        self.assertEqual(
+            execution["rejection_reason"],
+            "paper simulator rejected the ticket for insufficient position.",
+        )
+
+        response = self.client.post(
+            f"/paper-order-ticket-candidates/{paper_ticket['paper_order_ticket_id']}"
+            "/simulated-executions",
+            json=self._paper_execution_request(
+                paper_ticket,
+                execution_status="simulated_rejected",
+                fill_price="1",
+                fees="0",
+                rejection_reason="invalid rejected fill",
+            ),
+        )
+        self.assertEqual(response.status_code, 422)
+
     def test_paper_account_writes_paper_only_receipt(self) -> None:
         body = self._create_paper_account()
 
@@ -1812,6 +1956,12 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         fetched = self.client.get(f"/paper-accounts/{account['paper_account_id']}")
         self.assertEqual(fetched.status_code, 200)
         self.assertEqual(fetched.json()["paper_account"]["receipt_ref"], body["receipt_ref"])
+        listed = self.client.get("/paper-accounts")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(
+            listed.json()["paper_accounts"][0]["paper_account_id"],
+            account["paper_account_id"],
+        )
 
     def test_paper_account_application_updates_cash_and_position(self) -> None:
         paper_account_body = self._create_paper_account()
@@ -1910,6 +2060,14 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         self.assertEqual(receipt_payload["before"]["account"]["cash_balance"], "10000")
         self.assertEqual(receipt_payload["after"]["account"]["cash_balance"], "9797.55")
         self.assertFalse(receipt_payload["governance"]["real_cash_at_risk"])
+        positions = self.client.get(
+            f"/paper-accounts/{paper_account['paper_account_id']}/positions"
+        )
+        self.assertEqual(positions.status_code, 200)
+        self.assertEqual(
+            positions.json()["paper_positions"][0]["paper_position_id"],
+            position["paper_position_id"],
+        )
 
     def test_paper_account_application_rejects_stale_replay_and_live_markers(self) -> None:
         paper_account_body = self._create_paper_account()

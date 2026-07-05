@@ -67,10 +67,11 @@ def record_paper_execution_receipt(
     paper_order_ticket_id: str,
     expected_paper_order_ticket_receipt_ref: str,
     execution_status: PaperExecutionStatus,
-    fill_price: Any,
+    fill_price: Any | None,
     simulator_ref: str = "paper-simulator://local/v0",
     executed_at_utc: str | None = None,
     fees: Any = "0",
+    rejection_reason: str | None = None,
     execution_notes: list[str] | None = None,
     source_refs: list[str] | None = None,
     engine: Engine,
@@ -96,12 +97,18 @@ def record_paper_execution_receipt(
             f"paper execution cannot carry live/broker-submit marker {marker!r}"
         )
 
-    price = _decimal(fill_price, "fill_price")
-    if price < 0:
-        raise PaperExecutionValidationError("paper execution fill_price must be non-negative")
+    clean_rejection_reason = str(rejection_reason or "").strip()
+    price = _execution_price(fill_price, clean_status)
     fee_amount = _decimal(fees, "fees")
     if fee_amount < 0:
         raise PaperExecutionValidationError("paper execution fees must be non-negative")
+    if clean_status == "simulated_rejected":
+        if fee_amount != 0:
+            raise PaperExecutionValidationError("rejected paper executions require fees=0")
+        if not clean_rejection_reason:
+            raise PaperExecutionValidationError(
+                "rejected paper executions require rejection_reason"
+            )
 
     with Session(engine) as session:
         paper_ticket = session.get(PaperOrderTicketCandidate, paper_order_ticket_id)
@@ -158,6 +165,7 @@ def record_paper_execution_receipt(
         gross_notional=gross_notional,
         fees=fee_amount,
         currency=paper_ticket.currency,
+        rejection_reason=clean_rejection_reason or None,
         executed_at_utc=executed_at_utc or created_at,
         execution_notes=_dedupe_text(list(execution_notes or [])),
         source_refs=final_source_refs,
@@ -215,6 +223,24 @@ def _decimal(value: Any, field_name: str) -> Decimal:
         ) from exc
 
 
+def _execution_price(value: Any | None, execution_status: str) -> Decimal:
+    if execution_status == "simulated_rejected":
+        if value is None or str(value).strip() == "":
+            return Decimal("0")
+        price = _decimal(value, "fill_price")
+        if price != 0:
+            raise PaperExecutionValidationError(
+                "rejected paper executions require fill_price absent or 0"
+            )
+        return Decimal("0")
+    if value is None or str(value).strip() == "":
+        raise PaperExecutionValidationError("filled paper executions require fill_price")
+    price = _decimal(value, "fill_price")
+    if price <= 0:
+        raise PaperExecutionValidationError("filled paper execution fill_price must be positive")
+    return price
+
+
 def _receipt_refs_without_hashes(values: list[str]) -> list[str]:
     return [value for value in values if not str(value).startswith("sha256:")]
 
@@ -249,6 +275,7 @@ def _receipt_payload(
             "gross_notional": str(paper_execution.gross_notional),
             "fees": str(paper_execution.fees),
             "currency": paper_execution.currency,
+            "rejection_reason": paper_execution.rejection_reason,
             "executed_at_utc": paper_execution.executed_at_utc,
         },
         "paper_execution_receipt": paper_execution.model_dump(mode="json"),
