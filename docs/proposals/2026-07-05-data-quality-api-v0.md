@@ -137,10 +137,15 @@ dedicated API endpoints instead of parsing the larger catalog response.
 
 ## 10. Release Decision
 
-Keep draft pending independent review.
+Merge now.
 
 Reason:
-- Product value: dedicated quality API endpoints reduce query friction.
-- Boundary safety: all endpoints are GET-only, no network calls, reuse existing models.
-- Test confidence: API tests cover list, detail, 404, filters, read-only enforcement.
-- Future maintainability: thin API surface, no changes to quality logic.
+- Product value: dedicated quality API endpoints reduce query friction and let
+  downstream cockpit work query reports and gaps directly.
+- Boundary safety: all endpoints are GET-only, no network calls, no provider
+  refresh, no execution path, and no changes to core quality logic.
+- Test confidence: independent review passed; API tests cover list, detail,
+  404, missing receipt directory, malformed receipts, severity filtering,
+  blocks filtering, POST/PATCH read-only enforcement, and no-network imports.
+- Future maintainability: response contracts use typed DataQualityReport and
+  DataGap models; this remains a thin API surface over #104/#105.
