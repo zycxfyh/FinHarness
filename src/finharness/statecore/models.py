@@ -80,6 +80,19 @@ CAPITAL_OBJECTIVE_FIT_ALIGNMENTS: tuple[str, ...] = (
     "unclear",
     "conflicted",
 )
+PAPER_ORDER_TICKET_SIDES: tuple[str, ...] = ("buy", "sell")
+PAPER_ORDER_TICKET_ORDER_TYPES: tuple[str, ...] = ("market", "limit", "stop", "stop_limit")
+PAPER_ORDER_TICKET_TIFS: tuple[str, ...] = ("day", "gtc")
+PAPER_ORDER_TICKET_STATUSES: tuple[str, ...] = (
+    "paper_ticket_candidate",
+    "ready_for_paper_submission",
+    "blocked_by_validation",
+)
+PAPER_EXECUTION_STATUSES: tuple[str, ...] = (
+    "simulated_filled",
+    "simulated_rejected",
+)
+PAPER_ACCOUNT_STATUSES: tuple[str, ...] = ("active", "closed")
 
 
 def utc_now_iso() -> str:
@@ -1264,4 +1277,522 @@ class TradePlanReviewGate(StateCoreBase, table=True):
     def reject_order_ticket_creation(cls, value: bool) -> bool:
         if value:
             raise ValueError("trade plan review gates never create order tickets")
+        return False
+
+
+class PaperOrderTicketCandidate(StateCoreBase, table=True):
+    """Paper-only order ticket candidate derived from an allowed review gate.
+
+    This is the first intentionally order-shaped artifact in the mainline. It
+    may carry side/quantity/order-type fields, but only for the paper environment:
+    no live execution, no real cash at risk, and no broker submission.
+    """
+
+    __tablename__ = "paper_order_ticket_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "environment = 'paper'",
+            name="ck_paper_order_ticket_candidates_environment_paper",
+        ),
+        CheckConstraint(
+            "side IN (" + ", ".join(f"'{side}'" for side in PAPER_ORDER_TICKET_SIDES) + ")",
+            name="ck_paper_order_ticket_candidates_side_closed",
+        ),
+        CheckConstraint(
+            "order_type IN ("
+            + ", ".join(f"'{order_type}'" for order_type in PAPER_ORDER_TICKET_ORDER_TYPES)
+            + ")",
+            name="ck_paper_order_ticket_candidates_order_type_closed",
+        ),
+        CheckConstraint(
+            "time_in_force IN ("
+            + ", ".join(f"'{tif}'" for tif in PAPER_ORDER_TICKET_TIFS)
+            + ")",
+            name="ck_paper_order_ticket_candidates_tif_closed",
+        ),
+        CheckConstraint(
+            "candidate_status IN ("
+            + ", ".join(f"'{status}'" for status in PAPER_ORDER_TICKET_STATUSES)
+            + ")",
+            name="ck_paper_order_ticket_candidates_status_closed",
+        ),
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_paper_order_ticket_candidates_quantity_positive",
+        ),
+        CheckConstraint(
+            "live_execution_allowed = 0",
+            name="ck_paper_order_ticket_candidates_live_execution_false",
+        ),
+        CheckConstraint(
+            "real_cash_at_risk = 0",
+            name="ck_paper_order_ticket_candidates_real_cash_risk_false",
+        ),
+        CheckConstraint(
+            "submitted_to_broker = 0",
+            name="ck_paper_order_ticket_candidates_submitted_to_broker_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_paper_order_ticket_candidates_authority_transition_false",
+        ),
+    )
+
+    paper_order_ticket_id: str = Field(primary_key=True)
+    trade_plan_candidate_id: str = Field(
+        foreign_key="trade_plan_candidates.trade_plan_candidate_id",
+        index=True,
+    )
+    review_gate_id: str = Field(
+        foreign_key="trade_plan_review_gates.review_gate_id",
+        index=True,
+    )
+    action_intent_id: str = Field(foreign_key="action_intents.action_intent_id", index=True)
+    simulation_report_id: str = Field(
+        foreign_key="action_intent_simulation_reports.simulation_report_id",
+        index=True,
+    )
+    proposal_id: str = Field(foreign_key="proposals.proposal_id", index=True)
+    source_trade_plan_candidate_receipt_ref: str
+    source_review_gate_receipt_ref: str
+    source_action_intent_receipt_ref: str
+    source_action_preflight_report_hash: str
+    source_simulation_report_receipt_ref: str
+    environment: str = "paper"
+    candidate_status: str = "paper_ticket_candidate"
+    paper_account_ref: str
+    instrument_ref: str
+    symbol: str
+    side: str
+    order_type: str
+    time_in_force: str = "day"
+    quantity: Decimal = Field(sa_column=money_column())
+    limit_price: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    stop_price: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    notional_estimate: Decimal | None = Field(
+        default=None,
+        sa_column=money_column(nullable=True),
+    )
+    currency: str = "USD"
+    ticket_rationale: str
+    validation_findings: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=json_list_column(),
+    )
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    preflight_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "paper_order_ticket_candidate"
+    live_execution_allowed: bool = False
+    real_cash_at_risk: bool = False
+    submitted_to_broker: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("environment")
+    @classmethod
+    def require_paper_environment(cls, value: str) -> str:
+        if value != "paper":
+            raise ValueError("paper order ticket candidates only support environment='paper'")
+        return "paper"
+
+    @field_validator("symbol", "paper_account_ref", "instrument_ref", "ticket_rationale")
+    @classmethod
+    def require_ticket_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("paper order ticket candidate requires complete ticket context")
+        return value
+
+    @field_validator("live_execution_allowed")
+    @classmethod
+    def reject_live_execution(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper order ticket candidates never allow live execution")
+        return False
+
+    @field_validator("real_cash_at_risk")
+    @classmethod
+    def reject_real_cash_risk(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper order ticket candidates never put real cash at risk")
+        return False
+
+    @field_validator("submitted_to_broker")
+    @classmethod
+    def reject_broker_submission(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper order ticket candidates are not broker submissions")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper order ticket candidates never carry authority transitions")
+        return False
+
+
+class PaperExecutionReceipt(StateCoreBase, table=True):
+    """Paper-only simulated execution result for a PaperOrderTicketCandidate.
+
+    This records validation evidence from a local simulator. It is not a live
+    broker fill, not a broker submission, and does not put real cash at risk.
+    """
+
+    __tablename__ = "paper_execution_receipts"
+    __table_args__ = (
+        CheckConstraint(
+            "environment = 'paper'",
+            name="ck_paper_execution_receipts_environment_paper",
+        ),
+        CheckConstraint(
+            "execution_status IN ("
+            + ", ".join(f"'{status}'" for status in PAPER_EXECUTION_STATUSES)
+            + ")",
+            name="ck_paper_execution_receipts_status_closed",
+        ),
+        CheckConstraint(
+            "side IN (" + ", ".join(f"'{side}'" for side in PAPER_ORDER_TICKET_SIDES) + ")",
+            name="ck_paper_execution_receipts_side_closed",
+        ),
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_paper_execution_receipts_quantity_positive",
+        ),
+        CheckConstraint(
+            "fill_price >= 0",
+            name="ck_paper_execution_receipts_fill_price_non_negative",
+        ),
+        CheckConstraint(
+            "execution_status != 'simulated_rejected' OR fill_price = 0",
+            name="ck_paper_execution_receipts_rejected_fill_zero",
+        ),
+        CheckConstraint(
+            "execution_status != 'simulated_rejected' OR gross_notional = 0",
+            name="ck_paper_execution_receipts_rejected_notional_zero",
+        ),
+        CheckConstraint(
+            "live_execution_allowed = 0",
+            name="ck_paper_execution_receipts_live_execution_false",
+        ),
+        CheckConstraint(
+            "real_cash_at_risk = 0",
+            name="ck_paper_execution_receipts_real_cash_risk_false",
+        ),
+        CheckConstraint(
+            "submitted_to_broker = 0",
+            name="ck_paper_execution_receipts_submitted_to_broker_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_paper_execution_receipts_authority_transition_false",
+        ),
+    )
+
+    paper_execution_id: str = Field(primary_key=True)
+    paper_order_ticket_id: str = Field(
+        foreign_key="paper_order_ticket_candidates.paper_order_ticket_id",
+        index=True,
+    )
+    trade_plan_candidate_id: str = Field(
+        foreign_key="trade_plan_candidates.trade_plan_candidate_id",
+        index=True,
+    )
+    review_gate_id: str = Field(
+        foreign_key="trade_plan_review_gates.review_gate_id",
+        index=True,
+    )
+    action_intent_id: str = Field(foreign_key="action_intents.action_intent_id", index=True)
+    simulation_report_id: str = Field(
+        foreign_key="action_intent_simulation_reports.simulation_report_id",
+        index=True,
+    )
+    proposal_id: str = Field(foreign_key="proposals.proposal_id", index=True)
+    source_paper_order_ticket_receipt_ref: str
+    source_trade_plan_candidate_receipt_ref: str
+    source_review_gate_receipt_ref: str
+    source_action_intent_receipt_ref: str
+    source_action_preflight_report_hash: str
+    source_simulation_report_receipt_ref: str
+    environment: str = "paper"
+    paper_account_ref: str
+    simulator_ref: str
+    execution_status: str
+    symbol: str
+    side: str
+    quantity: Decimal = Field(sa_column=money_column())
+    fill_price: Decimal = Field(sa_column=money_column())
+    gross_notional: Decimal = Field(sa_column=money_column())
+    fees: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    currency: str = "USD"
+    rejection_reason: str | None = None
+    executed_at_utc: str = Field(default_factory=utc_now_iso)
+    execution_notes: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "paper_execution_receipt"
+    live_execution_allowed: bool = False
+    real_cash_at_risk: bool = False
+    submitted_to_broker: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("environment")
+    @classmethod
+    def require_paper_environment(cls, value: str) -> str:
+        if value != "paper":
+            raise ValueError("paper execution receipts only support environment='paper'")
+        return "paper"
+
+    @field_validator("paper_account_ref", "simulator_ref", "symbol")
+    @classmethod
+    def require_execution_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("paper execution receipt requires account, simulator, and symbol")
+        return value
+
+    @field_validator("live_execution_allowed")
+    @classmethod
+    def reject_live_execution(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper execution receipts never allow live execution")
+        return False
+
+    @field_validator("real_cash_at_risk")
+    @classmethod
+    def reject_real_cash_risk(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper execution receipts never put real cash at risk")
+        return False
+
+    @field_validator("submitted_to_broker")
+    @classmethod
+    def reject_broker_submission(cls, value: bool) -> bool:
+        if value:
+            raise ValueError(
+                "paper execution receipts are simulator results, not broker submissions"
+            )
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper execution receipts never carry authority transitions")
+        return False
+
+
+class PaperAccount(StateCoreBase, table=True):
+    """Paper-only account state for applying simulated executions.
+
+    Paper accounts are isolated from imported real accounts. They allow the
+    product to validate cash, position, and PnL behavior without claiming any
+    broker authority or putting real cash at risk.
+    """
+
+    __tablename__ = "paper_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "environment = 'paper'",
+            name="ck_paper_accounts_environment_paper",
+        ),
+        CheckConstraint(
+            "status IN (" + ", ".join(f"'{status}'" for status in PAPER_ACCOUNT_STATUSES) + ")",
+            name="ck_paper_accounts_status_closed",
+        ),
+        CheckConstraint("cash_balance >= 0", name="ck_paper_accounts_cash_non_negative"),
+        CheckConstraint(
+            "live_execution_allowed = 0",
+            name="ck_paper_accounts_live_execution_false",
+        ),
+        CheckConstraint(
+            "real_cash_at_risk = 0",
+            name="ck_paper_accounts_real_cash_risk_false",
+        ),
+        CheckConstraint(
+            "submitted_to_broker = 0",
+            name="ck_paper_accounts_submitted_to_broker_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_paper_accounts_authority_transition_false",
+        ),
+    )
+
+    paper_account_id: str = Field(primary_key=True)
+    display_name: str
+    environment: str = "paper"
+    status: str = "active"
+    currency: str = "USD"
+    cash_balance: Decimal = Field(sa_column=money_column())
+    realized_pnl: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    applied_paper_execution_ids: list[str] = Field(
+        default_factory=list,
+        sa_column=json_list_column(),
+    )
+    last_paper_execution_id: str | None = Field(
+        default=None,
+        foreign_key="paper_execution_receipts.paper_execution_id",
+    )
+    last_paper_execution_receipt_ref: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    non_claims: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "paper_account"
+    live_execution_allowed: bool = False
+    real_cash_at_risk: bool = False
+    submitted_to_broker: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+    updated_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("environment")
+    @classmethod
+    def require_paper_environment(cls, value: str) -> str:
+        if value != "paper":
+            raise ValueError("paper accounts only support environment='paper'")
+        return "paper"
+
+    @field_validator("display_name", "currency")
+    @classmethod
+    def require_account_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("paper account requires display name and currency")
+        return value
+
+    @field_validator("live_execution_allowed")
+    @classmethod
+    def reject_live_execution(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper accounts never allow live execution")
+        return False
+
+    @field_validator("real_cash_at_risk")
+    @classmethod
+    def reject_real_cash_risk(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper accounts never put real cash at risk")
+        return False
+
+    @field_validator("submitted_to_broker")
+    @classmethod
+    def reject_broker_submission(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper accounts are not broker accounts")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper accounts never carry authority transitions")
+        return False
+
+
+class PaperPosition(StateCoreBase, table=True):
+    """Paper-only position state derived from applied simulated executions."""
+
+    __tablename__ = "paper_positions"
+    __table_args__ = (
+        CheckConstraint(
+            "environment = 'paper'",
+            name="ck_paper_positions_environment_paper",
+        ),
+        CheckConstraint("quantity >= 0", name="ck_paper_positions_quantity_non_negative"),
+        CheckConstraint(
+            "average_cost >= 0",
+            name="ck_paper_positions_average_cost_non_negative",
+        ),
+        CheckConstraint("last_price >= 0", name="ck_paper_positions_last_price_non_negative"),
+        CheckConstraint(
+            "market_value >= 0",
+            name="ck_paper_positions_market_value_non_negative",
+        ),
+        CheckConstraint(
+            "live_execution_allowed = 0",
+            name="ck_paper_positions_live_execution_false",
+        ),
+        CheckConstraint(
+            "real_cash_at_risk = 0",
+            name="ck_paper_positions_real_cash_risk_false",
+        ),
+        CheckConstraint(
+            "submitted_to_broker = 0",
+            name="ck_paper_positions_submitted_to_broker_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_paper_positions_authority_transition_false",
+        ),
+    )
+
+    paper_position_id: str = Field(primary_key=True)
+    paper_account_id: str = Field(foreign_key="paper_accounts.paper_account_id", index=True)
+    environment: str = "paper"
+    symbol: str
+    quantity: Decimal = Field(sa_column=money_column())
+    average_cost: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    last_price: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    market_value: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    currency: str = "USD"
+    last_paper_execution_id: str | None = Field(
+        default=None,
+        foreign_key="paper_execution_receipts.paper_execution_id",
+    )
+    last_paper_execution_receipt_ref: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authority_level: AuthorityLevel = "paper_position"
+    live_execution_allowed: bool = False
+    real_cash_at_risk: bool = False
+    submitted_to_broker: bool = False
+    authority_transition: bool = False
+    updated_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("environment")
+    @classmethod
+    def require_paper_environment(cls, value: str) -> str:
+        if value != "paper":
+            raise ValueError("paper positions only support environment='paper'")
+        return "paper"
+
+    @field_validator("symbol", "currency")
+    @classmethod
+    def require_position_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("paper position requires symbol and currency")
+        return value
+
+    @field_validator("live_execution_allowed")
+    @classmethod
+    def reject_live_execution(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper positions never allow live execution")
+        return False
+
+    @field_validator("real_cash_at_risk")
+    @classmethod
+    def reject_real_cash_risk(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper positions never put real cash at risk")
+        return False
+
+    @field_validator("submitted_to_broker")
+    @classmethod
+    def reject_broker_submission(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper positions are not broker positions")
+        return False
+
+    @field_validator("authority_transition")
+    @classmethod
+    def reject_authority_transition(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("paper positions never carry authority transitions")
         return False

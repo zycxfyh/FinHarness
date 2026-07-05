@@ -314,6 +314,20 @@ class StateCoreApiTest(unittest.TestCase):
             "/capital-objective-fits/{capital_objective_fit_id}": {"get"},
             "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates": {"post"},
             "/trade-plan-review-gates/{review_gate_id}": {"get"},
+            "/trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates": {
+                "post"
+            },
+            "/paper-order-ticket-candidates": {"get"},
+            "/paper-order-ticket-candidates/{paper_order_ticket_id}": {"get"},
+            "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions": {
+                "post"
+            },
+            "/paper-execution-receipts": {"get"},
+            "/paper-execution-receipts/{paper_execution_id}": {"get"},
+            "/paper-accounts": {"get", "post"},
+            "/paper-accounts/{paper_account_id}": {"get"},
+            "/paper-accounts/{paper_account_id}/positions": {"get"},
+            "/paper-accounts/{paper_account_id}/execution-applications": {"post"},
             "/review/retrospective": {"get"},
             "/review/compare-marks": {"get"},
             "/review/queue": {"get"},
@@ -334,6 +348,10 @@ class StateCoreApiTest(unittest.TestCase):
         order_candidate_paths = {
             "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
             "/trade-plan-candidates/{trade_plan_candidate_id}",
+            "/trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates",
+            "/paper-order-ticket-candidates",
+            "/paper-order-ticket-candidates/{paper_order_ticket_id}",
+            "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions",
         }
         for path in paths:
             for forbidden in ("authorize", "execute", "live", "transfer"):
@@ -357,6 +375,24 @@ class StateCoreApiTest(unittest.TestCase):
             "FinancialGoal",
             "InsurancePolicy",
             "Liability",
+            "PaperAccount",
+            "PaperAccountCreateRequest",
+            "PaperAccountCreateResponse",
+            "PaperAccountExecutionApplicationCreateRequest",
+            "PaperAccountExecutionApplicationCreateResponse",
+            "PaperAccountListResponse",
+            "PaperAccountResponse",
+            "PaperExecutionCreateRequest",
+            "PaperExecutionCreateResponse",
+            "PaperExecutionListResponse",
+            "PaperExecutionReceipt",
+            "PaperOrderTicketCandidate",
+            "PaperOrderTicketCandidateCreateRequest",
+            "PaperOrderTicketCandidateCreateResponse",
+            "PaperOrderTicketCandidateListResponse",
+            "PaperOrderTicketCandidateResponse",
+            "PaperPosition",
+            "PaperPositionListResponse",
             "TradePlanCandidate",
             "Position",
             "Proposal",
