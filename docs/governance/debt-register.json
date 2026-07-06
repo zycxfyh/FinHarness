@@ -73,7 +73,7 @@
     {
       "id": "ENG-DEBT-0003",
       "title": "Receipt-backed write registry",
-      "status": "accepted",
+      "status": "active",
       "priority": "P1",
       "category": "receipt-integrity",
       "surface": "statecore",
