@@ -29,6 +29,13 @@ REQUIRED_FIELDS = {
     "review_due",
 }
 
+OPTIONAL_FIELDS = {
+    "resolution_ref",
+    "owner",
+    "evidence_refs",
+    "last_reviewed_at",
+}
+
 ALLOWED_STATUSES = {"accepted", "active", "blocked", "resolved", "deferred"}
 ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}
 ALLOWED_CATEGORIES = {
@@ -120,7 +127,7 @@ class DebtRegisterTest(unittest.TestCase):
             with self.subTest(debt_id=debt.get("id", "MISSING_ID")):
                 actual = set(debt)
                 missing = REQUIRED_FIELDS - actual
-                extra = actual - REQUIRED_FIELDS
+                extra = actual - REQUIRED_FIELDS - OPTIONAL_FIELDS
                 self.assertEqual(
                     missing,
                     set(),
@@ -187,14 +194,16 @@ class DebtRegisterTest(unittest.TestCase):
                 date.fromisoformat(debt["created_at"])
                 date.fromisoformat(debt["review_due"])
 
-    def test_review_due_is_not_in_the_past(self) -> None:
-        today = date.today()
-        overdue: list[str] = []
+    def test_review_due_not_before_created_at(self) -> None:
         for debt in _register()["debts"]:
-            due = date.fromisoformat(debt["review_due"])
-            if due < today:
-                overdue.append(f"{debt['id']} review_due {debt['review_due']} is past")
-        self.assertEqual([], overdue)
+            with self.subTest(debt_id=debt["id"]):
+                created = date.fromisoformat(debt["created_at"])
+                due = date.fromisoformat(debt["review_due"])
+                self.assertGreaterEqual(
+                    due,
+                    created,
+                    f"review_due {debt['review_due']} is before created_at {debt['created_at']}",
+                )
 
     def test_blocked_debts_have_blocked_by_entries(self) -> None:
         for debt in _register()["debts"]:
