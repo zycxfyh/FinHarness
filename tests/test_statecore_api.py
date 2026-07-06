@@ -278,200 +278,199 @@ class StateCoreApiTest(unittest.TestCase):
         paths = schema["paths"]
 
         allowed_routes = {
-            "/health": {"methods": {"get"}, "semantic": "read"},
-            "/exposure": {"methods": {"get"}, "semantic": "read"},
-            "/brief/daily": {"methods": {"get"}, "semantic": "read"},
-            "/dashboard/summary": {"methods": {"get"}, "semantic": "read"},
-            "/brief/latest": {"methods": {"get"}, "semantic": "read"},
-            "/state/accounts": {"methods": {"get"}, "semantic": "read"},
-            "/state/positions": {"methods": {"get"}, "semantic": "read"},
-            "/state/liabilities": {"methods": {"get"}, "semantic": "read"},
-            "/state/goals": {"methods": {"get"}, "semantic": "read"},
-            "/state/cashflows": {"methods": {"get"}, "semantic": "read"},
-            "/state/tax-events": {"methods": {"get"}, "semantic": "read"},
-            "/state/insurance": {"methods": {"get"}, "semantic": "read"},
-            "/state/documents": {"methods": {"get"}, "semantic": "read"},
-            "/snapshots": {"methods": {"get"}, "semantic": "read"},
-            "/diff": {"methods": {"get"}, "semantic": "read"},
-            "/receipts": {"methods": {"get"}, "semantic": "read"},
-            "/receipts/{receipt_id}": {"methods": {"get"}, "semantic": "read"},
-            "/timeline": {"methods": {"get"}, "semantic": "read"},
-            "/controls/status": {"methods": {"get"}, "semantic": "read"},
-            "/controls/limits": {"methods": {"get"}, "semantic": "read"},
-            "/data/catalog": {"methods": {"get"}, "semantic": "read"},
-            "/data/catalog/{dataset_key}": {"methods": {"get"}, "semantic": "read"},
-            "/data/gaps": {"methods": {"get"}, "semantic": "read"},
-            "/data/quality": {"methods": {"get"}, "semantic": "read"},
-            "/data/quality/{dataset_key}": {"methods": {"get"}, "semantic": "read"},
-            "/data/sources": {"methods": {"get"}, "semantic": "read"},
+            "/health": {"methods": {"get": "read"}},
+            "/exposure": {"methods": {"get": "read"}},
+            "/brief/daily": {"methods": {"get": "read"}},
+            "/dashboard/summary": {"methods": {"get": "read"}},
+            "/brief/latest": {"methods": {"get": "read"}},
+            "/state/accounts": {"methods": {"get": "read"}},
+            "/state/positions": {"methods": {"get": "read"}},
+            "/state/liabilities": {"methods": {"get": "read"}},
+            "/state/goals": {"methods": {"get": "read"}},
+            "/state/cashflows": {"methods": {"get": "read"}},
+            "/state/tax-events": {"methods": {"get": "read"}},
+            "/state/insurance": {"methods": {"get": "read"}},
+            "/state/documents": {"methods": {"get": "read"}},
+            "/snapshots": {"methods": {"get": "read"}},
+            "/diff": {"methods": {"get": "read"}},
+            "/receipts": {"methods": {"get": "read"}},
+            "/receipts/{receipt_id}": {"methods": {"get": "read"}},
+            "/timeline": {"methods": {"get": "read"}},
+            "/controls/status": {"methods": {"get": "read"}},
+            "/controls/limits": {"methods": {"get": "read"}},
+            "/data/catalog": {"methods": {"get": "read"}},
+            "/data/catalog/{dataset_key}": {"methods": {"get": "read"}},
+            "/data/gaps": {"methods": {"get": "read"}},
+            "/data/quality": {"methods": {"get": "read"}},
+            "/data/quality/{dataset_key}": {"methods": {"get": "read"}},
+            "/data/sources": {"methods": {"get": "read"}},
             "/proposals": {
-                "methods": {"get", "post"},
-                "semantic": "state_changing",
+                "methods": {"get": "read", "post": "state_changing"},
             },
-            "/proposals/{proposal_id}": {"methods": {"get"}, "semantic": "read"},
-            "/proposals/{proposal_id}/queue-checks": {"methods": {"get"}, "semantic": "read"},
-            "/proposals/{proposal_id}/review-task": {"methods": {"get"}, "semantic": "read"},
-            "/proposals/{proposal_id}/revisions": {"methods": {"get"}, "semantic": "read"},
+            "/proposals/{proposal_id}": {"methods": {"get": "read"}},
+            "/proposals/{proposal_id}/queue-checks": {"methods": {"get": "read"}},
+            "/proposals/{proposal_id}/review-task": {"methods": {"get": "read"}},
+            "/proposals/{proposal_id}/revisions": {"methods": {"get": "read"}},
             "/proposals/{proposal_id}/decision-scaffold": {
-                "methods": {"patch"},
-                "semantic": "state_changing",
+                "methods": {"patch": "state_changing"},
             },
             "/proposals/{proposal_id}/attest": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/proposals/{proposal_id}/timeline": {"methods": {"get"}, "semantic": "read"},
+            "/proposals/{proposal_id}/timeline": {"methods": {"get": "read"}},
             "/proposals/{proposal_id}/review-events": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/scaffold-revision-candidates/{candidate_id}/preflight": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/scaffold-revision-candidates/{candidate_id}/apply": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/proposals/{proposal_id}/action-intents": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/action-intents/{action_intent_id}": {"methods": {"get"}, "semantic": "read"},
+            "/action-intents/{action_intent_id}": {"methods": {"get": "read"}},
             "/action-intents/{action_intent_id}/preflight": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/action-intents/{action_intent_id}/authority-bindings": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/action-intent-authority-bindings/{binding_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/action-intents/{action_intent_id}/simulation-reports": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/action-intent-simulation-reports/{simulation_report_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/capital-objective-fits/{capital_objective_fit_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
             "/trade-plan-review-gates/{review_gate_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/paper-order-ticket-candidates": {"methods": {"get"}, "semantic": "read"},
+            "/paper-order-ticket-candidates": {"methods": {"get": "read"}},
             "/paper-order-ticket-candidates/{paper_order_ticket_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/paper-execution-receipts": {"methods": {"get"}, "semantic": "read"},
+            "/paper-execution-receipts": {"methods": {"get": "read"}},
             "/paper-execution-receipts/{paper_execution_id}": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/paper-accounts": {
-                "methods": {"get", "post"},
-                "semantic": "state_changing",
+                "methods": {"get": "read", "post": "state_changing"},
             },
-            "/paper-accounts/{paper_account_id}": {"methods": {"get"}, "semantic": "read"},
+            "/paper-accounts/{paper_account_id}": {"methods": {"get": "read"}},
             "/paper-accounts/{paper_account_id}/positions": {
-                "methods": {"get"},
-                "semantic": "read",
+                "methods": {"get": "read"},
             },
             "/paper-accounts/{paper_account_id}/execution-applications": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/review/retrospective": {"methods": {"get"}, "semantic": "read"},
-            "/review/compare-marks": {"methods": {"get"}, "semantic": "read"},
-            "/review/queue": {"methods": {"get"}, "semantic": "read"},
-            "/risk/register": {"methods": {"get"}, "semantic": "read"},
-            "/ips/current": {"methods": {"get"}, "semantic": "read"},
-            "/ips/draft": {"methods": {"post"}, "semantic": "state_changing"},
-            "/ips/check": {"methods": {"get"}, "semantic": "read"},
+            "/review/retrospective": {"methods": {"get": "read"}},
+            "/review/compare-marks": {"methods": {"get": "read"}},
+            "/review/queue": {"methods": {"get": "read"}},
+            "/risk/register": {"methods": {"get": "read"}},
+            "/ips/current": {"methods": {"get": "read"}},
+            "/ips/draft": {"methods": {"post": "state_changing"}},
+            "/ips/check": {"methods": {"get": "read"}},
             "/capital-mandates": {
-                "methods": {"post"},
-                "semantic": "state_changing",
+                "methods": {"post": "state_changing"},
             },
-            "/capital-mandates/current": {"methods": {"get"}, "semantic": "read"},
-            "/capital-mandates/{capital_mandate_id}": {"methods": {"get"}, "semantic": "read"},
+            "/capital-mandates/current": {"methods": {"get": "read"}},
+            "/capital-mandates/{capital_mandate_id}": {"methods": {"get": "read"}},
             "/agent-authority-grants": {
-                "methods": {"get", "post"},
-                "semantic": "state_changing",
+                "methods": {"get": "read", "post": "state_changing"},
             },
-            "/agent-authority-grants/{grant_id}": {"methods": {"get"}, "semantic": "read"},
+            "/agent-authority-grants/{grant_id}": {"methods": {"get": "read"}},
             "/agent-authority-grants/{grant_id}/validate": {
-                "methods": {"post"},
-                "semantic": "validation_only",
+                "methods": {"post": "validation_only"},
             },
         }
 
         # Path set must match exactly.
         self.assertEqual(set(paths), set(allowed_routes))
 
+        # Each path must expose exactly the declared methods.
         for path, spec in allowed_routes.items():
             actual_methods = set(paths[path])
+            expected_methods = set(spec["methods"])
             self.assertEqual(
                 actual_methods,
-                spec["methods"],
-                f"{path}: expected methods {spec['methods']}, got {actual_methods}",
+                expected_methods,
+                f"{path}: expected methods {expected_methods}, got {actual_methods}",
             )
 
-        # Assertions on semantic classes.
-        for path, spec in allowed_routes.items():
-            methods = spec["methods"]
-            semantic = spec["semantic"]
+        # Operation-level semantic class assertions.
+        read_ops = 0
+        state_changing_ops = 0
+        validation_only_ops = 0
 
-            if semantic == "read":
-                self.assertEqual(methods, {"get"}, f"read route {path} must only have GET")
-            elif semantic == "state_changing":
-                self.assertTrue(
-                    methods & {"post", "patch"},
-                    f"state_changing route {path} must have POST or PATCH",
-                )
-            elif semantic == "validation_only":
-                self.assertEqual(
-                    path,
-                    "/agent-authority-grants/{grant_id}/validate",
-                    "only agent-authority-grant validate may be validation_only",
-                )
+        for path, spec in allowed_routes.items():
+            for method, semantic in spec["methods"].items():
+                method_upper = method.upper()
+                if semantic == "read":
+                    read_ops += 1
+                    self.assertEqual(
+                        method_upper,
+                        "GET",
+                        f"read operation at {path} must be GET, got {method_upper}",
+                    )
+                elif semantic == "state_changing":
+                    state_changing_ops += 1
+                    self.assertIn(
+                        method_upper,
+                        {"POST", "PATCH"},
+                        f"state_changing operation at {path} must be POST or PATCH, got {method_upper}",
+                    )
+                elif semantic == "validation_only":
+                    validation_only_ops += 1
+                    self.assertEqual(
+                        path,
+                        "/agent-authority-grants/{grant_id}/validate",
+                        "only agent-authority-grant validate may be validation_only",
+                    )
+                    self.assertEqual(
+                        method_upper,
+                        "POST",
+                        f"validation_only operation at {path} must be POST",
+                    )
+
+        self.assertEqual(read_ops, 57, f"expected 57 read operations, got {read_ops}")
+        self.assertEqual(
+            state_changing_ops, 18, f"expected 18 state_changing operations, got {state_changing_ops}"
+        )
+        self.assertEqual(
+            validation_only_ops, 1, f"expected 1 validation_only operation, got {validation_only_ops}"
+        )
 
         # No live-execution, broker-submission, or authorization endpoints.
         for path in paths:
-            for forbidden in ("authorize", "execute", "live", "transfer"):
+            for forbidden in ("authorize", "execute", "live", "transfer", "authorization", "broker", "submit"):
                 self.assertNotIn(forbidden, path)
 
+        # Any path containing "order" must be in the paper-only candidate list.
         order_candidate_paths = {
             "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
             "/trade-plan-candidates/{trade_plan_candidate_id}",
