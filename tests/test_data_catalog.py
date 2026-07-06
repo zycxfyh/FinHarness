@@ -386,9 +386,11 @@ class DataCatalogApiTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
         from finharness.api.app import create_app
+        from finharness.local_operator import LocalOperatorContext
 
         self.app = create_app(
             market_data_receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         from tests.asgi_test_client import AsgiTestClient
 

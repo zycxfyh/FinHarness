@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlmodel import Session, select
 
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import (
     Account,
@@ -42,6 +43,7 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
             create_app(
                 state_core_engine=self.engine,
                 receipt_root=str(self.receipt_root),
+                local_operator_context=LocalOperatorContext("test_harness"),
             )
         )
         self.addCleanup(self.client.close)

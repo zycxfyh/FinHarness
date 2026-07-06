@@ -4,6 +4,7 @@ import unittest
 
 from finharness.agent_tools import draft_agent_review_note_from_context_payload
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.risk_register import read_review_risk_register
 from tests._review_fixtures import ReviewFixture
 from tests.asgi_test_client import AsgiTestClient

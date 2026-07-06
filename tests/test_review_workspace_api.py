@@ -6,6 +6,7 @@ from pathlib import Path
 
 from finharness.agent_tools import draft_agent_review_note_from_context_payload
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
@@ -30,7 +31,8 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts" / "state-core"
         self.engine = init_state_core(self.root / "state-core.sqlite")
         self.app = create_app(
-            state_core_engine=self.engine, receipt_root=str(self.receipt_root)
+            state_core_engine=self.engine, receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)

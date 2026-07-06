@@ -13,6 +13,7 @@ from finharness.agent_tools import (
     draft_governed_proposal_from_context_payload,
 )
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.models import Attestation, Proposal
 from finharness.statecore.proposals import create_governed_attestation
 from finharness.statecore.risk_classification import HighRiskConfirmationError
@@ -135,6 +136,7 @@ class AgentProposalDraftTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
@@ -191,6 +193,7 @@ class AgentProposalDraftTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
@@ -224,6 +227,7 @@ class AgentProposalDraftTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
@@ -252,6 +256,7 @@ class AgentProposalDraftTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
@@ -286,6 +291,7 @@ class AgentProposalDraftTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
