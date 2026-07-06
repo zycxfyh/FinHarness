@@ -9,8 +9,8 @@ from pathlib import Path
 from sqlmodel import Session
 
 from finharness.api.app import create_app
-from finharness.local_operator import LocalOperatorContext
 from finharness.ips import record_ips
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.action_intent_authority_bindings import (
     create_action_intent_authority_binding,
 )

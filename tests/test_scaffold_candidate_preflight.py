@@ -9,7 +9,6 @@ from finharness.agent_tools import (
     draft_agent_scaffold_revision_apply_candidate_from_context_payload,
 )
 from finharness.api.app import create_app
-from finharness.local_operator import LocalOperatorContext
 from finharness.scaffold_candidate_preflight import (
     preflight_scaffold_revision_candidate,
 )

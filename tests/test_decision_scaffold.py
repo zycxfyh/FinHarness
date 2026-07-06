@@ -14,8 +14,8 @@ from pathlib import Path
 
 from finharness.allocation import AllocationCandidate, CandidateOption, _candidate_scaffold
 from finharness.api.app import create_app
-from finharness.local_operator import LocalOperatorContext
 from finharness.daily_change_brief import _change_scaffold
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.decision_scaffold import (
     REQUIRED_FIELDS,
     DecisionScaffold,

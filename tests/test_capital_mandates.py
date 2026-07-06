@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from finharness.api.app import create_app
-from finharness.local_operator import LocalOperatorContext
 from finharness.ips import record_ips
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
     CapitalMandateValidationError,
