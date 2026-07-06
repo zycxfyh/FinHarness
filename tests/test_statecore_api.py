@@ -980,6 +980,29 @@ class WriteCapabilityGateTest(unittest.TestCase):
                 response = self.client.get(path)
                 self.assertIn(response.status_code, {200, 404})
 
+    def test_invalid_operator_context_fails_closed(self) -> None:
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            local_operator_context="not-a-context",  # type: ignore[arg-type]
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+        response = client.post(
+            "/proposals",
+            json={
+                "kind": "debt_fix",
+                "claim": "invalid context must not enable writes",
+                "evidence": {"source": "test"},
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"]["code"], "write_capability_required"
+        )
+        self.assertFalse(response.json()["detail"]["execution_allowed"])
+        self.assertFalse(response.json()["detail"]["authority_transition"])
+
     def test_explicit_operator_context_allows_writes(self) -> None:
         app = create_app(
             state_core_engine=self.engine,

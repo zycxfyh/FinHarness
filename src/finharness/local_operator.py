@@ -41,10 +41,8 @@ async def require_write_capability(request: Request) -> LocalOperatorContext:
     This dependency must be added to every state-changing route handler.
     GET routes and validation-only POST routes must NOT use it.
     """
-    ctx: LocalOperatorContext | None = getattr(
-        request.app.state, "local_operator_context", None
-    )
-    if ctx is None:
+    ctx = getattr(request.app.state, "local_operator_context", None)
+    if not isinstance(ctx, LocalOperatorContext):
         raise HTTPException(
             status_code=403,
             detail={
