@@ -57,7 +57,7 @@
       "receipt_payload_builder": "_review_event_receipt_payload",
       "receipt_indexed": true,
       "receipt_index_builder": "_receipt_index (shared helper, proposals.py L96)",
-      "stale_guard": "content_hash idempotency via _review_event_content_hash: if same kind+text+attester, replays existing receipt_ref; new content writes new receipt",
+      "stale_guard": "not applicable: review events are append-only; _review_event_content_hash is integrity/replay metadata only, not idempotency; repeated annotations create new review events.",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when receipt was newly written",
       "execution_allowed": false,
       "behavior_change": false
@@ -76,7 +76,7 @@
       "receipt_payload_builder": "_receipt_payload",
       "receipt_indexed": true,
       "receipt_index_builder": "_receipt_index (shared helper, proposals.py L96)",
-      "stale_guard": "expected proposal receipt_ref; ActionIntentStaleError raised if proposal receipt_ref mismatches",
+      "stale_guard": "expected proposal receipt_ref; ActionIntentStaleProposalError raised if proposal receipt_ref mismatches",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
       "behavior_change": false
@@ -306,6 +306,28 @@
       "receipt_index_builder": "ReceiptIndex(...) inline (L296)",
       "stale_guard": "not applicable: each new IPS draft supersedes prior draft; no upstream receipt_ref check",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
+      "execution_allowed": false,
+      "behavior_change": false
+    },
+    {
+      "id": "RBW-0017",
+      "bounded_context": "review_proposal",
+      "module": "finharness.statecore.proposals",
+      "file": "src/finharness/statecore/proposals.py",
+      "function": "revise_governed_proposal_scaffold",
+      "route_refs": [
+        "PATCH /proposals/{proposal_id}/decision-scaffold",
+        "POST /scaffold-revision-candidates/{candidate_id}/apply"
+      ],
+      "db_write_models": ["Proposal", "ReceiptIndex"],
+      "db_write_call": "delegates to create_governed_proposal with idempotent=True",
+      "receipt_kind": "state_core_proposal",
+      "receipt_subdir": "state-core/proposals",
+      "receipt_payload_builder": "_proposal_receipt_payload via create_governed_proposal",
+      "receipt_indexed": true,
+      "receipt_index_builder": "_receipt_index via create_governed_proposal",
+      "stale_guard": "existing proposal required; scaffold patch must change at least one stored field; delegated create_governed_proposal uses content_hash idempotency and supersedes prior receipt_ref; scaffold-candidate apply route additionally checks expected candidate receipt_ref, expected proposal receipt_ref, and expected preflight report hash at the API route layer",
+      "failure_cleanup": "delegated create_governed_proposal cleanup on StateCoreStoreError when receipt did not previously exist",
       "execution_allowed": false,
       "behavior_change": false
     }

@@ -33,11 +33,45 @@ REQUIRED_FIELDS = {
 
 ID_PATTERN = re.compile(r"^RBW-\d{4}$")
 
-REPRESENTATIVE_FUNCTIONS = {
-    "create_governed_proposal",
-    "create_governed_attestation",
-    "create_governed_review_event",
+EXPECTED_FUNCTIONS = {
+    "apply_paper_execution_to_account",
+    "create_action_intent_authority_binding",
     "create_governed_action_intent",
+    "create_governed_action_intent_simulation_report",
+    "create_governed_attestation",
+    "create_governed_capital_objective_fit",
+    "create_governed_proposal",
+    "create_governed_review_event",
+    "create_governed_trade_plan_candidate",
+    "create_governed_trade_plan_review_gate",
+    "create_paper_account",
+    "create_paper_order_ticket_candidate",
+    "record_agent_authority_grant",
+    "record_capital_mandate",
+    "record_ips",
+    "record_paper_execution_receipt",
+    "revise_governed_proposal_scaffold",
+}
+
+EXPECTED_ROUTE_REFS = {
+    "PATCH /proposals/{proposal_id}/decision-scaffold",
+    "POST /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
+    "POST /action-intents/{action_intent_id}/authority-bindings",
+    "POST /action-intents/{action_intent_id}/simulation-reports",
+    "POST /agent-authority-grants",
+    "POST /capital-mandates",
+    "POST /ips/draft",
+    "POST /paper-accounts",
+    "POST /paper-accounts/{paper_account_id}/execution-applications",
+    "POST /paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions",
+    "POST /proposals",
+    "POST /proposals/{proposal_id}/action-intents",
+    "POST /proposals/{proposal_id}/attest",
+    "POST /proposals/{proposal_id}/review-events",
+    "POST /scaffold-revision-candidates/{candidate_id}/apply",
+    "POST /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits",
+    "POST /trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates",
+    "POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates",
 }
 
 
@@ -179,13 +213,36 @@ class ReceiptBackedWriteRegistryTest(unittest.TestCase):
                 self.assertIsInstance(refs, list)
                 self.assertGreater(len(refs), 0)
 
-    def test_representative_functions_covered(self) -> None:
+    def test_expected_functions_are_registered(self) -> None:
         registered = {e["function"] for e in _registry()["entries"]}
-        missing = REPRESENTATIVE_FUNCTIONS - registered
+        missing = EXPECTED_FUNCTIONS - registered
+        extra = registered - EXPECTED_FUNCTIONS
         self.assertEqual(
             missing,
             set(),
-            f"representative functions not registered: {missing}",
+            f"expected functions not in registry: {missing}",
+        )
+        self.assertEqual(
+            extra,
+            set(),
+            f"unexpected functions in registry: {extra}",
+        )
+
+    def test_expected_route_refs_are_covered(self) -> None:
+        registered_route_refs = set()
+        for entry in _registry()["entries"]:
+            registered_route_refs.update(entry["route_refs"])
+        missing = EXPECTED_ROUTE_REFS - registered_route_refs
+        extra = registered_route_refs - EXPECTED_ROUTE_REFS
+        self.assertEqual(
+            missing,
+            set(),
+            f"expected route refs not in registry: {missing}",
+        )
+        self.assertEqual(
+            extra,
+            set(),
+            f"unexpected route refs in registry: {extra}",
         )
 
     def test_no_validation_only_posts_in_registry(self) -> None:
