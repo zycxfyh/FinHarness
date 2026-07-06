@@ -1,0 +1,207 @@
+{
+  "schema": "finharness.engineering_debt_register.v1",
+  "status": "current",
+  "updated": "2026-07-06",
+  "description": "Governed engineering debt register. Each entry records a known structural or tooling debt with explicit scope, risk, next action, and non-goals. Entries are not TODOs — they carry boundaries on what must and must not be done when the debt is resolved.",
+  "allowed_statuses": ["accepted", "active", "blocked", "resolved", "deferred"],
+  "allowed_priorities": ["P0", "P1", "P2", "P3"],
+  "allowed_categories": [
+    "governance-boundary",
+    "receipt-integrity",
+    "tooling",
+    "dependency-management",
+    "statecore-structure",
+    "frontend-structure",
+    "documentation-governance"
+  ],
+  "allowed_surfaces": [
+    "api",
+    "paper-validation",
+    "statecore",
+    "frontend",
+    "taskfile",
+    "dependencies",
+    "toolchain",
+    "governance"
+  ],
+  "debts": [
+    {
+      "id": "ENG-DEBT-0001",
+      "title": "API write capability gate",
+      "status": "accepted",
+      "priority": "P0",
+      "category": "governance-boundary",
+      "surface": "api",
+      "introduced_by": ["PR #110 route taxonomy baseline"],
+      "current_state": "Operation-level route taxonomy distinguishes read, state_changing, and validation_only routes, but state_changing routes do not yet require an explicit local operator or write capability dependency.",
+      "desired_state": "State-changing operations require an explicit local non-network WriteCapabilityDependency while preserving read-only GET access.",
+      "risk_if_ignored": "Future state-changing endpoints may be added without a consistent operator boundary. Changing the binding host or adding a reverse proxy would expose unauthenticated write endpoints.",
+      "next_action": "Design minimal LocalOperatorContext and add route-level write dependency with tests.",
+      "non_goals": [
+        "OAuth or external identity provider",
+        "broker authentication or execution authorization",
+        "live trading permission system",
+        "multi-user or role-based access control"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A4",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0002",
+      "title": "Paper validation capability boundary",
+      "status": "accepted",
+      "priority": "P1",
+      "category": "governance-boundary",
+      "surface": "paper-validation",
+      "introduced_by": ["PR #102 paper validation routes"],
+      "current_state": "Paper validation exposes order-shaped, execution-shaped, and account-shaped write endpoints under routes_paper_validation.py, protected only by non-claims and paper field semantics.",
+      "desired_state": "Paper validation routes sit under a distinct prefix, carry a standalone policy check and threat model, and are guarded by an explicit cannot-graduate-to-live gate test.",
+      "risk_if_ignored": "The object shapes (ticket, fill, account, execution application) are isomorphic to live trading constructs. Without an explicit boundary, future contributors may treat paper validation as a scaffold for live broker adapters.",
+      "next_action": "Add distinct router prefix, standalone policy check, threat model entry, and graduate-to-live gate test.",
+      "non_goals": [
+        "live broker integration",
+        "paper-to-live migration path",
+        "execution authorization"
+      ],
+      "blocked_by": ["ENG-DEBT-0001"],
+      "target_pr": "PR-A5",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0003",
+      "title": "Receipt-backed write registry",
+      "status": "accepted",
+      "priority": "P1",
+      "category": "receipt-integrity",
+      "surface": "statecore",
+      "introduced_by": ["StateCore write paths for proposals, action intents, paper validation, authority grants"],
+      "current_state": "32 receipt-related functions across 14 statecore files follow the same DB-write + receipt-file-write + ReceiptIndex-upsert pattern without a shared base or registry.",
+      "desired_state": "A unified ReceiptBackedCommand registry that registers each bounded context's write path, stale guard, and receipt payload, so pattern drift and stale receipt logic duplication are detectable.",
+      "risk_if_ignored": "Each new bounded context copies the receipt write pattern, introducing subtle drift in stale guard, hash binding, and idempotency behavior.",
+      "next_action": "Register all existing receipt write paths in a machine-checkable inventory. Decide whether to extract a shared ReceiptBackedCommand base or keep the pattern registered without abstraction.",
+      "non_goals": [
+        "rewriting existing receipt functions",
+        "changing receipt file format",
+        "replacing ReceiptIndex"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A3",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0004",
+      "title": "Taskfile check layering",
+      "status": "accepted",
+      "priority": "P1",
+      "category": "tooling",
+      "surface": "taskfile",
+      "introduced_by": ["Incremental additions to task check during data-trust and paper-validation slices"],
+      "current_state": "task check runs lint + typecheck + test + integration + frontend + governance + rules + experiments + eval:smoke in a single flat sequence. Experiments and eval:smoke introduce research dependencies and external tooling risk into the standard quality gate.",
+      "desired_state": "task check is layered into check:fast (lint, typecheck, unit tests), check:ci (integration, frontend, governance, rules), and check:research (experiments, eval:smoke), with task check aliased to check:fast for daily development.",
+      "risk_if_ignored": "Standard check becomes slower and more brittle as experiments, eval prompts, or new research integrations are added. Contributors learn to skip task check rather than fix unrelated failures.",
+      "next_action": "Create check:fast, check:ci, check:research targets. Move experiments and eval:smoke to check:research. Keep task check as an alias for check:fast.",
+      "non_goals": [
+        "changing individual task implementations",
+        "adding new checks",
+        "modifying CI workflow files in this debt entry"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A6",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0005",
+      "title": "Dependency grouping and dead dependency review",
+      "status": "accepted",
+      "priority": "P2",
+      "category": "dependency-management",
+      "surface": "dependencies",
+      "introduced_by": ["Mature-wheel policy accumulation across research, agent, eval, and paper slices"],
+      "current_state": "pyproject.toml main dependencies list includes backtrader, vectorbt, ta-lib, pandas-ta, plotly, and openai-agents which have no src-level imports. Research packages (riskfolio-lib, deepeval), agent packages (langgraph), and eval packages share the same dependency group with core runtime packages.",
+      "desired_state": "Dependencies are grouped into core, data, research, agent, eval, paper, and security groups. Dead dependencies are removed. Taskfile targets use uv sync --group for scoped installs.",
+      "risk_if_ignored": "Install time, CI time, vulnerability surface, and version conflict surface grow with every slice. Contributors cannot tell which packages are runtime-critical vs research-optional.",
+      "next_action": "Audit every main dependency for src-level imports. Remove dead dependencies. Create dependency groups in pyproject.toml.",
+      "non_goals": [
+        "changing runtime behavior of any existing code",
+        "upgrading or downgrading package versions",
+        "modifying uv.lock beyond dependency group changes"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A7",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0006",
+      "title": "StateCore model split",
+      "status": "accepted",
+      "priority": "P2",
+      "category": "statecore-structure",
+      "surface": "statecore",
+      "introduced_by": ["Incremental addition of personal finance, review, authority, action intent, trade plan, and paper validation models into models.py"],
+      "current_state": "models.py is one 1798-line file containing 26 SQLModel tables across six bounded contexts: personal_finance, review_proposal, authority, action_intent, trade_plan, paper_validation.",
+      "desired_state": "Models are split by bounded context into separate modules under statecore/, with models.py providing backwards-compatible re-exports.",
+      "risk_if_ignored": "Continued growth makes migration authorship, OpenAPI schema review, and test fixture isolation harder. Domain ownership boundaries blur as more tables are added to the same file.",
+      "next_action": "Split personal_finance_models (9 tables, no foreign keys, no governance dependencies) as the first bounded context extraction. Verify SQLModel.metadata registration, OpenAPI schema stability, and migration compatibility.",
+      "non_goals": [
+        "changing table schemas or constraints",
+        "splitting review_proposal or action_intent contexts (high coupling)",
+        "changing import paths for external consumers"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A8",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0007",
+      "title": "Frontend ReviewActionShell and module split",
+      "status": "accepted",
+      "priority": "P2",
+      "category": "frontend-structure",
+      "surface": "frontend",
+      "introduced_by": ["Incremental cockpit tab additions up to 8 tabs in a single-page vanilla JS client"],
+      "current_state": "app.js is one 1450-line file maintaining global state, selectors, fetch wrapper, renderers, and forms. Three write forms (attestation, scaffold revision, review event) each independently implement attester+reason collection and window.confirm guards.",
+      "desired_state": "Write forms are unified under a ReviewActionShell pattern. app.js is split into api.js, state.js, and per-view modules. The split preserves the existing vanilla JS + jsdom test compatibility.",
+      "risk_if_ignored": "Adding Research Workspace, Scenario, Paper Review, or Agent Tasks tabs as additional render paths in the same file will make app.js unmaintainable. Duplicated form patterns create drift in governance UX.",
+      "next_action": "Extract ReviewActionShell for the three existing write forms. Split api.js and state.js as the first module extraction without changing view structure.",
+      "non_goals": [
+        "migrating to React, Vue, or any framework",
+        "changing CSS or visual design",
+        "adding new tabs or features",
+        "breaking jsdom test compatibility"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A9",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    },
+    {
+      "id": "ENG-DEBT-0008",
+      "title": "Toolchain Node/Rust policy",
+      "status": "accepted",
+      "priority": "P1",
+      "category": "tooling",
+      "surface": "toolchain",
+      "introduced_by": ["mise.toml pins Node 26.2.0; CI security.yml uses Node 22 and installs Rust stable toolchain"],
+      "current_state": "Local dev (mise.toml) pins Node 26.2.0. CI workflows use Node 22 via actions/setup-node and install Rust stable via dtolnay/rust-toolchain despite the Rust crate being archived (2026-06-13). No Python dependency requires Rust compilation.",
+      "desired_state": "Node version is unified to a single agreed version across mise.toml and CI. Rust toolchain is removed from CI or documented with a comment explaining which dependency requires it. Version policy is recorded in docs/reference/.",
+      "risk_if_ignored": "Local vs CI Node version drift causes false-pass local tests or false-fail CI. Rust toolchain installation wastes CI time and confuses maintainers about toolchain requirements.",
+      "next_action": "Decide Node version target. Remove Rust toolchain from security.yml CI workflow or document the genuine dependency. Add toolchain version policy to docs/reference/.",
+      "non_goals": [
+        "changing Python, uv, pnpm, or task versions",
+        "adding new toolchain dependencies",
+        "modifying dependabot configuration"
+      ],
+      "blocked_by": [],
+      "target_pr": "PR-A6",
+      "created_at": "2026-07-06",
+      "review_due": "2026-08-15"
+    }
+  ]
+}
