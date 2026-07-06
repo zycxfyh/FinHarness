@@ -192,7 +192,7 @@ tasks:
       - uv run python -m unittest discover -s tests
 
   api:serve:
-    desc: Serve the read-only local state API
+    desc: Serve the local state API (read + governed non-execution write)
     cmds:
       - uv run uvicorn finharness.api.app:app --host 127.0.0.1 --port 8765
 
