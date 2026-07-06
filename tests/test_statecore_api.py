@@ -442,7 +442,7 @@ class StateCoreApiTest(unittest.TestCase):
                     self.assertIn(
                         method_upper,
                         {"POST", "PATCH"},
-                        f"state_changing operation at {path} must be POST or PATCH, got {method_upper}",
+                        f"state_changing at {path} must be POST/PATCH, got {method_upper}",
                     )
                 elif semantic == "validation_only":
                     validation_only_ops += 1
@@ -457,17 +457,29 @@ class StateCoreApiTest(unittest.TestCase):
                         f"validation_only operation at {path} must be POST",
                     )
 
-        self.assertEqual(read_ops, 57, f"expected 57 read operations, got {read_ops}")
+        self.assertEqual(read_ops, 57, f"expected 57 read ops, got {read_ops}")
         self.assertEqual(
-            state_changing_ops, 18, f"expected 18 state_changing operations, got {state_changing_ops}"
+            state_changing_ops,
+            18,
+            f"expected 18 state_changing ops, got {state_changing_ops}",
         )
         self.assertEqual(
-            validation_only_ops, 1, f"expected 1 validation_only operation, got {validation_only_ops}"
+            validation_only_ops,
+            1,
+            f"expected 1 validation_only op, got {validation_only_ops}",
         )
 
         # No live-execution, broker-submission, or authorization endpoints.
         for path in paths:
-            for forbidden in ("authorize", "execute", "live", "transfer", "authorization", "broker", "submit"):
+            for forbidden in (
+                "authorize",
+                "authorization",
+                "broker",
+                "execute",
+                "live",
+                "submit",
+                "transfer",
+            ):
                 self.assertNotIn(forbidden, path)
 
         # Any path containing "order" must be in the paper-only candidate list.
