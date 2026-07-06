@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
     CapitalMandateValidationError,

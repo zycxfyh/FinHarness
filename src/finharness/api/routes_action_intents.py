@@ -19,7 +19,11 @@ from finharness.action_intent_preflight import (
     ActionIntentPreflightFinding,
     preflight_action_intent,
 )
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.statecore.action_intent_authority_bindings import (
     ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS,
     ActionIntentAuthorityBindingResult,

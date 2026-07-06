@@ -7,7 +7,11 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.exposure import compute_exposure
 from finharness.ips import (
     IPS_NON_CLAIMS,

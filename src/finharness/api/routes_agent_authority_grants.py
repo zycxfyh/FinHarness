@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
     AgentAuthorityGrantValidationError,

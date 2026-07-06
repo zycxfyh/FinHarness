@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.market_data import ROOT
 from finharness.proposal_queue_checks import (
     ProposalQueueChecks,
