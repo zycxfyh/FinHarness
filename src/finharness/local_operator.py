@@ -47,7 +47,14 @@ async def require_write_capability(request: Request) -> LocalOperatorContext:
     if ctx is None:
         raise HTTPException(
             status_code=403,
-            detail="Local writes are not enabled for this application instance. "
-            "Pass local_operator_context to create_app() to enable governed writes.",
+            detail={
+                "code": "write_capability_required",
+                "message": (
+                    "Local writes are not enabled for this application instance. "
+                    "Pass local_operator_context to create_app() to enable governed writes."
+                ),
+                "execution_allowed": False,
+                "authority_transition": False,
+            },
         )
     return ctx

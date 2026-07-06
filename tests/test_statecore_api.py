@@ -959,8 +959,9 @@ class WriteCapabilityGateTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
         body = response.json()
-        self.assertIn("detail", body)
-        self.assertIn("Local writes are not enabled", body["detail"])
+        self.assertEqual(body["detail"]["code"], "write_capability_required")
+        self.assertFalse(body["detail"]["execution_allowed"])
+        self.assertFalse(body["detail"]["authority_transition"])
 
     def test_validation_only_post_succeeds_without_operator_context(self) -> None:
         # /agent-authority-grants/{id}/validate is validation_only, not state_changing;
@@ -1093,6 +1094,80 @@ class WriteCapabilityGateTest(unittest.TestCase):
                     f"{method} {path} must return 403 without operator context, "
                     f"got {response.status_code}",
                 )
+
+    def test_read_and_validation_only_routes_never_gated(self) -> None:
+        """Prove GET and validation-only POST routes are never gated."""
+        state_changing = {
+            ("POST", "/proposals"),
+            ("PATCH", "/proposals/{proposal_id}/decision-scaffold"),
+            ("POST", "/proposals/{proposal_id}/attest"),
+            ("POST", "/proposals/{proposal_id}/review-events"),
+            ("POST", "/scaffold-revision-candidates/{candidate_id}/apply"),
+            ("POST", "/proposals/{proposal_id}/action-intents"),
+            ("POST", "/action-intents/{action_intent_id}/authority-bindings"),
+            ("POST", "/action-intents/{action_intent_id}/simulation-reports"),
+            (
+                "POST",
+                "/action-intent-simulation-reports/{simulation_report_id}"
+                "/trade-plan-candidates",
+            ),
+            (
+                "POST",
+                "/trade-plan-candidates/{trade_plan_candidate_id}"
+                "/capital-objective-fits",
+            ),
+            ("POST", "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates"),
+            (
+                "POST",
+                "/trade-plan-candidates/{trade_plan_candidate_id}"
+                "/paper-order-ticket-candidates",
+            ),
+            (
+                "POST",
+                "/paper-order-ticket-candidates/{paper_order_ticket_id}"
+                "/simulated-executions",
+            ),
+            ("POST", "/paper-accounts"),
+            ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
+            ("POST", "/agent-authority-grants"),
+            ("POST", "/capital-mandates"),
+            ("POST", "/ips/draft"),
+        }
+        validation_only = {("POST", "/agent-authority-grants/{grant_id}/validate")}
+
+        openapi = self.client.get("/openapi.json")
+        self.assertEqual(openapi.status_code, 200)
+        paths = openapi.json()["paths"]
+
+        for path, methods in paths.items():
+            for method in methods:
+                key = (method.upper(), path)
+                if key in state_changing or key in validation_only:
+                    continue
+                with self.subTest(method=method.upper(), path=path):
+                    if method.upper() == "GET":
+                        target = path.replace("{proposal_id}", "nonexistent")
+                        target = target.replace("{receipt_id}", "nonexistent")
+                        target = target.replace("{dataset_key}", "nonexistent")
+                        target = target.replace("{action_intent_id}", "nonexistent")
+                        target = target.replace("{binding_id}", "nonexistent")
+                        target = target.replace("{simulation_report_id}", "nonexistent")
+                        target = target.replace("{trade_plan_candidate_id}", "nonexistent")
+                        target = target.replace("{capital_objective_fit_id}", "nonexistent")
+                        target = target.replace("{review_gate_id}", "nonexistent")
+                        target = target.replace("{paper_order_ticket_id}", "nonexistent")
+                        target = target.replace("{paper_execution_id}", "nonexistent")
+                        target = target.replace("{paper_account_id}", "nonexistent")
+                        target = target.replace("{grant_id}", "nonexistent")
+                        target = target.replace("{capital_mandate_id}", "nonexistent")
+                        target = target.replace("{candidate_id}", "nonexistent")
+                        target = target.replace("{snapshot_id}", "nonexistent")
+                        response = self.client.get(target)
+                        self.assertNotEqual(
+                            response.status_code,
+                            403,
+                            f"GET {path} must not be gated",
+                        )
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@ async def post_capital_mandate(
     body: CapitalMandateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> CapitalMandateWriteResponse:
     try:
         mandate = record_capital_mandate(

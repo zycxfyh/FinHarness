@@ -28,7 +28,7 @@
     {
       "id": "ENG-DEBT-0001",
       "title": "API write capability gate",
-      "status": "accepted",
+      "status": "active",
       "priority": "P0",
       "category": "governance-boundary",
       "surface": "api",

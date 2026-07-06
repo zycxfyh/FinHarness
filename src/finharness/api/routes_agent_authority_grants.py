@@ -63,7 +63,7 @@ async def post_agent_authority_grant(
     body: AgentAuthorityGrantRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> AgentAuthorityGrantWriteResponse:
     try:
         grant = record_agent_authority_grant(

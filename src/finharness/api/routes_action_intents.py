@@ -438,7 +438,7 @@ async def create_action_intent(
     request: ActionIntentCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> ActionIntentCreateResponse:
     try:
         write = create_governed_action_intent(
@@ -542,7 +542,7 @@ async def create_action_intent_authority_binding_endpoint(
     request: ActionIntentAuthorityBindingCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> ActionIntentAuthorityBindingCreateResponse:
     try:
         write = create_action_intent_authority_binding(
@@ -603,7 +603,7 @@ async def create_action_intent_simulation_report(
     request: ActionIntentSimulationCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> ActionIntentSimulationCreateResponse:
     try:
         write = create_governed_action_intent_simulation_report(
@@ -678,7 +678,7 @@ async def create_trade_plan_candidate(
     request: TradePlanCandidateCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> TradePlanCandidateCreateResponse:
     try:
         write = create_governed_trade_plan_candidate(
@@ -757,7 +757,7 @@ async def create_capital_objective_fit(
     request: CapitalObjectiveFitCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> CapitalObjectiveFitCreateResponse:
     try:
         write = create_governed_capital_objective_fit(
@@ -844,7 +844,7 @@ async def create_trade_plan_review_gate(
     request: TradePlanReviewGateCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> TradePlanReviewGateCreateResponse:
     try:
         write = create_governed_trade_plan_review_gate(

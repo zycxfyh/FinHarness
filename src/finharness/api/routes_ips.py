@@ -53,7 +53,7 @@ async def post_ips_draft(
     body: IpsDraftRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    write_capability: WriteCapabilityDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> InvestmentPolicyStatement:
     return record_ips(
         liquidity_floor_months=body.liquidity_floor_months,
