@@ -1,4 +1,4 @@
-"""FastAPI application for the read-only FinHarness state surface."""
+"""FastAPI application for the FinHarness governed state surface."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from finharness.api.routes_proposals import router as proposal_router
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_risk import router as risk_router
 from finharness.api.routes_state import router as state_router
+from finharness.local_operator import LocalOperatorContext
 from finharness.market_data import ROOT
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
 from finharness.runtime_log import configure_logging, get_logger
@@ -37,10 +38,11 @@ def create_app(
     state_core_engine: Engine | None = None,
     receipt_root: str | None = None,
     market_data_receipt_root: str | None = None,
+    local_operator_context: LocalOperatorContext | None = None,
 ) -> FastAPI:
     api = FastAPI(
         title="FinHarness State API",
-        summary="Read-only cockpit API for state snapshots, receipts, and diffs.",
+        summary="Governed cockpit API -- read + explicit local writes.",
         version="0.1.0",
     )
     if state_core_engine is not None:
@@ -50,6 +52,7 @@ def create_app(
         api.state.state_core_receipt_root = receipt_root
     if market_data_receipt_root is not None:
         api.state.market_data_receipt_root = market_data_receipt_root
+    api.state.local_operator_context = local_operator_context
 
     @api.middleware("http")
     async def log_request(request: Request, call_next):

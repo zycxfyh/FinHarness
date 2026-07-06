@@ -19,7 +19,7 @@ from finharness.action_intent_preflight import (
     ActionIntentPreflightFinding,
     preflight_action_intent,
 )
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
 from finharness.statecore.action_intent_authority_bindings import (
     ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS,
     ActionIntentAuthorityBindingResult,
@@ -438,6 +438,7 @@ async def create_action_intent(
     request: ActionIntentCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ActionIntentCreateResponse:
     try:
         write = create_governed_action_intent(
@@ -541,6 +542,7 @@ async def create_action_intent_authority_binding_endpoint(
     request: ActionIntentAuthorityBindingCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ActionIntentAuthorityBindingCreateResponse:
     try:
         write = create_action_intent_authority_binding(
@@ -601,6 +603,7 @@ async def create_action_intent_simulation_report(
     request: ActionIntentSimulationCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ActionIntentSimulationCreateResponse:
     try:
         write = create_governed_action_intent_simulation_report(
@@ -675,6 +678,7 @@ async def create_trade_plan_candidate(
     request: TradePlanCandidateCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> TradePlanCandidateCreateResponse:
     try:
         write = create_governed_trade_plan_candidate(
@@ -753,6 +757,7 @@ async def create_capital_objective_fit(
     request: CapitalObjectiveFitCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> CapitalObjectiveFitCreateResponse:
     try:
         write = create_governed_capital_objective_fit(
@@ -839,6 +844,7 @@ async def create_trade_plan_review_gate(
     request: TradePlanReviewGateCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> TradePlanReviewGateCreateResponse:
     try:
         write = create_governed_trade_plan_review_gate(

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.observability import TRACE_HEADER, is_safe_trace_id
 from finharness.statecore.models import (
     Account,
@@ -44,6 +45,7 @@ class StateCoreApiTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)
@@ -925,6 +927,172 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertTrue(proposal_receipt_ref.exists())
         self.assertEqual(read_all(Attestation, engine=self.engine), [])
         self.assertEqual(list((self.receipt_root / "attestations").glob("*.json")), [])
+
+
+class WriteCapabilityGateTest(unittest.TestCase):
+    """Tests that the write capability gate is fail-closed by default."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.db_path = self.root / "state-core.sqlite"
+        self.receipt_root = self.root / "receipts" / "state-core"
+        self.engine = init_state_core(self.db_path)
+        # fail-closed: no local_operator_context
+        self.app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        self.client = AsgiTestClient(self.app)
+        self.addCleanup(self.client.close)
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_state_changing_without_operator_context_returns_403(self) -> None:
+        response = self.client.post(
+            "/proposals",
+            json={
+                "kind": "debt_fix",
+                "claim": "should be gated",
+                "evidence": {"source": "test"},
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        body = response.json()
+        self.assertIn("detail", body)
+        self.assertIn("Local writes are not enabled", body["detail"])
+
+    def test_validation_only_post_succeeds_without_operator_context(self) -> None:
+        # /agent-authority-grants/{id}/validate is validation_only, not state_changing;
+        # it returns a structured validation result (allowed=false) for nonexistent grants
+        response = self.client.post(
+            "/agent-authority-grants/nonexistent/validate",
+            json={"requested_scope": {"allowed_asset_classes": ["crypto"]}},
+        )
+        # 200 because the validation endpoint runs and returns results
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["allowed"])
+
+    def test_get_routes_succeed_without_operator_context(self) -> None:
+        for path in ("/health", "/exposure", "/proposals", "/ips/current"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertIn(response.status_code, {200, 404})
+
+    def test_explicit_operator_context_allows_writes(self) -> None:
+        app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_operator"),
+        )
+        client = AsgiTestClient(app)
+        self.addCleanup(client.close)
+        response = client.post(
+            "/proposals",
+            json={
+                "kind": "debt_fix",
+                "claim": "with operator context, writes work",
+                "evidence": {"source": "test", "options": []},
+            },
+        )
+        self.assertIn(
+            response.status_code,
+            {200, 422},
+            f"gate allowed write but payload may be invalid: {response.status_code}",
+        )
+
+    def test_all_state_changing_routes_have_write_capability_dependency(self) -> None:
+        """Verify every state_changing route rejects writes without operator context."""
+
+        state_changing_routes = {
+            ("POST", "/proposals"),
+            ("PATCH", "/proposals/{proposal_id}/decision-scaffold"),
+            ("POST", "/proposals/{proposal_id}/attest"),
+            ("POST", "/proposals/{proposal_id}/review-events"),
+            ("POST", "/scaffold-revision-candidates/{candidate_id}/apply"),
+            ("POST", "/proposals/{proposal_id}/action-intents"),
+            ("POST", "/action-intents/{action_intent_id}/authority-bindings"),
+            ("POST", "/action-intents/{action_intent_id}/simulation-reports"),
+            (
+                "POST",
+                "/action-intent-simulation-reports/{simulation_report_id}"
+                "/trade-plan-candidates",
+            ),
+            (
+                "POST",
+                "/trade-plan-candidates/{trade_plan_candidate_id}"
+                "/capital-objective-fits",
+            ),
+            ("POST", "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates"),
+            (
+                "POST",
+                "/trade-plan-candidates/{trade_plan_candidate_id}"
+                "/paper-order-ticket-candidates",
+            ),
+            (
+                "POST",
+                "/paper-order-ticket-candidates/{paper_order_ticket_id}"
+                "/simulated-executions",
+            ),
+            ("POST", "/paper-accounts"),
+            ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
+            ("POST", "/agent-authority-grants"),
+            ("POST", "/capital-mandates"),
+            ("POST", "/ips/draft"),
+        }
+
+        # Use OpenAPI schema to verify allowed route set
+        openapi = self.client.get("/openapi.json")
+        self.assertEqual(openapi.status_code, 200)
+        paths = openapi.json()["paths"]
+
+        # Every state_changing route in the OpenAPI must match expectations
+        openapi_state_changing = set()
+        for path, methods in paths.items():
+            for method in methods:
+                if method.upper() in ("POST", "PATCH"):
+                    openapi_state_changing.add((method.upper(), path))
+
+        missing = state_changing_routes - openapi_state_changing
+        extra = openapi_state_changing - state_changing_routes - {
+            ("POST", "/agent-authority-grants/{grant_id}/validate"),
+        }
+        self.assertEqual(missing, set(), f"routes not in OpenAPI: {missing}")
+        self.assertEqual(extra, set(), f"unexpected state_changing routes: {extra}")
+
+        # Verify each state_changing handler rejects writes without operator context
+        for method, path in state_changing_routes:
+            with self.subTest(method=method, path=path):
+                # Build a test path with concrete IDs
+                test_path = path.replace("{proposal_id}", "nonexistent")
+                test_path = test_path.replace("{action_intent_id}", "nonexistent")
+                test_path = test_path.replace("{simulation_report_id}", "nonexistent")
+                test_path = test_path.replace("{trade_plan_candidate_id}", "nonexistent")
+                test_path = test_path.replace("{paper_order_ticket_id}", "nonexistent")
+                test_path = test_path.replace("{paper_account_id}", "nonexistent")
+                test_path = test_path.replace("{candidate_id}", "nonexistent")
+                test_path = test_path.replace("{grant_id}", "nonexistent")
+                test_path = test_path.replace("{capital_mandate_id}", "nonexistent")
+                test_path = test_path.replace("{binding_id}", "nonexistent")
+                test_path = test_path.replace("{review_gate_id}", "nonexistent")
+                test_path = test_path.replace("{capital_objective_fit_id}", "nonexistent")
+
+                if method == "POST":
+                    response = self.client.post(
+                        test_path,
+                        json={"placeholder": True},
+                    )
+                else:
+                    response = self.client.patch(
+                        test_path,
+                        json={"placeholder": True},
+                    )
+                self.assertEqual(
+                    response.status_code,
+                    403,
+                    f"{method} {path} must return 403 without operator context, "
+                    f"got {response.status_code}",
+                )
 
 
 if __name__ == "__main__":

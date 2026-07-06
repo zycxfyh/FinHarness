@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
 from finharness.market_data import ROOT
 from finharness.proposal_queue_checks import (
     ProposalQueueChecks,
@@ -770,6 +770,7 @@ async def revise_proposal_decision_scaffold(
     request: ProposalScaffoldRevisionRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ProposalScaffoldRevisionResponse:
     try:
         result = revise_governed_proposal_scaffold(
@@ -848,6 +849,7 @@ async def apply_scaffold_revision_candidate(
     request: ScaffoldRevisionCandidateApplyRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ScaffoldRevisionCandidateApplyResponse:
     candidate = find_scaffold_revision_candidate(candidate_id, engine=engine)
     if candidate is None:
@@ -953,6 +955,7 @@ async def create_proposal(
     request: ProposalCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ProposalCreateResponse:
     try:
         result = create_governed_proposal(
@@ -984,6 +987,7 @@ async def attest_proposal(
     request: AttestationCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> AttestationCreateResponse:
     try:
         result = create_governed_attestation(
@@ -1098,6 +1102,7 @@ async def add_review_event(
     request: ReviewEventCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> ReviewEventCreateResponse:
     try:
         result = create_governed_review_event(

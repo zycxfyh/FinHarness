@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
     CapitalMandateValidationError,
@@ -66,6 +66,7 @@ async def post_capital_mandate(
     body: CapitalMandateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> CapitalMandateWriteResponse:
     try:
         mandate = record_capital_mandate(

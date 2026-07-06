@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import EngineDependency, ReceiptRootDependency, WriteCapabilityDependency
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
     AgentAuthorityGrantValidationError,
@@ -63,6 +63,7 @@ async def post_agent_authority_grant(
     body: AgentAuthorityGrantRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    write_capability: WriteCapabilityDependency,
 ) -> AgentAuthorityGrantWriteResponse:
     try:
         grant = record_agent_authority_grant(
