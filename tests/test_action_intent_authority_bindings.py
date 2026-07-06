@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlmodel import Session
 
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.action_intent_authority_bindings import (
     ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS,
     create_action_intent_authority_binding,
@@ -36,6 +37,7 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.proposal_write = create_governed_proposal(

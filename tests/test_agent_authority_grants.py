@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlmodel import Session
 
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_DENY_REASONS,
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
@@ -298,6 +299,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)

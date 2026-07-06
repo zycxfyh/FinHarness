@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from finharness.api.app import create_app
+from finharness.local_operator import LocalOperatorContext
 from finharness.rule_change_ledger import RuleChange
 from finharness.statecore.store import init_state_core
 from tests.asgi_test_client import AsgiTestClient
@@ -34,7 +35,11 @@ class ReviewRetrospectiveApiTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts" / "state-core"
         self.annual_root = self.root / "receipts" / "annual-review"
         self.engine = init_state_core(self.root / "state-core.sqlite")
-        self.app = create_app(state_core_engine=self.engine, receipt_root=str(self.receipt_root))
+        self.app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
+        )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)
         self.addCleanup(self.engine.dispose)

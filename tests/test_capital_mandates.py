@@ -7,6 +7,7 @@ from pathlib import Path
 
 from finharness.api.app import create_app
 from finharness.ips import record_ips
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
     CapitalMandateValidationError,
@@ -205,6 +206,7 @@ class CapitalMandateApiTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)

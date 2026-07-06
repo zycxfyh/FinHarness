@@ -7,7 +7,11 @@ from decimal import Decimal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.exposure import compute_exposure
 from finharness.ips import (
     IPS_NON_CLAIMS,
@@ -53,6 +57,7 @@ async def post_ips_draft(
     body: IpsDraftRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> InvestmentPolicyStatement:
     return record_ips(
         liquidity_floor_months=body.liquidity_floor_months,

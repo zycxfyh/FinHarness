@@ -14,7 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from finharness.api.dependencies import EngineDependency, ReceiptRootDependency
+from finharness.api.dependencies import (
+    EngineDependency,
+    ReceiptRootDependency,
+    WriteCapabilityDependency,
+)
 from finharness.statecore.models import (
     PaperAccount,
     PaperExecutionReceipt,
@@ -242,6 +246,7 @@ async def create_paper_order_ticket_candidate_endpoint(
     request: PaperOrderTicketCandidateCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> PaperOrderTicketCandidateCreateResponse:
     try:
         write = create_paper_order_ticket_candidate(
@@ -338,6 +343,7 @@ async def create_paper_execution_receipt_endpoint(
     request: PaperExecutionCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> PaperExecutionCreateResponse:
     try:
         write = record_paper_execution_receipt(
@@ -425,6 +431,7 @@ async def create_paper_account_endpoint(
     request: PaperAccountCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> PaperAccountCreateResponse:
     try:
         write = create_paper_account(
@@ -514,6 +521,7 @@ async def apply_paper_execution_to_account_endpoint(
     request: PaperAccountExecutionApplicationCreateRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    _write_capability: WriteCapabilityDependency,
 ) -> PaperAccountExecutionApplicationCreateResponse:
     try:
         write = apply_paper_execution_to_account(

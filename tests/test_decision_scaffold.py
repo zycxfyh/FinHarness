@@ -15,6 +15,7 @@ from pathlib import Path
 from finharness.allocation import AllocationCandidate, CandidateOption, _candidate_scaffold
 from finharness.api.app import create_app
 from finharness.daily_change_brief import _change_scaffold
+from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.decision_scaffold import (
     REQUIRED_FIELDS,
     DecisionScaffold,
@@ -198,7 +199,8 @@ class ApiForcingTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts" / "state-core"
         self.engine = init_state_core(self.root / "state-core.sqlite")
         self.app = create_app(
-            state_core_engine=self.engine, receipt_root=str(self.receipt_root)
+            state_core_engine=self.engine, receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)
