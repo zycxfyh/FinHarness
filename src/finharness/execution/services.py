@@ -320,11 +320,30 @@ def submit_execution_order(
     """Submit an execution order to the broker adapter.
 
     The actual submission is handled by a BrokerAdapter. This service
-    records the submit attempt and updates status. For simulated adapters,
-    no external network call occurs.
+    records the submit attempted → submitted lifecycle. For simulated
+    adapters, no external network call occurs.
     """
     created = _now_utc()
 
+    # ── submit_attempted receipt ──
+    attempted_id, attempted_path = write_execution_receipt(
+        receipt_root=receipt_root,
+        kind="execution.order.submit_attempted",
+        artifact_id=execution_order_id,
+        payload={
+            "broker_connection_id": broker_connection_id,
+            "attempted_at_utc": created,
+        },
+    )
+    attempted_index = ReceiptIndex(
+        receipt_id=attempted_id,
+        kind="execution.order.submit_attempted",
+        path=_display_path(Path(attempted_path)),
+        created_at_utc=created,
+        refs=[execution_order_id],
+    )
+
+    # ── update status to submitted ──
     with Session(engine, expire_on_commit=False) as session:
         order = session.exec(
             select(ExecutionOrder).where(
@@ -336,7 +355,8 @@ def submit_execution_order(
         session.add(order)
         session.commit()
 
-    receipt_id, receipt_path = write_execution_receipt(
+    # ── submitted receipt ──
+    submitted_id, submitted_path = write_execution_receipt(
         receipt_root=receipt_root,
         kind="execution.order.submitted",
         artifact_id=execution_order_id,
@@ -345,17 +365,17 @@ def submit_execution_order(
             "submitted_at_utc": created,
         },
     )
-    order.receipt_ref = receipt_id
-
-    index = ReceiptIndex(
-        receipt_id=receipt_id,
+    submitted_index = ReceiptIndex(
+        receipt_id=submitted_id,
         kind="execution.order.submitted",
-        path=_display_path(Path(receipt_path)),
+        path=_display_path(Path(submitted_path)),
         created_at_utc=created,
         refs=[execution_order_id],
     )
 
-    write_records([index], engine=engine)
+    # ── persist receipt_ref on the order row ──
+    order.receipt_ref = submitted_id
+    write_records([order, attempted_index, submitted_index], engine=engine)
     return order
 
 

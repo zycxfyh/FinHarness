@@ -272,6 +272,21 @@ class ExecutionServicesTest(unittest.TestCase):
         self.assertIsNotNone(submitted.submitted_at_utc)
         self.assertIsNotNone(submitted.receipt_ref)
 
+        # Receipt persisted to database
+        with Session(self.engine) as s:
+            persisted = s.exec(
+                select(ExecutionOrder).where(
+                    ExecutionOrder.execution_order_id == submitted.execution_order_id
+                )
+            ).one()
+            self.assertEqual(persisted.receipt_ref, submitted.receipt_ref)
+
+        # submit_attempted receipt in index
+        with Session(self.engine) as s:
+            kinds = {r.kind for r in s.exec(select(ReceiptIndex)).all()}
+            self.assertIn("execution.order.submit_attempted", kinds)
+            self.assertIn("execution.order.submitted", kinds)
+
     def test_full_lifecycle(self) -> None:
         """Complete lifecycle: draft → check → approve → stage → submit → report → delta → reconciliation."""
         bid, aid = self._setup_broker_and_account()
@@ -328,6 +343,17 @@ class ExecutionServicesTest(unittest.TestCase):
             broker_connection_id=bid,
         )
         self.assertEqual(submitted.execution_status, "submitted")
+        self.assertIsNotNone(submitted.receipt_ref)
+
+        # Verify receipt_ref persisted to database
+        with Session(self.engine) as s:
+            persisted = s.exec(
+                select(ExecutionOrder).where(
+                    ExecutionOrder.execution_order_id == submitted.execution_order_id
+                )
+            ).one()
+            self.assertEqual(persisted.receipt_ref, submitted.receipt_ref)
+            self.assertIsNotNone(persisted.submitted_at_utc)
 
         # 6. Execution report (simulated)
         report = record_execution_report(
@@ -376,6 +402,7 @@ class ExecutionServicesTest(unittest.TestCase):
                 "execution.pretrade_check.recorded",
                 "execution.approval.recorded",
                 "execution.order.staged",
+                "execution.order.submit_attempted",
                 "execution.order.submitted",
                 "execution.report.recorded",
                 "execution.position_delta.recorded",
