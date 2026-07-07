@@ -1,5 +1,9 @@
 """Paper validation routes.
 
+LEGACY — superseded by Execution Kernel (/execution/* routes).
+no_new_callers: true
+superseded_by: /execution/order-drafts, /execution/orders/{id}/submit, /execution/reports
+
 These endpoints expose a paper-only validation loop. They may carry
 order-shaped fields, simulated fills, and paper account state, but they do not
 create live orders, broker submissions, real-cash risk, or authority changes.

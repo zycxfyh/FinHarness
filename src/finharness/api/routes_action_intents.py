@@ -1,5 +1,9 @@
 """Action intent candidate routes.
 
+LEGACY — superseded by Execution Kernel (/execution/* routes).
+no_new_callers: true
+superseded_by: /execution/order-drafts, /execution/orders, /execution/reports
+
 These endpoints bridge proposal review state to future capital-action workflows.
 They do not create orders, broker instructions, approvals, or execution
 authorization.

@@ -87,3 +87,50 @@ entries:
     checks_required:
       - task docs:current-check
       - uv run python -m unittest tests.test_removal_ledger
+
+  - id: downgrade-capital-action-intent-to-legacy
+    target:
+      - docs/architecture/system-map.md#6-capital-action-intent
+      - docs/architecture/capital-os-layering.md#l6-legacy
+      - src/finharness/api/routes_action_intents.py
+    action: downgrade
+    reason: >
+      ActionIntent chain (ActionIntent → AuthorityBinding → SimulationReport →
+      TradePlanCandidate → CapitalObjectiveFit → TradePlanReviewGate) superseded
+      by Execution Kernel (OrderDraft → PreTradeCheck → ApprovalRecord →
+      ExecutionOrder → ExecutionReport). Old objects preserved as readable
+      receipts; new callers use /execution/* routes. Separation bridge at
+      execution/legacy_bridge.py.
+    replacement:
+      - src/finharness/statecore/execution_models.py
+      - src/finharness/execution/services.py
+      - src/finharness/api/routes_execution.py
+      - src/finharness/execution/legacy_bridge.py
+    owner: execution
+    proposed_in_pr: '123'
+    status: done
+    remove_from_current_nav: false
+    checks_required:
+      - uv run python -m unittest tests.test_execution_legacy_bridge
+
+  - id: downgrade-paper-validation-to-legacy
+    target:
+      - docs/architecture/system-map.md#7-paper-validation-runtime
+      - src/finharness/api/routes_paper_validation.py
+    action: downgrade
+    reason: >
+      Paper validation (PaperOrderTicketCandidate → PaperExecutionReceipt →
+      PaperAccount → PaperPosition) superseded by Execution Kernel. Paper
+      order/execution/account shapes projected via legacy_bridge.py.
+    replacement:
+      - src/finharness/execution/adapters/simulated_broker.py
+      - src/finharness/execution/broker.py
+      - src/finharness/execution/commands.py
+      - src/finharness/execution/legacy_bridge.py
+    owner: execution
+    proposed_in_pr: '123'
+    status: done
+    remove_from_current_nav: false
+    checks_required:
+      - uv run python -m unittest tests.test_execution_legacy_bridge
+      - uv run python -m unittest tests.test_simulated_broker_submit

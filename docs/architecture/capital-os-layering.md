@@ -78,11 +78,12 @@ attestation。该 revision 是 review evidence,不是 execution authorization。
 
 ## 不变量(跨层)
 
-- `execution_allowed=false` 默认贯穿;approval ≠ execution authorization。
-- StateCore 是 queryable state;receipt files 才是 source of truth。
+- Execution Kernel (L6) 使用 live-shaped model, simulated substrate; `network_enabled=false`。
+- StateCore 是 queryable state; receipt files 才是 source of truth。
 - 金额用 `DecimalText`(TEXT),不用 float。
 - Agent 经 tool + 最小上下文包读数据,不裸读全库、不写核心状态。
-- 每一层只授予进入下一层治理步骤的资格,不授予越级执行能力。
+- Old ActionIntent/PaperValidation chains are legacy; execution facts projected to Execution Spine via `execution/legacy_bridge.py`;
+  agentic artifacts retained in agentic layers; negative protection docs tagged for future cleanup.
 
 ## 已退役(2026-06-26)
 
