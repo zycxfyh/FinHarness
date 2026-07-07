@@ -1,9 +1,15 @@
-"""PreTradePacket — read-only aggregate view over the action-intent chain.
+"""PreTradePacket — LEGACY PROJECTION ONLY.
 
-A PreTradePacket assembles a proposal's action chain into a single coherent
-view without modifying any existing object, schema, receipt, or route. It is
-the first step in reclassifying the action chain's complexity from
+Status: legacy. Superseded by execution/legacy_bridge.py + Execution Kernel.
+not product API, not canonical execution packet.
+
+A PreTradePacket assembles a proposal's old action chain into a single
+coherent view without modifying any existing object. It served as the
+first bridge step in reclassifying the action chain's complexity from
 Object-heavy to Evaluator / Workflow / Permission layers.
+
+Use execution/legacy_bridge.py for current migration/separation.
+Use /execution/* API for canonical execution access.
 
 Constraints:
     - Read-only: no StateCore writes, no receipt creation, no API routes.
