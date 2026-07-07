@@ -182,8 +182,8 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         self.assertEqual(result.proposal_id, pid)
         self.assertEqual(result.agentic_artifacts, [])
         self.assertEqual(result.deletion_candidates, [])
-        self.assertIsNone(result.execution_projection.order_draft_projection)
-        self.assertIsNone(result.execution_projection.approval_projection)
+        self.assertEqual(len(result.execution_projection.order_draft_projections), 0)
+        self.assertEqual(len(result.execution_projection.approval_projections), 0)
 
     def test_full_chain_separation(self) -> None:
         """Full legacy chain → separated into execution / agentic / deletion."""
@@ -191,9 +191,9 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         result = separate_legacy_chain(pid, self.engine)
 
         # ── Execution projection exists ──
-        self.assertIsNotNone(result.execution_projection.order_draft_projection)
-        self.assertIsNotNone(result.execution_projection.execution_order_projection)
-        self.assertIsNotNone(result.execution_projection.approval_projection)
+        self.assertGreater(len(result.execution_projection.order_draft_projections), 0)
+        self.assertGreater(len(result.execution_projection.execution_order_projections), 0)
+        self.assertGreater(len(result.execution_projection.approval_projections), 0)
         self.assertGreater(len(result.execution_projection.pretrade_findings), 0)
 
         # ── Agentic artifacts exist (not in execution projection) ──
@@ -256,11 +256,11 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         self.assertEqual(intent_deletions[0].superseded_by, "OrderDraft")
 
     def test_review_gate_projects_to_approval(self) -> None:
-        """TradePlanReviewGate human decision → approval_projection in execution."""
+        """TradePlanReviewGate human decision → approval_projections in execution."""
         pid = self._seed_full_chain()
         result = separate_legacy_chain(pid, self.engine)
 
-        approval = result.execution_projection.approval_projection
+        approval = result.execution_projection.approval_projections[0]
         self.assertIsNotNone(approval)
         self.assertEqual(approval["source"], "TradePlanReviewGate")
         self.assertEqual(
@@ -268,11 +268,11 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         )
 
     def test_paper_ticket_projects_to_order_draft(self) -> None:
-        """PaperOrderTicketCandidate order fields → order_draft_projection."""
+        """PaperOrderTicketCandidate order fields → order_draft_projections."""
         pid = self._seed_full_chain()
         result = separate_legacy_chain(pid, self.engine)
 
-        draft = result.execution_projection.order_draft_projection
+        draft = result.execution_projection.order_draft_projections[0]
         self.assertIsNotNone(draft)
         self.assertEqual(draft["source"], "PaperOrderTicketCandidate")
         self.assertEqual(draft["symbol"], "SPY")
@@ -294,7 +294,7 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         self.assertIn("ActionIntent", agentic_sources)
 
         # The execution projection must NOT contain these as first-class fields
-        self.assertIsNotNone(result.execution_projection.order_draft_projection)
+        self.assertGreater(len(result.execution_projection.order_draft_projections), 0)
         # But there is NO objective_fit or authority_binding field on ExecutionProjection
 
         # Verify unresolved semantics exist for objective fit

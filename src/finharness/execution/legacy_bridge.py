@@ -44,20 +44,20 @@ class ExecutionProjection:
     """
 
     # From PaperOrderTicketCandidate → OrderDraft / ExecutionOrder
-    order_draft_projection: dict[str, Any] | None = None
-    execution_order_projection: dict[str, Any] | None = None
+    order_draft_projections: list[dict[str, Any]] = field(default_factory=list)
+    execution_order_projections: list[dict[str, Any]] = field(default_factory=list)
 
     # From TradePlanReviewGate → ApprovalRecord
-    approval_projection: dict[str, Any] | None = None
+    approval_projections: list[dict[str, Any]] = field(default_factory=list)
 
     # From ActionIntentSimulationReport → PreTradeCheck findings
     pretrade_findings: list[dict[str, Any]] = field(default_factory=list)
 
     # From PaperExecutionReceipt → ExecutionReport
-    execution_report_projection: dict[str, Any] | None = None
+    execution_report_projections: list[dict[str, Any]] = field(default_factory=list)
 
     # From PaperPosition → PositionDelta (via paper execution)
-    position_delta_projection: dict[str, Any] | None = None
+    position_delta_projections: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -306,7 +306,7 @@ def separate_legacy_chain(
                     ).all()
                     for gate in gates:
                         # Human approval decision → execution projection
-                        result.execution_projection.approval_projection = {
+                        result.execution_projection.approval_projections.append({
                             "source": "TradePlanReviewGate",
                             "source_id": gate.review_gate_id,
                             "decision": gate.review_decision,
@@ -314,7 +314,7 @@ def separate_legacy_chain(
                             "reviewer_type": gate.reviewer_type,
                             "review_reason": gate.review_reason,
                             "may_enter_staging": gate.may_enter_order_ticket_candidate_staging,
-                        }
+                        })
                         result.agentic_artifacts.append(
                             AgenticArtifact(
                                 kind="permission_trace",
@@ -342,7 +342,7 @@ def separate_legacy_chain(
                     ).all()
                     for ticket in tickets:
                         # Order-shaped fields → ExecutionOrder projection
-                        result.execution_projection.order_draft_projection = {
+                        result.execution_projection.order_draft_projections.append({
                             "source": "PaperOrderTicketCandidate",
                             "source_id": ticket.paper_order_ticket_id,
                             "symbol": ticket.symbol,
@@ -355,13 +355,13 @@ def separate_legacy_chain(
                             else None,
                             "environment": ticket.environment,
                             "rationale": ticket.ticket_rationale,
-                        }
-                        result.execution_projection.execution_order_projection = {
+                        })
+                        result.execution_projection.execution_order_projections.append({
                             "source": "PaperOrderTicketCandidate",
                             "source_id": ticket.paper_order_ticket_id,
                             "status": ticket.candidate_status,
                             "environment": ticket.environment,
-                        }
+                        })
                         result.deletion_candidates.append(
                             DeletionCandidate(
                                 legacy_id=ticket.paper_order_ticket_id,
@@ -380,7 +380,7 @@ def separate_legacy_chain(
                             )
                         ).all()
                         for pr in paper_reports:
-                            result.execution_projection.execution_report_projection = {
+                            result.execution_projection.execution_report_projections.append({
                                 "source": "PaperExecutionReceipt",
                                 "source_id": pr.paper_execution_id,
                                 "execution_status": pr.execution_status,
@@ -388,7 +388,7 @@ def separate_legacy_chain(
                                 "fill_price": str(pr.fill_price)
                                 if pr.fill_price
                                 else None,
-                            }
+                            })
                             result.deletion_candidates.append(
                                 DeletionCandidate(
                                     legacy_id=pr.paper_execution_id,
