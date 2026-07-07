@@ -108,6 +108,7 @@ entries:
       - src/finharness/execution/legacy_bridge.py
     owner: execution
     proposed_in_pr: '123'
+    effective_pr: '123'
     status: done
     remove_from_current_nav: false
     checks_required:
@@ -129,6 +130,7 @@ entries:
       - src/finharness/execution/legacy_bridge.py
     owner: execution
     proposed_in_pr: '123'
+    effective_pr: '123'
     status: done
     remove_from_current_nav: false
     checks_required:
