@@ -79,8 +79,8 @@ Permission 控制 Tool / Workflow 的可用性，不控制业务逻辑。
 
 #### Trace
 过程记录。observability span、receipt、audit log、execution timeline。
+Trace 是审计与证据材料；它不直接授予权限，但可以作为 Evaluator / Guardrail / Preflight 的输入。
 例: 每个 StateCore write 的 receipt、API request tracing、workflow checkpoint evidence。
-Trace 是事后审计材料，不参与实时决策。
 
 ## 2. 最关键的约束
 

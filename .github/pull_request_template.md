@@ -21,6 +21,7 @@
 - [ ] 不新增 Agent capability profile
 - [ ] 不新增 Action / Authority / TradePlan / Paper object
 - [ ] 不新增 docs-current 强绑定事实
+- [ ] CI checks green, or failure explained as pre-existing/unrelated
 
 例外理由（如有）：
 
