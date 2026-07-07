@@ -64,7 +64,7 @@ class ExecutionProjection:
 class AgenticArtifact:
     """Artifacts that belong in agentic layers — NOT execution objects."""
 
-    kind: str  # skill_output, evaluator_finding, permission_trace, context, workflow_output, review_memo
+    kind: str  # skill_output | evaluator_finding | permission_trace | context | workflow_output | review_memo | trace
     source_object: str  # which legacy model produced this
     source_id: str
     summary: str
