@@ -1,0 +1,707 @@
+# FinHarness Abstraction Inventory
+# 把现有复杂度按 Object / Tool / Resource / Context / Skill / Workflow /
+# Loop / Evaluator / Guardrail / Permission / Trace 重新分类。
+#
+# 这一步不改 runtime，只做认知归位。
+# 原则: 先归类，后桥接，再迁移，最后删除。
+
+schema: finharness.abstraction_inventory.v1
+status: current
+updated: "2026-07-08"
+description: >
+  Stabilization-phase inventory mapping every existing complex artifact to its
+  correct abstraction layer.  Each entry records current_form,
+  better_abstraction, target_form, migration_path, delete_condition, and
+  risk_if_left_as_object.
+principles_ref: docs/engineering/agentic-abstraction-principles.md
+
+# ──────────────────────────────────────────────────────────────────────────────
+# StateCore Objects — 当前以 SQLModel table 存在的概念
+# ──────────────────────────────────────────────────────────────────────────────
+
+objects:
+  - name: Account
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+    target_form: Account (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none — this IS a business fact
+
+  - name: Position
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+    target_form: Position (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: Snapshot
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+    target_form: Snapshot (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — evidence anchor
+    risk_if_left_as_object: none
+
+  - name: Liability
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+    target_form: Liability (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: FinancialGoal
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+    target_form: FinancialGoal (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: CashflowEvent
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+    better_abstraction:
+      - business_fact
+    target_form: CashflowEvent (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: TaxEvent
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+    better_abstraction:
+      - business_fact
+    target_form: TaxEvent (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: InsurancePolicy
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+    better_abstraction:
+      - business_fact
+    target_form: InsurancePolicy (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: DocumentRef
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+    better_abstraction:
+      - business_fact
+    target_form: DocumentRef (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — core business fact
+    risk_if_left_as_object: none
+
+  - name: ReceiptIndex
+    current_form:
+      - statecore_model
+      - read_index
+    better_abstraction:
+      - trace_index
+    target_form: ReceiptIndex (remain as Object / Trace index)
+    migration_path: none_needed
+    delete_condition: never — evidence lookup surface
+    risk_if_left_as_object: none
+
+  # ── Review objects ──
+
+  - name: Proposal
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+      - workflow_artifact
+    target_form: Proposal (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — governed decision record
+    risk_if_left_as_object: none — correct layer
+
+  - name: Attestation
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - business_fact
+      - trace
+    target_form: Attestation (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — evidence of review
+    risk_if_left_as_object: none
+
+  - name: ReviewEvent
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - trace
+    target_form: ReviewEvent (remain as Object)
+    migration_path: none_needed
+    delete_condition: never — review timeline
+    risk_if_left_as_object: none
+
+  # ── Policy objects — 保留但暂不扩展 ──
+
+  - name: InvestmentPolicyStatement
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - policy_config
+      - resource
+    target_form: IPS (remain as Object; serve as Resource/Context too)
+    migration_path: none_needed
+    delete_condition: never — policy anchor
+    risk_if_left_as_object: none — IPS IS a long-lived policy fact
+
+  - name: CapitalMandate
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - policy_config
+      - permission_config
+    target_form: CapitalMandate (remain; freeze expansion)
+    migration_path: none_needed
+    delete_condition: never — authority anchor
+    risk_if_left_as_object: low — but freeze further field expansion
+
+  # ── Authority objects — 暂不扩展 ──
+
+  - name: AgentAuthorityGrant
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - tool_permission_config
+    target_form: AgentAuthorityGrant (remain; freeze expansion)
+    migration_path: none_needed
+    delete_condition: never — tool auth anchor
+    risk_if_left_as_object: low — but freeze new grant types
+
+  # ── Action chain objects — 需要重新分类 ──
+
+  - name: ActionIntent
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+      - action_chain_head
+    better_abstraction:
+      - action_draft
+      - proposal_child
+    target_form: ActionDraft view (keep Object; rename semantics)
+    migration_path: bridge_read_model_first
+    delete_condition:
+      - no direct API callers on old write path
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: moderate — action chain head object inflation
+
+  - name: ActionIntentAuthorityBinding
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - evaluator_result
+      - guardrail_finding
+    target_form: PreTradeCheck.authority_findings
+    migration_path: bridge_read_model_first — add as section in PreTradePacket
+    delete_condition:
+      - no direct API callers
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: high — continues authority-chain object inflation;
+      this is an evaluator finding pretending to be a business object
+
+  - name: ActionIntentSimulationReport
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - workflow_output
+      - evaluator_evidence
+    target_form: PreTradePacket.simulation section
+    migration_path: bridge_read_model_first
+    delete_condition:
+      - no direct API callers
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: moderate — simulation is a workflow output, not a
+      standalone business fact
+
+  # ── Trade plan objects — 需要重新分类 ──
+
+  - name: TradePlanCandidate
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - paper_plan_section
+      - workflow_artifact
+    target_form: PreTradePacket.plan section / Paper trade plan section
+    migration_path: bridge_read_model_first
+    delete_condition:
+      - no direct API callers
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: high — trade plan object chain keeps growing;
+      should be a section in aggregate view, not independent objects
+
+  - name: CapitalObjectiveFit
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - skill_output
+      - review_memo_section
+    target_form: PreTradePacket.objective_fit section / Review memo
+    migration_path: bridge_read_model_first
+    delete_condition:
+      - no direct API callers
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: high — objective fit is a review judgment,
+      not a standalone business fact
+
+  - name: TradePlanReviewGate
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - permission_checkpoint
+      - approval_record
+    target_form: PreTradePacket.approval section / ApprovalRecord
+    migration_path: bridge_read_model_first
+    delete_condition:
+      - no direct API callers
+      - covered by PreTradePacketView
+      - historical receipts remain readable
+    risk_if_left_as_object: high — review gate is a permission checkpoint,
+      not a standalone object
+
+  # ── Paper objects — execution kernel seed ──
+
+  - name: PaperOrderTicketCandidate
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - paper_environment_order
+      - execution_kernel_seed
+    target_form: execution/paper/orders (migrate to execution bounded context)
+    migration_path: wrapper_first — keep old path, add execution/paper/
+    delete_condition:
+      - execution/paper/ fully covers old surface
+      - old paper_validation routes marked no_new_callers
+      - historical receipts remain readable
+    risk_if_left_as_object: low — but rename semantics from "validation tail"
+      to "execution paper environment"
+
+  - name: PaperExecutionReceipt
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - paper_environment_fill
+      - execution_kernel_seed
+    target_form: execution/paper/execution_reports (migrate)
+    migration_path: wrapper_first
+    delete_condition: same as PaperOrderTicketCandidate
+    risk_if_left_as_object: low — but belongs in execution bounded context
+
+  - name: PaperAccount
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - paper_environment_account
+      - execution_kernel_seed
+    target_form: execution/paper/ledger (migrate)
+    migration_path: wrapper_first
+    delete_condition: same as PaperOrderTicketCandidate
+    risk_if_left_as_object: low — but belongs in execution bounded context
+
+  - name: PaperPosition
+    current_form:
+      - statecore_model
+      - receipt_backed_object
+      - api_surface
+    better_abstraction:
+      - paper_environment_position
+      - execution_kernel_seed
+    target_form: execution/paper/ledger (migrate)
+    migration_path: wrapper_first
+    delete_condition: same as PaperOrderTicketCandidate
+    risk_if_left_as_object: low — but belongs in execution bounded context
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Registries — 当前以 YAML/JSON/Python 存在的注册表
+# ──────────────────────────────────────────────────────────────────────────────
+
+registries:
+  - name: DataCatalog
+    current_form:
+      - read_model
+      - api_surface
+    better_abstraction:
+      - resource
+      - context
+    target_form: DataCatalog (remain as Resource)
+    migration_path: none_needed — already correct
+    delete_condition: never — data trust anchor
+    risk_if_left_as_object: none — already a Resource
+
+  - name: RiskRegister
+    current_form:
+      - read_model
+    better_abstraction:
+      - resource
+      - context
+    target_form: RiskRegister (remain as Resource)
+    migration_path: none_needed
+    delete_condition: never — risk awareness anchor
+    risk_if_left_as_object: none — already a Resource
+
+  - name: DebtRegister
+    current_form:
+      - registry
+      - json_file
+    better_abstraction:
+      - loop_backlog
+      - evaluator_input
+    target_form: DebtRegister (remain; repurpose as Loop backlog)
+    migration_path: none_needed — classification only
+    delete_condition: never — debt tracking is essential
+    risk_if_left_as_object: low — but don't let it grow into an object system
+
+  - name: WriteRegistry (receipt-backed-write-registry)
+    current_form:
+      - registry
+      - json_file
+      - machine_checked
+    better_abstraction:
+      - evaluator_input
+      - release_gate
+    target_form: WriteRegistry (remain; feed into release evaluator)
+    migration_path: upgrade_to_evaluator_input
+    delete_condition: never — write surface audit is essential
+    risk_if_left_as_object: none — but it must become evaluator input, not just docs
+
+  - name: SupportSurfaceRegistry
+    current_form:
+      - registry
+      - yaml_file
+      - machine_checked
+    better_abstraction:
+      - governance_loop_config
+      - resource
+    target_form: SupportSurfaceRegistry (remain; downgrade from "current fact" stance)
+    migration_path: none_needed — classification only
+    delete_condition: possibly downgrade to reference-only
+    risk_if_left_as_object: low — but don't let it expand into an object system
+
+  - name: GraphRegistry
+    current_form:
+      - registry
+      - python_module
+    better_abstraction:
+      - release_evaluator_input
+      - resource
+    target_form: GraphRegistry (remain; downgrade)
+    migration_path: none_needed — classification only
+    delete_condition: possibly downgrade to reference-only
+    risk_if_left_as_object: low — but don't expand
+
+  - name: PolicyRegistry
+    current_form:
+      - registry
+      - python_module
+    better_abstraction:
+      - guardrail_registry
+    target_form: PolicyRegistry (remain as Guardrail registry)
+    migration_path: none_needed
+    delete_condition: never — policy enforcement anchor
+    risk_if_left_as_object: none — already correct as guardrail
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API Routes — 当前 API surface 分类
+# ──────────────────────────────────────────────────────────────────────────────
+
+api_routes:
+  - name: action_intent_routes
+    current_form:
+      - api_surface
+      - write_routes
+    better_abstraction:
+      - governed_write
+      - evaluator_target
+    target_form: legacy_internal; superseded_by /execution/pretrade-packets/
+    migration_path: mark no_new_callers; superseded_by header
+    delete_condition:
+      - PreTradePacket read model fully covers
+      - no direct API callers
+    risk_if_left_as_object: moderate — action chain API surface keeps growing
+
+  - name: paper_validation_routes
+    current_form:
+      - api_surface
+      - write_routes
+    better_abstraction:
+      - execution_paper_environment
+      - governed_write
+    target_form: execution/paper/* routes
+    migration_path: wrapper + redirect
+    delete_condition:
+      - execution/paper/ fully covers
+      - old routes marked no_new_callers
+    risk_if_left_as_object: low — correct direction but wrong location
+
+  - name: agent_authority_grant_routes
+    current_form:
+      - api_surface
+      - write_routes
+    better_abstraction:
+      - permission_config_api
+    target_form: remain; freeze expansion
+    migration_path: none_needed
+    delete_condition: never — auth anchor
+    risk_if_left_as_object: low — freeze new grant types
+
+  - name: capital_mandate_routes
+    current_form:
+      - api_surface
+      - write_routes
+    better_abstraction:
+      - policy_config_api
+    target_form: remain; freeze expansion
+    migration_path: none_needed
+    delete_condition: never — authority anchor
+    risk_if_left_as_object: low — freeze new mandate fields
+
+  - name: proposal_routes
+    current_form:
+      - api_surface
+      - read_and_write
+    better_abstraction:
+      - governed_decision_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — core workflow surface
+    risk_if_left_as_object: none
+
+  - name: review_routes
+    current_form:
+      - api_surface
+      - read_and_write
+    better_abstraction:
+      - review_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — core workflow surface
+    risk_if_left_as_object: none
+
+  - name: ips_routes
+    current_form:
+      - api_surface
+      - write_routes
+    better_abstraction:
+      - policy_config_api
+    target_form: remain; freeze expansion
+    migration_path: none_needed
+    delete_condition: never — IPS anchor
+    risk_if_left_as_object: low
+
+  - name: data_catalog_routes
+    current_form:
+      - api_surface
+      - read_only
+    better_abstraction:
+      - resource_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — data trust surface
+    risk_if_left_as_object: none
+
+  - name: data_quality_routes
+    current_form:
+      - api_surface
+      - read_only
+    better_abstraction:
+      - evaluator_output_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — data trust surface
+    risk_if_left_as_object: none
+
+  - name: risk_routes
+    current_form:
+      - api_surface
+      - read_only
+    better_abstraction:
+      - resource_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — risk awareness surface
+    risk_if_left_as_object: none
+
+  - name: state_routes
+    current_form:
+      - api_surface
+      - read_only
+    better_abstraction:
+      - resource_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — state query surface
+    risk_if_left_as_object: none
+
+  - name: cockpit_routes
+    current_form:
+      - api_surface
+      - read_only
+      - frontend_static
+    better_abstraction:
+      - resource_api
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — cockpit surface
+    risk_if_left_as_object: none
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent artifacts — 当前 Agent 能力/工具/profile
+# ──────────────────────────────────────────────────────────────────────────────
+
+agent_artifacts:
+  - name: Agent Capabilities (agent_capabilities.py)
+    current_form:
+      - python_module
+      - tool_registry
+    better_abstraction:
+      - tool
+      - permission_config
+    target_form: AgentCapabilities (remain; freeze new capability profiles)
+    migration_path: none_needed
+    delete_condition: never — agent tool boundary
+    risk_if_left_as_object: moderate — freeze expansion; classify each
+      capability as Tool/Resource/Evaluator
+
+  - name: Agent Runtime (agent_runtime.py)
+    current_form:
+      - python_module
+      - loop_entrypoint
+    better_abstraction:
+      - workflow_runner
+    target_form: AgentRuntime (remain; classify as Workflow runner)
+    migration_path: none_needed
+    delete_condition: never — agent execution host
+    risk_if_left_as_object: low
+
+  - name: Agent Tools (agent_tools.py)
+    current_form:
+      - python_module
+      - tool_implementations
+    better_abstraction:
+      - tool
+    target_form: AgentTools (remain; each tool individually classified)
+    migration_path: none_needed
+    delete_condition: never — tool implementations
+    risk_if_left_as_object: low
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Governance artifacts — 当前治理文档/检查/test
+# ──────────────────────────────────────────────────────────────────────────────
+
+governance_artifacts:
+  - name: change-control.md
+    current_form:
+      - documentation
+      - process_rule
+    better_abstraction:
+      - guardrail
+      - evaluator
+    target_form: Guardrail doc + Evaluator test
+    migration_path: none_needed — already correct
+    delete_condition: never — governance documentation
+    risk_if_left_as_object: none
+
+  - name: gate-checklists.md
+    current_form:
+      - documentation
+      - checklist
+    better_abstraction:
+      - skill
+    target_form: Skill (checklist form)
+    migration_path: convert to .skills/verify-gate-checklist/
+    delete_condition: never — governance documentation
+    risk_if_left_as_object: low — static doc is fine but skill form enables
+      agent-driven verification
+
+  - name: operating-model.md
+    current_form:
+      - documentation
+      - process_model
+    better_abstraction:
+      - workflow_description
+    target_form: remain
+    migration_path: none_needed
+    delete_condition: never — governance documentation
+    risk_if_left_as_object: none
+
+  - name: Taskfile check
+    current_form:
+      - task_runner
+      - build_script
+    better_abstraction:
+      - evaluator_runner
+      - loop_runner
+    target_form: Taskfile (remain; split into check / check:full / release:preflight)
+    migration_path: split_later — PR-9
+    delete_condition: never — governance build script
+    risk_if_left_as_object: low — but too heavy for local iteration
