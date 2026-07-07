@@ -85,16 +85,14 @@ domain model / read model / write(command) model / adapters / invariants
   signals 派生成 risk objects,不是 persistent risk DB、risk acceptance、scoring
   或 scenario generation;receipt 写失败必须清理 queryable mirror。
 
-### 6. Capital Action Intent
+### 6. Capital Action Intent (legacy — superseded by Execution Kernel)
 
-- **职责**:把当前 proposal/revision state 翻译成 candidate-only capital
-  action intent,用 authority binding 记录 agent/human/system author 是否可被
-  admitted into downstream checks,并把 system preflight 绑定到 qualitative
-  simulation report,再把 simulation evidence 转成 pre-trade plan candidate,
-  用 `CapitalObjectiveFit` 解释 candidate 与用户资本目标、收益假设、风险预算、
-  流动性、集中度、可逆性、机会成本、替代路径和 next safe path 的关系,
-  并用 human `TradePlanReviewGate` 决定是否可进入未来
-  order-ticket-candidate staging。
+- **职责**:~~(旧)把当前 proposal 翻译成 candidate-only capital action intent~~。
+  已被 Execution Kernel 取代。旧对象通过 `execution/legacy_bridge.py` 桥接分离:
+  执行相关事实投影到 OrderDraft/ExecutionOrder/ApprovalRecord/ExecutionReport;
+  agentic artifacts 留在 agentic layers。
+- **status**: legacy. No new callers. Superseded by System 7 (Execution Kernel).
+- **domain**:`statecore/action_intents.py`、`ActionIntent` 等(保留只读)。
 - **domain**:`statecore/action_intents.py`、`ActionIntent`、
   `statecore/action_intent_authority_bindings.py`、
   `ActionIntentAuthorityBinding`、`statecore/action_intent_simulations.py`、
@@ -158,11 +156,12 @@ domain model / read model / write(command) model / adapters / invariants
   `execution_allowed=false`,且不是 suitability certification、AuthorityContract
   或 broker instruction。
 
-### 7. Paper Validation Runtime
+### 7. Paper Validation Runtime (legacy — superseded by Execution Kernel)
 
-- **职责**:把 human-allowed TradePlanCandidate 放入 isolated paper state,用
-  paper order ticket、simulated execution、paper account/position 和 receipt
-  验证计划后果。
+- **职责**:~~(旧)isolated paper state 验证计划后果~~。
+  已被 Execution Kernel 取代。paper order/execution/account/position 对象通过
+  `execution/legacy_bridge.py` 投影到 ExecutionOrder/ExecutionReport/PositionDelta。
+- **status**: legacy. No new callers.
 - **domain**:`statecore/paper_order_tickets.py`、`PaperOrderTicketCandidate`;
   `statecore/paper_executions.py`、`PaperExecutionReceipt`;
   `statecore/paper_accounts.py`、`PaperAccount`、`PaperPosition`。
@@ -180,6 +179,34 @@ domain model / read model / write(command) model / adapters / invariants
   application 只接受 `simulated_filled`,拒绝 stale account/execution receipt、
   replay、insufficient cash/position 和 live/broker markers;所有对象保持
   `environment=paper`,不更新真实账户、不提交 broker。
+
+### 7b. Execution Kernel (canonical — **current mainline**)
+
+- **职责**:正面承载执行生命周期。OrderDraft → PreTradeCheck → ApprovalRecord
+  → ExecutionOrder → SimulatedBrokerAdapter.submit_order() → ExecutionReport
+  → PositionDelta → ReconciliationReport。
+  ExecutionEnvironment.LIVE 是合法值。submit_order 是合法命令。
+  但只注册 SimulatedBrokerAdapter,无真实 broker SDK/credential/funding/venue。
+- **domain**:`statecore/execution_models.py` (BrokerConnection, ExecutionAccount,
+  OrderDraft, PreTradeCheck, ApprovalRecord, ExecutionOrder, ExecutionReport,
+  PositionDelta, ReconciliationReport)。
+- **services**:`execution/services.py`、`execution/receipts.py`。
+- **adapter**:`execution/broker.py` (BrokerAdapter Protocol)、
+  `execution/adapters/simulated_broker.py`。
+- **commands**:`execution/commands.py` (submit_order)。
+- **bridge**:`execution/legacy_bridge.py` (旧 ActionIntent/PaperValidation → Execution 分离)。
+- **API**:`api/routes_execution.py`:
+  `POST /execution/order-drafts`、
+  `POST /execution/order-drafts/{id}/pretrade-checks`、
+  `POST /execution/order-drafts/{id}/approvals`、
+  `POST /execution/order-drafts/{id}/stage`、
+  `POST /execution/orders/{id}/submit`、
+  `GET /execution/orders/{id}`、`GET /execution/orders`、
+  `GET /execution/reports/{id}`。
+- **cockpit**:frontend Execution tab (Order Drafts / Execution Orders / Execution Reports)。
+- **invariants**:live-shaped model, simulated substrate;network_enabled=false;
+  所有状态变更写 receipt;execution 对象不承载 agentic reasoning/review memo/
+  permission trace(这些留在 agentic layers)。
 
 ### 8. Research Evidence
 
