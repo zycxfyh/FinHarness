@@ -409,6 +409,31 @@ class StateCoreApiTest(unittest.TestCase):
             "/agent-authority-grants/{grant_id}/validate": {
                 "methods": {"post": "validation_only"},
             },
+            # ── Execution Kernel routes ──
+            "/execution/order-drafts": {
+                "methods": {"post": "state_changing"},
+            },
+            "/execution/order-drafts/{order_draft_id}/pretrade-checks": {
+                "methods": {"post": "state_changing"},
+            },
+            "/execution/order-drafts/{order_draft_id}/approvals": {
+                "methods": {"post": "state_changing"},
+            },
+            "/execution/order-drafts/{order_draft_id}/stage": {
+                "methods": {"post": "state_changing"},
+            },
+            "/execution/orders/{execution_order_id}/submit": {
+                "methods": {"post": "state_changing"},
+            },
+            "/execution/orders/{execution_order_id}": {
+                "methods": {"get": "read"},
+            },
+            "/execution/orders": {
+                "methods": {"get": "read"},
+            },
+            "/execution/reports/{execution_report_id}": {
+                "methods": {"get": "read"},
+            },
         }
 
         # Path set must match exactly.
@@ -459,11 +484,11 @@ class StateCoreApiTest(unittest.TestCase):
                         f"validation_only operation at {path} must be POST",
                     )
 
-        self.assertEqual(read_ops, 57, f"expected 57 read ops, got {read_ops}")
+        self.assertEqual(read_ops, 60, f"expected 60 read ops, got {read_ops}")
         self.assertEqual(
             state_changing_ops,
-            18,
-            f"expected 18 state_changing ops, got {state_changing_ops}",
+            23,
+            f"expected 23 state_changing ops, got {state_changing_ops}",
         )
         self.assertEqual(
             validation_only_ops,
@@ -471,8 +496,11 @@ class StateCoreApiTest(unittest.TestCase):
             f"expected 1 validation_only op, got {validation_only_ops}",
         )
 
-        # No live-execution, broker-submission, or authorization endpoints.
+        # No external live-execution, broker-submission, or authorization endpoints
+        # outside the canonical Execution Kernel surface (/execution/*).
         for path in paths:
+            if path.startswith("/execution/"):
+                continue  # canonical Execution Kernel — allowed
             for forbidden in (
                 "authorize",
                 "authorization",
@@ -484,7 +512,8 @@ class StateCoreApiTest(unittest.TestCase):
             ):
                 self.assertNotIn(forbidden, path)
 
-        # Any path containing "order" must be in the paper-only candidate list.
+        # Any path containing "order" must be in the paper-only candidate list
+        # or in the canonical Execution Kernel surface.
         order_candidate_paths = {
             "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
             "/trade-plan-candidates/{trade_plan_candidate_id}",
@@ -492,6 +521,14 @@ class StateCoreApiTest(unittest.TestCase):
             "/paper-order-ticket-candidates",
             "/paper-order-ticket-candidates/{paper_order_ticket_id}",
             "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions",
+            # Canonical Execution Kernel
+            "/execution/order-drafts",
+            "/execution/order-drafts/{order_draft_id}/pretrade-checks",
+            "/execution/order-drafts/{order_draft_id}/approvals",
+            "/execution/order-drafts/{order_draft_id}/stage",
+            "/execution/orders/{execution_order_id}",
+            "/execution/orders/{execution_order_id}/submit",
+            "/execution/orders",
         }
         for path in paths:
             if "order" in path:
@@ -1063,6 +1100,12 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/agent-authority-grants"),
             ("POST", "/capital-mandates"),
             ("POST", "/ips/draft"),
+            # Canonical Execution Kernel
+            ("POST", "/execution/order-drafts"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/pretrade-checks"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/approvals"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/stage"),
+            ("POST", "/execution/orders/{execution_order_id}/submit"),
         }
 
         # Use OpenAPI schema to verify allowed route set
@@ -1155,6 +1198,12 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/agent-authority-grants"),
             ("POST", "/capital-mandates"),
             ("POST", "/ips/draft"),
+            # Canonical Execution Kernel
+            ("POST", "/execution/order-drafts"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/pretrade-checks"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/approvals"),
+            ("POST", "/execution/order-drafts/{order_draft_id}/stage"),
+            ("POST", "/execution/orders/{execution_order_id}/submit"),
         }
         validation_only = {("POST", "/agent-authority-grants/{grant_id}/validate")}
 

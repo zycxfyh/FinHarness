@@ -60,7 +60,6 @@ _FORBIDDEN_RESEARCH_IDENTIFIERS = (
 _FORBIDDEN_API_HEADLESS_IMPORT_PREFIXES = (
     "finharness.okx",
     "finharness.alpaca",
-    "finharness.execution",
     "finharness.execution_graph",
     "finharness.okx_live_gate",
     "finharness.trading",
