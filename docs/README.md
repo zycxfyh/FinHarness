@@ -4,10 +4,11 @@ This is the task map for FinHarness documentation. Start with the job you are
 trying to do, not with the architecture.
 
 FinHarness is a personal capital governance harness: state, IPS,
-proposal/review, evidence, Agent explanation, cockpit surfaces, and the staged
-path toward paper validation and controlled capital-action workflows. The docs
-should make the product path concrete: understand state, form candidates, review
-evidence, validate safely, and learn from outcomes.
+proposal/review, execution kernel (OrderDraft → PreTradeCheck → Approval
+→ ExecutionOrder → SimulatedBrokerAdapter → ExecutionReport → Reconciliation),
+Agent explanation, and cockpit surfaces. The execution spine uses a live-shaped
+model on a simulated substrate — no real broker, credentials, or external
+connectivity.
 
 ## Start Here
 
