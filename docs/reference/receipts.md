@@ -233,10 +233,8 @@ Location: `data/receipts/state-core/action-intents/`
 | `governance.execution_allowed` | `bool` | Always false. |
 | `governance.authority_transition` | `bool` | Always false. |
 | `governance.candidate_only` | `bool` | True. |
-| `governance.not_order` | `bool` | True; not an order ticket. |
-| `governance.not_broker_execution` | `bool` | True; not broker execution. |
-| `governance.not_execution_authorization` | `bool` | True. |
-| `governance.not_investment_advice` | `bool` | True. |
+| `governance.not_order` | `bool` | True; not an order ticket. (legacy) |
+| `governance.not_advice_not_execution` | `bool` | True. (legacy) |
 | `governance.non_claims` | `list[str]` | Explicit action-intent non-claims. |
 
 ### Action Intent Authority Binding Receipt

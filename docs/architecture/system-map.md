@@ -91,70 +91,9 @@ domain model / read model / write(command) model / adapters / invariants
   已被 Execution Kernel 取代。旧对象通过 `execution/legacy_bridge.py` 桥接分离:
   执行相关事实投影到 OrderDraft/ExecutionOrder/ApprovalRecord/ExecutionReport;
   agentic artifacts 留在 agentic layers。
-- **status**: legacy. No new callers. Superseded by System 7 (Execution Kernel).
-- **domain**:`statecore/action_intents.py`、`ActionIntent` 等(保留只读)。
-- **domain**:`statecore/action_intents.py`、`ActionIntent`、
-  `statecore/action_intent_authority_bindings.py`、
-  `ActionIntentAuthorityBinding`、`statecore/action_intent_simulations.py`、
-  `statecore/trade_plan_candidates.py`、`TradePlanCandidate`、
-  `statecore/capital_objective_fits.py`、`CapitalObjectiveFit`、
-  `statecore/trade_plan_review_gates.py`、`TradePlanReviewGate`、
-  `action_intent_preflight.py`、
-  `api/routes_action_intents.py`。
-- **write(command)**:`POST /proposals/{proposal_id}/action-intents` /
-  `create_governed_action_intent`;
-  `POST /action-intents/{action_intent_id}/authority-bindings` /
-  `create_action_intent_authority_binding`;
-  `POST /action-intents/{action_intent_id}/simulation-reports` /
-  `create_governed_action_intent_simulation_report`;
-  `POST
-  /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates` /
-  `create_governed_trade_plan_candidate`;
-  `POST /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits` /
-  `create_governed_capital_objective_fit`;
-  `POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates` /
-  `create_governed_trade_plan_review_gate`。
-- **read**:`GET /action-intents/{action_intent_id}`、
-  `GET /action-intents/{action_intent_id}/preflight`、
-  `GET /action-intent-authority-bindings/{binding_id}`、
-  `GET /action-intent-simulation-reports/{simulation_report_id}`、
-  `GET /trade-plan-candidates/{trade_plan_candidate_id}`、
-  `GET /capital-objective-fits/{capital_objective_fit_id}`、
-  `GET /trade-plan-review-gates/{review_gate_id}`。
-- **invariants**:ActionIntentCandidate 只记录待审 capital action intent;创建时必须
-  绑定当前 proposal receipt,拒绝 stale receipt,拒绝 order/broker/execution/
-  authority markers,并写 `state_core_action_intent_candidate` receipt;system
-  preflight 只读重算 authority binding、freshness、scope、IPS policy、evidence、
-  precondition、v0 impact summary、risk posture 和 deterministic report hash;
-  ActionIntentAuthorityBinding 只授予进入 downstream checks 的资格;agent-authored ActionIntent 必须引用
-  `agent_authority_grant_id`,server use-time validate grant 并保留 binding 与
-  grant_validation 两类 deny reasons,denied binding 也写 receipt 供下游读取;
-  human-authored ActionIntent 可不引用 grant,system-authored ActionIntent 可不引用
-  grant 但必须记录 source rule;binding allowed 仍不等于 preflight pass、trade-plan
-  approval、order ticket、broker submission、preflight bypass 或 execution
-  authorization;action preflight 消费 latest/current binding 而不重写 grant 语义:
-  agent-authored intent 缺 allowed binding、binding denied、binding receipt stale
-  或缺 grant validation evidence 时 block;human/system 无 binding 可继续走现有
-  preflight,但已有 binding 的 denied/stale 状态会被消费并 block;simulation report
-  创建时必须重新计算并匹配 current preflight hash,block 则拒绝,warn 必须显式
-  acknowledge all warning codes,并写
-  `state_core_action_intent_simulation_report` receipt;v0 simulation report
-  仍是 qualitative downstream evidence;
-  TradePlanCandidate 只允许 plan direction/scope/cap/constraint fields,拒绝
-  exact quantity、broker/order-ready/execution/authority markers 和 stale
-  simulation/preflight evidence,写 `state_core_trade_plan_candidate` receipt,但
-  `submitted_to_broker=false`;CapitalObjectiveFit 只记录当前 candidate/simulation/
-  action/preflight evidence 上的 objective alignment、benefit thesis、risk/liquidity/
-  concentration impact、reversibility、opportunity cost、alternatives、uncertainties、
-  user questions 和 recommended next safe path,写
-  `state_core_capital_objective_fit` receipt,但不是 investment advice、suitability
-  certification、trade-plan approval、order ticket、broker submission 或 execution
-  authorization;TradePlanReviewGate 只记录 human reviewer 对当前
-  candidate/simulation/action/preflight evidence 的 allow/deny,允许结果仅表示可进入未来
-  order-ticket-candidate staging,写 `state_core_trade_plan_review_gate` receipt,
-  但 `creates_order_ticket=false`,`submitted_to_broker=false`,
-  `execution_allowed=false`,且不是 suitability certification、AuthorityContract
-  或 broker instruction。
+- **status**: legacy. No new callers. Superseded by System 7b (Execution Kernel).
+- **migration**: `execution/legacy_bridge.py` separates execution facts (→ OrderDraft/ExecutionOrder/ApprovalRecord/ExecutionReport) from agentic artifacts.
+- **old routes preserved read-only**: `GET/POST /action-intents/*`, `GET /trade-plan-candidates/*`, etc.
 
 ### 7. Paper Validation Runtime (legacy — superseded by Execution Kernel)
 

@@ -98,6 +98,6 @@ vectorbt_runner.py / workflow.py / backtrader_runner.py`,以及对应 `scripts/`
 
 live-trading 相关的 OKX / Alpaca / trading guard / market-access ledger 代码已于
 2026-06-27 从 mainline runtime 归档到
-`experiments/archive/live_trading_legacy/`。当前 Taskfile 不暴露 live execution 或
-paper broker 执行入口;若未来需要只读 market-data 能力,应按 L0B 重新建外部数据
-adapter,不要继承归档执行代码。
+`experiments/archive/live_trading_legacy/`。当前 mainline 已建立 canonical Execution
+Kernel (L6):live-shaped model on simulated substrate,无真实 broker SDK/credential/
+funding/venue connectivity。
