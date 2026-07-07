@@ -23,6 +23,7 @@ const selectors = {
     retrospective: document.querySelector("#retrospective-view"),
     compare: document.querySelector("#compare-view"),
     "data-trust": document.querySelector("#data-trust-view"),
+    execution: document.querySelector("#execution-view"),
   },
   summaryGrid: document.querySelector("#summary-grid"),
   dailyBriefHeadline: document.querySelector("#daily-brief-headline"),
@@ -47,6 +48,9 @@ const selectors = {
   dataTrustCatalog: document.querySelector("#data-trust-catalog"),
   dataTrustQuality: document.querySelector("#data-trust-quality"),
   dataTrustGaps: document.querySelector("#data-trust-gaps"),
+  executionDrafts: document.querySelector("#execution-drafts"),
+  executionOrders: document.querySelector("#execution-orders"),
+  executionReports: document.querySelector("#execution-reports"),
 };
 
 function setStatus(text, tone = "") {
@@ -1396,6 +1400,77 @@ async function renderDataTrust() {
   }
 }
 
+async function renderExecution() {
+  clear(selectors.executionDrafts);
+  clear(selectors.executionOrders);
+  clear(selectors.executionReports);
+
+  try {
+    const orders = await (await fetch("/execution/orders?limit=20")).json();
+    const drafts = [];
+    const staged = [];
+    const submitted = [];
+    for (const o of orders || []) {
+      if (o.execution_status === "staged") staged.push(o);
+      else submitted.push(o);
+    }
+    // Show drafts via the orders' underlying draft IDs
+    for (const o of staged) {
+      try {
+        const draft = await (await fetch(`/execution/order-drafts/${o.order_draft_id}`)).json();
+        drafts.push(draft);
+      } catch (_) {}
+    }
+
+    if (!drafts.length && !orders.length) {
+      selectors.executionDrafts.append(textElement("p", "empty-state", "No order drafts."));
+      selectors.executionOrders.append(textElement("p", "empty-state", "No execution orders."));
+      selectors.executionReports.append(textElement("p", "empty-state", "No execution reports."));
+      return;
+    }
+
+    for (const d of drafts) {
+      const el = document.createElement("div");
+      el.className = "item-card";
+      el.append(textElement("span", "item-label", `${d.side.toUpperCase()} ${d.quantity} ${d.symbol} ${d.order_type}`));
+      el.append(textElement("span", "item-meta", `status: ${d.draft_status} | env: ${d.environment}`));
+      if (d.receipt_ref) el.append(textElement("span", "item-meta", `receipt: ${d.receipt_ref}`));
+      selectors.executionDrafts.append(el);
+    }
+
+    for (const o of orders) {
+      const el = document.createElement("div");
+      el.className = "item-card";
+      el.append(textElement("span", "item-label", `Order ${o.execution_order_id.slice(0,12)}...`));
+      el.append(textElement("span", "item-meta", `status: ${o.execution_status} | env: ${o.environment}`));
+      if (o.submitted_at_utc) el.append(textElement("span", "item-meta", `submitted: ${o.submitted_at_utc}`));
+      selectors.executionOrders.append(el);
+    }
+
+    // Load reports for submitted orders
+    for (const o of submitted) {
+      try {
+        const resp = await fetch(`/execution/orders/${o.execution_order_id}`);
+        if (!resp.ok) continue;
+        const order = await resp.json();
+        // Try to find a report via the order's receipt or report lookup
+        const reportsResp = await fetch("/execution/reports/" + (order.receipt_ref || "nonexistent"));
+        if (reportsResp.ok) {
+          const r = await reportsResp.json();
+          const el = document.createElement("div");
+          el.className = "item-card";
+          el.append(textElement("span", "item-label", `${r.report_type}`));
+          el.append(textElement("span", "item-meta", `fill: ${r.fill_status} | qty: ${r.filled_quantity}`));
+          if (r.average_fill_price) el.append(textElement("span", "item-meta", `avg px: ${r.average_fill_price}`));
+          selectors.executionReports.append(el);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {
+    selectors.executionDrafts.append(textElement("p", "empty-state", "Execution API unavailable."));
+  }
+}
+
 const renderers = {
   overview: renderOverview,
   exposure: renderExposure,
@@ -1405,6 +1480,7 @@ const renderers = {
   retrospective: renderRetrospective,
   compare: renderCompare,
   "data-trust": renderDataTrust,
+  execution: renderExecution,
 };
 
 const errorTargets = {
@@ -1416,6 +1492,7 @@ const errorTargets = {
   retrospective: () => selectors.retrospectiveBlock,
   compare: () => selectors.compareBlock,
   "data-trust": () => selectors.dataTrustSummary,
+  execution: () => selectors.executionOrders,
 };
 
 async function refresh() {
