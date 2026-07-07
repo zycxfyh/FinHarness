@@ -151,6 +151,20 @@ old receipts stay readable.
 | `PostTradeLineage` | `source: PostTradeSourceSpec`; `input_execution_snapshot_id: str`; `input_execution_receipt_ref: str`; `execution_event_ids: list[str]`; `execution_final_status: str`; `post_trade_status: PostTradeStatus`; `computed_at_utc: str`; `transform_version: str = finharness.post_trade.v1`; `output_hash: str`; `output_ref: str` |
 | `DailyEvidenceLineage` | `market_snapshot_refs: list[str]`; `indicator_snapshot_refs: list[str]`; `event_snapshot_ref: str | None`; `interpretation_snapshot_ref: str | None`; `computed_at_utc: str`; `transform_version: str = finharness.daily_evidence.v1`; `output_hash: str`; `output_ref: str` |
 
+## Canonical Execution Receipt Kinds (v0)
+
+| Kind | Description | Source |
+|---|---|---|
+| `execution.order_draft.created` | Order draft persisted | `execution/services.py:create_order_draft` |
+| `execution.pretrade_check.recorded` | Pre-trade check recorded | `execution/services.py:run_pretrade_check` |
+| `execution.approval.recorded` | Approval decision recorded | `execution/services.py:record_approval` |
+| `execution.order.staged` | Order staged for execution | `execution/services.py:stage_execution_order` |
+| `execution.order.submit_attempted` | Submit attempt recorded | `execution/services.py:submit_execution_order` |
+| `execution.order.submitted` | Order submitted to adapter | `execution/services.py:submit_execution_order` |
+| `execution.report.recorded` | Execution report persisted | `execution/services.py:record_execution_report` |
+| `execution.position_delta.recorded` | Position change recorded | `execution/services.py:record_position_delta` |
+| `execution.reconciliation.recorded` | Reconciliation recorded | `execution/services.py:record_reconciliation` |
+
 ## Non-Standard Receipt Shapes
 
 Some receipts are written as direct JSON dictionaries rather than the common
