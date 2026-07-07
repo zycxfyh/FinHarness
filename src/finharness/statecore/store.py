@@ -40,6 +40,17 @@ from finharness.statecore.models import (
     TradePlanCandidate,
     TradePlanReviewGate,
 )
+from finharness.statecore.execution_models import (
+    ApprovalRecord,
+    BrokerConnection,
+    ExecutionAccount,
+    ExecutionOrder,
+    ExecutionReport,
+    OrderDraft,
+    PositionDelta,
+    PreTradeCheck,
+    ReconciliationReport,
+)
 
 STATE_CORE_DB_ENV_VAR = "FINHARNESS_STATE_CORE_DB_PATH"
 DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-core.sqlite"
@@ -71,6 +82,15 @@ StateCoreRecord = (
     | Attestation
     | ReviewEvent
     | InvestmentPolicyStatement
+    | BrokerConnection
+    | ExecutionAccount
+    | OrderDraft
+    | PreTradeCheck
+    | ApprovalRecord
+    | ExecutionOrder
+    | ExecutionReport
+    | PositionDelta
+    | ReconciliationReport
 )
 
 
