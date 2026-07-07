@@ -108,6 +108,7 @@ tasks:
       - node frontend/tests/review_workspace.test.cjs
       - node frontend/tests/review_retrospective.test.cjs
       - node frontend/tests/review_compare.test.cjs
+      - node frontend/tests/cockpit_execution.test.cjs
 
   test:browser:
     desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.

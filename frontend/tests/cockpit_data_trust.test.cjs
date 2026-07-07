@@ -26,9 +26,9 @@ const document = window.document;
 const dataTrustTab = document.querySelector('.tab[data-view="data-trust"]');
 assert.ok(dataTrustTab, "Data Trust tab must exist in the cockpit nav");
 
-// 2. Tab count is 8
+// 2. Tab count is 9
 const tabs = document.querySelectorAll("nav.tabs button.tab");
-assert.equal(tabs.length, 8, "cockpit must have 8 tabs including Data Trust");
+assert.equal(tabs.length, 9, "cockpit must have 9 tabs");
 
 // 3. Data Trust view section exists
 const dataTrustView = document.querySelector("#data-trust-view");
