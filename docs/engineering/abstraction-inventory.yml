@@ -4,8 +4,9 @@
 schema: finharness.abstraction_inventory.v2
 status: current
 updated: '2026-07-08'
-description: 'Stabilization-phase inventory mapping every existing complex artifact to its correct abstraction layer.  Each
-  entry records current_form, better_abstraction, target_form, migration_path, delete_condition, and risk_if_left_as_object.
+description: 'Stabilization-phase inventory mapping existing complex artifacts to their
+  target abstraction layers. Each entry records current_form, target_layer,
+  target_form, migration_path, delete_condition, risk_level, and risk_reason.
 
   '
 principles_ref: docs/engineering/agentic-abstraction-principles.md
