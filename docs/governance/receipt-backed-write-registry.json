@@ -11,8 +11,13 @@
       "module": "finharness.statecore.proposals",
       "file": "src/finharness/statecore/proposals.py",
       "function": "create_governed_proposal",
-      "route_refs": ["POST /proposals"],
-      "db_write_models": ["Proposal", "ReceiptIndex"],
+      "route_refs": [
+        "POST /proposals"
+      ],
+      "db_write_models": [
+        "Proposal",
+        "ReceiptIndex"
+      ],
       "db_write_call": "upsert_records (idempotent path) or write_records (new path)",
       "receipt_kind": "state_core_proposal",
       "receipt_subdir": "state-core/proposals",
@@ -30,8 +35,13 @@
       "module": "finharness.statecore.proposals",
       "file": "src/finharness/statecore/proposals.py",
       "function": "create_governed_attestation",
-      "route_refs": ["POST /proposals/{proposal_id}/attest"],
-      "db_write_models": ["Attestation", "ReceiptIndex"],
+      "route_refs": [
+        "POST /proposals/{proposal_id}/attest"
+      ],
+      "db_write_models": [
+        "Attestation",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_attestation",
       "receipt_subdir": "state-core/attestations",
@@ -49,8 +59,13 @@
       "module": "finharness.statecore.proposals",
       "file": "src/finharness/statecore/proposals.py",
       "function": "create_governed_review_event",
-      "route_refs": ["POST /proposals/{proposal_id}/review-events"],
-      "db_write_models": ["ReviewEvent", "ReceiptIndex"],
+      "route_refs": [
+        "POST /proposals/{proposal_id}/review-events"
+      ],
+      "db_write_models": [
+        "ReviewEvent",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_review_event",
       "receipt_subdir": "state-core/review-events",
@@ -68,8 +83,13 @@
       "module": "finharness.statecore.action_intents",
       "file": "src/finharness/statecore/action_intents.py",
       "function": "create_governed_action_intent",
-      "route_refs": ["POST /proposals/{proposal_id}/action-intents"],
-      "db_write_models": ["ActionIntent", "ReceiptIndex"],
+      "route_refs": [
+        "POST /proposals/{proposal_id}/action-intents"
+      ],
+      "db_write_models": [
+        "ActionIntent",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_action_intent_candidate",
       "receipt_subdir": "state-core/action-intents",
@@ -87,8 +107,13 @@
       "module": "finharness.statecore.action_intent_simulations",
       "file": "src/finharness/statecore/action_intent_simulations.py",
       "function": "create_governed_action_intent_simulation_report",
-      "route_refs": ["POST /action-intents/{action_intent_id}/simulation-reports"],
-      "db_write_models": ["ActionIntentSimulationReport", "ReceiptIndex"],
+      "route_refs": [
+        "POST /action-intents/{action_intent_id}/simulation-reports"
+      ],
+      "db_write_models": [
+        "ActionIntentSimulationReport",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_action_intent_simulation_report",
       "receipt_subdir": "state-core/action-intent-simulation-reports",
@@ -106,8 +131,13 @@
       "module": "finharness.statecore.action_intent_authority_bindings",
       "file": "src/finharness/statecore/action_intent_authority_bindings.py",
       "function": "create_action_intent_authority_binding",
-      "route_refs": ["POST /action-intents/{action_intent_id}/authority-bindings"],
-      "db_write_models": ["ActionIntentAuthorityBinding", "ReceiptIndex"],
+      "route_refs": [
+        "POST /action-intents/{action_intent_id}/authority-bindings"
+      ],
+      "db_write_models": [
+        "ActionIntentAuthorityBinding",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_action_intent_authority_binding",
       "receipt_subdir": "state-core/action-intent-authority-bindings",
@@ -125,8 +155,13 @@
       "module": "finharness.statecore.agent_authority_grants",
       "file": "src/finharness/statecore/agent_authority_grants.py",
       "function": "record_agent_authority_grant",
-      "route_refs": ["POST /agent-authority-grants"],
-      "db_write_models": ["AgentAuthorityGrant", "ReceiptIndex"],
+      "route_refs": [
+        "POST /agent-authority-grants"
+      ],
+      "db_write_models": [
+        "AgentAuthorityGrant",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_agent_authority_grant",
       "receipt_subdir": "state-core/agent-authority-grants",
@@ -144,8 +179,13 @@
       "module": "finharness.statecore.capital_mandates",
       "file": "src/finharness/statecore/capital_mandates.py",
       "function": "record_capital_mandate",
-      "route_refs": ["POST /capital-mandates"],
-      "db_write_models": ["CapitalMandate", "ReceiptIndex"],
+      "route_refs": [
+        "POST /capital-mandates"
+      ],
+      "db_write_models": [
+        "CapitalMandate",
+        "ReceiptIndex"
+      ],
       "db_write_call": "upsert_records (supersedes prior active mandates + writes new mandate and index)",
       "receipt_kind": "state_core_capital_mandate",
       "receipt_subdir": "state-core/capital-mandates",
@@ -163,8 +203,13 @@
       "module": "finharness.statecore.trade_plan_candidates",
       "file": "src/finharness/statecore/trade_plan_candidates.py",
       "function": "create_governed_trade_plan_candidate",
-      "route_refs": ["POST /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates"],
-      "db_write_models": ["TradePlanCandidate", "ReceiptIndex"],
+      "route_refs": [
+        "POST /action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates"
+      ],
+      "db_write_models": [
+        "TradePlanCandidate",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_trade_plan_candidate",
       "receipt_subdir": "state-core/trade-plan-candidates",
@@ -182,8 +227,13 @@
       "module": "finharness.statecore.capital_objective_fits",
       "file": "src/finharness/statecore/capital_objective_fits.py",
       "function": "create_governed_capital_objective_fit",
-      "route_refs": ["POST /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits"],
-      "db_write_models": ["CapitalObjectiveFit", "ReceiptIndex"],
+      "route_refs": [
+        "POST /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits"
+      ],
+      "db_write_models": [
+        "CapitalObjectiveFit",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_capital_objective_fit",
       "receipt_subdir": "state-core/capital-objective-fits",
@@ -201,8 +251,13 @@
       "module": "finharness.statecore.trade_plan_review_gates",
       "file": "src/finharness/statecore/trade_plan_review_gates.py",
       "function": "create_governed_trade_plan_review_gate",
-      "route_refs": ["POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates"],
-      "db_write_models": ["TradePlanReviewGate", "ReceiptIndex"],
+      "route_refs": [
+        "POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates"
+      ],
+      "db_write_models": [
+        "TradePlanReviewGate",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_trade_plan_review_gate",
       "receipt_subdir": "state-core/trade-plan-review-gates",
@@ -220,8 +275,13 @@
       "module": "finharness.statecore.paper_order_tickets",
       "file": "src/finharness/statecore/paper_order_tickets.py",
       "function": "create_paper_order_ticket_candidate",
-      "route_refs": ["POST /trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates"],
-      "db_write_models": ["PaperOrderTicketCandidate", "ReceiptIndex"],
+      "route_refs": [
+        "POST /trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates"
+      ],
+      "db_write_models": [
+        "PaperOrderTicketCandidate",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_paper_order_ticket_candidate",
       "receipt_subdir": "state-core/paper-order-ticket-candidates",
@@ -239,8 +299,13 @@
       "module": "finharness.statecore.paper_executions",
       "file": "src/finharness/statecore/paper_executions.py",
       "function": "record_paper_execution_receipt",
-      "route_refs": ["POST /paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions"],
-      "db_write_models": ["PaperExecutionReceipt", "ReceiptIndex"],
+      "route_refs": [
+        "POST /paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions"
+      ],
+      "db_write_models": [
+        "PaperExecutionReceipt",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_paper_execution",
       "receipt_subdir": "state-core/paper-execution-receipts",
@@ -258,8 +323,13 @@
       "module": "finharness.statecore.paper_accounts",
       "file": "src/finharness/statecore/paper_accounts.py",
       "function": "create_paper_account",
-      "route_refs": ["POST /paper-accounts"],
-      "db_write_models": ["PaperAccount", "ReceiptIndex"],
+      "route_refs": [
+        "POST /paper-accounts"
+      ],
+      "db_write_models": [
+        "PaperAccount",
+        "ReceiptIndex"
+      ],
       "db_write_call": "write_records",
       "receipt_kind": "state_core_paper_account",
       "receipt_subdir": "state-core/paper-accounts",
@@ -277,8 +347,14 @@
       "module": "finharness.statecore.paper_accounts",
       "file": "src/finharness/statecore/paper_accounts.py",
       "function": "apply_paper_execution_to_account",
-      "route_refs": ["POST /paper-accounts/{paper_account_id}/execution-applications"],
-      "db_write_models": ["PaperAccount", "PaperPosition", "ReceiptIndex"],
+      "route_refs": [
+        "POST /paper-accounts/{paper_account_id}/execution-applications"
+      ],
+      "db_write_models": [
+        "PaperAccount",
+        "PaperPosition",
+        "ReceiptIndex"
+      ],
       "db_write_call": "upsert_records (updates account and position)",
       "receipt_kind": "state_core_paper_execution_application",
       "receipt_subdir": "state-core/paper-execution-applications",
@@ -296,8 +372,13 @@
       "module": "finharness.ips",
       "file": "src/finharness/ips.py",
       "function": "record_ips",
-      "route_refs": ["POST /ips/draft"],
-      "db_write_models": ["InvestmentPolicyStatement", "ReceiptIndex"],
+      "route_refs": [
+        "POST /ips/draft"
+      ],
+      "db_write_models": [
+        "InvestmentPolicyStatement",
+        "ReceiptIndex"
+      ],
       "db_write_call": "upsert_records (supersedes prior IPS + writes new IPS and index)",
       "receipt_kind": "state_core_ips",
       "receipt_subdir": "state-core/ips",
@@ -319,7 +400,10 @@
         "PATCH /proposals/{proposal_id}/decision-scaffold",
         "POST /scaffold-revision-candidates/{candidate_id}/apply"
       ],
-      "db_write_models": ["Proposal", "ReceiptIndex"],
+      "db_write_models": [
+        "Proposal",
+        "ReceiptIndex"
+      ],
       "db_write_call": "delegates to create_governed_proposal with idempotent=True",
       "receipt_kind": "state_core_proposal",
       "receipt_subdir": "state-core/proposals",
@@ -328,6 +412,67 @@
       "receipt_index_builder": "_receipt_index via create_governed_proposal",
       "stale_guard": "existing proposal required; scaffold patch must change at least one stored field; delegated create_governed_proposal uses content_hash idempotency and supersedes prior receipt_ref; scaffold-candidate apply route additionally checks expected candidate receipt_ref, expected proposal receipt_ref, and expected preflight report hash at the API route layer",
       "failure_cleanup": "delegated create_governed_proposal cleanup on StateCoreStoreError when receipt did not previously exist",
+      "execution_allowed": false,
+      "behavior_change": false
+    },
+    {
+      "id": "RBW-0018",
+      "bounded_context": "execution",
+      "module": "finharness.execution.services",
+      "file": "src/finharness/execution/services.py",
+      "function": "create_order_draft",
+      "route_refs": [
+        "POST /execution/order-drafts"
+      ],
+      "db_write_models": [
+        "OrderDraft",
+        "ReceiptIndex"
+      ],
+      "db_write_call": "write_records",
+      "receipt_kind": "execution.order_draft.created",
+      "receipt_subdir": "execution/order-drafts",
+      "receipt_indexed": true,
+      "execution_allowed": false,
+      "behavior_change": false
+    },
+    {
+      "id": "RBW-0019",
+      "bounded_context": "execution",
+      "module": "finharness.execution.services",
+      "file": "src/finharness/execution/services.py",
+      "function": "stage_execution_order",
+      "route_refs": [
+        "POST /execution/order-drafts/{id}/stage"
+      ],
+      "db_write_models": [
+        "ExecutionOrder",
+        "ReceiptIndex"
+      ],
+      "db_write_call": "write_records",
+      "receipt_kind": "execution.order.staged",
+      "receipt_subdir": "execution/orders",
+      "receipt_indexed": true,
+      "execution_allowed": false,
+      "behavior_change": false
+    },
+    {
+      "id": "RBW-0020",
+      "bounded_context": "execution",
+      "module": "finharness.execution.commands",
+      "file": "src/finharness/execution/commands.py",
+      "function": "submit_order",
+      "route_refs": [
+        "POST /execution/orders/{id}/submit"
+      ],
+      "db_write_models": [
+        "ExecutionOrder",
+        "ReceiptIndex",
+        "ExecutionReport"
+      ],
+      "db_write_call": "write_records (via submit_execution_order + record_execution_report)",
+      "receipt_kind": "execution.order.submitted",
+      "receipt_subdir": "execution/orders",
+      "receipt_indexed": true,
       "execution_allowed": false,
       "behavior_change": false
     }
