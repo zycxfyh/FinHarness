@@ -35,6 +35,7 @@ class SimulatedBrokerAdapter:
     """
 
     environment: ExecutionEnvironment = ExecutionEnvironment.PAPER
+    adapter_kind: str = "simulated"
 
     def __init__(
         self,
@@ -43,6 +44,7 @@ class SimulatedBrokerAdapter:
         fill_price_offset: Decimal | None = None,
     ) -> None:
         self.environment = environment
+        self.adapter_kind = "simulated"
         self.simulate_fill = simulate_fill
         self.fill_price_offset = fill_price_offset
 

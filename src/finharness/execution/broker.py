@@ -52,7 +52,16 @@ def register_broker_adapter(
     broker_connection_id: str,
     adapter: BrokerAdapter,
 ) -> None:
-    """Register an adapter for a broker connection."""
+    """Register an adapter for a broker connection.
+
+    Raises ValueError if adapter is not simulated.
+    """
+    kind = getattr(adapter, "adapter_kind", "")
+    if kind != "simulated":
+        raise ValueError(
+            f"Only simulated broker adapters are supported, "
+            f"got adapter_kind={kind!r}"
+        )
     _broker_registry[broker_connection_id] = adapter
 
 
