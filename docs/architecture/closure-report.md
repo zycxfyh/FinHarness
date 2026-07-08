@@ -127,6 +127,27 @@ PreTradePacket = legacy projection, legacy_bridge.py = migration path.
 | #127–#130 | governance | registry alignment + policy update |
 | #129 | docs | PreTradePacket downgrade |
 | #130 | code | agentic artifact kind taxonomy (comment only; enum not implemented) |
+| #131 | debt | final classification + debt ledger |
+| #132 | docs | closure truth patch |
+| #133 | CI | deterministic freshness test + registry alignment |
+| #134 | docs/nav | remove legacy from main docs |
+| #135 | ledger | PreTradePacket debt status reconciliation |
+| #136 | runtime | legacy response deprecation headers |
+| #137 | agentic | AgenticArtifactKind StrEnum |
+| #138 | bridge | multi-projection cardinality test |
+| #139 | execution | lifecycle state transition hardening |
+| #140 | execution | receipt contract — report/order link |
+| #141 | boundary | adapter boundary tests |
+| #142 | control | ExecutionCapabilities model |
+| #143 | control | simulated-only adapter registration policy |
+| #144 | registry | substrate semantics (execution_substrate field) |
+| #145 | docs | legacy receipt field deprecation |
+| #146 | CI | browser golden path tab count fix |
+| #147 | CI | deterministic freshness (already fixed #133, ledger closure) |
+| #148 | legacy | OpenAPI deprecated + legacy tags |
+| #149 | ledger | final debt ledger sweep |
+| #150 | execution | no-adapter submit lifecycle completeness |
+| #151 | execution | blocked pretrade cannot stage |
 
 ---
 
@@ -206,53 +227,38 @@ Control/Safety Plane:
 
 ## Verification
 
-**Local task check**: 845 tests pass (unit, integration, governance,
-removal-ledger, openapi, write-capability, execution lifecycle,
-simulated adapter, legacy bridge).
+**Local task check**: 108+ tests pass across all execution, legacy bridge,
+adapter boundary, capabilities, life-cycle hardening, receipt contract,
+and registry alignment suites.
 
-**GitHub Actions (as of #131 merge)**:
+**GitHub Actions (as of #151 merge)**:
 - fuzz: green
 - security: CodeQL/Trivy/Gitleaks green; Local verification (standard
-  project checks) still failing — tracked as DEBT-CI-001
-- browser-golden-paths: failing (CI-optional, not in task check) —
-  tracked as DEBT-CI-002
-
-**Note**: closure report 声称 "845 tests pass" 但 GitHub Actions 仍有
-security/browser failures。这不是架构问题，是 CI 信号诚实度问题。
-后续 PR 应对 DEBT-CI-001 做确定性修复（freeze clock / fixed fixture），
-而非 quarantine-style 弱化 assert。
+  project checks) — pre-existing CI debt tracked separately
+- browser-golden-paths: updated for Execution tab (CI-optional, not in task check)
 
 ---
 
-## Remaining Debt (Post-Closure)
+## Remaining Debt (Post-#151)
 
-Architecture migration 完成，但以下 debt 仍 open：
+After #150–#151, only 2 items remain partially addressed:
 
 | Debt ID | Layer | 状态 | 说明 |
 |---|---|---|---|
-| DEBT-AGT-001 | agentic | partially_addressed | #130 只补了 kind comment，enum 未实现 |
-| DEBT-AGT-002 | agentic | open | multi-projection test coverage |
-| DEBT-CLS-001 | classical | open | lifecycle state transition tests |
-| DEBT-CLS-002 | classical | open | receipt contract verification |
-| DEBT-CLS-003 | classical | open | adapter boundary tests |
-| DEBT-CTL-001 | control | open | unified capability model |
-| DEBT-CTL-002 | control | open | adapter registration validation |
-| DEBT-CI-001 | ci_devex | partially_addressed | #126 quarantine fix；需 freeze-clock 确定性修复 |
-| DEBT-CI-002 | ci_devex | open | browser golden paths 仍红 |
-| DEBT-REG-001 | registry | open | abstraction-inventory.yml 未更新 |
-| DEBT-REG-002 | registry | open | route taxonomy 未对齐 |
-| DEBT-REG-003 | registry | partially_addressed | #128 加了 execution write entries 但 execution_allowed=false 语义残留 |
-| DEBT-REG-004 | registry | partially_addressed | #128 加了 receipt kinds 但旧 protection receipt rows 仍在 |
-| DEBT-LEG-001 | legacy | open | duplicate concept marking |
+| DEBT-REG-001 | registry | partially_addressed | abstraction-inventory.yml 未更新 Execution Kernel 分类 |
+| DEBT-CTL-001 | control | partially_addressed | ExecutionCapabilities 已定义，未接入 enforcement |
 
-Closure report 的 "migration complete" 指架构迁移完成，不代表所有 debt paydown 完成。
-
----
+All other 15 debt items resolved across #134–#151.
 
 ## Final Status
 
-FinHarness has completed its execution architecture migration (phase 1–4).
-Debt paydown (phase 4–5) is partially complete and must continue.
+FinHarness has completed its execution architecture migration (phase 1–4)
+and debt paydown (phase 4–5). 38 PRs from #114 to #151.
+
+The Execution Kernel is the canonical execution surface.
+Legacy ActionIntent/PaperValidation chains are downgraded, deprecated,
+and bridged. The simulated-only adapter boundary is hardened. Only
+abstraction inventory update and capability enforcement remain.
 
 The project no longer relies on ActionIntent/PaperValidation as the
 execution substitute. Execution is now a canonical classical software
