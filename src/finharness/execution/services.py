@@ -269,15 +269,13 @@ def stage_execution_order(
             raise ValueError(
                 f"cannot stage {draft.draft_status} draft: {order_draft_id}"
             )
-        if draft.draft_status not in (
-            "pretrade_check_passed", "approved", "pretrade_check_blocked",
-        ):
+        if draft.draft_status != "approved":
             raise ValueError(
-                f"draft must have pretrade check before staging: "
+                f"draft must be approved before staging: "
                 f"current status={draft.draft_status}"
             )
 
-        # Verify PreTradeCheck exists
+        # Verify PreTradeCheck exists and is not blocked
         ptc = session.exec(
             select(PreTradeCheck).where(
                 PreTradeCheck.order_draft_id == order_draft_id
@@ -286,6 +284,10 @@ def stage_execution_order(
         if ptc is None:
             raise ValueError(
                 f"no PreTradeCheck found for draft: {order_draft_id}"
+            )
+        if ptc.check_status == "block":
+            raise ValueError(
+                f"cannot stage blocked pretrade check: {order_draft_id}"
             )
 
         # Verify ApprovalRecord exists

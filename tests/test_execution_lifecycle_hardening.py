@@ -131,7 +131,7 @@ class ExecutionLifecycleHardeningTest(unittest.TestCase):
                 order_draft_id=draft.order_draft_id,
                 broker_connection_id="bc_test",
             )
-        self.assertIn("pretrade", str(ctx.exception).lower())
+        self.assertIn("approved", str(ctx.exception).lower())
 
     def test_cannot_stage_without_approval(self) -> None:
         """Draft with PreTradeCheck but no Approval → stage should fail."""
@@ -149,7 +149,34 @@ class ExecutionLifecycleHardeningTest(unittest.TestCase):
                 order_draft_id=draft.order_draft_id,
                 broker_connection_id="bc_test",
             )
-        self.assertIn("approval", str(ctx.exception).lower())
+        self.assertIn("approved", str(ctx.exception).lower())
+
+    def test_cannot_stage_blocked_pretrade(self) -> None:
+        """Blocked PreTradeCheck → stage should fail even with approval."""
+        draft = self._create_draft()
+        run_pretrade_check(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+            findings=[{"rule": "position_limit", "severity": "block", "result": "exceeds max"}],
+        )
+        record_approval(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+            reviewer_id="test_op",
+            decision="approved",
+            rationale="override test",
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            stage_execution_order(
+                engine=self.engine,
+                receipt_root=str(self.receipt_root),
+                order_draft_id=draft.order_draft_id,
+                broker_connection_id="bc_test",
+            )
+        self.assertIn("block", str(ctx.exception).lower())
 
     # ── Submit guard tests ────────────────────────────────────────────────
 
