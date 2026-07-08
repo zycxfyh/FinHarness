@@ -54,7 +54,7 @@ from finharness.statecore.paper_order_tickets import (
     create_paper_order_ticket_candidate,
 )
 
-router = APIRouter(tags=["paper-validation"])
+router = APIRouter(tags=["paper-validation", "legacy"], deprecated=True)
 
 
 class PaperOrderTicketCandidateCreateRequest(BaseModel):
