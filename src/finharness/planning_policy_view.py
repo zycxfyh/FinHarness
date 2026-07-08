@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from finharness.rule_change_ledger import RULE_CHANGE_STATE_ROOT, RuleChange
+from finharness.rule_change_ledger import RULE_CHANGE_STATE_ROOT, RuleChange, is_traceable
 
 NON_CLAIMS: tuple[str, ...] = (
     "PlanningPolicyView is a read model, not a rule engine.",
@@ -71,11 +71,6 @@ def _load_rule_change(file_path: Path) -> RuleChange | None:
         return None
 
 
-def _is_traceable(rule: RuleChange) -> bool:
-    """A rule is traceable if it links back to a lesson draft."""
-    return isinstance(rule.lesson_draft_id, str) and bool(rule.lesson_draft_id.strip())
-
-
 def build_planning_policy_view(
     state_root: Path | None = None,
 ) -> PlanningPolicyView:
@@ -101,7 +96,7 @@ def build_planning_policy_view(
         if rule is None:
             continue
 
-        traceable = _is_traceable(rule)
+        traceable = is_traceable(rule)
         pr = PlanningPolicyRule(
             rule_change_id=rule.rule_change_id,
             rule_target=rule.rule_target,

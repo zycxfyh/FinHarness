@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
@@ -305,3 +306,96 @@ class TestAdapterFromQueueCheck:
         report = evaluation_report_from_queue_check(mock)
         assert report.execution_allowed is False
         assert report.authority_transition is False
+
+
+# ── Real object projection (dataclass PreflightFinding) ──────────────────────
+
+
+@dataclass(frozen=True)
+class RealPreflightFinding:
+    code: str
+    severity: str
+    message: str
+    recovery_hint: str = ""
+    source_refs: list[str] | None = None
+    receipt_refs: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class RealScaffoldPreflightReport:
+    candidate_id: str = "c_001"
+    proposal_id: str = "p_real"
+    status: str = "block"
+    system_preflight_recomputed: bool = True
+    findings: list[object] | None = None
+    candidate_receipt_ref: str | None = None
+    current_proposal_receipt_ref: str | None = None
+    proposed_scaffold: dict | None = None
+    changed_fields: list[str] | None = None
+    basis_risk_ids: list[str] | None = None
+    active_basis_risk_ids: list[str] | None = None
+    missing_basis_risk_ids: list[str] | None = None
+    source_refs: list[str] | None = None
+    receipt_refs: list[str] | None = None
+    report_hash: str = "abc123"
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class TestRealObjectProjection:
+    def test_scaffold_preflight_object_projects_status_and_findings(self) -> None:
+        real = RealScaffoldPreflightReport(
+            status="block",
+            proposal_id="p_real_obj",
+            findings=[
+                RealPreflightFinding(
+                    code="missing_risk_basis",
+                    severity="block",
+                    message="No basis risk IDs linked",
+                    recovery_hint="Add basis_risk_ids",
+                    source_refs=["src_1"],
+                    receipt_refs=["r_1"],
+                ),
+            ],
+            receipt_refs=["r_preflight_real"],
+        )
+        report = evaluation_report_from_scaffold_preflight(real)
+        assert report.status == "block"
+        assert len(report.findings) == 1
+        f0 = report.findings[0]
+        assert f0.code == "missing_risk_basis"
+        assert f0.severity == "block"
+        assert f0.message == "No basis risk IDs linked"
+        assert f0.recovery_hint == "Add basis_risk_ids"
+        assert f0.source_refs == ["src_1"]
+        assert f0.receipt_refs == ["r_1"]
+        assert "r_preflight_real" in report.receipt_refs
+
+    def test_scaffold_preflight_dict_projection_still_works(self) -> None:
+        """Backward compatibility: dict-based test doubles still work."""
+        mock = MockScaffoldPreflight(
+            preflight_status="warn",
+            findings=[
+                {"code": "old_style", "severity": "info", "message": "dict finding"},
+            ],
+        )
+        report = evaluation_report_from_scaffold_preflight(mock)
+        assert report.status == "warn"
+        assert len(report.findings) == 1
+        assert report.findings[0].code == "old_style"
+
+    def test_scaffold_preflight_mixed_finding_types(self) -> None:
+        """Mixed dataclass + dict findings both work."""
+        mixed_report = RealScaffoldPreflightReport(
+            status="warn",
+            proposal_id="p_mixed",
+            findings=[
+                RealPreflightFinding(code="real_finding", severity="warn", message="real"),
+                {"code": "dict_finding", "severity": "info", "message": "dict"},
+            ],
+        )
+        report = evaluation_report_from_scaffold_preflight(mixed_report)
+        assert len(report.findings) == 2
+        codes = {f.code for f in report.findings}
+        assert "real_finding" in codes
+        assert "dict_finding" in codes

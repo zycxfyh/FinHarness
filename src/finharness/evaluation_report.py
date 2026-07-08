@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -152,6 +152,27 @@ def _dedupe_refs(values: list[str]) -> list[str]:
     return out
 
 
+# ── Finding field accessor (dict + dataclass) ───────────────────────────────
+
+
+def _finding_get(finding: object, key: str, default: Any = "") -> Any:
+    """Read a field from a dict or object (dataclass) finding."""
+    val = (
+        finding.get(key, default)
+        if isinstance(finding, dict)
+        else getattr(finding, key, default)
+    )
+    return val if val is not None else default
+
+
+def _finding_list_get(finding: object, key: str) -> list[str]:
+    """Read a list field from a dict or dataclass finding."""
+    raw = _finding_get(finding, key, [])
+    if isinstance(raw, list):
+        return _dedupe_refs(raw)
+    return []
+
+
 # ── Adapter: scaffold candidate preflight → EvaluationReport ────────────────
 
 
@@ -160,10 +181,15 @@ def evaluation_report_from_scaffold_preflight(
 ) -> EvaluationReport:
     """Project a ScaffoldCandidatePreflightReport into an EvaluationReport.
 
-    Accepts any object with preflight_status, proposal_id, findings
-    (list of dicts with code/message/severity), and optional receipt_refs.
+    Accepts the real ScaffoldCandidatePreflightReport (status: PreflightStatus,
+    findings: list[PreflightFinding] as frozen dataclasses) and dict-based
+    test doubles (preflight_status + dict findings) for backward compatibility.
     """
-    preflight_status = getattr(report, "preflight_status", "warn")
+    # status is the canonical field; preflight_status is the test-double fallback
+    raw_status = getattr(report, "status", None)
+    if raw_status is None:
+        raw_status = getattr(report, "preflight_status", "warn")
+
     proposal_id = getattr(report, "proposal_id", "unknown")
     raw_findings = getattr(report, "findings", []) or []
     raw_receipt_refs = getattr(report, "receipt_refs", []) or []
@@ -173,19 +199,18 @@ def evaluation_report_from_scaffold_preflight(
         "warn": "warn",
         "block": "block",
     }
-    status = status_map.get(str(preflight_status), "warn")
+    status = status_map.get(str(raw_status), "warn")
 
     findings = [
         EvaluationFinding(
-            code=str(f.get("code", "preflight_finding")),
-            severity=_coerce_severity(f.get("severity", "warn")),
-            message=str(f.get("message", "")),
-            recovery_hint=str(f.get("recovery_hint", "")),
-            source_refs=_dedupe_refs(list(f.get("source_refs", []))),
-            receipt_refs=_dedupe_refs(list(f.get("receipt_refs", []))),
+            code=str(_finding_get(f, "code", "preflight_finding")),
+            severity=_coerce_severity(_finding_get(f, "severity", "warn")),
+            message=str(_finding_get(f, "message", "")),
+            recovery_hint=str(_finding_get(f, "recovery_hint", "")),
+            source_refs=_finding_list_get(f, "source_refs"),
+            receipt_refs=_finding_list_get(f, "receipt_refs"),
         )
         for f in raw_findings
-        if isinstance(f, dict)
     ]
 
     return build_evaluation_report(
