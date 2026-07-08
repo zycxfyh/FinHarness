@@ -399,3 +399,89 @@ class TestRealObjectProjection:
         codes = {f.code for f in report.findings}
         assert "real_finding" in codes
         assert "dict_finding" in codes
+
+
+# ── Real ProposalQueueChecks projection ─────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class RealQueueCheckFinding:
+    code: str
+    severity: str
+    classification: str = "finding"
+    message: str = ""
+    recovery_hint: str = ""
+    source_refs: list[str] | None = None
+    receipt_refs: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class RealProposalQueueChecks:
+    proposal_id: str = "p_real"
+    check_state: str = "review_required"
+    blocks: list[object] | None = None
+    warnings: list[object] | None = None
+    source_refs: list[str] | None = None
+    receipt_refs: list[str] | None = None
+
+
+class TestRealQueueCheckProjection:
+    def test_queue_check_object_projects_blocks_and_warnings(self) -> None:
+        real = RealProposalQueueChecks(
+            proposal_id="p_qc_real",
+            check_state="blocked",
+            blocks=[
+                RealQueueCheckFinding(
+                    code="missing_source_refs",
+                    severity="block",
+                    message="No source refs provided",
+                    source_refs=["src_qc"],
+                    receipt_refs=["r_qc_block"],
+                ),
+            ],
+            warnings=[
+                RealQueueCheckFinding(
+                    code="stale_context",
+                    severity="warn",
+                    message="Context is older than 7 days",
+                    receipt_refs=["r_qc_warn"],
+                ),
+            ],
+            receipt_refs=["r_qc_total"],
+        )
+        report = evaluation_report_from_queue_check(real)
+        assert report.status == "block"
+        assert len(report.findings) == 2
+        # Blocks come first, warnings second
+        assert report.findings[0].code == "missing_source_refs"
+        assert report.findings[0].severity == "block"
+        assert report.findings[1].code == "stale_context"
+        assert report.findings[1].severity == "warn"
+        assert "r_qc_total" in report.receipt_refs
+
+    def test_queue_check_dict_projection_still_works(self) -> None:
+        mock = MockQueueCheck(
+            status="warn",
+            findings=[
+                {"code": "old_dict", "severity": "info", "message": "dict"},
+            ],
+        )
+        report = evaluation_report_from_queue_check(mock)
+        assert report.status == "warn"
+        assert len(report.findings) == 1
+        assert report.findings[0].code == "old_dict"
+
+    def test_queue_check_state_maps_correctly(self) -> None:
+        for state, expected in (
+            ("clear", "pass"),
+            ("review_required", "warn"),
+            ("blocked", "block"),
+            ("pass", "pass"),
+            ("warn", "warn"),
+            ("block", "block"),
+        ):
+            real = RealProposalQueueChecks(check_state=state, warnings=[
+                RealQueueCheckFinding(code="x", severity="warn", message="x"),
+            ])
+            report = evaluation_report_from_queue_check(real)
+            assert report.status == expected, f"{state} → {report.status}, expected {expected}"
