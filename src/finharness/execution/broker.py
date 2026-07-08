@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Protocol
 
 from finharness.statecore.execution_models import (
-    BrokerConnection,
     ExecutionEnvironment,
     ExecutionOrder,
     ExecutionReport,

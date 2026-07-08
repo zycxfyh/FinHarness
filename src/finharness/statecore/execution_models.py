@@ -13,6 +13,8 @@ The hard engineering boundary:
     No real external broker, credential, account funding, or venue
     connectivity exists.
 """
+# ruff: noqa: UP042
+
 
 from __future__ import annotations
 
@@ -26,8 +28,6 @@ from sqlmodel import Field, SQLModel
 
 from finharness.statecore.models import (
     STATE_CORE_SCHEMA_VERSION,
-    AuthorityLevel,
-    json_dict_column,
     json_list_column,
     money_column,
 )

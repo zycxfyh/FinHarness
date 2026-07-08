@@ -23,14 +23,14 @@ from finharness.action_intent_preflight import (
     ActionIntentPreflightFinding,
     preflight_action_intent,
 )
-from finharness.api.legacy_headers import (
-    ACTION_INTENT_SUPERSEDED_BY,
-    mark_legacy_surface,
-)
 from finharness.api.dependencies import (
     EngineDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
+)
+from finharness.api.legacy_headers import (
+    ACTION_INTENT_SUPERSEDED_BY,
+    mark_legacy_surface,
 )
 from finharness.statecore.action_intent_authority_bindings import (
     ACTION_INTENT_AUTHORITY_BINDING_NON_CLAIMS,

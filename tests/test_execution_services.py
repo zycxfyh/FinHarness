@@ -3,6 +3,8 @@
 Proves the canonical execution lifecycle runs end-to-end:
 draft → check → approve → stage → submit → report → position delta → reconciliation.
 """
+# ruff: noqa: E501
+
 
 from __future__ import annotations
 
@@ -25,16 +27,12 @@ from finharness.execution.services import (
     submit_execution_order,
 )
 from finharness.statecore.execution_models import (
-    ApprovalRecord,
     BrokerConnection,
     ExecutionAccount,
     ExecutionEnvironment,
     ExecutionOrder,
     ExecutionReport,
     OrderDraft,
-    PositionDelta,
-    PreTradeCheck,
-    ReconciliationReport,
 )
 from finharness.statecore.models import ReceiptIndex
 from finharness.statecore.store import init_state_core, write_records

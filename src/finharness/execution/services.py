@@ -7,7 +7,6 @@ simulated substrate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -18,13 +17,10 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from finharness.execution.receipts import (
-    EXECUTION_RECEIPT_KINDS,
     write_execution_receipt,
 )
 from finharness.statecore.execution_models import (
     ApprovalRecord,
-    BrokerConnection,
-    ExecutionAccount,
     ExecutionEnvironment,
     ExecutionOrder,
     ExecutionReport,
@@ -34,9 +30,8 @@ from finharness.statecore.execution_models import (
     ReconciliationReport,
 )
 from finharness.statecore.models import ReceiptIndex
-from finharness.statecore.proposals import _display_path, _receipt_index
+from finharness.statecore.proposals import _display_path
 from finharness.statecore.store import write_records
-
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
