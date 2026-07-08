@@ -225,7 +225,13 @@ debts:
       Tests cover: cannot stage rejected draft, cannot submit non-staged
       order, filled report updates status, partial fill behavior.
     priority: medium
-    candidate_pr: 137
+    candidate_pr: 139
+    status: resolved
+    status_note: >
+      #139 added 8 lifecycle hardening tests covering: rejected/cancelled
+      draft rejection, missing pretrade/approval guards, double-submit
+      guard, receipt ordering, and fill integrity. stage_execution_order
+      and submit_execution_order now raise ValueError on illegal transitions.
     blocked_by: []
 
   - id: DEBT-CLS-002

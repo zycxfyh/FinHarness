@@ -253,16 +253,54 @@ def stage_execution_order(
     broker_connection_id: str,
     environment: str = "live",
 ) -> ExecutionOrder:
-    """Stage an execution order from an approved draft."""
-    # Load the draft to get environment
-    actual_env = environment
+    """Stage an execution order from an approved draft.
+
+    Raises ValueError if draft is rejected, cancelled, not pretrade-checked,
+    or not yet approved.
+    """
+    # ── pre-conditions ──
     with Session(engine) as session:
         draft = session.exec(
             select(OrderDraft).where(OrderDraft.order_draft_id == order_draft_id)
         ).one_or_none()
-        if draft:
-            env_val = draft.environment
-            actual_env = env_val.value if hasattr(env_val, "value") else str(env_val)
+        if draft is None:
+            raise ValueError(f"order draft not found: {order_draft_id}")
+        if draft.draft_status in ("rejected", "cancelled"):
+            raise ValueError(
+                f"cannot stage {draft.draft_status} draft: {order_draft_id}"
+            )
+        if draft.draft_status not in (
+            "pretrade_check_passed", "approved", "pretrade_check_blocked",
+        ):
+            raise ValueError(
+                f"draft must have pretrade check before staging: "
+                f"current status={draft.draft_status}"
+            )
+
+        # Verify PreTradeCheck exists
+        ptc = session.exec(
+            select(PreTradeCheck).where(
+                PreTradeCheck.order_draft_id == order_draft_id
+            )
+        ).first()
+        if ptc is None:
+            raise ValueError(
+                f"no PreTradeCheck found for draft: {order_draft_id}"
+            )
+
+        # Verify ApprovalRecord exists
+        approval = session.exec(
+            select(ApprovalRecord).where(
+                ApprovalRecord.order_draft_id == order_draft_id
+            )
+        ).first()
+        if approval is None:
+            raise ValueError(
+                f"no ApprovalRecord found for draft: {order_draft_id}"
+            )
+
+        env_val = draft.environment
+        actual_env = env_val.value if hasattr(env_val, "value") else str(env_val)
 
     order_id = _new_id("eo")
     created = _now_utc()
@@ -322,7 +360,24 @@ def submit_execution_order(
     The actual submission is handled by a BrokerAdapter. This service
     records the submit attempted → submitted lifecycle. For simulated
     adapters, no external network call occurs.
+
+    Raises ValueError if the order is not in 'staged' status.
     """
+    # ── pre-condition: must be staged ──
+    with Session(engine) as session:
+        order_check = session.exec(
+            select(ExecutionOrder).where(
+                ExecutionOrder.execution_order_id == execution_order_id
+            )
+        ).one_or_none()
+        if order_check is None:
+            raise ValueError(f"execution order not found: {execution_order_id}")
+        if order_check.execution_status != "staged":
+            raise ValueError(
+                f"cannot submit order with status '{order_check.execution_status}': "
+                f"must be 'staged', got '{order_check.execution_status}'"
+            )
+
     created = _now_utc()
 
     # ── submit_attempted receipt ──
