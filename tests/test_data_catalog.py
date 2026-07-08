@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from finharness.data_catalog import (
     DataCatalogEntry,
@@ -286,21 +287,18 @@ class DataCatalogDiscoveryTest(unittest.TestCase):
         payload = _make_receipt_json()
         self._write_receipt("receipt_mds_20260701T000000Z_00000001.json", payload)
 
-        view = build_data_catalog(self.receipt_root)
+        # Freeze clock: _days_since returns 1 so freshness always "fresh".
+        with patch("finharness.data_quality_policy._days_since", return_value=1):
+            view = build_data_catalog(self.receipt_root)
+
         entry = next(e for e in view.catalog_entries if e.provider == "yfinance")
 
-        self.assertIn(entry.freshness_status, ("fresh", "stale", "critically_stale", "unknown"))
-        self.assertIn(entry.quality_status, ("ok", "degraded", "unknown"))
-        self.assertIn(entry.bias_status, ("controlled", "uncontrolled"))
-        self.assertIn(
-            entry.readiness_status,
-            ("usable", "usable_with_warnings", "not_ready"),
-        )
+        self.assertEqual(entry.freshness_status, "fresh")
+        self.assertEqual(entry.quality_status, "ok")
+        self.assertEqual(entry.bias_status, "uncontrolled")
+        self.assertEqual(entry.readiness_status, "usable_with_warnings")
         self.assertIsInstance(entry.findings, list)
         self.assertIsInstance(entry.blocks, list)
-        # Freshness is time-sensitive; accept any valid status.
-        self.assertIn(entry.freshness_status, ("fresh", "stale", "critically_stale", "unknown"))
-        self.assertEqual(entry.readiness_status, "usable_with_warnings")
 
     def test_malformed_receipt_becomes_data_gap(self) -> None:
         bad_path = self.receipt_root / "receipt_mds_20260701T000000Z_bad.json"

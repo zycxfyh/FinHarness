@@ -31,12 +31,12 @@ debts:
       moved to optional integration suite.
     priority: high
     candidate_pr: 126
-    status: partially_addressed
+    status: resolved
     status_note: >
-      #126 changed assertEqual('fresh') → assertIn(valid_statuses),
-      which eliminated flaky CI red but weakened test semantics
-      (quarantine-style fix). Deterministic fix (freeze clock /
-      fixed fixture) still needed.
+      #126 applied a quarantine assertIn fix; #133 replaced it with
+      a deterministic mock (_days_since → 1) and restored meaningful
+      assertEqual("fresh") assertions. Test now verifies correct
+      freshness computation regardless of wall-clock time.
     blocked_by: []
 
   - id: DEBT-CI-002
@@ -100,10 +100,11 @@ debts:
     candidate_pr: 130
     status: partially_addressed
     status_note: >
-      #128 added RBW-0018/0019/0020 execution write entries. However,
-      all entries still use execution_allowed=false, which is semantically
-      misleading for canonical execution routes. Field rename or
-      clarification note still needed.
+      #128 added RBW-0018/0019/0020 execution write entries but they were
+      missing required fields (receipt_payload_builder, receipt_index_builder,
+      stale_guard, failure_cleanup). #133 filled these in, matching the
+      execution receipts.py pattern. execution_allowed=false semantics note
+      was added in #132; field rename still pending.
     blocked_by: []
 
   - id: DEBT-REG-004

@@ -434,7 +434,11 @@
       "db_write_call": "write_records",
       "receipt_kind": "execution.order_draft.created",
       "receipt_subdir": "execution/order-drafts",
+      "receipt_payload_builder": "write_execution_receipt (finharness.execution.receipts, L60)",
       "receipt_indexed": true,
+      "receipt_index_builder": "ReceiptIndex(...) inline (services.py L116)",
+      "stale_guard": "not applicable: each draft is a new artifact_id; no upstream receipt_ref check",
+      "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
       "behavior_change": false
     },
@@ -454,7 +458,11 @@
       "db_write_call": "write_records",
       "receipt_kind": "execution.order.staged",
       "receipt_subdir": "execution/orders",
+      "receipt_payload_builder": "write_execution_receipt (finharness.execution.receipts, L60)",
       "receipt_indexed": true,
+      "receipt_index_builder": "ReceiptIndex(...) inline (services.py L305)",
+      "stale_guard": "not applicable: each stage creates a new ExecutionOrder with new artifact_id",
+      "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
       "behavior_change": false
     },
@@ -475,7 +483,11 @@
       "db_write_call": "write_records (via submit_execution_order + record_execution_report)",
       "receipt_kind": "execution.order.submitted",
       "receipt_subdir": "execution/orders",
+      "receipt_payload_builder": "write_execution_receipt (finharness.execution.receipts, L60)",
       "receipt_indexed": true,
+      "receipt_index_builder": "ReceiptIndex(...) inline (services.py L368)",
+      "stale_guard": "not applicable: submit is a lifecycle transition; existing order must exist but no receipt_ref staleness check",
+      "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
       "behavior_change": false
     }

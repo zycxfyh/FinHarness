@@ -51,6 +51,10 @@ EXPECTED_FUNCTIONS = {
     "record_ips",
     "record_paper_execution_receipt",
     "revise_governed_proposal_scaffold",
+    # Execution Kernel (#116-#118)
+    "create_order_draft",
+    "stage_execution_order",
+    "submit_order",
 }
 
 EXPECTED_ROUTE_REFS = {
@@ -72,6 +76,10 @@ EXPECTED_ROUTE_REFS = {
     "POST /trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits",
     "POST /trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates",
     "POST /trade-plan-candidates/{trade_plan_candidate_id}/review-gates",
+    # Execution Kernel (#116-#118)
+    "POST /execution/order-drafts",
+    "POST /execution/order-drafts/{id}/stage",
+    "POST /execution/orders/{id}/submit",
 }
 
 
