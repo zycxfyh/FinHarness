@@ -16,6 +16,7 @@ from pathlib import Path
 
 from finharness.execution.legacy_bridge import (
     AgenticArtifact,
+    AgenticArtifactKind,
     ExecutionProjection,
     LegacyExecutionBridgeResult,
     separate_legacy_chain,
@@ -313,3 +314,46 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
         for d in result.deletion_candidates:
             self.assertIsNotNone(d.superseded_by, f"{d.object_type} missing superseded_by")
             self.assertGreater(len(d.superseded_by), 0)
+
+    def test_agentic_artifact_kinds_are_enum_values(self) -> None:
+        """All agentic artifacts have kind that is an AgenticArtifactKind enum."""
+        pid = self._seed_full_chain()
+        result = separate_legacy_chain(pid, self.engine)
+
+        for artifact in result.agentic_artifacts:
+            self.assertIsInstance(
+                artifact.kind,
+                AgenticArtifactKind,
+                f"{artifact.source_object}: {artifact.kind} is not AgenticArtifactKind",
+            )
+
+        # Verify classification correctness — specific mappings
+        kinds_by_source: dict[str, set[AgenticArtifactKind]] = {}
+        for a in result.agentic_artifacts:
+            kinds_by_source.setdefault(a.source_object, set()).add(a.kind)
+
+        # CapitalObjectiveFit → SKILL_OUTPUT
+        self.assertIn(
+            AgenticArtifactKind.SKILL_OUTPUT,
+            kinds_by_source.get("CapitalObjectiveFit", set()),
+        )
+        # AuthorityBinding → EVALUATOR_FINDING
+        self.assertIn(
+            AgenticArtifactKind.EVALUATOR_FINDING,
+            kinds_by_source.get("ActionIntentAuthorityBinding", set()),
+        )
+        # TradePlanReviewGate → PERMISSION_TRACE
+        self.assertIn(
+            AgenticArtifactKind.PERMISSION_TRACE,
+            kinds_by_source.get("TradePlanReviewGate", set()),
+        )
+        # ActionIntent → CONTEXT
+        self.assertIn(
+            AgenticArtifactKind.CONTEXT,
+            kinds_by_source.get("ActionIntent", set()),
+        )
+        # SimulationReport → WORKFLOW_OUTPUT
+        self.assertIn(
+            AgenticArtifactKind.WORKFLOW_OUTPUT,
+            kinds_by_source.get("ActionIntentSimulationReport", set()),
+        )

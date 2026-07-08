@@ -185,12 +185,12 @@ debts:
       kind uses enum: context, skill_output, workflow_output,
       evaluator_finding, permission_trace, review_memo, trace.
     priority: medium
-    candidate_pr: 135
-    status: partially_addressed
+    candidate_pr: 137
+    status: resolved
     status_note: >
-      #130 added a comment listing allowed kind values in legacy_bridge.py
-      but did not implement an actual enum. The kind field remains a
-      free-form string. Enum implementation still needed.
+      #137 replaced free-form string with AgenticArtifactKind(StrEnum).
+      All creation sites use enum values. Test verifies isinstance check
+      and classification correctness.
     blocked_by: []
 
   - id: DEBT-AGT-002
