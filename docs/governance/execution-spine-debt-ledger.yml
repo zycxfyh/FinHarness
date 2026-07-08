@@ -111,13 +111,10 @@ debts:
       /paper-validation/*.
     priority: high
     candidate_pr: 130
-    status: partially_addressed
+    status: resolved
     status_note: >
-      #128 added RBW-0018/0019/0020 execution write entries but they were
-      missing required fields (receipt_payload_builder, receipt_index_builder,
-      stale_guard, failure_cleanup). #133 filled these in, matching the
-      execution receipts.py pattern. execution_allowed=false semantics note
-      was added in #132; field rename still pending.
+      #144 added execution_substrate + real_external_execution_allowed.
+      execution_allowed retained as deprecated compatibility field.
     blocked_by: []
 
   - id: DEBT-REG-004
@@ -132,11 +129,11 @@ debts:
       legacy; not_* protection receipts deprecated.
     priority: medium
     candidate_pr: 131
-    status: partially_addressed
+    status: resolved
     status_note: >
-      #128 added 9 execution.* receipt kinds to receipts.md. However,
-      old not_* protection receipt rows remain as active entries.
-      Deprecation/legacy marking still needed.
+      #145 added Legacy / Deprecated Receipt Fields section.
+      not_order, not_advice_not_execution, execution_allowed marked
+      as legacy only, superseded by Execution Kernel + simulated substrate.
     blocked_by: []
 
   # ── Legacy Shadow Surface ───────────────────────────────────────────
