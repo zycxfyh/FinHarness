@@ -105,7 +105,7 @@ async function run() {
       "Overview view must be the active default view",
     );
     const tabCount = await page.locator("nav.tabs button.tab").count();
-    assert.equal(tabCount, 8, "expected the 8 cockpit tabs");
+    assert.equal(tabCount, 9, "expected the 9 cockpit tabs (incl. Execution)");
     await shot(page, "01-cockpit-load");
 
     // --- Golden path 2: Proposals view opens (seeded) --------------------------------
