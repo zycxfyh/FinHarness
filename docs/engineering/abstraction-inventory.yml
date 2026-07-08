@@ -3,7 +3,7 @@
 # See docs/engineering/agentic-abstraction-principles.md for taxonomy.
 schema: finharness.abstraction_inventory.v2
 status: current
-updated: '2026-07-08'
+updated: '2026-07-09'
 description: 'Stabilization-phase inventory mapping existing complex artifacts to their
   target abstraction layers. Each entry records current_form, target_layer,
   target_form, migration_path, delete_condition, risk_level, and risk_reason.
@@ -368,6 +368,93 @@ objects:
   - same as PaperOrderTicketCandidate
   risk_level: low
   risk_reason: low — but belongs in execution bounded context
+- name: AgentRunReceipt
+  current_form:
+  - receipt_only
+  - trace_primitive
+  target_layer:
+  - trace
+  target_form: AgentRunReceipt (remain receipt-only)
+  migration_path: receipt_first
+  delete_condition:
+  - replaced by AgentRun table only after >=2 real integration points need query/state
+  risk_level: low
+  risk_reason: correct first trace primitive; do not graduate to StateCore prematurely
+- name: ContextTrust
+  current_form:
+  - projection_metadata
+  - context_annotation
+  target_layer:
+  - context
+  - resource
+  target_form: ContextTrust metadata on agent-facing context
+  migration_path: projection_first
+  delete_condition:
+  - never — epistemic metadata remains required for agent cognition
+  risk_level: low
+  risk_reason: correct agent cognition metadata; next risk is pack-level coarseness
+- name: EvaluationReport
+  current_form:
+  - projection_model
+  - evaluator_common_shape
+  target_layer:
+  - evaluator
+  target_form: EvaluationReport common projection
+  migration_path: projection_first
+  delete_condition:
+  - replaced only if full evaluator runtime appears
+  risk_level: low
+  risk_reason: correct common evaluator shape; do not turn into governance decision
+- name: AuthorityTransitionRecord
+  current_form:
+  - receipt_only
+  - eligibility_record
+  target_layer:
+  - permission
+  - trace
+  target_form: eligibility-only authority transition record
+  migration_path: receipt_first
+  delete_condition:
+  - never for recorded transitions; may graduate after real workflow consumers
+  risk_level: moderate
+  risk_reason: must not become execution authorization; eligibility-only boundary must hold
+- name: PlanningPolicyView
+  current_form:
+  - read_model
+  - feedback_projection
+  target_layer:
+  - feedback
+  - context
+  target_form: planner-readable view from traceable RuleChange
+  migration_path: projection_first
+  delete_condition:
+  - replaced only by stronger planner policy runtime
+  risk_level: low
+  risk_reason: correct learning-to-context bridge; not planner runtime
+- name: OptionSetReceipt
+  current_form:
+  - receipt_only
+  - deliberation_artifact
+  target_layer:
+  - deliberation
+  target_form: receipt-only option set
+  migration_path: receipt_first
+  delete_condition:
+  - graduate only after multiple planning/review consumers
+  risk_level: moderate
+  risk_reason: avoid becoming proposal replacement or shadow action object
+- name: PlanDraftReceipt
+  current_form:
+  - receipt_only
+  - deliberation_artifact
+  target_layer:
+  - deliberation
+  target_form: receipt-only plan draft
+  migration_path: receipt_first
+  delete_condition:
+  - graduate only after real loop/evaluator consumers
+  risk_level: moderate
+  risk_reason: must not become execution plan or order generator
 registries:
 - name: DataCatalog
   current_form:
