@@ -15,7 +15,7 @@
   "devDependencies": {
     "jsdom": "^29.1.1",
     "playwright": "^1.61.1",
-    "promptfoo": "^0.121.12"
+    "promptfoo": "^0.121.18"
   },
   "pnpm": {
     "comment": "Security overrides: pin transitive dev deps (under promptfoo/jsdom) to the patched floor WITHIN the same major, to clear Dependabot CVEs without an unnecessary major bump. See docs/security/security-debt-register.md.",
