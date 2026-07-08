@@ -22,7 +22,7 @@ FinHarness 原语的对应关系看
 
 FinHarness 是一个 local-first **personal capital governance framework**:
 把个人资本状态、IPS/CapitalMandate、证据、proposal/review、Agent explanation、
-receipt、governance checks、paper validation、agent task runtime 和未来受控
+receipt、governance checks、Execution Kernel (simulated substrate) 和未来受控
 资本动作能力组织成可审计闭环。
 
 ## Framework Shape

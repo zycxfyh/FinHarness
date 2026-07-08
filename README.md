@@ -5,13 +5,12 @@ individual see their financial state, risk exposure, decision rationale,
 reviewable action options, and what actually happened afterward.
 
 The product is meant to move step by step from situational awareness to governed
-planning, paper validation, review, and eventually tightly controlled execution
-surfaces. The research / evidence / risk **harness** underneath is the engine
-room, not the product surface: every meaningful suggestion carries claims with
-evidence, assumptions, limitations, and review state, then produces a receipt.
-FinHarness is allowed to explain, compare, simulate, validate, and help the
-operator form and review financial judgment; it must not pretend any claim is a
-guaranteed edge.
+planning, execution simulation, review, and eventual controlled execution
+surfaces. The Execution Kernel (OrderDraft → PreTradeCheck → ApprovalRecord
+→ ExecutionOrder → SimulatedBrokerAdapter → ExecutionReport → PositionDelta
+→ ReconciliationReport) is the canonical execution mainline; the current
+substrate is simulated-only — no real broker SDK, no funded account, no
+external venue connectivity.
 
 > **Product direction:** [Product Thesis](docs/product/product-thesis.md) ·
 > [Product Roadmap](docs/product/product-roadmap.md) ·
@@ -20,8 +19,8 @@ guaranteed edge.
 >
 > **New here?** Start with the [docs task map](docs/README.md), then run the
 > [Golden Path Tutorial](docs/tutorials/golden-path.md). It walks you through a
-> safe end-to-end flow and shows the brakes: human review, receipts, and
-> `execution_allowed=false`.
+> safe end-to-end flow and shows the governance model: human review, receipts,
+> and simulated-only execution substrate.
 
 > **Need the framework in one screen?** Use the
 > [Framework Index](docs/architecture/framework-index.md). It summarizes each
@@ -100,13 +99,17 @@ FinHarness now follows the Capital OS layering:
 
 ```text
 import -> state -> policy -> proposal/review -> agent explanation
--> action simulation -> retrospective/learning -> cockpit
+-> Execution Kernel (simulated) -> retrospective/learning -> cockpit
 ```
 
-The current executable mainline is personal capital state, IPS policy checks,
-governed proposals, review/attestation, receipts, and the local cockpit. The old
-ten-layer trading-signal chain and live-trading entry points have been retired
-from mainline. Their historical code is archived under
+The Execution Kernel is the canonical execution path:
+OrderDraft → PreTradeCheck → ApprovalRecord → ExecutionOrder
+→ SimulatedBrokerAdapter.submit_order() → ExecutionReport
+→ PositionDelta → ReconciliationReport.
+
+The old ten-layer trading-signal chain and live-trading entry points have been retired
+from mainline. The ActionIntent/TradePlan/PaperValidation chain is legacy,
+bridged via `execution/legacy_bridge.py`. Their historical code is archived under
 `experiments/archive/live_trading_legacy/` and must not be imported by product
 runtime, API routes, Agent tools, or Taskfile tasks.
 
@@ -119,16 +122,19 @@ runtime, API routes, Agent tools, or Taskfile tasks.
 | Review System | Human attestation, compare, archive/reopen, annual review, lesson-to-rule | [System Map](docs/architecture/system-map.md) |
 | Research Evidence + Mature Wheels | Cite-only evidence and mature adapters; external tools are inputs, not authority | [Research Assets](docs/research/README.md), [Mature Wheel Control Plane](docs/architecture/mature-wheel-control-plane.md) |
 | Cockpit/API + Agent Explanation | Local read/review product surface and tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md) |
+| Execution Kernel | Canonical execution lifecycle on simulated substrate (OrderDraft → ExecutionReport) | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Execution Routes](docs/reference/api.md) |
 | EOS Governance + Security | Policy registry, docs-current guard, repo intelligence, hardening, release checks | [Documentation Fact Governance](docs/architecture/documentation-fact-governance.md), [Threat Model](docs/security/finharness-threat-model.md) |
 
 If a change makes this table feel wrong, update the Framework Index, System Map,
 Module Map, and current entry docs in the same PR, then run
 `task docs:current-check`.
 
-The local B0 cockpit is served by the product API. The API is read plus governed
-human attestation: it exposes reads and lets a named human attest a proposal, and
-nothing else. There is no order, transfer, live execution, or ceiling-raise
-endpoint (tests assert the route boundary).
+The local B0 cockpit is served by the product API. The API exposes reads, governed
+human attestation, and the Execution Kernel lifecycle on a simulated substrate.
+The Execution Kernel models OrderDraft and ExecutionOrder and calls
+SimulatedBrokerAdapter.submit_order() — but no real broker SDK, credential,
+funded account, or external venue connectivity exists. Tests assert the
+simulated-only adapter boundary.
 
 ```bash
 task api:serve
@@ -137,8 +143,7 @@ task api:serve
 
 The browser surface shows Overview, Exposure, Proposals, and Timeline views.
 Proposal details include candidate evidence, options, attestations, and revision
-history. Human attestations are governance evidence recorded with
-`execution_allowed=false`.
+history.
 
 Personal-finance state can be mirrored without making FinHarness the ledger.
 There are two read-only adapters:
@@ -176,8 +181,8 @@ round-trip through float): personal-finance amounts and `Position`
 quantity/market value/cost basis. Snapshot diffs and observations aggregate in
 `Decimal` and present `float` at the receipt/API layer.
 
-Human attestation is fail-closed everywhere: an attestation is review evidence
-recorded with `execution_allowed=false`. High-risk proposal approval requires
+Human attestation is review evidence: an attestation records the reviewer's
+decision with receipt-backed evidence. High-risk proposal approval requires
 counter-evidence; rejection remains allowed so the review queue never pressures
 the system into fabricating a rationale.
 
