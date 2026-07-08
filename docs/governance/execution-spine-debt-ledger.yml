@@ -267,7 +267,12 @@ debts:
       network_enabled=false. credential_ref is None. No external
       SDK dependency.
     priority: medium
-    candidate_pr: 139
+    candidate_pr: 141
+    status: resolved
+    status_note: >
+      #141 added 6 adapter boundary tests: adapter_kind=simulated,
+      network_enabled=False, credential_ref=None, no real SDK imports,
+      submit_order returns simulated broker_event_ref.
     blocked_by: []
 
   # ── Control / Safety ────────────────────────────────────────────────
