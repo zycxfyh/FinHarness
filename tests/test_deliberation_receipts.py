@@ -139,6 +139,16 @@ class TestPlanDraftReceipt:
                 receipt_root=Path(tmp),
             )
 
+    def test_rejects_all_blank_steps(self) -> None:
+        import pytest
+
+        with tempfile.TemporaryDirectory() as tmp, pytest.raises(ValueError, match="step"):
+            write_plan_draft_receipt(
+                objective="test",
+                steps=["   ", "\n", "\t"],
+                receipt_root=Path(tmp),
+            )
+
     def test_strips_whitespace_steps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             receipt = write_plan_draft_receipt(

@@ -151,8 +151,9 @@ def write_plan_draft_receipt(
     """
     if not objective.strip():
         raise ValueError("PlanDraftReceipt requires a non-blank objective")
-    if not steps:
-        raise ValueError("PlanDraftReceipt requires at least one step")
+    clean_steps = [s.strip() for s in steps if s.strip()]
+    if not clean_steps:
+        raise ValueError("PlanDraftReceipt requires at least one non-blank step")
 
     receipt_id = _new_id("pd")
     plan_id = _new_id("plan")
@@ -161,7 +162,7 @@ def write_plan_draft_receipt(
         receipt_id=receipt_id,
         plan_id=plan_id,
         objective=objective.strip(),
-        steps=[s.strip() for s in steps if s.strip()],
+        steps=clean_steps,
         stop_conditions=_dedupe_refs(stop_conditions or []),
         required_evaluations=_dedupe_refs(required_evaluations or []),
         related_option_set_id=related_option_set_id.strip()

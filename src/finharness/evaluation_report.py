@@ -229,35 +229,61 @@ def evaluation_report_from_scaffold_preflight(
 def evaluation_report_from_queue_check(
     queue_check: object,
 ) -> EvaluationReport:
-    """Project proposal queue check output into an EvaluationReport.
+    """Project ProposalQueueChecks into an EvaluationReport.
 
-    Accepts any object with status, findings (list of dicts with code/
-    message/severity), and optional proposal_id and receipt_refs.
+    Accepts the real ProposalQueueChecks (check_state, blocks, warnings
+    as QueueCheckFinding dataclasses) and dict-based test doubles
+    (status + findings) for backward compatibility.
     """
-    raw_status = getattr(queue_check, "status", "warn")
+    # check_state is the canonical field; status is the test-double fallback
+    raw_state = getattr(queue_check, "check_state", None)
+    if raw_state is None:
+        raw_state = getattr(queue_check, "status", "warn")
+
     proposal_id = getattr(queue_check, "proposal_id", "unknown")
-    raw_findings = getattr(queue_check, "findings", []) or []
     raw_receipt_refs = getattr(queue_check, "receipt_refs", []) or []
 
+    # Real queue checks have blocks + warnings; test doubles have findings
+    raw_blocks = getattr(queue_check, "blocks", None)
+    raw_warnings = getattr(queue_check, "warnings", None)
+    if raw_blocks is not None or raw_warnings is not None:
+        # Real object path: merge blocks (→ block severity) + warnings (→ warn)
+        block_findings = [
+            _finding_to_evaluation_finding(f, severity_override="block")
+            for f in (raw_blocks or [])
+        ]
+        warn_findings = [
+            _finding_to_evaluation_finding(f, severity_override="warn")
+            for f in (raw_warnings or [])
+        ]
+        findings = block_findings + warn_findings
+    else:
+        # Test double path: use findings (dicts only, backward compat)
+        raw_findings = getattr(queue_check, "findings", []) or []
+        findings = [
+            EvaluationFinding(
+                code=str(f.get("code", "queue_check_finding")),
+                severity=_coerce_severity(f.get("severity", "warn")),
+                message=str(f.get("message", "")),
+                recovery_hint=str(f.get("recovery_hint", "")),
+                source_refs=_dedupe_refs(list(f.get("source_refs", []))),
+                receipt_refs=_dedupe_refs(list(f.get("receipt_refs", []))),
+            )
+            for f in raw_findings
+            if isinstance(f, dict)
+        ]
+
+    # Map check_state → pass/warn/block
+    state_str = str(raw_state).strip().lower()
     status_map: dict[str, Literal["pass", "warn", "block"]] = {
         "pass": "pass",
         "warn": "warn",
         "block": "block",
+        "clear": "pass",
+        "review_required": "warn",
+        "blocked": "block",
     }
-    status = status_map.get(str(raw_status), "warn")
-
-    findings = [
-        EvaluationFinding(
-            code=str(f.get("code", "queue_check_finding")),
-            severity=_coerce_severity(f.get("severity", "warn")),
-            message=str(f.get("message", "")),
-            recovery_hint=str(f.get("recovery_hint", "")),
-            source_refs=_dedupe_refs(list(f.get("source_refs", []))),
-            receipt_refs=_dedupe_refs(list(f.get("receipt_refs", []))),
-        )
-        for f in raw_findings
-        if isinstance(f, dict)
-    ]
+    status = status_map.get(state_str, "warn")
 
     return build_evaluation_report(
         evaluator_id="proposal_queue_check",
@@ -266,6 +292,27 @@ def evaluation_report_from_queue_check(
         status=status,
         findings=findings,
         receipt_refs=list(raw_receipt_refs) if isinstance(raw_receipt_refs, list) else [],
+    )
+
+
+def _finding_to_evaluation_finding(
+    finding: object,
+    *,
+    severity_override: str | None = None,
+) -> EvaluationFinding:
+    """Convert a dict or dataclass finding to an EvaluationFinding."""
+    severity = (
+        _coerce_severity(severity_override)
+        if severity_override
+        else _coerce_severity(_finding_get(finding, "severity", "warn"))
+    )
+    return EvaluationFinding(
+        code=str(_finding_get(finding, "code", "queue_check_finding")),
+        severity=severity,
+        message=str(_finding_get(finding, "message", "")),
+        recovery_hint=str(_finding_get(finding, "recovery_hint", "")),
+        source_refs=_finding_list_get(finding, "source_refs"),
+        receipt_refs=_finding_list_get(finding, "receipt_refs"),
     )
 
 
