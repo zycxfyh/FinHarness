@@ -227,3 +227,79 @@ class TestAuthorityTransitionRecord:
             )
             with pytest.raises(ValidationError, match="frozen"):
                 record.eligibility = "deferred"  # type: ignore[misc]
+
+    def test_has_receipt_ref_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            record = record_authority_transition(
+                subject_type="proposal",
+                subject_id="p_001",
+                from_state="draft",
+                to_state="eligible",
+                eligibility="eligible",
+                evaluation_report_refs=["er_001"],
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                receipt_root=root,
+            )
+            assert record.receipt_ref is not None
+            assert "authority-transitions" in record.receipt_ref
+            assert record.transition_id in record.receipt_ref
+            assert Path(record.receipt_ref).exists()
+
+    def test_receipt_refs_do_not_contain_transition_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = record_authority_transition(
+                subject_type="proposal",
+                subject_id="p_001",
+                from_state="draft",
+                to_state="eligible",
+                eligibility="eligible",
+                evaluation_report_refs=["er_001"],
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                receipt_root=Path(tmp),
+            )
+            assert record.transition_id not in record.receipt_refs, (
+                "receipt_refs must not contain transition_id"
+            )
+
+    def test_supporting_receipt_refs_appear_in_receipt_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = record_authority_transition(
+                subject_type="proposal",
+                subject_id="p_001",
+                from_state="draft",
+                to_state="eligible",
+                eligibility="eligible",
+                evaluation_report_refs=["er_001"],
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                receipt_root=Path(tmp),
+                supporting_receipt_refs=["r_evidence_1", "r_evidence_2"],
+            )
+            assert "r_evidence_1" in record.receipt_refs
+            assert "r_evidence_2" in record.receipt_refs
+
+    def test_evaluation_report_refs_separate_from_receipt_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = record_authority_transition(
+                subject_type="proposal",
+                subject_id="p_001",
+                from_state="draft",
+                to_state="eligible",
+                eligibility="eligible",
+                evaluation_report_refs=["er_001", "er_002"],
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                receipt_root=Path(tmp),
+                supporting_receipt_refs=["r_support"],
+            )
+            assert record.evaluation_report_refs == ["er_001", "er_002"]
+            assert record.receipt_refs == ["r_support"]
+            # evaluation_report_refs NOT duplicated into receipt_refs
+            assert "er_001" not in record.receipt_refs
