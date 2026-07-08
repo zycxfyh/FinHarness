@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlalchemy import desc, Engine
+from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
 from finharness.statecore.models import (
