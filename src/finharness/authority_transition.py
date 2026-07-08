@@ -1,6 +1,6 @@
 """AuthorityTransitionRecord v0 — eligibility-only transition recording.
 
-Agentic-space dimension: Authority Space.
+Agentic-space dimension: Authority Space + Trace Semantics.
 
 Records the transition of a subject from one state to another based on
 evaluation evidence. This is eligibility-only (eligible / not_eligible /
@@ -8,6 +8,12 @@ deferred), NOT execution authorization. Every record requires a human
 attester, human reason, and at least one EvaluationReport reference.
 
 Receipt-only. No StateCore table. No order/execution creation.
+
+Semantics:
+  transition_id          = record identity
+  receipt_ref            = this record's own receipt path
+  evaluation_report_refs = evidence/evaluator refs (required)
+  receipt_refs           = supporting receipt refs (not self-id)
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ class AuthorityTransitionRecord(BaseModel):
     from_state: str
     to_state: str
     eligibility: Literal["eligible", "not_eligible", "deferred"]
+    receipt_ref: str | None = None
     evaluation_report_refs: list[str]
     human_attester: str
     human_reason: str
@@ -92,6 +99,7 @@ def record_authority_transition(
     receipt_root: str | Path,
     capital_mandate_id: str | None = None,
     agent_authority_grant_id: str | None = None,
+    supporting_receipt_refs: Sequence[str] = (),
 ) -> AuthorityTransitionRecord:
     """Record an eligibility-only authority transition.
 
@@ -102,7 +110,8 @@ def record_authority_transition(
     - evaluation_report_refs must contain at least one ref
 
     The record is written as a JSON file under receipt_root/authority-transitions/
-    and returned as a frozen model.
+    and returned as a frozen model. receipt_ref is set to the actual file path;
+    receipt_refs contains supporting refs, NOT the transition_id.
 
     Raises ValueError if any requirement is violated.
     """
@@ -130,6 +139,12 @@ def record_authority_transition(
         )
 
     transition_id = _new_id("at")
+    root = Path(receipt_root)
+    target_dir = root / "authority-transitions"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    receipt_ref = str(target_dir / f"{transition_id}.json")
+
+    supporting = _dedupe_refs(supporting_receipt_refs)
 
     record = AuthorityTransitionRecord(
         transition_id=transition_id,
@@ -138,6 +153,7 @@ def record_authority_transition(
         from_state=from_state.strip(),
         to_state=to_state.strip(),
         eligibility=cast(Literal["eligible", "not_eligible", "deferred"], eligibility_value),
+        receipt_ref=receipt_ref,
         evaluation_report_refs=report_refs,
         human_attester=human_attester.strip(),
         human_reason=human_reason.strip(),
@@ -148,15 +164,10 @@ def record_authority_transition(
         agent_authority_grant_id=agent_authority_grant_id.strip()
         if agent_authority_grant_id
         else None,
-        receipt_refs=[transition_id],
+        receipt_refs=supporting,
     )
 
-    root = Path(receipt_root)
-    root.mkdir(parents=True, exist_ok=True)
-    target_dir = root / "authority-transitions"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    file_path = target_dir / f"{transition_id}.json"
-    file_path.write_text(
+    Path(receipt_ref).write_text(
         record.model_dump_json(indent=2, exclude_none=True),
         encoding="utf-8",
     )
