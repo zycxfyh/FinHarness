@@ -720,3 +720,23 @@ When reviewing a receipt, check:
 - A generated lesson draft receipt is not a promoted rule.
 - An external provenance store may index receipts later, but it must not replace
   FinHarness receipt semantics.
+
+## Legacy / Deprecated Receipt Fields
+
+The following negative-protection fields appear in legacy receipt shapes
+(Action Intent, Trade Plan Candidate, Capital Objective Fit, Review Gate).
+They are **not** the canonical execution boundary model and are superseded
+by the Execution Kernel + simulated substrate invariants (#114–#131).
+
+| Legacy field | Location | Superseded by |
+|---|---|---|
+| `governance.not_order` | Action Intent Candidate | Execution Kernel: `PreTradeCheck` + `ApprovalRecord` |
+| `governance.not_advice_not_execution` | Action Intent Candidate | `X-FinHarness-Legacy-Surface` header + Execution Kernel |
+| `governance.execution_allowed` | All legacy shapes | `execution_substrate` (write registry) + `BrokerConnection.adapter_kind = "simulated"` |
+| `governance_boundary.not_order_ticket` | Authority Binding | `ExecutionOrder` is the canonical order surface |
+| `governance_boundary.not_broker_submission` | Authority Binding, Review Gate | `submit_execution_order` + simulated adapter boundary |
+| `governance_boundary.not_execution_authorization` | Authority Binding | `ExecutionCapabilities.submit_live_order = False` |
+
+These fields remain in legacy receipts for historical readability only.
+New callers use the Execution Kernel positive lifecycle:
+`OrderDraft → PreTradeCheck → ApprovalRecord → ExecutionOrder → SimulatedBrokerAdapter → ExecutionReport`.
