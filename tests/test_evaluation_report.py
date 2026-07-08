@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -13,6 +16,7 @@ from finharness.evaluation_report import (
     build_evaluation_report,
     evaluation_report_from_queue_check,
     evaluation_report_from_scaffold_preflight,
+    write_evaluation_report,
 )
 
 
@@ -485,3 +489,74 @@ class TestRealQueueCheckProjection:
             ])
             report = evaluation_report_from_queue_check(real)
             assert report.status == expected, f"{state} → {report.status}, expected {expected}"
+
+
+# ── EvaluationReport receipt writer ─────────────────────────────────────────
+
+
+class TestEvaluationReportReceiptWriter:
+    def test_writes_json_and_returns_stable_ref(self) -> None:
+        report = build_evaluation_report(
+            evaluator_id="writer_test",
+            subject_type="proposal",
+            subject_id="p_writer",
+            status="warn",
+            findings=[
+                EvaluationFinding(code="test", severity="warn", message="test"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            ref = write_evaluation_report(report=report, receipt_root=tmp)
+            assert "evaluation-reports/" in ref
+            assert f"{report.report_id}.json" in ref
+            assert f"sha256:{report.report_hash}" in ref
+            file_path = Path(tmp) / "evaluation-reports" / f"{report.report_id}.json"
+            assert file_path.exists()
+            payload = json.loads(file_path.read_text())
+            assert payload["status"] == "warn"
+            assert payload["execution_allowed"] is False
+
+    def test_preserves_execution_allowed_false(self) -> None:
+        report = build_evaluation_report(
+            evaluator_id="auth_test",
+            subject_type="proposal",
+            subject_id="p_auth",
+            status="pass",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            write_evaluation_report(report=report, receipt_root=tmp)
+            file_path = Path(tmp) / "evaluation-reports" / f"{report.report_id}.json"
+            payload = json.loads(file_path.read_text())
+            assert payload["execution_allowed"] is False
+            assert payload["authority_transition"] is False
+
+    def test_authority_transition_can_reference_evaluation_receipt(self) -> None:
+        from finharness.authority_transition import record_authority_transition
+
+        report = build_evaluation_report(
+            evaluator_id="at_integration",
+            subject_type="proposal",
+            subject_id="p_at_int",
+            status="warn",
+            findings=[
+                EvaluationFinding(code="missing_evidence", severity="warn",
+                                  message="Evidence ref is empty"),
+            ],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_ref = write_evaluation_report(report=report, receipt_root=tmp)
+            at_record = record_authority_transition(
+                subject_type="proposal",
+                subject_id="p_at_int",
+                from_state="draft",
+                to_state="eligible",
+                eligibility="eligible",
+                evaluation_report_refs=[eval_ref],
+                human_attester="ops",
+                human_reason="Evaluation report shows warn but no block — eligible",
+                explicit_confirmation=True,
+                receipt_root=tmp,
+            )
+            assert eval_ref in at_record.evaluation_report_refs
+            assert at_record.receipt_ref is not None
+            assert Path(at_record.receipt_ref).exists()

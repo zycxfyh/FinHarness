@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -322,3 +323,34 @@ def _coerce_severity(raw: object) -> Literal["info", "warn", "block"]:
     if text in valid:
         return text  # type: ignore[return-value]
     return "warn"
+
+
+# ── Receipt writer ──────────────────────────────────────────────────────────
+
+
+def write_evaluation_report(
+    *,
+    report: EvaluationReport,
+    receipt_root: str | Path,
+) -> str:
+    """Write an EvaluationReport as a persistent JSON receipt.
+
+    Returns a stable reference path:
+      evaluation-reports/{report_id}.json#sha256:{report_hash}
+
+    This enables AuthorityTransitionRecord (and other consumers) to
+    reference evaluation evidence via a stable, traceable path.
+    The report_hash anchor allows consumers to verify content integrity
+    without re-reading the file.
+
+    Does NOT create a StateCore table, registry, or service.
+    """
+    root = Path(receipt_root)
+    target_dir = root / "evaluation-reports"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    file_path = target_dir / f"{report.report_id}.json"
+    file_path.write_text(
+        report.model_dump_json(indent=2, exclude_none=True),
+        encoding="utf-8",
+    )
+    return f"evaluation-reports/{report.report_id}.json#sha256:{report.report_hash}"
