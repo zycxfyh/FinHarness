@@ -357,3 +357,110 @@ class LegacyBridgeSeparationTest(unittest.TestCase):
             AgenticArtifactKind.WORKFLOW_OUTPUT,
             kinds_by_source.get("ActionIntentSimulationReport", set()),
         )
+
+    def test_multi_ticket_and_execution_preserves_all_projections(self) -> None:
+        """Two tickets, two executions → both captured, none overwritten."""
+        pid = self._seed_full_chain()
+
+        # Verify single chain has 1 order draft, no execution report yet
+        result_single = separate_legacy_chain(pid, self.engine)
+        self.assertEqual(
+            len(result_single.execution_projection.order_draft_projections), 1,
+            "seed should have 1 ticket",
+        )
+
+        # Add a second ticket + execution on top of the same chain
+        tid2 = f"tpc2_{pid[-8:]}"
+        pid_ticket2 = f"paper2_{pid[-8:]}"
+        pex2 = f"pex2_{pid[-8:]}"
+        # Re-use existing parent IDs from _seed_full_chain pattern
+        existing_ai_id = f"ai_{pid[-8:]}"
+        existing_sim_id = f"sim_{pid[-8:]}"
+        existing_gate_id = f"gate_{pid[-8:]}"
+
+        write_records(
+            [
+                TradePlanCandidate(
+                    trade_plan_candidate_id=tid2,
+                    action_intent_id=existing_ai_id,
+                    simulation_report_id=existing_sim_id,
+                    proposal_id=pid,
+                    source_action_intent_receipt_ref="test",
+                    source_action_preflight_report_hash="hash",
+                    source_simulation_report_receipt_ref="test",
+                    source_action_preflight_status="pass",
+                    plan_direction="reduce",
+                    plan_reason="second ticket",
+                    candidate_status="needs_authority_contract",
+                ),
+                PaperOrderTicketCandidate(
+                    paper_order_ticket_id=pid_ticket2,
+                    trade_plan_candidate_id=tid2,
+                    review_gate_id=existing_gate_id,
+                    action_intent_id=existing_ai_id,
+                    simulation_report_id=existing_sim_id,
+                    proposal_id=pid,
+                    source_trade_plan_candidate_receipt_ref="test",
+                    source_review_gate_receipt_ref="test",
+                    source_action_intent_receipt_ref="test",
+                    source_action_preflight_report_hash="hash",
+                    source_simulation_report_receipt_ref="test",
+                    paper_account_ref="pa_test",
+                    instrument_ref="QQQ",
+                    symbol="QQQ",
+                    side="buy",
+                    order_type="limit",
+                    quantity=Decimal("50"),
+                    ticket_rationale="buy QQQ 50",
+                ),
+                PaperExecutionReceipt(
+                    paper_execution_id=pex2,
+                    paper_order_ticket_id=pid_ticket2,
+                    trade_plan_candidate_id=tid2,
+                    review_gate_id=existing_gate_id,
+                    action_intent_id=existing_ai_id,
+                    simulation_report_id=existing_sim_id,
+                    proposal_id=pid,
+                    source_paper_order_ticket_receipt_ref="test",
+                    source_trade_plan_candidate_receipt_ref="test",
+                    source_review_gate_receipt_ref="test",
+                    source_action_intent_receipt_ref="test",
+                    source_action_preflight_report_hash="hash",
+                    source_simulation_report_receipt_ref="test",
+                    paper_account_ref="pa_test",
+                    symbol="QQQ",
+                    side="buy",
+                    quantity=Decimal("50"),
+                    fill_price=Decimal("380.00"),
+                    gross_notional=Decimal("19000.00"),
+                    execution_status="simulated_filled",
+                    simulator_ref="test-sim",
+                    executed_at_utc="2026-01-01T00:00:00Z",
+                ),
+            ],
+            engine=self.engine,
+        )
+
+        result = separate_legacy_chain(pid, self.engine)
+
+        # Both tickets projected → 2 order drafts (1 seed + 1 new)
+        self.assertEqual(
+            len(result.execution_projection.order_draft_projections), 2,
+            "two tickets should produce two order_draft_projections",
+        )
+
+        # New execution receipt is captured (was 0, now 1)
+        self.assertGreaterEqual(
+            len(result.execution_projection.execution_report_projections), 1,
+            "new execution receipt should be captured",
+        )
+
+        # Verify distinct symbols captured in order drafts
+        symbols = {d["symbol"] for d in result.execution_projection.order_draft_projections}
+        self.assertEqual(symbols, {"SPY", "QQQ"})
+
+        # New QQQ execution captured (check source_id prefix)
+        report_sources = {
+            r["source_id"] for r in result.execution_projection.execution_report_projections
+        }
+        self.assertIn(pex2, report_sources)
