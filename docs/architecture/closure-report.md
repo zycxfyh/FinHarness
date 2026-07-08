@@ -17,8 +17,13 @@ Execution 现在由 OrderDraft → PreTradeCheck → ApprovalRecord
 旧 ActionIntent / TradePlan / PaperValidation 链已被标记为 legacy，
 通过 legacy_bridge.py 分离 execution facts 与 agentic artifacts。
 
-845 测试全部通过。后续工作是 bounded engineering debt，
-不再是核心架构不清的问题。
+Local task check 报告 845 tests pass。
+GitHub Actions 实际状态：fuzz workflow green；security workflow 中
+CodeQL/Trivy/Gitleaks green，但 Local verification (Run standard project checks)
+仍 failure；browser golden paths 失败（CI-optional，不在 task check 覆盖范围）。
+
+后续工作：bounded engineering debt + CI 信号修复。核心架构迁移已完成，
+但 debt paydown 仍在进行中。
 
 ---
 
@@ -121,7 +126,7 @@ PreTradePacket = legacy projection, legacy_bridge.py = migration path.
 | #126 | CI | flaky freshness test fix |
 | #127–#130 | governance | registry alignment + policy update |
 | #129 | docs | PreTradePacket downgrade |
-| #130 | code | agentic artifact classification |
+| #130 | code | agentic artifact kind taxonomy (comment only; enum not implemented) |
 
 ---
 
@@ -201,16 +206,53 @@ Control/Safety Plane:
 
 ## Verification
 
-845 tests pass: unit, integration, governance, removal-ledger, openapi,
-write-capability, execution lifecycle, simulated adapter, legacy bridge.
+**Local task check**: 845 tests pass (unit, integration, governance,
+removal-ledger, openapi, write-capability, execution lifecycle,
+simulated adapter, legacy bridge).
 
-Known exception: browser golden paths (CI-optional, not in task check).
+**GitHub Actions (as of #131 merge)**:
+- fuzz: green
+- security: CodeQL/Trivy/Gitleaks green; Local verification (standard
+  project checks) still failing — tracked as DEBT-CI-001
+- browser-golden-paths: failing (CI-optional, not in task check) —
+  tracked as DEBT-CI-002
+
+**Note**: closure report 声称 "845 tests pass" 但 GitHub Actions 仍有
+security/browser failures。这不是架构问题，是 CI 信号诚实度问题。
+后续 PR 应对 DEBT-CI-001 做确定性修复（freeze clock / fixed fixture），
+而非 quarantine-style 弱化 assert。
+
+---
+
+## Remaining Debt (Post-Closure)
+
+Architecture migration 完成，但以下 debt 仍 open：
+
+| Debt ID | Layer | 状态 | 说明 |
+|---|---|---|---|
+| DEBT-AGT-001 | agentic | partially_addressed | #130 只补了 kind comment，enum 未实现 |
+| DEBT-AGT-002 | agentic | open | multi-projection test coverage |
+| DEBT-CLS-001 | classical | open | lifecycle state transition tests |
+| DEBT-CLS-002 | classical | open | receipt contract verification |
+| DEBT-CLS-003 | classical | open | adapter boundary tests |
+| DEBT-CTL-001 | control | open | unified capability model |
+| DEBT-CTL-002 | control | open | adapter registration validation |
+| DEBT-CI-001 | ci_devex | partially_addressed | #126 quarantine fix；需 freeze-clock 确定性修复 |
+| DEBT-CI-002 | ci_devex | open | browser golden paths 仍红 |
+| DEBT-REG-001 | registry | open | abstraction-inventory.yml 未更新 |
+| DEBT-REG-002 | registry | open | route taxonomy 未对齐 |
+| DEBT-REG-003 | registry | partially_addressed | #128 加了 execution write entries 但 execution_allowed=false 语义残留 |
+| DEBT-REG-004 | registry | partially_addressed | #128 加了 receipt kinds 但旧 protection receipt rows 仍在 |
+| DEBT-LEG-001 | legacy | open | duplicate concept marking |
+
+Closure report 的 "migration complete" 指架构迁移完成，不代表所有 debt paydown 完成。
 
 ---
 
 ## Final Status
 
-FinHarness has completed its execution architecture migration.
+FinHarness has completed its execution architecture migration (phase 1–4).
+Debt paydown (phase 4–5) is partially complete and must continue.
 
 The project no longer relies on ActionIntent/PaperValidation as the
 execution substitute. Execution is now a canonical classical software
