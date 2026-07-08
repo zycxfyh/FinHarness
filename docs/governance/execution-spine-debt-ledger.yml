@@ -146,6 +146,10 @@ debts:
     layer: legacy_shadow_surface
     category: bridge_as_product
     artifact: src/finharness/execution/pretrade_packet.py (#115)
+    status: resolved
+    status_note: >
+      #129 marked PreTradePacket as LEGACY PROJECTION ONLY.
+      Superseded by execution/legacy_bridge.py + Execution Kernel.
     problem: >
       PreTradePacket is a legacy projection bridge, not a canonical product
       API. It should not be documented as a user-facing path.
@@ -153,7 +157,7 @@ debts:
       Docs clear that PreTradePacket is legacy projection only,
       not canonical execution packet.
     priority: medium
-    candidate_pr: 133
+    candidate_pr: 135
     blocked_by: []
 
   - id: DEBT-LEG-003
