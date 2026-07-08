@@ -4,6 +4,9 @@
   "debt_ref": "ENG-DEBT-0003",
   "updated": "2026-07-06",
   "description": "Machine-checkable inventory of receipt-backed write paths. Each entry records a function that combines database state write, receipt JSON file write, and ReceiptIndex creation. This registry records existing behavior; it does not introduce a shared abstraction or runtime behavior change.",
+  "field_semantics_notes": {
+    "execution_allowed": "Post Execution Spine migration (#114-#131): execution_allowed=false means real_external_execution_allowed=false — i.e., no real broker SDK, no funded account, no external venue/network adapter. It does NOT mean 'Execution Kernel disabled'. Canonical /execution/* write routes (RBW-0018/0019/0020) record execution_allowed=false because the current substrate is simulated-only, not because execution writes are forbidden. Future: consider renaming to external_execution_allowed or adding execution_substrate field ('simulated' | 'live')."
+  },
   "entries": [
     {
       "id": "RBW-0001",

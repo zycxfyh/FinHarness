@@ -7,6 +7,7 @@ description: >
   candidate PR. This is a planning artifact, not a runtime check.
 
 allowed_priorities: [high, medium, low]
+allowed_statuses: [open, partially_addressed, resolved]
 allowed_layers:
   - classical_execution
   - legacy_shadow_surface
@@ -30,6 +31,12 @@ debts:
       moved to optional integration suite.
     priority: high
     candidate_pr: 126
+    status: partially_addressed
+    status_note: >
+      #126 changed assertEqual('fresh') → assertIn(valid_statuses),
+      which eliminated flaky CI red but weakened test semantics
+      (quarantine-style fix). Deterministic fix (freeze clock /
+      fixed fixture) still needed.
     blocked_by: []
 
   - id: DEBT-CI-002
@@ -91,6 +98,12 @@ debts:
       /paper-validation/*.
     priority: high
     candidate_pr: 130
+    status: partially_addressed
+    status_note: >
+      #128 added RBW-0018/0019/0020 execution write entries. However,
+      all entries still use execution_allowed=false, which is semantically
+      misleading for canonical execution routes. Field rename or
+      clarification note still needed.
     blocked_by: []
 
   - id: DEBT-REG-004
@@ -105,6 +118,11 @@ debts:
       legacy; not_* protection receipts deprecated.
     priority: medium
     candidate_pr: 131
+    status: partially_addressed
+    status_note: >
+      #128 added 9 execution.* receipt kinds to receipts.md. However,
+      old not_* protection receipt rows remain as active entries.
+      Deprecation/legacy marking still needed.
     blocked_by: []
 
   # ── Legacy Shadow Surface ───────────────────────────────────────────
@@ -163,6 +181,11 @@ debts:
       evaluator_finding, permission_trace, review_memo, trace.
     priority: medium
     candidate_pr: 135
+    status: partially_addressed
+    status_note: >
+      #130 added a comment listing allowed kind values in legacy_bridge.py
+      but did not implement an actual enum. The kind field remains a
+      free-form string. Enum implementation still needed.
     blocked_by: []
 
   - id: DEBT-AGT-002
