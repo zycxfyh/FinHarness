@@ -158,6 +158,22 @@ class ReceiptBackedWriteRegistryTest(unittest.TestCase):
             with self.subTest(entry_id=entry["id"]):
                 self.assertFalse(entry["execution_allowed"])
 
+    def test_new_fields_present(self) -> None:
+        """Every entry has execution_substrate and real_external_execution_allowed."""
+        for entry in _registry()["entries"]:
+            with self.subTest(entry_id=entry["id"]):
+                self.assertIn("execution_substrate", entry)
+                self.assertIn("real_external_execution_allowed", entry)
+                self.assertIn(entry["execution_substrate"], ("simulated", "none"))
+                self.assertFalse(entry["real_external_execution_allowed"])
+
+    def test_execution_entries_have_simulated_substrate(self) -> None:
+        """RBW-0018/0019/0020 (execution context) have substrate=simulated."""
+        for entry in _registry()["entries"]:
+            if entry.get("bounded_context") == "execution":
+                with self.subTest(entry_id=entry["id"]):
+                    self.assertEqual(entry["execution_substrate"], "simulated")
+
     def test_behavior_change_is_false(self) -> None:
         for entry in _registry()["entries"]:
             with self.subTest(entry_id=entry["id"]):

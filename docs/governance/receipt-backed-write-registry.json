@@ -5,7 +5,10 @@
   "updated": "2026-07-06",
   "description": "Machine-checkable inventory of receipt-backed write paths. Each entry records a function that combines database state write, receipt JSON file write, and ReceiptIndex creation. This registry records existing behavior; it does not introduce a shared abstraction or runtime behavior change.",
   "field_semantics_notes": {
-    "execution_allowed": "Post Execution Spine migration (#114-#131): execution_allowed=false means real_external_execution_allowed=false — i.e., no real broker SDK, no funded account, no external venue/network adapter. It does NOT mean 'Execution Kernel disabled'. Canonical /execution/* write routes (RBW-0018/0019/0020) record execution_allowed=false because the current substrate is simulated-only, not because execution writes are forbidden. Future: consider renaming to external_execution_allowed or adding execution_substrate field ('simulated' | 'live')."
+    "execution_allowed": "DEPRECATED — use execution_substrate + real_external_execution_allowed instead.",
+    "execution_substrate": "simulated = canonical execution on simulated broker; none = no execution path (legacy, read-only, or non-execution).",
+    "real_external_execution_allowed": "Whether real external broker execution is enabled. Always false.",
+    "legacy_surface": "true on legacy route entries; absent on canonical mainline."
   },
   "entries": [
     {
@@ -30,7 +33,9 @@
       "stale_guard": "content_hash idempotency: if existing proposal has same content_hash, replays existing receipt_ref without rewriting; supersedes prior unmatched-hash receipt_ref",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0002",
@@ -54,7 +59,9 @@
       "stale_guard": "not applicable: attestation is append-only; no idempotency check needed",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0003",
@@ -78,7 +85,9 @@
       "stale_guard": "not applicable: review events are append-only; _review_event_content_hash is integrity/replay metadata only, not idempotency; repeated annotations create new review events.",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when receipt was newly written",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0004",
@@ -102,7 +111,10 @@
       "stale_guard": "expected proposal receipt_ref; ActionIntentStaleProposalError raised if proposal receipt_ref mismatches",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0005",
@@ -126,7 +138,10 @@
       "stale_guard": "expected action intent receipt_ref and expected preflight report hash; ActionIntentSimulationStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0006",
@@ -150,7 +165,10 @@
       "stale_guard": "expected action intent receipt_ref; ValueError raised on mismatch (not a named StaleError)",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0007",
@@ -174,7 +192,10 @@
       "stale_guard": "not applicable: grant creation is unique (new grant ID per call); duplicate check via grant_id uniqueness",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0008",
@@ -198,7 +219,10 @@
       "stale_guard": "not applicable: each new mandate supersedes prior active mandates; no stale receipt_ref check",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0009",
@@ -222,7 +246,10 @@
       "stale_guard": "expected action intent receipt_ref and expected simulation report receipt_ref; TradePlanCandidateStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0010",
@@ -246,7 +273,10 @@
       "stale_guard": "expected mandate receipt_ref, expected IPS receipt_ref, and expected trade plan candidate receipt_ref; CapitalObjectiveFitStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0011",
@@ -270,7 +300,10 @@
       "stale_guard": "expected trade plan candidate receipt_ref, expected action intent receipt_ref, expected simulation report receipt_ref, expected capital objective fit receipt_ref, and expected mandate/IPS receipt_refs; TradePlanReviewGateStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0012",
@@ -294,7 +327,10 @@
       "stale_guard": "expected trade plan candidate receipt_ref, expected review gate receipt_ref, expected action intent receipt_ref, expected simulation report receipt_ref, expected preflight report hash; PaperOrderTicketStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0013",
@@ -318,7 +354,10 @@
       "stale_guard": "expected paper order ticket receipt_ref; PaperExecutionStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0014",
@@ -342,7 +381,10 @@
       "stale_guard": "not applicable: paper account creation is unique (no upstream receipt_ref to guard against staleness)",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0015",
@@ -367,7 +409,10 @@
       "stale_guard": "expected paper account receipt_ref and expected paper execution receipt_ref; checks execution not already applied; PaperAccountStaleError raised on mismatch",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false,
+      "legacy_surface": true
     },
     {
       "id": "RBW-0016",
@@ -391,7 +436,9 @@
       "stale_guard": "not applicable: each new IPS draft supersedes prior draft; no upstream receipt_ref check",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0017",
@@ -416,7 +463,9 @@
       "stale_guard": "existing proposal required; scaffold patch must change at least one stored field; delegated create_governed_proposal uses content_hash idempotency and supersedes prior receipt_ref; scaffold-candidate apply route additionally checks expected candidate receipt_ref, expected proposal receipt_ref, and expected preflight report hash at the API route layer",
       "failure_cleanup": "delegated create_governed_proposal cleanup on StateCoreStoreError when receipt did not previously exist",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0018",
@@ -440,7 +489,9 @@
       "stale_guard": "not applicable: each draft is a new artifact_id; no upstream receipt_ref check",
       "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "simulated",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0019",
@@ -464,7 +515,9 @@
       "stale_guard": "not applicable: each stage creates a new ExecutionOrder with new artifact_id",
       "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "simulated",
+      "real_external_execution_allowed": false
     },
     {
       "id": "RBW-0020",
@@ -489,7 +542,9 @@
       "stale_guard": "not applicable: submit is a lifecycle transition; existing order must exist but no receipt_ref staleness check",
       "failure_cleanup": "receipt written via atomic_write_json before DB write; no explicit cleanup on DB failure",
       "execution_allowed": false,
-      "behavior_change": false
+      "behavior_change": false,
+      "execution_substrate": "simulated",
+      "real_external_execution_allowed": false
     }
   ]
 }
