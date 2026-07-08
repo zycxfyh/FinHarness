@@ -25,6 +25,8 @@ from finharness.execution.broker import (
 from finharness.execution.commands import submit_order
 from finharness.execution.services import (
     create_order_draft,
+    record_approval,
+    run_pretrade_check,
     stage_execution_order,
 )
 from finharness.statecore.execution_models import (
@@ -165,6 +167,19 @@ class SubmitOrderCommandTest(unittest.TestCase):
             quantity=Decimal("100"),
             rationale="submit test",
             environment="live",
+        )
+        run_pretrade_check(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+        )
+        record_approval(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+            reviewer_id="test_op",
+            decision="approved",
+            rationale="ok",
         )
         order = stage_execution_order(
             engine=self.engine,
