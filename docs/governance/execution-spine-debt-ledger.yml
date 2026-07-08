@@ -52,6 +52,9 @@ debts:
       Execution tab in stable test path.
     priority: high
     candidate_pr: 127
+    status: resolved
+    status_note: >
+      #146 updated browser smoke test tab count 8→9 for Execution tab.
     blocked_by: []
 
   # ── Registry / Inventory ────────────────────────────────────────────
@@ -69,6 +72,11 @@ debts:
       deletion_candidate.
     priority: high
     candidate_pr: 128
+    status: partially_addressed
+    status_note: >
+      #114 inventory bridges to Execution Kernel. New models, services,
+      adapter, routes, and bridge exist but inventory not fully reclassified.
+      Legacy chain marked deletion_candidate via legacy_bridge.py.
     blocked_by: []
 
   - id: DEBT-REG-002
@@ -82,7 +90,12 @@ debts:
       /execution/* = canonical, /action-intents/* = legacy_internal,
       /paper-validation/* = legacy_internal. No new callers on legacy.
     priority: high
-    candidate_pr: 129
+    candidate_pr: 128
+    status: resolved
+    status_note: >
+      #149 marked legacy routes with tags=['legacy'] + deprecated=True.
+      /execution/* = canonical. /action-intents/* and /paper-validation/*
+      = legacy with X-FinHarness-Legacy-Surface headers.
     blocked_by: []
 
   - id: DEBT-REG-003
@@ -139,7 +152,12 @@ debts:
       Old objects marked legacy. New callers use Execution Kernel.
       Migration path via legacy_bridge.py documented.
     priority: high
-    candidate_pr: 132
+    candidate_pr: 134
+    status: resolved
+    status_note: >
+      #136 added legacy response headers. #149 marked routes deprecated.
+      legacy_bridge.py (#121) separates old chain into execution facts
+      vs agentic artifacts. New callers use Execution Kernel.
     blocked_by: []
 
   - id: DEBT-LEG-002
@@ -172,6 +190,10 @@ debts:
       response metadata flag.
     priority: medium
     candidate_pr: 134
+    status: resolved
+    status_note: >
+      #136 added X-FinHarness-Legacy-Surface + X-FinHarness-Superseded-By
+      headers to all legacy route responses.
     blocked_by: []
 
   # ── Agentic Artifacts ───────────────────────────────────────────────
@@ -204,7 +226,7 @@ debts:
     desired_state: >
       All projection fields are lists. Tests cover multi-item chains.
     priority: medium
-    candidate_pr: 138
+    candidate_pr: 140
     status: resolved
     status_note: >
       #138 added test_multi_ticket_and_execution_preserves_all_projections.
@@ -291,6 +313,11 @@ debts:
       manage_broker_credentials (false).
     priority: medium
     candidate_pr: 140
+    status: partially_addressed
+    status_note: >
+      #142 defined ExecutionCapabilities dataclass with 7 flags.
+      submit_simulated=True, submit_live=False, manage_credentials=False.
+      Not yet wired into services — enforcement deferred.
     blocked_by: []
 
   - id: DEBT-CTL-002
@@ -307,6 +334,10 @@ debts:
       registration.
     priority: medium
     candidate_pr: 141
+    status: resolved
+    status_note: >
+      #143 added adapter_kind guard to register_broker_adapter.
+      Non-simulated adapters raise ValueError.
     blocked_by: []
 
   # ── Docs / Product Truth ────────────────────────────────────────────
@@ -323,4 +354,9 @@ debts:
       Execution Kernel canonical mainline.
     priority: medium
     candidate_pr: 142
+    status: resolved
+    status_note: >
+      #132 (closure truth patch) + #134 (docs/nav) + #145 (receipt legacy
+      deprecation) removed not_* protection language from mainline docs
+      and marked remaining fields as legacy/deprecated.
     blocked_by: [DEBT-REG-001, DEBT-REG-002, DEBT-LEG-001]
