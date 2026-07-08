@@ -13,11 +13,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
+from finharness.api.legacy_headers import (
+    PAPER_VALIDATION_SUPERSEDED_BY,
+    mark_legacy_surface,
+)
 from finharness.api.dependencies import (
     EngineDependency,
     ReceiptRootDependency,
@@ -251,7 +255,9 @@ async def create_paper_order_ticket_candidate_endpoint(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> PaperOrderTicketCandidateCreateResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     try:
         write = create_paper_order_ticket_candidate(
             trade_plan_candidate_id=trade_plan_candidate_id,
@@ -297,9 +303,11 @@ async def create_paper_order_ticket_candidate_endpoint(
 )
 async def list_paper_order_ticket_candidates(
     engine: EngineDependency,
+    response: Response,
     paper_account_id: str | None = None,
     symbol: str | None = None,
 ) -> PaperOrderTicketCandidateListResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     statement = select(PaperOrderTicketCandidate).order_by(
         desc(PaperOrderTicketCandidate.created_at_utc)
     )
@@ -321,7 +329,9 @@ async def list_paper_order_ticket_candidates(
 async def get_paper_order_ticket_candidate(
     paper_order_ticket_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> PaperOrderTicketCandidateResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     with Session(engine) as session:
         paper_ticket = session.get(PaperOrderTicketCandidate, paper_order_ticket_id)
     if paper_ticket is None:
@@ -348,7 +358,9 @@ async def create_paper_execution_receipt_endpoint(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> PaperExecutionCreateResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     try:
         write = record_paper_execution_receipt(
             paper_order_ticket_id=paper_order_ticket_id,
@@ -391,9 +403,11 @@ async def create_paper_execution_receipt_endpoint(
 )
 async def list_paper_execution_receipts(
     engine: EngineDependency,
+    response: Response,
     paper_account_id: str | None = None,
     symbol: str | None = None,
 ) -> PaperExecutionListResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     statement = select(PaperExecutionReceipt).order_by(
         desc(PaperExecutionReceipt.created_at_utc)
     )
@@ -413,7 +427,9 @@ async def list_paper_execution_receipts(
 async def get_paper_execution_receipt(
     paper_execution_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> PaperExecutionResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     with Session(engine) as session:
         paper_execution = session.get(PaperExecutionReceipt, paper_execution_id)
     if paper_execution is None:
@@ -436,7 +452,9 @@ async def create_paper_account_endpoint(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> PaperAccountCreateResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     try:
         write = create_paper_account(
             display_name=request.display_name,
@@ -461,8 +479,10 @@ async def create_paper_account_endpoint(
 @router.get("/paper-accounts", response_model=PaperAccountListResponse)
 async def list_paper_accounts(
     engine: EngineDependency,
+    response: Response,
     status: str | None = None,
 ) -> PaperAccountListResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     statement = select(PaperAccount).order_by(desc(PaperAccount.updated_at_utc))
     if status is not None:
         statement = statement.where(PaperAccount.status == status)
@@ -475,7 +495,9 @@ async def list_paper_accounts(
 async def get_paper_account(
     paper_account_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> PaperAccountResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     with Session(engine) as session:
         paper_account = session.get(PaperAccount, paper_account_id)
     if paper_account is None:
@@ -499,7 +521,9 @@ async def get_paper_account(
 async def list_paper_account_positions(
     paper_account_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> PaperPositionListResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     with Session(engine) as session:
         paper_account = session.get(PaperAccount, paper_account_id)
         if paper_account is None:
@@ -526,7 +550,9 @@ async def apply_paper_execution_to_account_endpoint(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> PaperAccountExecutionApplicationCreateResponse:
+    mark_legacy_surface(response, PAPER_VALIDATION_SUPERSEDED_BY)
     try:
         write = apply_paper_execution_to_account(
             paper_account_id=paper_account_id,
