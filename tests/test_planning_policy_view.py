@@ -21,9 +21,11 @@ def _write_rule_change(
     rationale: str = "test rationale",
     attester: str = "test_ops",
     lesson_draft_id: str | None = "lesson_001",
+    lesson_doc_ref: str | None = "docs/lessons/lesson_001.md",
     receipt_refs: list[str] | None = None,
     status: str = "active",
 ) -> Path:
+    refs = receipt_refs if receipt_refs is not None else ["r_test"]
     payload = {
         "schema_version": "finharness.rule_change.v1",
         "rule_change_id": rule_change_id,
@@ -34,7 +36,8 @@ def _write_rule_change(
         "rationale": rationale,
         "attester": attester,
         "lesson_draft_id": lesson_draft_id,
-        "receipt_refs": receipt_refs or [],
+        "lesson_doc_ref": lesson_doc_ref,
+        "receipt_refs": refs,
         "status": status,
     }
     root.mkdir(parents=True, exist_ok=True)
@@ -139,3 +142,29 @@ class TestPlanningPolicyView:
         view = PlanningPolicyView()
         assert view.execution_allowed is False
         assert view.authority_transition is False
+
+    def test_incomplete_rule_change_does_not_enter_active_rules(self) -> None:
+        """A RuleChange missing lesson_doc_ref/receipt_refs/rationale/attester
+        is NOT traceable per rule_change_ledger.is_traceable()."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # Has lesson_draft_id but missing lesson_doc_ref → not traceable
+            payload = {
+                "schema_version": "finharness.rule_change.v1",
+                "rule_change_id": "rc_incomplete",
+                "created_at_utc": "2026-07-08T00:00:00Z",
+                "rule_target": "guard.test",
+                "change_kind": "threshold",
+                "new_value": 5.0,
+                "rationale": "",
+                "attester": "",
+                "lesson_draft_id": "lesson_001",
+                "lesson_doc_ref": None,
+                "receipt_refs": [],
+                "status": "active",
+            }
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "rc_incomplete.json").write_text(json.dumps(payload), encoding="utf-8")
+            view = build_planning_policy_view(state_root=root)
+            assert len(view.active_rules) == 0
+            assert "guard.test" in view.stale_or_untraceable_rules
