@@ -463,3 +463,67 @@ class ExecutionServicesTest(unittest.TestCase):
             ).one()
             self.assertFalse(bc.network_enabled)
             self.assertEqual(bc.adapter_kind, "simulated")
+
+    def test_receipt_contract_report_references_order(self) -> None:
+        """ExecutionReport receipt persists link back to ExecutionOrder."""
+        bid, aid = self._setup_broker_and_account()
+        draft = create_order_draft(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            execution_account_id=aid,
+            instrument_ref="SPY",
+            symbol="SPY",
+            side="sell",
+            order_type="market",
+            quantity=Decimal("50"),
+            rationale="test receipt contract",
+        )
+        run_pretrade_check(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+        )
+        record_approval(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+            reviewer_id="test_op",
+            decision="approved",
+            rationale="ok",
+        )
+        order = stage_execution_order(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            order_draft_id=draft.order_draft_id,
+            broker_connection_id=bid,
+        )
+        submit_execution_order(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            execution_order_id=order.execution_order_id,
+            broker_connection_id=bid,
+        )
+
+        report = record_execution_report(
+            engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            execution_order_id=order.execution_order_id,
+            report_type="fill",
+            fill_status="filled",
+            filled_quantity=Decimal("50"),
+            average_fill_price=Decimal("450.00"),
+        )
+
+        # Report references the order
+        self.assertEqual(report.execution_order_id, order.execution_order_id)
+        self.assertIsNotNone(report.receipt_ref)
+
+        # Verify report persisted and linked
+        with Session(self.engine) as s:
+            persisted = s.exec(
+                select(ExecutionReport).where(
+                    ExecutionReport.execution_report_id == report.execution_report_id
+                )
+            ).one()
+            self.assertEqual(persisted.execution_order_id, order.execution_order_id)
+            self.assertEqual(persisted.receipt_ref, report.receipt_ref)
