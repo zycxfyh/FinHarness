@@ -161,6 +161,16 @@ class ExecutionRoutesTest(unittest.TestCase):
             },
         ).json()
 
+        # Pre-conditions required before staging
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/pretrade-checks",
+            json={},
+        )
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/approvals",
+            json={"decision": "approved", "reviewer_id": "test_op", "rationale": "go"},
+        )
+
         resp = self.client.post(
             f"/execution/order-drafts/{draft['order_draft_id']}/stage",
             json={"broker_connection_id": bid},
@@ -182,6 +192,17 @@ class ExecutionRoutesTest(unittest.TestCase):
                 "rationale": "test",
             },
         ).json()
+
+        # Pre-conditions required before staging
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/pretrade-checks",
+            json={},
+        )
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/approvals",
+            json={"decision": "approved", "reviewer_id": "test_op", "rationale": "go"},
+        )
+
         order = self.client.post(
             f"/execution/order-drafts/{draft['order_draft_id']}/stage",
             json={"broker_connection_id": bid},
@@ -211,6 +232,17 @@ class ExecutionRoutesTest(unittest.TestCase):
                 "rationale": "test",
             },
         ).json()
+
+        # Pre-conditions
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/pretrade-checks",
+            json={},
+        )
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/approvals",
+            json={"decision": "approved", "reviewer_id": "test_op", "rationale": "go"},
+        )
+
         order = self.client.post(
             f"/execution/order-drafts/{draft['order_draft_id']}/stage",
             json={"broker_connection_id": bid},
@@ -240,6 +272,17 @@ class ExecutionRoutesTest(unittest.TestCase):
                 "rationale": "test list",
             },
         ).json()
+
+        # Pre-conditions
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/pretrade-checks",
+            json={},
+        )
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/approvals",
+            json={"decision": "approved", "reviewer_id": "test_op", "rationale": "go"},
+        )
+
         self.client.post(
             f"/execution/order-drafts/{draft['order_draft_id']}/stage",
             json={"broker_connection_id": bid},
@@ -263,6 +306,17 @@ class ExecutionRoutesTest(unittest.TestCase):
                 "rationale": "test",
             },
         ).json()
+
+        # Pre-conditions
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/pretrade-checks",
+            json={},
+        )
+        self.client.post(
+            f"/execution/order-drafts/{draft['order_draft_id']}/approvals",
+            json={"decision": "approved", "reviewer_id": "test_op", "rationale": "go"},
+        )
+
         order = self.client.post(
             f"/execution/order-drafts/{draft['order_draft_id']}/stage",
             json={"broker_connection_id": bid},
