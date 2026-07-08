@@ -430,6 +430,8 @@ def _fit_pack_to_budget(
 
 
 def _proposal_summary(proposal: Proposal) -> dict[str, Any]:
+    from finharness.context_trust import trust_for_receipt_backed_state
+
     return {
         "proposal_id": proposal.proposal_id,
         "kind": proposal.kind,
@@ -443,10 +445,20 @@ def _proposal_summary(proposal: Proposal) -> dict[str, Any]:
         "limitation_keys": sorted(proposal.limitations),
         "source_refs": list(_refs([proposal.receipt_ref, *proposal.source_refs])),
         "execution_allowed": False,
+        "trust": trust_for_receipt_backed_state(
+            receipt_refs=[proposal.receipt_ref] if proposal.receipt_ref else [],
+            source_refs=list(proposal.source_refs),
+        ).model_dump(),
     }
 
 
 def _timeline_entry_summary(entry: Any) -> dict[str, Any]:
+    from finharness.context_trust import (
+        trust_for_agent_draft,
+        trust_for_human_attested,
+        trust_for_receipt_backed_state,
+    )
+
     detail = entry.detail if isinstance(entry.detail, dict) else {}
     source_refs = _refs(detail.get("source_refs", ()))
     out = {
@@ -459,6 +471,27 @@ def _timeline_entry_summary(entry: Any) -> dict[str, Any]:
         "source_refs": list(source_refs),
         "execution_allowed": False,
     }
+    # Entry-level trust based on kind
+    kind = str(entry.kind).lower() if entry.kind else ""
+    has_attester = bool(entry.attester and str(entry.attester).strip())
+    if "attestation" in kind or ("attest" in kind and has_attester):
+        out["trust"] = trust_for_human_attested(
+            source_refs=list(source_refs),
+        ).model_dump()
+    elif "agent_review" in kind or "agent_" in kind:
+        out["trust"] = trust_for_agent_draft(
+            source_refs=list(source_refs),
+        ).model_dump()
+    elif "proposal" in kind:
+        out["trust"] = trust_for_receipt_backed_state(
+            receipt_refs=list(source_refs),
+            source_refs=list(source_refs),
+        ).model_dump()
+    else:
+        out["trust"] = trust_for_receipt_backed_state(
+            receipt_refs=list(source_refs),
+            source_refs=list(source_refs),
+        ).model_dump()
     for key in ("decision", "text", "attestation_ref", "compare_with"):
         value = detail.get(key)
         if value:
