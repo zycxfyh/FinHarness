@@ -246,7 +246,13 @@ debts:
       submit_attempted precedes submitted. ExecutionOrder.receipt_ref
       persisted. Report receipt linked to order.
     priority: medium
-    candidate_pr: 138
+    candidate_pr: 140
+    status: resolved
+    status_note: >
+      test_full_lifecycle already verifies all 9 receipt kinds in
+      ReceiptIndex. test_submit_execution_order verifies receipt_ref
+      persistence. #140 added test_receipt_contract_report_references_order
+      (ExecutionReport → ExecutionOrder link + receipt_ref persistence).
     blocked_by: []
 
   - id: DEBT-CLS-003
