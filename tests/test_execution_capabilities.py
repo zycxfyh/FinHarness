@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import FrozenInstanceError
 
 from finharness.execution.capabilities import (
     DEFAULT_EXECUTION_CAPABILITIES,
-    ExecutionCapabilities,
 )
 
 
@@ -16,7 +16,7 @@ class ExecutionCapabilitiesTest(unittest.TestCase):
     def test_default_frozen(self) -> None:
         """ExecutionCapabilities is frozen — cannot mutate."""
         caps = DEFAULT_EXECUTION_CAPABILITIES
-        with self.assertRaises(Exception):
+        with self.assertRaises(FrozenInstanceError):
             caps.submit_live_order = True  # type: ignore[misc]
 
     def test_submit_simulated_order_true(self) -> None:

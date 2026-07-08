@@ -32,7 +32,6 @@ from finharness.statecore.execution_models import (
     ExecutionAccount,
     ExecutionEnvironment,
     ExecutionOrder,
-    ExecutionReport,
     OrderDraft,
 )
 from finharness.statecore.models import ReceiptIndex

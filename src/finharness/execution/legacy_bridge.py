@@ -32,7 +32,6 @@ from finharness.statecore.models import (
     TradePlanReviewGate,
 )
 
-
 # ── Bridge result types ─────────────────────────────────────────────────────
 
 
@@ -175,7 +174,7 @@ def separate_legacy_chain(
                 DeletionCandidate(
                     legacy_id=intent.action_intent_id,
                     object_type="ActionIntent",
-                    reason="agentic draft, not execution object; replaced by OrderDraft as canonical entry point",
+                    reason="agentic draft, not execution object; replaced by OrderDraft as canonical entry point",  # noqa: E501
                     superseded_by="OrderDraft",
                 )
             )
@@ -194,7 +193,7 @@ def separate_legacy_chain(
                         kind=AgenticArtifactKind.EVALUATOR_FINDING,
                         source_object="ActionIntentAuthorityBinding",
                         source_id=b.binding_id,
-                        summary=f"authority check: allowed={b.allowed} author={b.author_type}:{b.author_id}",
+                        summary=f"authority check: allowed={b.allowed} author={b.author_type}:{b.author_id}",  # noqa: E501
                     )
                 )
                 if b.deny_reasons:
@@ -210,7 +209,7 @@ def separate_legacy_chain(
                     DeletionCandidate(
                         legacy_id=b.binding_id,
                         object_type="ActionIntentAuthorityBinding",
-                        reason="evaluator finding, not execution object; replaced by PreTradeCheck + evaluator layer",
+                        reason="evaluator finding, not execution object; replaced by PreTradeCheck + evaluator layer",  # noqa: E501
                         superseded_by="PreTradeCheck",
                     )
                 )
@@ -241,14 +240,14 @@ def separate_legacy_chain(
                         kind=AgenticArtifactKind.WORKFLOW_OUTPUT,
                         source_object="ActionIntentSimulationReport",
                         source_id=sim.simulation_report_id,
-                        summary=f"simulation: mode={sim.scenario_mode} status={sim.simulation_status} risk={sim.risk_posture}",
+                        summary=f"simulation: mode={sim.scenario_mode} status={sim.simulation_status} risk={sim.risk_posture}",  # noqa: E501
                     )
                 )
                 result.deletion_candidates.append(
                     DeletionCandidate(
                         legacy_id=sim.simulation_report_id,
                         object_type="ActionIntentSimulationReport",
-                        reason="workflow output; execution-relevant findings projected to PreTradeCheck, narrative stays in agentic layer",
+                        reason="workflow output; execution-relevant findings projected to PreTradeCheck, narrative stays in agentic layer",  # noqa: E501
                         superseded_by="PreTradeCheck (findings) + workflow trace (narrative)",
                     )
                 )
@@ -267,14 +266,14 @@ def separate_legacy_chain(
                             kind=AgenticArtifactKind.CONTEXT,
                             source_object="TradePlanCandidate",
                             source_id=plan.trade_plan_candidate_id,
-                            summary=f"plan: direction={plan.plan_direction} reason={plan.plan_reason[:60]}",
+                            summary=f"plan: direction={plan.plan_direction} reason={plan.plan_reason[:60]}",  # noqa: E501
                         )
                     )
                     result.deletion_candidates.append(
                         DeletionCandidate(
                             legacy_id=plan.trade_plan_candidate_id,
                             object_type="TradePlanCandidate",
-                            reason="planning artifact, not execution object; direction/reason are context for OrderDraft",
+                            reason="planning artifact, not execution object; direction/reason are context for OrderDraft",  # noqa: E501
                             superseded_by="OrderDraft (context fields)",
                         )
                     )
@@ -293,22 +292,22 @@ def separate_legacy_chain(
                                 kind=AgenticArtifactKind.SKILL_OUTPUT,
                                 source_object="CapitalObjectiveFit",
                                 source_id=fit.capital_objective_fit_id,
-                                summary=f"objective fit: alignment={fit.objective_alignment} thesis={fit.benefit_thesis[:60]}",
+                                summary=f"objective fit: alignment={fit.objective_alignment} thesis={fit.benefit_thesis[:60]}",  # noqa: E501
                             )
                         )
                         result.unresolved_semantics.append(
                             UnresolvedSemantic(
                                 source="CapitalObjectiveFit",
-                                field_or_concept="benefit_thesis / risk_budget_impact / alternatives_considered",
-                                issue="valuable review context; not execution state, but useful for compliance/audit",
-                                recommendation="preserve as review memo trace; do NOT project into ExecutionOrder",
+                                field_or_concept="benefit_thesis / risk_budget_impact / alternatives_considered",  # noqa: E501
+                                issue="valuable review context; not execution state, but useful for compliance/audit",  # noqa: E501
+                                recommendation="preserve as review memo trace; do NOT project into ExecutionOrder",  # noqa: E501
                             )
                         )
                         result.deletion_candidates.append(
                             DeletionCandidate(
                                 legacy_id=fit.capital_objective_fit_id,
                                 object_type="CapitalObjectiveFit",
-                                reason="skill output / review memo, not execution object; preserve as trace",
+                                reason="skill output / review memo, not execution object; preserve as trace",  # noqa: E501
                                 superseded_by="review memo trace (agentic layer)",
                             )
                         )
@@ -337,14 +336,14 @@ def separate_legacy_chain(
                                 kind=AgenticArtifactKind.PERMISSION_TRACE,
                                 source_object="TradePlanReviewGate",
                                 source_id=gate.review_gate_id,
-                                summary=f"gate: decision={gate.review_decision} reviewer={gate.reviewer_id}",
+                                summary=f"gate: decision={gate.review_decision} reviewer={gate.reviewer_id}",  # noqa: E501
                             )
                         )
                         result.deletion_candidates.append(
                             DeletionCandidate(
                                 legacy_id=gate.review_gate_id,
                                 object_type="TradePlanReviewGate",
-                                reason="permission checkpoint; human decision projected to ApprovalRecord, gate itself is trace",
+                                reason="permission checkpoint; human decision projected to ApprovalRecord, gate itself is trace",  # noqa: E501
                                 superseded_by="ApprovalRecord",
                             )
                         )
@@ -383,7 +382,7 @@ def separate_legacy_chain(
                             DeletionCandidate(
                                 legacy_id=ticket.paper_order_ticket_id,
                                 object_type="PaperOrderTicketCandidate",
-                                reason="shadow ExecutionOrder; order-shaped fields projected to OrderDraft + ExecutionOrder",
+                                reason="shadow ExecutionOrder; order-shaped fields projected to OrderDraft + ExecutionOrder",  # noqa: E501
                                 superseded_by="OrderDraft + ExecutionOrder",
                             )
                         )

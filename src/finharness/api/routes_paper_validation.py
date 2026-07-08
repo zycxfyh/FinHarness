@@ -18,14 +18,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from finharness.api.legacy_headers import (
-    PAPER_VALIDATION_SUPERSEDED_BY,
-    mark_legacy_surface,
-)
 from finharness.api.dependencies import (
     EngineDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
+)
+from finharness.api.legacy_headers import (
+    PAPER_VALIDATION_SUPERSEDED_BY,
+    mark_legacy_surface,
 )
 from finharness.statecore.models import (
     PaperAccount,

@@ -27,7 +27,6 @@ from finharness.execution.services import (
 from finharness.statecore.execution_models import (
     BrokerConnection,
     ExecutionAccount,
-    ExecutionEnvironment,
     ExecutionOrder,
     OrderDraft,
 )
@@ -66,7 +65,7 @@ class ExecutionLifecycleHardeningTest(unittest.TestCase):
         return ("bc_test", "ea_test")
 
     def _create_draft(self) -> OrderDraft:
-        bc_id, ea_id = self._setup_broker_and_account()
+        _, ea_id = self._setup_broker_and_account()
         return create_order_draft(
             engine=self.engine,
             receipt_root=str(self.receipt_root),

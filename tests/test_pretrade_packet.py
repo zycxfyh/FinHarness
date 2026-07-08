@@ -25,7 +25,6 @@ from finharness.statecore.models import (
     ActionIntentSimulationReport,
     CapitalObjectiveFit,
     PaperOrderTicketCandidate,
-    Proposal,
     TradePlanCandidate,
     TradePlanReviewGate,
 )

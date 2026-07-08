@@ -15,9 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from finharness.execution.legacy_bridge import (
-    AgenticArtifact,
     AgenticArtifactKind,
-    ExecutionProjection,
     LegacyExecutionBridgeResult,
     separate_legacy_chain,
 )
@@ -28,7 +26,6 @@ from finharness.statecore.models import (
     CapitalObjectiveFit,
     PaperExecutionReceipt,
     PaperOrderTicketCandidate,
-    Proposal,
     TradePlanCandidate,
     TradePlanReviewGate,
 )

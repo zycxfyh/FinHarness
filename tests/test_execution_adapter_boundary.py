@@ -172,6 +172,7 @@ class AdapterBoundaryTest(unittest.TestCase):
 
         # No-adapter path must still write submit lifecycle receipts
         from sqlmodel import Session, select
+
         from finharness.statecore.models import ReceiptIndex
         with Session(self.engine) as s:
             kinds = {r.kind for r in s.exec(select(ReceiptIndex)).all()}

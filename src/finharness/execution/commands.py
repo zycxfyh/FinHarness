@@ -14,7 +14,6 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from finharness.execution.broker import (
-    BrokerAdapter,
     resolve_broker_adapter,
 )
 from finharness.execution.services import (
@@ -22,7 +21,6 @@ from finharness.execution.services import (
     submit_execution_order,
 )
 from finharness.statecore.execution_models import (
-    BrokerConnection,
     ExecutionOrder,
     ExecutionReport,
     OrderDraft,
