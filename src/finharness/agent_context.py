@@ -282,10 +282,15 @@ def build_open_proposals_context(engine: Engine, *, limit: int = 10) -> AgentCon
     data_gaps: list[str] = []
     if len(open_proposals) > len(items):
         data_gaps.append(f"open proposals truncated to {len(items)} items")
+    from finharness.context_trust import trust_for_agent_draft
+
     summary = {
         "open_count": len(open_proposals),
         "returned_count": len(items),
         "items": items,
+        "trust": trust_for_agent_draft(
+            source_refs=list(source_refs),
+        ).model_dump(),
     }
     return _pack(
         name=spec.name,
@@ -320,12 +325,18 @@ def build_proposal_timeline_context(
     data_gaps: list[str] = []
     if len(timeline.entries) > len(entries):
         data_gaps.append(f"proposal timeline truncated to {len(entries)} entries")
+    from finharness.context_trust import trust_for_receipt_backed_state
+
     summary = {
         "proposal_id": timeline.proposal_id,
         "is_archived": timeline.is_archived,
         "entry_count": len(timeline.entries),
         "returned_count": len(entries),
         "entries": entries,
+        "trust": trust_for_receipt_backed_state(
+            source_refs=list(source_refs),
+            receipt_refs=list(source_refs),
+        ).model_dump(),
     }
     return _pack(
         name=spec.name,
