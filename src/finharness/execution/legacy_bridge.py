@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import desc, Engine
+from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
 from finharness.statecore.models import (
