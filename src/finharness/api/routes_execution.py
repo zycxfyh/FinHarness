@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from finharness.api.dependencies import (
@@ -256,7 +257,7 @@ def api_list_orders(
     with Session(engine) as session:
         orders = session.exec(
             select(ExecutionOrder)
-            .order_by(ExecutionOrder.created_at_utc.desc())
+            .order_by(desc(ExecutionOrder.created_at_utc))
             .offset(offset)
             .limit(limit)
         ).all()

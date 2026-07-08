@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Engine
+from sqlalchemy import desc, Engine
 from sqlmodel import Session, select
 
 from finharness.statecore.models import (
@@ -148,7 +148,7 @@ def separate_legacy_chain(
         intents = session.exec(
             select(ActionIntent)
             .where(ActionIntent.proposal_id == proposal_id)
-            .order_by(ActionIntent.created_at_utc.desc())
+            .order_by(desc(ActionIntent.created_at_utc))
         ).all()
 
         for intent in intents:
