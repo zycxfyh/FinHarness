@@ -170,6 +170,16 @@ class AdapterBoundaryTest(unittest.TestCase):
             f"broker_event_ref should be simulated, got: {report.broker_event_ref}",
         )
 
+        # No-adapter path must still write submit lifecycle receipts
+        from sqlmodel import Session, select
+        from finharness.statecore.models import ReceiptIndex
+        with Session(self.engine) as s:
+            kinds = {r.kind for r in s.exec(select(ReceiptIndex)).all()}
+        self.assertIn("execution.order.submit_attempted", kinds,
+                      "no-adapter submit must write submit_attempted receipt")
+        self.assertIn("execution.order.submitted", kinds,
+                      "no-adapter submit must write submitted receipt")
+
     def test_submit_order_with_adapter_returns_simulated_fill(self) -> None:
         """submit_order with SimulatedBrokerAdapter → simulated:fill ref."""
         from finharness.execution.adapters.simulated_broker import SimulatedBrokerAdapter

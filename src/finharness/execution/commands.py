@@ -63,7 +63,13 @@ def submit_order(
     # Resolve adapter
     adapter = resolve_broker_adapter(broker_id)
     if adapter is None:
-        # No adapter registered — record as simulated submit_ack
+        # No adapter registered — still record the full submit lifecycle
+        submit_execution_order(
+            engine=engine,
+            receipt_root=receipt_root,
+            execution_order_id=execution_order_id,
+            broker_connection_id=broker_id,
+        )
         return record_execution_report(
             engine=engine,
             receipt_root=receipt_root,
