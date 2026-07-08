@@ -87,7 +87,7 @@ from finharness.statecore.trade_plan_review_gates import (
     create_governed_trade_plan_review_gate,
 )
 
-router = APIRouter(tags=["action-intents"])
+router = APIRouter(tags=["action-intents", "legacy"], deprecated=True)
 
 
 class ActionIntentCreateRequest(BaseModel):
