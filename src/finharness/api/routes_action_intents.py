@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlmodel import Session
 
@@ -22,6 +22,10 @@ from finharness.action_intent_preflight import (
     ActionIntentImpactSummary,
     ActionIntentPreflightFinding,
     preflight_action_intent,
+)
+from finharness.api.legacy_headers import (
+    ACTION_INTENT_SUPERSEDED_BY,
+    mark_legacy_surface,
 )
 from finharness.api.dependencies import (
     EngineDependency,
@@ -447,7 +451,9 @@ async def create_action_intent(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> ActionIntentCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_governed_action_intent(
             proposal_id=proposal_id,
@@ -485,7 +491,9 @@ async def create_action_intent(
 async def get_action_intent(
     action_intent_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> ActionIntentResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         action_intent = session.get(ActionIntent, action_intent_id)
     if action_intent is None:
@@ -507,7 +515,9 @@ async def get_action_intent(
 async def get_action_intent_preflight(
     action_intent_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> ActionIntentPreflightResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     report = preflight_action_intent(action_intent_id, engine=engine)
     if report is None:
         raise HTTPException(
@@ -551,7 +561,9 @@ async def create_action_intent_authority_binding_endpoint(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> ActionIntentAuthorityBindingCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_action_intent_authority_binding(
             action_intent_id=action_intent_id,
@@ -587,7 +599,9 @@ async def create_action_intent_authority_binding_endpoint(
 async def get_action_intent_authority_binding(
     binding_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> ActionIntentAuthorityBindingResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         binding = session.get(ActionIntentAuthorityBinding, binding_id)
     if binding is None:
@@ -612,7 +626,9 @@ async def create_action_intent_simulation_report(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> ActionIntentSimulationCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_governed_action_intent_simulation_report(
             action_intent_id=action_intent_id,
@@ -662,7 +678,9 @@ async def create_action_intent_simulation_report(
 async def get_action_intent_simulation_report(
     simulation_report_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> ActionIntentSimulationResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         simulation_report = session.get(ActionIntentSimulationReport, simulation_report_id)
     if simulation_report is None:
@@ -687,7 +705,9 @@ async def create_trade_plan_candidate(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> TradePlanCandidateCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_governed_trade_plan_candidate(
             simulation_report_id=simulation_report_id,
@@ -740,7 +760,9 @@ async def create_trade_plan_candidate(
 async def get_trade_plan_candidate(
     trade_plan_candidate_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> TradePlanCandidateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         trade_plan_candidate = session.get(TradePlanCandidate, trade_plan_candidate_id)
     if trade_plan_candidate is None:
@@ -766,7 +788,9 @@ async def create_capital_objective_fit(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> CapitalObjectiveFitCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_governed_capital_objective_fit(
             trade_plan_candidate_id=trade_plan_candidate_id,
@@ -824,7 +848,9 @@ async def create_capital_objective_fit(
 async def get_capital_objective_fit(
     capital_objective_fit_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> CapitalObjectiveFitResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         objective_fit = session.get(CapitalObjectiveFit, capital_objective_fit_id)
     if objective_fit is None:
@@ -853,7 +879,9 @@ async def create_trade_plan_review_gate(
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
+    response: Response,
 ) -> TradePlanReviewGateCreateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     try:
         write = create_governed_trade_plan_review_gate(
             trade_plan_candidate_id=trade_plan_candidate_id,
@@ -904,7 +932,9 @@ async def create_trade_plan_review_gate(
 async def get_trade_plan_review_gate(
     review_gate_id: str,
     engine: EngineDependency,
+    response: Response,
 ) -> TradePlanReviewGateResponse:
+    mark_legacy_surface(response, ACTION_INTENT_SUPERSEDED_BY)
     with Session(engine) as session:
         review_gate = session.get(TradePlanReviewGate, review_gate_id)
     if review_gate is None:
