@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlalchemy import Engine
+from sqlalchemy import desc, Engine
 from sqlmodel import Session, select
 
 from finharness.statecore.models import (
@@ -189,7 +189,7 @@ def build_pretrade_packet(
         action_intents = session.exec(
             select(ActionIntent)
             .where(ActionIntent.proposal_id == proposal_id)
-            .order_by(ActionIntent.created_at_utc.desc())
+            .order_by(desc(ActionIntent.created_at_utc))
         ).all()
 
         if action_intents:
@@ -213,7 +213,7 @@ def build_pretrade_packet(
                     ActionIntentAuthorityBinding.action_intent_id
                     == latest.action_intent_id
                 )
-                .order_by(ActionIntentAuthorityBinding.created_at_utc.desc())
+                .order_by(desc(ActionIntentAuthorityBinding.created_at_utc))
             ).all()
             for b in bindings:
                 packet.authority_findings.append(
@@ -245,7 +245,7 @@ def build_pretrade_packet(
                     == latest.action_intent_id
                 )
                 .order_by(
-                    ActionIntentSimulationReport.created_at_utc.desc()
+                    desc(ActionIntentSimulationReport.created_at_utc)
                 )
             ).all()
             latest_sim = sim_reports[0] if sim_reports else None
@@ -269,7 +269,7 @@ def build_pretrade_packet(
                         TradePlanCandidate.simulation_report_id
                         == latest_sim.simulation_report_id
                     )
-                    .order_by(TradePlanCandidate.created_at_utc.desc())
+                    .order_by(desc(TradePlanCandidate.created_at_utc))
                 ).all()
                 latest_plan = plans[0] if plans else None
                 if latest_plan:
@@ -292,7 +292,7 @@ def build_pretrade_packet(
                             CapitalObjectiveFit.trade_plan_candidate_id
                             == latest_plan.trade_plan_candidate_id
                         )
-                        .order_by(CapitalObjectiveFit.created_at_utc.desc())
+                        .order_by(desc(CapitalObjectiveFit.created_at_utc))
                     ).all()
                     latest_fit = fits[0] if fits else None
                     if latest_fit:
@@ -315,7 +315,7 @@ def build_pretrade_packet(
                             TradePlanReviewGate.trade_plan_candidate_id
                             == latest_plan.trade_plan_candidate_id
                         )
-                        .order_by(TradePlanReviewGate.created_at_utc.desc())
+                        .order_by(desc(TradePlanReviewGate.created_at_utc))
                     ).all()
                     latest_gate = gates[0] if gates else None
                     if latest_gate:
@@ -335,7 +335,7 @@ def build_pretrade_packet(
                             == latest_plan.trade_plan_candidate_id
                         )
                         .order_by(
-                            PaperOrderTicketCandidate.created_at_utc.desc()
+                            desc(PaperOrderTicketCandidate.created_at_utc)
                         )
                     ).all()
                     latest_ticket = tickets[0] if tickets else None
