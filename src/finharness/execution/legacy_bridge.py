@@ -15,6 +15,7 @@ Agentic artifacts stay in agentic layers.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import Engine
@@ -60,11 +61,27 @@ class ExecutionProjection:
     position_delta_projections: list[dict[str, Any]] = field(default_factory=list)
 
 
+class AgenticArtifactKind(StrEnum):
+    """Machine-readable classification of agentic artifact types.
+
+    These are NOT execution objects. They belong in the agentic plane
+    (Skill, Evaluator, Permission, Workflow, Context, Review, Trace).
+    """
+
+    CONTEXT = "context"
+    SKILL_OUTPUT = "skill_output"
+    WORKFLOW_OUTPUT = "workflow_output"
+    EVALUATOR_FINDING = "evaluator_finding"
+    PERMISSION_TRACE = "permission_trace"
+    REVIEW_MEMO = "review_memo"
+    TRACE = "trace"
+
+
 @dataclass
 class AgenticArtifact:
     """Artifacts that belong in agentic layers — NOT execution objects."""
 
-    kind: str  # skill_output | evaluator_finding | permission_trace | context | workflow_output | review_memo | trace
+    kind: AgenticArtifactKind
     source_object: str  # which legacy model produced this
     source_id: str
     summary: str
@@ -139,7 +156,7 @@ def separate_legacy_chain(
             # ActionIntent is primarily an agentic draft — not an execution object
             result.agentic_artifacts.append(
                 AgenticArtifact(
-                    kind="context",
+                    kind=AgenticArtifactKind.CONTEXT,
                     source_object="ActionIntent",
                     source_id=intent.action_intent_id,
                     summary=f"action draft: {intent.action_type} — {intent.intent_summary[:80]}",
@@ -148,7 +165,7 @@ def separate_legacy_chain(
             # Its rationale is context, not broker order state
             result.agentic_artifacts.append(
                 AgenticArtifact(
-                    kind="context",
+                    kind=AgenticArtifactKind.CONTEXT,
                     source_object="ActionIntent.rationale",
                     source_id=intent.action_intent_id,
                     summary=f"rationale: {intent.rationale[:80]}",
@@ -174,7 +191,7 @@ def separate_legacy_chain(
             for b in bindings:
                 result.agentic_artifacts.append(
                     AgenticArtifact(
-                        kind="evaluator_finding",
+                        kind=AgenticArtifactKind.EVALUATOR_FINDING,
                         source_object="ActionIntentAuthorityBinding",
                         source_id=b.binding_id,
                         summary=f"authority check: allowed={b.allowed} author={b.author_type}:{b.author_id}",
@@ -183,7 +200,7 @@ def separate_legacy_chain(
                 if b.deny_reasons:
                     result.agentic_artifacts.append(
                         AgenticArtifact(
-                            kind="evaluator_finding",
+                            kind=AgenticArtifactKind.EVALUATOR_FINDING,
                             source_object="ActionIntentAuthorityBinding.deny_reasons",
                             source_id=b.binding_id,
                             summary=f"deny: {', '.join(b.deny_reasons)}",
@@ -221,7 +238,7 @@ def separate_legacy_chain(
                 # The simulation narrative is a workflow output, not execution state
                 result.agentic_artifacts.append(
                     AgenticArtifact(
-                        kind="workflow_output",
+                        kind=AgenticArtifactKind.WORKFLOW_OUTPUT,
                         source_object="ActionIntentSimulationReport",
                         source_id=sim.simulation_report_id,
                         summary=f"simulation: mode={sim.scenario_mode} status={sim.simulation_status} risk={sim.risk_posture}",
@@ -247,7 +264,7 @@ def separate_legacy_chain(
                 for plan in plans:
                     result.agentic_artifacts.append(
                         AgenticArtifact(
-                            kind="context",
+                            kind=AgenticArtifactKind.CONTEXT,
                             source_object="TradePlanCandidate",
                             source_id=plan.trade_plan_candidate_id,
                             summary=f"plan: direction={plan.plan_direction} reason={plan.plan_reason[:60]}",
@@ -273,7 +290,7 @@ def separate_legacy_chain(
                     for fit in fits:
                         result.agentic_artifacts.append(
                             AgenticArtifact(
-                                kind="skill_output",
+                                kind=AgenticArtifactKind.SKILL_OUTPUT,
                                 source_object="CapitalObjectiveFit",
                                 source_id=fit.capital_objective_fit_id,
                                 summary=f"objective fit: alignment={fit.objective_alignment} thesis={fit.benefit_thesis[:60]}",
@@ -317,7 +334,7 @@ def separate_legacy_chain(
                         })
                         result.agentic_artifacts.append(
                             AgenticArtifact(
-                                kind="permission_trace",
+                                kind=AgenticArtifactKind.PERMISSION_TRACE,
                                 source_object="TradePlanReviewGate",
                                 source_id=gate.review_gate_id,
                                 summary=f"gate: decision={gate.review_decision} reviewer={gate.reviewer_id}",
