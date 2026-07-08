@@ -105,6 +105,13 @@ CONTEXT_PACK_SPECS: dict[str, AgentContextPackSpec] = {
         max_items=20,
         max_chars=9000,
     ),
+    "planning_policy": AgentContextPackSpec(
+        name="planning_policy",
+        description="Active traceable planning policy rules from the RuleChange ledger.",
+        source="build_planning_policy_view",
+        max_items=30,
+        max_chars=8000,
+    ),
 }
 
 
@@ -345,6 +352,45 @@ def build_proposal_timeline_context(
         source_refs=source_refs,
         data_gaps=tuple(data_gaps),
         non_claims=PROPOSAL_CONTEXT_NON_CLAIMS,
+        spec=spec,
+    )
+
+
+def build_planning_policy_context() -> AgentContextPack:
+    """Read active traceable planning policy rules as an agent context pack."""
+    from finharness.context_trust import trust_for_human_attested
+    from finharness.planning_policy_view import build_planning_policy_view
+
+    spec = CONTEXT_PACK_SPECS["planning_policy"]
+    view = build_planning_policy_view()
+    items = [rule.model_dump() for rule in view.active_rules[:spec.max_items]]
+    data_gaps: list[str] = []
+    if len(view.active_rules) > len(items):
+        data_gaps.append(f"active rules truncated to {len(items)} items")
+    if view.stale_or_untraceable_rules:
+        data_gaps.append(
+            f"stale/untraceable rules: {', '.join(view.stale_or_untraceable_rules[:10])}"
+        )
+    summary = {
+        "active_rule_count": len(view.active_rules),
+        "returned_count": len(items),
+        "items": items,
+        "checklist_items": view.checklist_items,
+        "thresholds": view.thresholds,
+        "allowlists": view.allowlists,
+        "stale_or_untraceable_count": len(view.stale_or_untraceable_rules),
+        "trust": trust_for_human_attested(
+            source_refs=view.source_refs,
+            receipt_refs=view.receipt_refs,
+        ).model_dump(),
+    }
+    return _pack(
+        name=spec.name,
+        available=True,
+        summary=summary,
+        source_refs=tuple(view.source_refs),
+        data_gaps=tuple(data_gaps),
+        non_claims=AGENT_CONTEXT_NON_CLAIMS,
         spec=spec,
     )
 
