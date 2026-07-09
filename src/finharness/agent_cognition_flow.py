@@ -22,6 +22,7 @@ from finharness.agent_run_receipts import (
     AgentToolCallSummary,
     write_agent_run_receipt,
 )
+from finharness.authority_eligibility_policy import eligibility_from_evaluation_status
 from finharness.authority_transition import (
     record_authority_transition,
 )
@@ -32,9 +33,9 @@ from finharness.deliberation_receipts import (
 )
 from finharness.evaluation_report import (
     EvaluationFinding,
-    build_evaluation_report,
     write_evaluation_report,
 )
+from finharness.plan_draft_evaluator import evaluate_plan_draft_to_report
 
 NON_CLAIMS: tuple[str, ...] = (
     "AgentCognitionFlow is a deterministic cognition trace, not an execution pipeline.",
@@ -125,32 +126,16 @@ def run_agent_cognition_flow(
     )
     plan_draft_ref = f"deliberation/{plan_draft.receipt_id}.json"
 
-    # 3. Evaluation
-    eval_status_value = eval_status if eval_status in ("pass", "warn", "block") else "warn"
-    severity_map: dict[str, str] = {"pass": "info", "warn": "warn", "block": "block"}
-    if eval_findings is not None:
-        findings = list(eval_findings)
-    else:
-        plan_step_summary = ", ".join(plan_steps[:5])
-        findings = [
-            EvaluationFinding(
-                code="flow_plan_evaluation",
-                severity=severity_map[eval_status_value],
-                message=f"Plan contains {len(plan_steps)} step(s): {plan_step_summary}",
-                recovery_hint="Human review required before any action",
-                source_refs=source_refs or [],
-                receipt_refs=[option_set_ref, plan_draft_ref],
-            ),
-        ]
-    eval_report = build_evaluation_report(
-        evaluator_id="agent_cognition_flow",
-        subject_type="plan_draft",
-        subject_id=plan_draft.plan_id,
-        status=eval_status_value,  # type: ignore[arg-type]
-        findings=findings,
+    # 3. Evaluation — uses real plan draft evaluator
+    eval_report = evaluate_plan_draft_to_report(
+        plan_draft=plan_draft,
         source_refs=source_refs,
-        receipt_refs=[option_set_ref, plan_draft_ref],
     )
+    if eval_findings is not None:
+        # Custom findings override evaluator output
+        eval_report = eval_report.model_copy(update={"findings": list(eval_findings)})
+    if eval_status in ("pass", "warn", "block"):
+        eval_report = eval_report.model_copy(update={"status": eval_status})
     eval_ref = write_evaluation_report(
         report=eval_report,
         receipt_root=root,
@@ -180,12 +165,14 @@ def run_agent_cognition_flow(
     ]
 
     if human_attester and human_reason and explicit_confirmation:
+        eligibility = eligibility_from_evaluation_status(eval_report.status)
+        to_state_map = {"eligible": "eligible", "deferred": "deferred", "not_eligible": "blocked"}
         at_record = record_authority_transition(
             subject_type="plan_draft",
             subject_id=plan_draft.plan_id,
             from_state="drafted",
-            to_state="eligible",
-            eligibility="eligible",
+            to_state=to_state_map[eligibility],
+            eligibility=eligibility,
             evaluation_report_refs=[eval_ref],
             human_attester=human_attester,
             human_reason=human_reason,
