@@ -1,4 +1,4 @@
-"""Tests for AgentWorkRequest / AgentWorkResult models."""
+"""Tests for AgentWorkRequest / AgentWorkResult / ContextSnapshot models."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from finharness.agent_work_loop import (
     AgentWorkRequest,
     AgentWorkResult,
+    freeze_work_context,
 )
 
 
@@ -106,3 +107,53 @@ class TestAgentWorkResult:
         )
         assert len(result.data_gaps) == 1
         assert len(result.findings) == 1
+
+
+class TestAgentWorkContextSnapshot:
+
+    def test_freeze_empty_context(self) -> None:
+        snap = freeze_work_context(work_id="awr_test", profile_name="default")
+        assert snap.work_id == "awr_test"
+        assert snap.context_trust_by_ref == {}
+        assert snap.context_refs == []
+        assert snap.findings == []
+        assert snap.execution_allowed is False
+
+    def test_freeze_with_payload_extracts_trust(self) -> None:
+        from finharness.context_trust import trust_for_system_computed
+
+        trust = trust_for_system_computed(source_refs=["ref://ctx1"])
+        payload: dict[str, object] = {
+            "packs": [{
+                "name": "capital_summary",
+                "summary": {"trust": trust.model_dump()},
+                "source_refs": ["ref://ctx1"],
+                "context_pack_refs": ["context_pack://capital_summary"],
+            }]
+        }
+        snap = freeze_work_context(
+            work_id="awr_test", profile_name="default",
+            context_projection_payload=payload,
+        )
+        assert snap.context_refs == ["context_pack://capital_summary"]
+        assert snap.source_refs == ["ref://ctx1"]
+        assert len(snap.context_trust_by_ref) > 0
+
+    def test_snapshot_is_frozen(self) -> None:
+        snap = freeze_work_context(work_id="awr_test", profile_name="default")
+        with pytest.raises(ValidationError, match="frozen"):
+            snap.work_id = "hijacked"  # type: ignore[misc]
+
+    def test_snapshot_has_snapshot_id(self) -> None:
+        snap = freeze_work_context(work_id="awr_test", profile_name="default")
+        assert snap.snapshot_id.startswith("ctxsnap_")
+
+    def test_malformed_context_produces_finding(self) -> None:
+        payload: dict[str, object] = {
+            "packs": [{"summary": {"trust": {"source_type": 999}}}],
+        }
+        snap = freeze_work_context(
+            work_id="awr_test", profile_name="default",
+            context_projection_payload=payload,
+        )
+        assert len(snap.findings) > 0  # malformed trust captured
