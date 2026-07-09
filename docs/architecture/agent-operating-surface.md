@@ -1,7 +1,7 @@
 # Agent Operating Surface
 
-Status: v1 (2026-07-09)
-Phase: Wave 2 RFC — architecture definition, no runtime changes.
+Status: v2 (2026-07-09 — Wave 2 complete)
+Phase: Wave 2 complete — 16 PRs (#190–#205) merged.
 
 ## One Sentence
 
