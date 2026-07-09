@@ -11,6 +11,7 @@ Produces an EvaluationReport with pass/warn/block status.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from finharness.deliberation_receipts import PlanDraftReceipt
@@ -33,6 +34,30 @@ BLOCKED_ACTION_TOKENS: frozenset[str] = frozenset(
         "dispatch",
     }
 )
+
+NON_ACTION_PHRASE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\btrade[- ]off analysis\b", re.IGNORECASE),
+    re.compile(r"\brisk[- ]return trade[- ]offs?\b", re.IGNORECASE),
+    re.compile(r"\bportfolio trade[- ]offs?\b", re.IGNORECASE),
+)
+
+
+def _strip_non_action_phrases(step: str) -> str:
+    """Remove known non-action phrases before tokenization."""
+    out = step
+    for pattern in NON_ACTION_PHRASE_PATTERNS:
+        out = pattern.sub(" ", out)
+    return out
+
+
+def _tokenize_step(step: str) -> list[str]:
+    """Tokenize a plan step using regex word boundaries.
+
+    Uses re.findall with [a-zA-Z_]+ to split on word boundaries
+    including punctuation (execute., submit:, broker,).
+    """
+    cleaned = _strip_non_action_phrases(step)
+    return re.findall(r"[a-zA-Z_]+", cleaned.lower())
 
 
 def evaluate_plan_draft_receipt(
@@ -65,7 +90,7 @@ def evaluate_plan_draft_receipt(
 
     action_tokens_found: list[str] = []
     for step in plan_draft.steps:
-        tokens = step.lower().replace("-", " ").replace("_", " ").split()
+        tokens = _tokenize_step(step)
         for tok in tokens:
             if tok in BLOCKED_ACTION_TOKENS and tok not in action_tokens_found:
                 action_tokens_found.append(tok)
