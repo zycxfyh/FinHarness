@@ -26,12 +26,18 @@ from finharness.authority_eligibility_policy import eligibility_from_evaluation_
 from finharness.authority_transition import (
     record_authority_transition,
 )
+from finharness.context_trust import ContextTrust
+from finharness.context_use_policy import (
+    ContextRequiredUse,
+    validate_context_refs_for_use,
+)
 from finharness.deliberation_receipts import (
     OptionDraft,
     write_option_set_receipt,
     write_plan_draft_receipt,
 )
 from finharness.evaluation_report import (
+    EvaluationFinding,
     EvaluationReport,
     write_evaluation_report,
 )
@@ -77,6 +83,8 @@ def run_agent_cognition_flow(
     human_attester: str | None = None,
     human_reason: str | None = None,
     explicit_confirmation: bool = False,
+    context_trust_by_ref: dict[str, ContextTrust] | None = None,
+    required_context_use: ContextRequiredUse = "use_as_evidence",
     evaluator_override: EvaluationReport | None = None,
     allow_evaluation_override: bool = False,
 ) -> AgentCognitionFlowResult:
@@ -127,6 +135,47 @@ def run_agent_cognition_flow(
     )
     plan_draft_ref = f"deliberation/{plan_draft.receipt_id}.json"
 
+    # 2.5 Context validation — enforce allowed uses if trust metadata provided
+    context_findings: list[EvaluationFinding] = []
+
+    if source_refs:
+        if context_trust_by_ref is None:
+            context_findings.append(
+                EvaluationFinding(
+                    code="context_trust_metadata_missing",
+                    severity="warn",
+                    message=(
+                        "Context refs were supplied without ContextTrust metadata"
+                    ),
+                    recovery_hint=(
+                        "Provide context_trust_by_ref so source refs can be "
+                        "validated for intended use"
+                    ),
+                    source_refs=list(source_refs),
+                )
+            )
+        else:
+            validation = validate_context_refs_for_use(
+                refs=list(source_refs),
+                trust_by_ref=context_trust_by_ref,
+                required_use=required_context_use,
+            )
+            for ref, reason in zip(
+                validation.blocked_refs, validation.blocked_reasons, strict=False
+            ):
+                context_findings.append(
+                    EvaluationFinding(
+                        code="context_use_not_allowed",
+                        severity="block",
+                        message=reason,
+                        recovery_hint=(
+                            f"Use a context ref whose allowed_uses "
+                            f"includes {required_context_use}"
+                        ),
+                        source_refs=[ref],
+                    )
+                )
+
     # 3. Evaluation — uses real plan draft evaluator
     if evaluator_override is not None:
         if not allow_evaluation_override:
@@ -139,6 +188,24 @@ def run_agent_cognition_flow(
             plan_draft=plan_draft,
             source_refs=source_refs,
         )
+
+    # Merge context validation findings into evaluation report
+    if context_findings:
+        merged_findings = [*eval_report.findings, *context_findings]
+        merged_status = (
+            "block"
+            if any(f.severity == "block" for f in merged_findings)
+            else "warn"
+            if any(f.severity == "warn" for f in merged_findings)
+            else eval_report.status
+        )
+        eval_report = eval_report.model_copy(
+            update={
+                "findings": merged_findings,
+                "status": merged_status,
+            }
+        )
+
     eval_ref = write_evaluation_report(
         report=eval_report,
         receipt_root=root,

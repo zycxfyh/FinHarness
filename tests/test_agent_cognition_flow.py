@@ -11,6 +11,11 @@ import pytest
 from finharness.agent_cognition_flow import (
     run_agent_cognition_flow,
 )
+from finharness.context_trust import (
+    trust_for_agent_draft,
+    trust_for_receipt_backed_state,
+    trust_for_unknown,
+)
 from finharness.evaluation_report import (
     build_evaluation_report,
 )
@@ -247,3 +252,153 @@ class TestAgentCognitionFlow:
             at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
             at_payload = json.loads(at_path.read_text())
             assert at_payload["eligibility"] == "not_eligible"
+
+    # ── Context use policy flow integration tests (R-005 / RISK-2) ────
+
+    def test_flow_receipt_backed_context_passes(self) -> None:
+        """receipt_backed_state context refs must pass validation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trust = trust_for_receipt_backed_state(receipt_refs=["r1"])
+            # Use evaluator_override with pass so only context validation
+            # determines the result (evaluator warns on minimal plans).
+            pass_report = build_evaluation_report(
+                evaluator_id="test",
+                subject_type="plan_draft",
+                subject_id="plan-1",
+                status="pass",
+                findings=[],
+            )
+            result = run_agent_cognition_flow(
+                goal="Test receipt-backed context",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                context_trust_by_ref={"ctx-1": trust},
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                evaluator_override=pass_report,
+                allow_evaluation_override=True,
+            )
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "eligible"
+
+    def test_flow_missing_context_trust_warns(self) -> None:
+        """source_refs without context_trust_by_ref must warn."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = run_agent_cognition_flow(
+                goal="Test missing trust metadata",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            # warn → deferred
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "deferred"
+
+    def test_flow_agent_draft_context_blocked(self) -> None:
+        """agent_draft source ref with use_as_evidence must block."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trust = trust_for_agent_draft(source_refs=["ctx-1"])
+            result = run_agent_cognition_flow(
+                goal="Test agent draft blocked",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                context_trust_by_ref={"ctx-1": trust},
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "not_eligible"
+
+    def test_flow_unknown_context_blocked(self) -> None:
+        """unknown source ref must block."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trust = trust_for_unknown()
+            result = run_agent_cognition_flow(
+                goal="Test unknown context blocked",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                context_trust_by_ref={"ctx-1": trust},
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "not_eligible"
+
+    def test_flow_empty_context_trust_blocks_all(self) -> None:
+        """context_trust_by_ref={} with source_refs must block all."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = run_agent_cognition_flow(
+                goal="Test empty trust blocks all",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                context_trust_by_ref={},
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "not_eligible"
+
+    def test_flow_context_finding_in_eval_receipt(self) -> None:
+        """agent_draft ref must produce context_use_not_allowed in eval receipt."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trust = trust_for_agent_draft(source_refs=["ctx-1"])
+            result = run_agent_cognition_flow(
+                goal="Test context finding in receipt",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["Review allocation"],
+                receipt_root=root,
+                source_refs=["ctx-1"],
+                context_trust_by_ref={"ctx-1": trust},
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            # Evaluation report ref is path#sha256:hash — strip anchor
+            eval_path = root / result.evaluation_report_ref.split("#")[0]
+            eval_payload = json.loads(eval_path.read_text())
+            codes = {f["code"] for f in eval_payload["findings"]}
+            assert "context_use_not_allowed" in codes
