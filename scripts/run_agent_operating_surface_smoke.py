@@ -13,21 +13,19 @@ from pathlib import Path
 from finharness.agent_cognition_flow import run_agent_cognition_flow
 from finharness.agent_operating_flow import (
     evaluate_playbook_requirements,
-    run_agent_cognition_flow_from_operating_inputs,
 )
 from finharness.agent_receipt_search import build_receipt_search_index, search_receipt_index
 from finharness.agent_runtime_receipts import AgentRuntimeTraceSink
 from finharness.agent_tool_availability import capture_tool_universe_snapshot
 from finharness.agent_tool_registry import build_registry
 from finharness.agent_tool_result_envelope import build_tool_result_envelope
-from finharness.context_trust import trust_for_system_computed
 from finharness.domain_memory import (
+    attest_domain_memory,
     build_domain_memory_context_pack,
     propose_domain_memory,
-    attest_domain_memory,
 )
-from finharness.evaluator_registry import evaluator_ids, list_evaluators
-from finharness.playbook_loader import load_cognition_playbook, list_cognition_playbooks
+from finharness.evaluator_registry import evaluator_ids
+from finharness.playbook_loader import load_cognition_playbook
 from finharness.review_workspace import build_review_workspace_projection_from_receipts
 
 
@@ -62,7 +60,8 @@ def main() -> int:
             "Model visible subset of profile exposed",
             set(univ.model_visible_tools).issubset(set(univ.profile_exposed_tools)),
         )
-        failures += _check("Hidden or unavailable distinguished", isinstance(univ.hidden_tools, list))
+        is_list = isinstance(univ.hidden_tools, list)
+        failures += _check("Hidden or unavailable distinguished", is_list)
 
         # 3. Envelope ref taxonomy
         print("\n3. Tool Result Envelope (ref taxonomy)")
@@ -112,8 +111,13 @@ def main() -> int:
 
         # 7. Trace sink
         print("\n7. Runtime Trace Sink")
-        sink = AgentRuntimeTraceSink(goal="Smoke trace", profile_name="default", receipt_root=root)
-        sink.dispatch(profile_name="default", tool_name="get_quote_snapshot", arguments={"symbol": "AAPL"})
+        sink = AgentRuntimeTraceSink(
+            goal="Smoke trace", profile_name="default", receipt_root=root,
+        )
+        sink.dispatch(
+            profile_name="default", tool_name="get_quote_snapshot",
+            arguments={"symbol": "AAPL"},
+        )
         failures += _check("Sink records result", sink.result_count == 1)
         receipt = sink.finalize()
         failures += _check("Sink finalizes receipt", receipt.outcome == "succeeded")
@@ -163,7 +167,6 @@ def main() -> int:
         entries = build_receipt_search_index(root)
         failures += _check("Index covers receipts", len(entries) > 0)
         index_path = root / "receipt-index.jsonl"
-        import json as _json
         with index_path.open("w") as f:
             for e in entries:
                 f.write(e.model_dump_json() + "\n")
