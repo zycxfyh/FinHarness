@@ -193,7 +193,9 @@ class TestAgentToolRegistry:
 
     def test_finding_severity_is_literal(self) -> None:
         """severity field rejects invalid values."""
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             AgentToolRegistryFinding(
                 tool_name="t",
                 severity="critical",  # type: ignore[arg-type]
