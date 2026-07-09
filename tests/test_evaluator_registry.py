@@ -14,8 +14,9 @@ class TestEvaluatorRegistry:
 
     def test_list_returns_evaluators(self) -> None:
         evals = list_evaluators()
-        assert len(evals) == 1
-        assert evals[0].evaluator_id == "plan_draft_evaluator"
+        assert len(evals) == 2
+        ids = {e.evaluator_id for e in evals}
+        assert ids == {"plan_draft_evaluator", "research_evidence_quality"}
 
     def test_get_evaluator_finds_known(self) -> None:
         e = get_evaluator("plan_draft_evaluator")
@@ -35,6 +36,11 @@ class TestEvaluatorRegistry:
         matches = evaluators_for_subject("PlanDraft")
         assert len(matches) == 1
         assert matches[0].evaluator_id == "plan_draft_evaluator"
+
+    def test_evaluators_for_research_evidence(self) -> None:
+        matches = evaluators_for_subject("research_evidence")
+        assert len(matches) == 1
+        assert matches[0].evaluator_id == "research_evidence_quality"
 
     def test_no_match_subject_returns_empty(self) -> None:
         matches = evaluators_for_subject("OrderDraft")
