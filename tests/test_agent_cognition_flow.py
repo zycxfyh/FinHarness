@@ -6,8 +6,13 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from finharness.agent_cognition_flow import (
     run_agent_cognition_flow,
+)
+from finharness.evaluation_report import (
+    build_evaluation_report,
 )
 
 
@@ -159,3 +164,86 @@ class TestAgentCognitionFlow:
             eval_refs = at_payload["evaluation_report_refs"]
             assert len(eval_refs) >= 1
             assert result.evaluation_report_ref in eval_refs
+
+    def test_eval_status_parameter_removed(self) -> None:
+        """Passing the old eval_status parameter must raise TypeError."""
+        with tempfile.TemporaryDirectory() as tmp, pytest.raises(TypeError):
+            run_agent_cognition_flow(
+                goal="Test",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["S1"],
+                receipt_root=Path(tmp),
+                eval_status="pass",  # type: ignore[call-arg]
+            )
+
+    def test_evaluator_override_without_allow_raises(self) -> None:
+        """Override without explicit allow must raise ValueError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            override_report = build_evaluation_report(
+                evaluator_id="test",
+                subject_type="plan_draft",
+                subject_id="plan-1",
+                status="pass",
+                findings=[],
+            )
+            with pytest.raises(ValueError, match="allow_evaluation_override"):
+                run_agent_cognition_flow(
+                    goal="Test",
+                    profile_name="default",
+                    objective="Test",
+                    option_claims=["A"],
+                    plan_steps=["S1"],
+                    receipt_root=Path(tmp),
+                    evaluator_override=override_report,
+                    allow_evaluation_override=False,
+                )
+
+    def test_evaluator_override_with_allow_works(self) -> None:
+        """Override with explicit allow must use the provided report."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            override_report = build_evaluation_report(
+                evaluator_id="test",
+                subject_type="plan_draft",
+                subject_id="plan-1",
+                status="pass",
+                findings=[],
+            )
+            result = run_agent_cognition_flow(
+                goal="Test override",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["S1"],
+                receipt_root=root,
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+                evaluator_override=override_report,
+                allow_evaluation_override=True,
+            )
+            # Authority transition must exist (pass → eligible)
+            assert result.authority_transition_ref is not None
+
+    def test_flow_block_cannot_become_pass_by_accident(self) -> None:
+        """Plan with execution-like language must remain block by default."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = run_agent_cognition_flow(
+                goal="Test block integrity",
+                profile_name="default",
+                objective="Test",
+                option_claims=["A"],
+                plan_steps=["execute order", "submit to broker"],
+                receipt_root=root,
+                human_attester="ops",
+                human_reason="test",
+                explicit_confirmation=True,
+            )
+            # Authority must be not_eligible (block)
+            assert result.authority_transition_ref is not None
+            at_path = root / result.authority_transition_ref  # type: ignore[arg-type]
+            at_payload = json.loads(at_path.read_text())
+            assert at_payload["eligibility"] == "not_eligible"
