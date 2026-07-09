@@ -9,6 +9,8 @@ quality structure of research evidence, not its investment correctness.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 from finharness.evaluation_report import (
@@ -121,7 +123,9 @@ def evaluate_research_evidence_quality(
             ))
             warned = True
 
-    status: str = "block" if blocked else "warn" if warned else "pass"
+    status: Literal["pass", "warn", "block"] = (
+        "block" if blocked else "warn" if warned else "pass"
+    )
 
     return build_evaluation_report(
         evaluator_id="research_evidence_quality",

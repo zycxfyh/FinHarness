@@ -52,7 +52,8 @@ def main() -> int:
         print("\n2. Tool Availability")
         snapset = capture_tool_availability_snapshots("default")
         failures += _check("Availability snapshots exist", len(snapset.snapshots) > 0)
-        failures += _check("Available count in summary", int(snapset.summary["available_count"]) > 0)
+        avail_count = int(snapset.summary["available_count"])
+        failures += _check("Available count in summary", avail_count > 0)
 
         # 3. Tool Result Envelope
         print("\n3. Tool Result Envelope")
