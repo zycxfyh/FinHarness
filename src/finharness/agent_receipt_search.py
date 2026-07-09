@@ -1,11 +1,11 @@
-"""Agent receipt search v0 — deterministic local receipt search.
+"""Agent receipt search v0.1 — deterministic local receipt search.
 
 Agentic-space dimension: Trace Space.
 Operating surface: Track C — Memory / Search.
 
-Lets an agent (or operator) search past AgentRunReceipt and related
-receipt files by keyword, code, status, or ref. Deterministic JSON
-scan — no database, no FTS, no LLM summarization.
+v0.1 (PR #211): Adds JSONL receipt search index for faster querying
+and makes text-search deterministic via indexed metadata rather than
+per-query file scanning.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ ReceiptKind = Literal[
     "authority_transition",
     "option_set",
     "plan_draft",
+    "domain_memory",
     "all",
 ]
 
@@ -30,6 +31,21 @@ NON_CLAIMS: tuple[str, ...] = (
     "Search results are projections, not execution authorization.",
     "Not investment advice.",
 )
+
+
+class ReceiptSearchIndexEntry(BaseModel):
+    """One entry in the receipt search index."""
+
+    model_config = ConfigDict(frozen=True)
+
+    receipt_id: str
+    receipt_kind: str
+    file_path: str
+    subject_id: str | None = None
+    status: str | None = None
+    refs: list[str] = Field(default_factory=list)
+    text: str = ""
+    created_at_utc: str | None = None
 
 
 class AgentReceiptSearchResult(BaseModel):
@@ -47,6 +63,161 @@ class AgentReceiptSearchResult(BaseModel):
     snippet: str | None = None
 
 
+_KIND_DIR_MAP: dict[str, str] = {
+    "agent_run": "agent-runs",
+    "evaluation_report": "evaluation-reports",
+    "authority_transition": "authority-transitions",
+    "option_set": "deliberation",
+    "plan_draft": "deliberation",
+    "domain_memory": "domain-memory",
+}
+
+
+# ── index building ───────────────────────────────────────────────────
+
+
+def build_receipt_search_index(receipt_root: Path) -> list[ReceiptSearchIndexEntry]:
+    """Build a search index from all receipt files under receipt_root.
+
+    Scans known receipt directories and extracts metadata into
+    ReceiptSearchIndexEntry objects. Stale or unreadable files are
+    skipped (not reported as errors).
+    """
+    entries: list[ReceiptSearchIndexEntry] = []
+    for kind, dir_name in sorted(_KIND_DIR_MAP.items()):
+        search_dir = receipt_root / dir_name
+        if not search_dir.is_dir():
+            continue
+        for file_path in sorted(search_dir.glob("*.json")):
+            try:
+                payload = json.loads(file_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            receipt_id = str(payload.get("receipt_id", file_path.stem))
+            subject_id = str(payload.get("plan_id") or payload.get("subject_id") or "")
+            status = str(payload.get("status") or payload.get("outcome") or "")
+
+            # Collect refs
+            refs: list[str] = []
+            _ref_keys = ("source_refs", "evidence_refs", "context_refs",
+                         "receipt_refs", "artifact_refs")
+            for ref_key in _ref_keys:
+                val = payload.get(ref_key, [])
+                if isinstance(val, list):
+                    refs.extend(str(r) for r in val)
+
+            # Collect text for search
+            text_parts: list[str] = []
+            for key in ("goal", "objective", "stop_reason", "content"):
+                val = payload.get(key)
+                if isinstance(val, str) and val.strip():
+                    text_parts.append(val)
+
+            entries.append(ReceiptSearchIndexEntry(
+                receipt_id=receipt_id,
+                receipt_kind=kind,
+                file_path=str(file_path),
+                subject_id=subject_id or None,
+                status=status or None,
+                refs=refs,
+                text=" ".join(text_parts),
+                created_at_utc=str(payload.get("created_at_utc", "")) or None,
+            ))
+
+    return entries
+
+
+def write_receipt_search_index(receipt_root: Path) -> Path:
+    """Build the index and write it as JSONL next to the receipt root.
+
+    Returns the path to the written index file.
+    """
+    entries = build_receipt_search_index(receipt_root)
+    index_path = receipt_root / "receipt-index.jsonl"
+    with index_path.open("w", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(entry.model_dump_json() + "\n")
+    return index_path
+
+
+def _match_entry(
+    entry: ReceiptSearchIndexEntry,
+    query_lower: str,
+) -> tuple[list[str], str | None]:
+    """Match a query against an index entry. Returns (matched_on, snippet)."""
+    matched_on: list[str] = []
+    snippet: str | None = None
+    if query_lower in entry.receipt_id.lower():
+        matched_on.append("receipt_id")
+    if entry.status and query_lower in entry.status.lower():
+        matched_on.append("status")
+    if query_lower in entry.receipt_kind.lower():
+        matched_on.append("kind")
+    if any(query_lower in r.lower() for r in entry.refs):
+        matched_on.append("refs")
+    if query_lower in entry.text.lower():
+        matched_on.append("text")
+        snippet = entry.text[:200]
+    return matched_on, snippet
+
+
+def search_receipt_index(
+    index_path: Path,
+    query: str,
+    *,
+    kinds: list[str] | None = None,
+    limit: int = 20,
+) -> list[AgentReceiptSearchResult]:
+    """Search the receipt index by keyword.
+
+    Matches query against receipt_id, receipt_kind, status, refs, and
+    text fields. When no index file exists, falls back to an empty result.
+    """
+    if not index_path.exists():
+        return []
+    if not query.strip():
+        return []
+
+    query_lower = query.lower()
+    results: list[AgentReceiptSearchResult] = []
+
+    with index_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if len(results) >= limit:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = ReceiptSearchIndexEntry.model_validate_json(line)
+            except ValueError:
+                continue
+
+            if kinds is not None and entry.receipt_kind not in kinds:
+                continue
+
+            matched_on, snippet = _match_entry(entry, query_lower)
+            if not matched_on:
+                continue
+
+            results.append(AgentReceiptSearchResult(
+                receipt_id=entry.receipt_id,
+                receipt_kind=entry.receipt_kind,
+                file_path=entry.file_path,
+                goal_or_subject=entry.subject_id,
+                outcome_or_status=entry.status,
+                created_at=entry.created_at_utc,
+                matched_on=matched_on,
+                snippet=snippet,
+            ))
+
+    return results[:limit]
+
+
+# ── existing scan-based search (backward compat) ──────────────────────
+
+
 def search_agent_receipts(
     *,
     receipt_root: str | Path,
@@ -59,6 +230,9 @@ def search_agent_receipts(
     Scans JSON files in receipt subdirectories, matching the query
     against receipt_id, goal, outcome, error codes, and refs.
     Returns up to `limit` results.
+
+    Prefer build_receipt_search_index() + search_receipt_index() for
+    repeated queries — this scan-based approach re-reads every file.
     """
     if not query.strip():
         return []
@@ -85,15 +259,6 @@ def search_agent_receipts(
     return results[:limit]
 
 
-_KIND_DIR_MAP: dict[str, str] = {
-    "agent_run": "agent-runs",
-    "evaluation_report": "evaluation-reports",
-    "authority_transition": "authority-transitions",
-    "option_set": "deliberation",
-    "plan_draft": "deliberation",
-}
-
-
 def _resolve_kinds(kinds: list[ReceiptKind] | None) -> set[str]:
     if kinds is None or "all" in kinds:
         return set(_KIND_DIR_MAP.values())
@@ -118,12 +283,10 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
     matched_on: list[str] = []
     snippet: str | None = None
 
-    # Search receipt_id
     receipt_id = str(payload.get("receipt_id", ""))
     if query_lower in receipt_id.lower():
         matched_on.append("receipt_id")
 
-    # Search goal / subject
     goal = payload.get("goal") or payload.get("objective") or ""
     goal_str = str(goal)
     if query_lower in goal_str.lower():
@@ -131,12 +294,10 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
         if not snippet and goal_str:
             snippet = goal_str[:200]
 
-    # Search stop_reason
     stop = str(payload.get("stop_reason", ""))
     if query_lower in stop.lower():
         matched_on.append("stop_reason")
 
-    # Search refs
     for ref_key in ("source_refs", "evidence_refs", "context_refs", "artifact_refs"):
         refs = payload.get(ref_key, [])
         if isinstance(refs, list) and any(
@@ -144,7 +305,6 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
         ):
             matched_on.append(ref_key)
 
-    # Search error codes
     tool_calls = payload.get("tool_calls", [])
     if isinstance(tool_calls, list):
         for tc in tool_calls:
@@ -156,7 +316,6 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
                 matched_on.append("error_code")
                 break
 
-    # Search evaluation status / outcome
     for key in ("status", "outcome"):
         val = str(payload.get(key, ""))
         if query_lower in val.lower():
@@ -171,7 +330,6 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
         or payload.get("status")
     )
 
-    # Derive receipt kind from directory
     kind = _kind_from_dir(dir_name)
 
     return AgentReceiptSearchResult(
