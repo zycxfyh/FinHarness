@@ -157,3 +157,100 @@ class TestAgentWorkContextSnapshot:
             context_projection_payload=payload,
         )
         assert len(snap.findings) > 0  # malformed trust captured
+
+
+class TestBoundedDispatchLoop:
+
+    def test_dispatch_loop_with_valid_tools(self) -> None:
+        import tempfile
+
+        from finharness.agent_work_loop import (
+            AgentWorkRequest,
+            freeze_work_context,
+            run_bounded_tool_dispatch_loop,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            req = AgentWorkRequest(
+                goal="Test dispatch", profile_name="default",
+                objective="Test", work_type="research_review",
+                receipt_root=tmp,
+                requested_tools=["get_quote_snapshot"],
+                max_tool_calls=5,
+            )
+            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
+            envelopes, _sr, _data_gaps = run_bounded_tool_dispatch_loop(
+                request=req, context_snapshot=snap,
+            )
+            assert len(envelopes) == 1
+            assert _sr == "completed"
+            assert envelopes[0]["tool_name"] == "get_quote_snapshot"
+
+    def test_dispatch_loop_respects_max_tool_calls(self) -> None:
+        import tempfile
+
+        from finharness.agent_work_loop import (
+            AgentWorkRequest,
+            freeze_work_context,
+            run_bounded_tool_dispatch_loop,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            req = AgentWorkRequest(
+                goal="Test budget", profile_name="default",
+                objective="Test", work_type="research_review",
+                receipt_root=tmp,
+                requested_tools=["get_quote_snapshot", "get_quote_snapshot",
+                                 "get_quote_snapshot"],
+                max_tool_calls=2,
+            )
+            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
+            envelopes, stop_reason, _ = run_bounded_tool_dispatch_loop(
+                request=req, context_snapshot=snap,
+            )
+            assert len(envelopes) == 2
+            assert stop_reason == "max_tool_calls_reached"
+
+    def test_dispatch_loop_unavailable_tool(self) -> None:
+        import tempfile
+
+        from finharness.agent_work_loop import (
+            AgentWorkRequest,
+            freeze_work_context,
+            run_bounded_tool_dispatch_loop,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            req = AgentWorkRequest(
+                goal="Test unavailable", profile_name="default",
+                objective="Test", work_type="research_review",
+                receipt_root=tmp,
+                requested_tools=["nonexistent_tool"],
+                max_tool_calls=5,
+            )
+            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
+            envelopes, _sr, _data_gaps = run_bounded_tool_dispatch_loop(
+                request=req, context_snapshot=snap,
+            )
+            assert len(envelopes) == 0
+            assert len(_data_gaps) > 0
+            assert "tool_unavailable" in _data_gaps[0]
+
+    def test_dispatch_loop_empty_tools(self) -> None:
+        import tempfile
+
+        from finharness.agent_work_loop import (
+            AgentWorkRequest,
+            freeze_work_context,
+            run_bounded_tool_dispatch_loop,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            req = AgentWorkRequest(
+                goal="Test empty", profile_name="default",
+                objective="Test", work_type="research_review",
+                receipt_root=tmp,
+                requested_tools=[], max_tool_calls=5,
+            )
+            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
+            envelopes, stop_reason, _ = run_bounded_tool_dispatch_loop(
+                request=req, context_snapshot=snap,
+            )
+            assert len(envelopes) == 0
+            assert stop_reason == "completed"
