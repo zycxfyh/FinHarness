@@ -39,6 +39,8 @@ class AgentToolResultEnvelope(BaseModel):
     result_summary: str | None = None
     source_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
+    provider_refs: list[str] = Field(default_factory=list)
+    observation_refs: list[str] = Field(default_factory=list)
     artifact_refs: list[str] = Field(default_factory=list)
     receipt_refs: list[str] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)
@@ -65,6 +67,8 @@ def build_tool_result_envelope(
     # Extract refs from evidence envelope
     source_refs: list[str] = []
     evidence_refs: list[str] = []
+    provider_refs: list[str] = []
+    observation_refs: list[str] = []
     receipt_refs: list[str] = []
     context_refs: list[str] = []
     data_gaps: list[str] = []
@@ -75,7 +79,10 @@ def build_tool_result_envelope(
             if result.evidence.source_refs
             else []
         )
-        evidence_refs = _dedupe(
+        # Provider IDs are metadata about the tool/data source,
+        # NOT evidence. Evidence refs come from receipt_refs and
+        # concrete source references in the result payload.
+        provider_refs = _dedupe(
             [f"provider:{pid}" for pid in result.evidence.provider_ids]
         )
         receipt_refs = _dedupe(
@@ -83,6 +90,8 @@ def build_tool_result_envelope(
             if result.evidence.receipt_refs
             else []
         )
+        # Receipt refs ARE evidence refs
+        evidence_refs = list(receipt_refs)
         context_refs = _dedupe(
             list(result.evidence.context_pack_refs)
             if result.evidence.context_pack_refs
@@ -113,6 +122,8 @@ def build_tool_result_envelope(
         result_summary=result_summary,
         source_refs=source_refs,
         evidence_refs=evidence_refs,
+        provider_refs=provider_refs,
+        observation_refs=observation_refs,
         artifact_refs=[],
         receipt_refs=receipt_refs,
         context_refs=context_refs,
