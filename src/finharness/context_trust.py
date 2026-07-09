@@ -72,7 +72,7 @@ def trust_for_receipt_backed_state(
         source_type="receipt_backed_state",
         trust_level="high",
         verification_status="verified",
-        allowed_uses=["read", "cite", "plan_from"],
+        allowed_uses=["read", "cite", "plan_from", "use_as_evidence"],
         source_refs=_dedupe_refs(source_refs or []),
         receipt_refs=_dedupe_refs(receipt_refs),
     )
@@ -88,7 +88,7 @@ def trust_for_system_computed(
         source_type="system_computed",
         trust_level="high",
         verification_status="derived",
-        allowed_uses=["read", "cite", "plan_from"],
+        allowed_uses=["read", "cite", "plan_from", "use_as_evidence"],
         source_refs=_dedupe_refs(source_refs or []),
         receipt_refs=_dedupe_refs(receipt_refs or []),
     )
