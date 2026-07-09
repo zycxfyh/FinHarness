@@ -289,13 +289,13 @@ def build_open_proposals_context(engine: Engine, *, limit: int = 10) -> AgentCon
     data_gaps: list[str] = []
     if len(open_proposals) > len(items):
         data_gaps.append(f"open proposals truncated to {len(items)} items")
-    from finharness.context_trust import trust_for_agent_draft
+    from finharness.context_trust import trust_for_system_computed
 
     summary = {
         "open_count": len(open_proposals),
         "returned_count": len(items),
         "items": items,
-        "trust": trust_for_agent_draft(
+        "trust": trust_for_system_computed(
             source_refs=list(source_refs),
         ).model_dump(),
     }

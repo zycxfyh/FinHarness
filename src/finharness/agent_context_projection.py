@@ -22,6 +22,7 @@ from finharness.agent_context import (
     build_current_ips_context,
     build_ips_check_context,
     build_open_proposals_context,
+    build_planning_policy_context,
     unavailable_context_pack,
 )
 from finharness.statecore.store import StateCoreStoreError, open_state_core
@@ -199,6 +200,13 @@ CONTEXT_PROJECTION_PROFILES: dict[str, AgentContextProjectionProfile] = {
                 max_items=8,
                 max_source_refs=8,
             ),
+            AgentContextPackProjectionSpec(
+                pack_name="planning_policy",
+                priority=60,
+                max_chars=4_000,
+                max_items=10,
+                max_source_refs=8,
+            ),
         ),
     ),
     "review-draft": AgentContextProjectionProfile(
@@ -243,6 +251,13 @@ CONTEXT_PROJECTION_PROFILES: dict[str, AgentContextProjectionProfile] = {
                 max_chars=10_000,
                 max_items=20,
                 max_source_refs=16,
+            ),
+            AgentContextPackProjectionSpec(
+                pack_name="planning_policy",
+                priority=45,
+                max_chars=5_000,
+                max_items=15,
+                max_source_refs=12,
             ),
         ),
     ),
@@ -417,6 +432,7 @@ def build_capital_context_projection_payload(
                     limit=max(1, min(int(open_proposals_limit), 20)),
                 )
             ),
+            _pack_payload(build_planning_policy_context()),
         ]
     finally:
         if owned_engine:
