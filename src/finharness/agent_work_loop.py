@@ -250,6 +250,66 @@ def run_cognition_flow_from_work_result(
     }
 
 
+def run_agent_work_loop(
+    *,
+    request: AgentWorkRequest,
+    context_projection_payload: dict[str, object] | None = None,
+) -> AgentWorkResult:
+    """Run a complete agent work loop.
+
+    1. Freeze context snapshot
+    2. Run bounded tool dispatch loop
+    3. Run cognition flow from tool results
+    4. Update receipt search index
+    5. Produce hydrated AgentWorkResult
+    """
+    from finharness.agent_receipt_search import write_receipt_search_index
+
+    # 1. Freeze context
+    snap = freeze_work_context(
+        work_id=request.work_id,
+        profile_name=request.profile_name,
+        context_projection_payload=context_projection_payload,
+    )
+
+    # 2. Dispatch tools
+    envelopes, stop_reason, data_gaps = run_bounded_tool_dispatch_loop(
+        request=request, context_snapshot=snap,
+    )
+
+    # 3. Run cognition flow
+    flow = run_cognition_flow_from_work_result(
+        request=request, context_snapshot=snap,
+        tool_envelopes=envelopes, receipt_root=request.receipt_root,
+    )
+
+    # 4. Determine outcome
+    outcome: AgentWorkOutcome = "succeeded"
+    if data_gaps:
+        outcome = "failed" if not envelopes else "partial"
+
+    # 5. Update search index
+    root = Path(request.receipt_root)
+    index_path = write_receipt_search_index(root)
+
+    return AgentWorkResult(
+        work_id=request.work_id,
+        goal=request.goal,
+        profile_name=request.profile_name,
+        work_type=request.work_type,
+        outcome=outcome,
+        stop_reason=stop_reason,
+        tool_result_refs=[e.get("tool_name", "") for e in envelopes],
+        agent_run_receipt_ref=None,
+        evaluation_report_ref=flow.get("evaluation_report_ref"),
+        authority_transition_ref=flow.get("authority_transition_ref"),
+        review_workspace_ref=None,
+        search_index_ref=str(index_path),
+        data_gaps=data_gaps,
+        findings=snap.findings,
+    )
+
+
 def _new_id(prefix: str) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{prefix}_{stamp}_{uuid4().hex[:8]}"
