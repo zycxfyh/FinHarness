@@ -116,6 +116,59 @@ class AgentWorkContextSnapshot(BaseModel):
     execution_allowed: Literal[False] = False
 
 
+class AgentWorkPlaybookBinding(BaseModel):
+    """Playbook bound to a work loop — requirements validated."""
+
+    model_config = ConfigDict(frozen=True)
+
+    playbook_name: str
+    version: str
+    required_context_packs: list[str] = Field(default_factory=list)
+    recommended_evaluators: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+    bound: bool = False
+
+
+def bind_playbook_to_work(playbook_name: str) -> AgentWorkPlaybookBinding:
+    """Load a playbook and validate its requirements.
+
+    Returns a binding that records whether all requirements are met.
+    If playbook is missing or has unmet requirements, bound=False
+    and findings are populated.
+    """
+    from finharness.evaluator_registry import evaluator_ids
+    from finharness.playbook_loader import load_cognition_playbook
+
+    pb = load_cognition_playbook(playbook_name)
+    if pb is None:
+        return AgentWorkPlaybookBinding(
+            playbook_name=playbook_name,
+            version="unknown",
+            findings=[f"playbook '{playbook_name}' not found"],
+            bound=False,
+        )
+
+    finding_msgs: list[str] = []
+    bound = True
+    registered_ids = set(evaluator_ids())
+
+    for eid in pb.recommended_evaluators:
+        if eid not in registered_ids:
+            finding_msgs.append(
+                f"recommended evaluator '{eid}' not registered"
+            )
+            bound = False
+
+    return AgentWorkPlaybookBinding(
+        playbook_name=playbook_name,
+        version=pb.version,
+        required_context_packs=pb.required_context_packs,
+        recommended_evaluators=pb.recommended_evaluators,
+        findings=finding_msgs,
+        bound=bound,
+    )
+
+
 def freeze_work_context(
     *,
     work_id: str,

@@ -254,3 +254,35 @@ class TestBoundedDispatchLoop:
             )
             assert len(envelopes) == 0
             assert stop_reason == "completed"
+
+
+class TestPlaybookBinding:
+
+    def test_bind_valid_playbook(self) -> None:
+        from finharness.agent_work_loop import bind_playbook_to_work
+
+        binding = bind_playbook_to_work("ips-drift-review")
+        assert binding.bound is True
+        assert binding.playbook_name == "ips-drift-review"
+        assert binding.version != "unknown"
+        assert binding.required_context_packs == ["current_ips", "capital_summary"]
+        assert binding.recommended_evaluators == ["plan_draft_evaluator"]
+        assert binding.findings == []
+
+    def test_bind_missing_playbook(self) -> None:
+        from finharness.agent_work_loop import bind_playbook_to_work
+
+        binding = bind_playbook_to_work("nonexistent_playbook")
+        assert binding.bound is False
+        assert binding.version == "unknown"
+        assert len(binding.findings) > 0
+
+    def test_binding_model_is_frozen(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from finharness.agent_work_loop import AgentWorkPlaybookBinding
+
+        b = AgentWorkPlaybookBinding(playbook_name="test", version="1.0")
+        with pytest.raises(ValidationError, match="frozen"):
+            b.playbook_name = "x"  # type: ignore[misc]
