@@ -44,6 +44,15 @@ _DETERMINISTIC_EVALUATORS: dict[str, EvaluatorSpec] = {
         ),
         input_kind="plan_draft",
     ),
+    "research_evidence_quality": EvaluatorSpec(
+        evaluator_id="research_evidence_quality",
+        subject_type="research_evidence",
+        description=(
+            "Checks evidence source type, provider, recency, "
+            "and claim support"
+        ),
+        input_kind="research_evidence_items",
+    ),
 }
 
 
