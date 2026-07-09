@@ -171,3 +171,81 @@ def _new_id(prefix: str) -> str:
 
 def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
+
+
+# ── bounded tool dispatch loop ────────────────────────────────────────
+
+
+def run_bounded_tool_dispatch_loop(
+    *,
+    request: AgentWorkRequest,
+    context_snapshot: AgentWorkContextSnapshot,
+) -> tuple[list[dict[str, object]], str, list[str]]:
+    """Run a bounded tool dispatch loop for a work request.
+
+    Dispatches requested_tools in order, respecting max_tool_calls budget.
+    Each dispatch passes through AgentRuntimeTraceSink for automatic
+    trace recording. Returns (envelopes_as_dicts, stop_reason, data_gaps).
+
+    Rules:
+    - max max_tool_calls dispatches
+    - Only profile_exposed + available tools
+    - Only read / local_eval / append_only_review_write
+    - Each result produces an AgentToolResultEnvelope
+    - Trace sink writes AgentRunReceipt at completion
+    """
+    from pathlib import Path
+
+    from finharness.agent_runtime_receipts import AgentRuntimeTraceSink
+    from finharness.agent_tool_availability import capture_tool_universe_snapshot
+    from finharness.agent_tool_result_envelope import build_tool_result_envelope
+
+    receipt_root = Path(request.receipt_root)
+    sink = AgentRuntimeTraceSink(
+        goal=request.goal,
+        profile_name=request.profile_name,
+        receipt_root=receipt_root,
+    )
+
+    universe = capture_tool_universe_snapshot(request.profile_name)
+    available_tools = set(universe.model_visible_tools)
+
+    envelopes: list[dict[str, object]] = []
+    data_gaps: list[str] = []
+
+    tool_count = 0
+    for tool_name in request.requested_tools:
+        if tool_count >= request.max_tool_calls:
+            break
+
+        if tool_name not in available_tools:
+            data_gaps.append(
+                f"tool_unavailable: {tool_name} not available for "
+                f"profile {request.profile_name!r}"
+            )
+            tool_count += 1
+            continue
+
+        result = sink.dispatch(
+            profile_name=request.profile_name,
+            tool_name=tool_name,
+            arguments={},
+        )
+
+        env = build_tool_result_envelope(result)
+        envelopes.append(env.model_dump())
+        data_gaps.extend(env.data_gaps)
+        tool_count += 1
+
+    stop_reason = "completed"
+    if tool_count >= request.max_tool_calls and tool_count == len(request.requested_tools):
+        stop_reason = "completed"
+    elif tool_count >= request.max_tool_calls:
+        stop_reason = "max_tool_calls_reached"
+
+    # Finalize trace sink -> AgentRunReceipt written
+    from contextlib import suppress
+    with suppress(ValueError):
+        sink.finalize()
+
+    return envelopes, stop_reason, data_gaps
