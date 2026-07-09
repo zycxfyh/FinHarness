@@ -119,3 +119,75 @@ class TestPlanDraftEvaluator:
         assert status == "block"
         action_finding = next(f for f in findings if f.code == "plan_action_language")
         assert action_finding.message.count("execute") == 1
+
+    # ── Regex tokenization tests (RISK-3) ──────────────────────────────
+
+    def test_block_action_with_period(self) -> None:
+        """execute. with trailing punctuation must still block."""
+        status, findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Execute."]),
+        )
+        assert status == "block"
+        assert any(f.code == "plan_action_language" for f in findings)
+
+    def test_block_action_with_colon(self) -> None:
+        """submit: with trailing colon must still block."""
+        status, findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Submit: review and confirm"]),
+        )
+        assert status == "block"
+        codes = {f.code for f in findings}
+        assert "plan_action_language" in codes
+
+    def test_block_action_broker_comma(self) -> None:
+        """broker, with trailing comma must still block."""
+        status, _findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Contact broker, then review"]),
+        )
+        assert status == "block"
+
+    def test_allow_trade_off_analysis(self) -> None:
+        """trade-off analysis must not trigger trade block."""
+        status, _findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Review trade-off analysis"]),
+        )
+        assert status != "block"
+
+    def test_allow_risk_return_trade_offs(self) -> None:
+        """risk-return trade-offs must not trigger trade block."""
+        status, _findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Analyze risk-return trade-offs"]),
+        )
+        assert status != "block"
+
+    def test_allow_portfolio_trade_offs(self) -> None:
+        """portfolio trade-offs must not trigger trade block."""
+        status, _findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Evaluate portfolio trade-offs"]),
+        )
+        assert status != "block"
+
+    def test_block_execute_trade_off_order(self) -> None:
+        """execute + order still block even if trade-off phrase is present."""
+        status, findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Execute trade-off order"]),
+        )
+        assert status == "block"
+        codes = {f.code for f in findings}
+        assert "plan_action_language" in codes
+
+    def test_block_trade_SPY(self) -> None:
+        """trade SPY must block — bare trade is an action token."""
+        status, _findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Trade SPY after review"]),
+        )
+        assert status == "block"
+
+    def test_block_submit_trade_off_phrase(self) -> None:
+        """submit still blocks even when trade-off phrase is present."""
+        status, findings = evaluate_plan_draft_receipt(
+            plan_draft=_plan(steps=["Submit trade-off analysis for review"]),
+        )
+        assert status == "block"
+        codes = {f.code for f in findings}
+        assert "plan_action_language" in codes
