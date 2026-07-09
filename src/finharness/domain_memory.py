@@ -3,13 +3,14 @@
 Agentic-space dimension: Feedback Space / Memory.
 Operating surface: Track C — Memory / Search.
 
-Agent proposes memory → DomainMemoryDraftReceipt → human attests →
-promoted to PlanningPolicyView or context pack. Not auto-injected,
-not agent-mutable after creation.
+v0.1 (PR #212): Adds domain memory context pack promotion — attested
+memories can now be bundled into a context pack consumable by the
+cognition flow.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -50,6 +51,27 @@ class DomainMemoryDraftReceipt(BaseModel):
     attested_by: str | None = None
     attested_at_utc: str | None = None
     attested_reason: str | None = None
+    supersedes_memory_ids: list[str] = Field(default_factory=list)
+    conflicts_with_memory_ids: list[str] = Field(default_factory=list)
+    promoted_at_utc: str | None = None
+    promotion_reason: str | None = None
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+class DomainMemoryContextPack(BaseModel):
+    """Context pack built from attested domain memories."""
+
+    model_config = ConfigDict(frozen=True)
+
+    pack_id: str
+    name: str = "domain_memory"
+    memories: list[DomainMemoryDraftReceipt] = Field(default_factory=list)
+    budget_chars: int = 3000
+    total_chars: int = 0
+    truncated: bool = False
+    source_refs: list[str] = Field(default_factory=list)
+    receipt_refs: list[str] = Field(default_factory=list)
     execution_allowed: bool = False
     authority_transition: bool = False
 
@@ -124,8 +146,6 @@ def attest_domain_memory(
     if not file_path.exists():
         raise FileNotFoundError(f"domain memory draft not found: {memory_id}")
 
-    import json
-
     payload = json.loads(file_path.read_text(encoding="utf-8"))
     if payload.get("status") != "draft":
         raise ValueError(
@@ -153,6 +173,74 @@ def attest_domain_memory(
     )
 
     return attested
+
+
+# ── context pack promotion (new in v0.1) ──────────────────────────────
+
+
+def list_domain_memories(
+    receipt_root: str | Path,
+    *,
+    status_filter: DomainMemoryStatus | None = None,
+) -> list[DomainMemoryDraftReceipt]:
+    """List all domain memory receipts under receipt_root."""
+    root = Path(receipt_root) / "domain-memory"
+    if not root.is_dir():
+        return []
+    memories: list[DomainMemoryDraftReceipt] = []
+    for file_path in sorted(root.glob("*.json")):
+        try:
+            payload = json.loads(file_path.read_text(encoding="utf-8"))
+            mem = DomainMemoryDraftReceipt(**payload)
+            if status_filter is None or mem.status == status_filter:
+                memories.append(mem)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+    return memories
+
+
+def build_domain_memory_context_pack(
+    *,
+    receipt_root: str | Path,
+    memory_types: list[DomainMemoryType] | None = None,
+    budget_chars: int = 3000,
+) -> DomainMemoryContextPack:
+    """Build a context pack from attested domain memories.
+
+    Only attested memories are included. Draft and rejected memories
+    are excluded. A character budget is enforced; if memories exceed
+    it, they are truncated and the pack is marked as truncated=True.
+    """
+    all_memories = list_domain_memories(receipt_root, status_filter="attested")
+
+    if memory_types is not None:
+        all_memories = [m for m in all_memories if m.memory_type in memory_types]
+
+    source_refs: list[str] = []
+    receipt_refs: list[str] = []
+    included: list[DomainMemoryDraftReceipt] = []
+    total_chars = 0
+
+    for mem in all_memories:
+        mem_len = len(mem.content)
+        if total_chars + mem_len <= budget_chars:
+            included.append(mem)
+            total_chars += mem_len
+            source_refs.extend(mem.source_refs)
+            receipt_refs.append(mem.memory_id)
+        else:
+            break
+
+    pack_id = _new_id("dmpack")
+    return DomainMemoryContextPack(
+        pack_id=pack_id,
+        memories=included,
+        budget_chars=budget_chars,
+        total_chars=total_chars,
+        truncated=len(included) < len(all_memories),
+        source_refs=_dedupe(source_refs),
+        receipt_refs=receipt_refs,
+    )
 
 
 def _dedupe(values: list[str]) -> list[str]:
