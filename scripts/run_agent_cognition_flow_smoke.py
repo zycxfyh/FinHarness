@@ -49,8 +49,8 @@ def main() -> None:
             source_refs=["capital_summary", "current_ips"],
             human_attester="ops_reviewer",
             human_reason=(
-                "Pre-trade checks pass, risk within mandate, "
-                "IPS threshold bands allow 5% adjustment"
+                "Evaluation receipt reviewed; plan remains non-executing "
+                "and requires separate future checks before any action"
             ),
             explicit_confirmation=True,
         )

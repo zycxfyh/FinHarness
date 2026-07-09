@@ -76,6 +76,8 @@ def run_agent_cognition_flow(
     human_attester: str | None = None,
     human_reason: str | None = None,
     explicit_confirmation: bool = False,
+    eval_status: str = "warn",
+    eval_findings: list[EvaluationFinding] | None = None,
 ) -> AgentCognitionFlowResult:
     """Run a deterministic agent cognition flow.
 
@@ -85,6 +87,10 @@ def run_agent_cognition_flow(
     3. build + write_evaluation_report — evaluates the plan
     4. record_authority_transition — if human confirmation present
     5. write_agent_run_receipt — traces the entire run
+
+    eval_status controls the evaluation result: "pass", "warn" (default), or "block".
+    eval_findings overrides the default finding; if omitted, a default
+    "plan evaluation — human review required" finding is generated.
 
     Returns AgentCognitionFlowResult with all artifact refs.
     execution_allowed is False throughout.
@@ -120,22 +126,28 @@ def run_agent_cognition_flow(
     plan_draft_ref = f"deliberation/{plan_draft.receipt_id}.json"
 
     # 3. Evaluation
-    plan_step_summary = ", ".join(plan_steps[:5])
-    eval_report = build_evaluation_report(
-        evaluator_id="agent_cognition_flow",
-        subject_type="plan_draft",
-        subject_id=plan_draft.plan_id,
-        status="warn",
-        findings=[
+    eval_status_value = eval_status if eval_status in ("pass", "warn", "block") else "warn"
+    severity_map: dict[str, str] = {"pass": "info", "warn": "warn", "block": "block"}
+    if eval_findings is not None:
+        findings = list(eval_findings)
+    else:
+        plan_step_summary = ", ".join(plan_steps[:5])
+        findings = [
             EvaluationFinding(
                 code="flow_plan_evaluation",
-                severity="warn",
+                severity=severity_map[eval_status_value],
                 message=f"Plan contains {len(plan_steps)} step(s): {plan_step_summary}",
                 recovery_hint="Human review required before any action",
                 source_refs=source_refs or [],
                 receipt_refs=[option_set_ref, plan_draft_ref],
             ),
-        ],
+        ]
+    eval_report = build_evaluation_report(
+        evaluator_id="agent_cognition_flow",
+        subject_type="plan_draft",
+        subject_id=plan_draft.plan_id,
+        status=eval_status_value,  # type: ignore[arg-type]
+        findings=findings,
         source_refs=source_refs,
         receipt_refs=[option_set_ref, plan_draft_ref],
     )
