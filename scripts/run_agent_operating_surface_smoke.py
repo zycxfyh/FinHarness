@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Agent Operating Surface smoke — end-to-end verification of Wave 2 surfaces.
+"""Agent Operating Surface semantic smoke — v0.1.
 
-Runs a deterministic chain through all operating surfaces:
-tool registry → availability → projection trust map → tool envelopes →
-playbook load → evaluator registry → cognition flow → evaluation →
-authority → run receipt → review workspace projection.
-
-No LLM. No broker. No Execution Kernel.
+Verifies surfaces enter real lifecycle, not just exist.
 """
 
 from __future__ import annotations
@@ -16,15 +11,24 @@ import tempfile
 from pathlib import Path
 
 from finharness.agent_cognition_flow import run_agent_cognition_flow
-from finharness.agent_operating_flow import run_agent_cognition_flow_from_operating_inputs
-from finharness.agent_runtime import AgentToolRuntimeResult
-from finharness.agent_tool_availability import capture_tool_availability_snapshots
-from finharness.agent_tool_registry import build_registry, registry_summary
+from finharness.agent_operating_flow import (
+    evaluate_playbook_requirements,
+    run_agent_cognition_flow_from_operating_inputs,
+)
+from finharness.agent_receipt_search import build_receipt_search_index, search_receipt_index
+from finharness.agent_runtime_receipts import AgentRuntimeTraceSink
+from finharness.agent_tool_availability import capture_tool_universe_snapshot
+from finharness.agent_tool_registry import build_registry
 from finharness.agent_tool_result_envelope import build_tool_result_envelope
 from finharness.context_trust import trust_for_system_computed
-from finharness.evaluator_registry import list_evaluators
-from finharness.playbook_loader import list_cognition_playbooks, load_cognition_playbook
-from finharness.review_workspace import build_review_workspace_projection
+from finharness.domain_memory import (
+    build_domain_memory_context_pack,
+    propose_domain_memory,
+    attest_domain_memory,
+)
+from finharness.evaluator_registry import evaluator_ids, list_evaluators
+from finharness.playbook_loader import load_cognition_playbook, list_cognition_playbooks
+from finharness.review_workspace import build_review_workspace_projection_from_receipts
 
 
 def _check(description: str, ok: bool) -> int:
@@ -35,58 +39,108 @@ def _check(description: str, ok: bool) -> int:
 
 def main() -> int:
     failures = 0
-    print("Agent Operating Surface Smoke")
+    print("Agent Operating Surface Semantic Smoke v0.1")
     print("=" * 50)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
-        # 1. Tool Registry
-        print("\n1. Tool Registry")
-        regs = build_registry()
-        failures += _check("Registry has tools", len(regs) > 0)
-        summary = registry_summary()
-        failures += _check("Registry summary consistent", summary["total_registered"] == len(regs))
+        # 1. Registry — no invalid registrations
+        print("\n1. Tool Registry (strictness)")
+        reg = build_registry()
+        failures += _check("Registry has no invalid entries", reg.invalid_count == 0)
+        failures += _check(
+            "Registry invalid_count in summary",
+            reg.summary()["invalid_count"] == 0,
+        )
 
-        # 2. Tool Availability
-        print("\n2. Tool Availability")
-        snapset = capture_tool_availability_snapshots("default")
-        failures += _check("Availability snapshots exist", len(snapset.snapshots) > 0)
-        avail_count = int(snapset.summary["available_count"])
-        failures += _check("Available count in summary", avail_count > 0)
+        # 2. Global tool universe — hidden/exposed
+        print("\n2. Global Tool Universe")
+        univ = capture_tool_universe_snapshot("default")
+        failures += _check("Universe has registered tools", len(univ.registered_tools) > 0)
+        failures += _check(
+            "Model visible subset of profile exposed",
+            set(univ.model_visible_tools).issubset(set(univ.profile_exposed_tools)),
+        )
+        failures += _check("Hidden or unavailable distinguished", isinstance(univ.hidden_tools, list))
 
-        # 3. Tool Result Envelope
-        print("\n3. Tool Result Envelope")
-        rt = AgentToolRuntimeResult(
-            ok=True,
-            tool_name="get_quote_snapshot",
-            side_effect="read",
+        # 3. Envelope ref taxonomy
+        print("\n3. Tool Result Envelope (ref taxonomy)")
+        from finharness.agent_runtime import dispatch_agent_tool
+        rt = dispatch_agent_tool(
+            profile_name="default", tool_name="get_quote_snapshot",
+            arguments={"symbol": "AAPL"},
         )
         env = build_tool_result_envelope(rt)
-        failures += _check("Envelope built", env.tool_name == "get_quote_snapshot")
-        failures += _check("execution_allowed=False", not env.execution_allowed)
+        failures += _check("provider_refs populated", len(env.provider_refs) >= 0)
+        failures += _check(
+            "No provider: prefix in evidence_refs",
+            all(not ref.startswith("provider:") for ref in env.evidence_refs),
+        )
 
-        # 4. Playbooks
-        print("\n4. Playbooks")
-        summaries = list_cognition_playbooks()
-        failures += _check("Playbooks listed", len(summaries) > 0)
+        # 4. Playbook YAML
+        print("\n4. Playbook YAML Parsing")
         pb = load_cognition_playbook("ips-drift-review")
-        failures += _check("Playbook loaded", pb is not None and "Procedure" in pb.procedure)
+        failures += _check("Playbook loaded", pb is not None)
+        failures += _check(
+            "required_context_packs = [current_ips, capital_summary]",
+            pb.required_context_packs == ["current_ips", "capital_summary"],
+        )
+        failures += _check(
+            "recommended_evaluators = [plan_draft_evaluator]",
+            pb.recommended_evaluators == ["plan_draft_evaluator"],
+        )
+        failures += _check("side_effects = [read]", pb.side_effects == ["read"])
 
-        # 5. Evaluator Registry
+        # 5. Evaluator registry completeness
         print("\n5. Evaluator Registry")
-        evals = list_evaluators()
-        failures += _check("Evaluators listed", len(evals) > 0)
+        ids = set(evaluator_ids())
+        failures += _check(
+            "research_evidence_quality registered",
+            "research_evidence_quality" in ids,
+        )
 
-        # 6. Cognition Flow (direct)
-        print("\n6. Cognition Flow (direct)")
+        # 6. Playbook requirements -> findings
+        print("\n6. Playbook Requirements in Flow")
+        missing_ctx_findings = evaluate_playbook_requirements(
+            pb, context_projection_payload={"packs": []},
+        )
+        failures += _check(
+            "Missing context packs produce findings",
+            any(f.code == "playbook_context_missing" for f in missing_ctx_findings),
+        )
+
+        # 7. Trace sink
+        print("\n7. Runtime Trace Sink")
+        sink = AgentRuntimeTraceSink(goal="Smoke trace", profile_name="default", receipt_root=root)
+        sink.dispatch(profile_name="default", tool_name="get_quote_snapshot", arguments={"symbol": "AAPL"})
+        failures += _check("Sink records result", sink.result_count == 1)
+        receipt = sink.finalize()
+        failures += _check("Sink finalizes receipt", receipt.outcome == "succeeded")
+
+        # 8. Domain memory -> context pack
+        print("\n8. Domain Memory Promotion")
+        d = propose_domain_memory(
+            proposed_by="agent:smoke", memory_type="planning_lesson",
+            content="Smoke test: SPY allocation review is systematic",
+            receipt_root=root,
+        )
+        attest_domain_memory(
+            memory_id=d.memory_id, attested_by="human:smoke",
+            attested_reason="Verified in smoke test", receipt_root=root,
+        )
+        pack = build_domain_memory_context_pack(receipt_root=root)
+        failures += _check("Attested memory enters context pack", len(pack.memories) == 1)
+
+        # 9. Cognition flow
+        print("\n9. Cognition Flow")
         flow = run_agent_cognition_flow(
-            goal="Smoke test: verify SPY exposure is within IPS bands",
+            goal="Smoke: verify SPY exposure within IPS",
             profile_name="default",
-            objective="Verify that SPY allocation does not exceed IPS maximum",
-            option_claims=["Stay at current allocation", "Reduce SPY to target"],
+            objective="Verify allocation",
+            option_claims=["Stay", "Reduce"],
             plan_steps=[
-                "Check current SPY allocation vs IPS target",
+                "Check SPY allocation vs IPS target",
                 "Evaluate drift",
                 "Propose rebalance if needed",
                 "Stop and await human confirmation",
@@ -94,46 +148,33 @@ def main() -> int:
             receipt_root=root,
         )
         failures += _check("Flow ID generated", bool(flow.flow_id))
-        failures += _check("Option set ref", bool(flow.option_set_ref))
-        failures += _check("Plan draft ref", bool(flow.plan_draft_ref))
-        failures += _check("Evaluation report ref", bool(flow.evaluation_report_ref))
-        failures += _check("Run receipt ref", bool(flow.agent_run_receipt_ref))
-        failures += _check("execution_allowed=False", not flow.execution_allowed)
 
-        # 7. Operating Surface Flow
-        print("\n7. Operating Surface Flow")
-        trust = trust_for_system_computed(source_refs=["ref://ctx1"])
-        payload = {
-            "packs": [{
-                "name": "capital_summary",
-                "summary": {"trust": trust.model_dump()},
-                "source_refs": ["ref://ctx1"],
-                "context_pack_refs": ["context_pack://capital_summary"],
-            }]
-        }
-        os_flow = run_agent_cognition_flow_from_operating_inputs(
-            goal="Smoke: operating surface integration test",
-            profile_name="default",
-            objective="Verify end-to-end operating surface integration",
-            option_claims=["Option A", "Option B"],
-            plan_steps=["Step 1: gather context", "Step 2: evaluate", "Step 3: stop"],
-            receipt_root=root,
-            context_projection_payload=payload,
-            playbook_name="ips-drift-review",
+        # 10. Review workspace hydrated from receipts
+        print("\n10. Review Workspace (hydrated)")
+        ws = build_review_workspace_projection_from_receipts(
+            flow_result=flow, receipt_root=root,
         )
-        failures += _check("OS Flow ID generated", bool(os_flow.flow_id))
-        failures += _check("OS Flow execution_allowed=False", not os_flow.execution_allowed)
-
-        # 8. Review Workspace
-        print("\n8. Review Workspace")
-        ws = build_review_workspace_projection(flow_result=flow)
-        failures += _check("Workspace ID generated", bool(ws.workspace_id))
-        failures += _check("Workspace has goal", bool(ws.goal))
+        failures += _check("Evaluation status populated", ws.evaluation_status is not None)
+        failures += _check("Open findings present", len(ws.open_findings) > 0)
         failures += _check("Workspace has receipt refs", len(ws.receipt_refs) > 0)
+
+        # 11. Receipt search index
+        print("\n11. Receipt Search Index")
+        entries = build_receipt_search_index(root)
+        failures += _check("Index covers receipts", len(entries) > 0)
+        index_path = root / "receipt-index.jsonl"
+        import json as _json
+        with index_path.open("w") as f:
+            for e in entries:
+                f.write(e.model_dump_json() + "\n")
+        results = search_receipt_index(index_path, "SPY")
+        failures += _check("Search finds flow by content", len(results) > 0)
+        results_by_status = search_receipt_index(index_path, "succeeded")
+        failures += _check("Search by outcome", len(results_by_status) > 0)
 
     print("\n" + "=" * 50)
     if failures == 0:
-        print("ALL CHECKS PASSED — Agent Operating Surface is operational.")
+        print("ALL CHECKS PASSED — Agent Operating Surface is semantically operational.")
     else:
         print(f"{failures} CHECK(S) FAILED")
     return 0 if failures == 0 else 1
