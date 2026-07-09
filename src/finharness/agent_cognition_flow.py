@@ -32,7 +32,7 @@ from finharness.deliberation_receipts import (
     write_plan_draft_receipt,
 )
 from finharness.evaluation_report import (
-    EvaluationFinding,
+    EvaluationReport,
     write_evaluation_report,
 )
 from finharness.plan_draft_evaluator import evaluate_plan_draft_to_report
@@ -77,8 +77,8 @@ def run_agent_cognition_flow(
     human_attester: str | None = None,
     human_reason: str | None = None,
     explicit_confirmation: bool = False,
-    eval_status: str = "warn",
-    eval_findings: list[EvaluationFinding] | None = None,
+    evaluator_override: EvaluationReport | None = None,
+    allow_evaluation_override: bool = False,
 ) -> AgentCognitionFlowResult:
     """Run a deterministic agent cognition flow.
 
@@ -89,9 +89,10 @@ def run_agent_cognition_flow(
     4. record_authority_transition — if human confirmation present
     5. write_agent_run_receipt — traces the entire run
 
-    eval_status controls the evaluation result: "pass", "warn" (default), or "block".
-    eval_findings overrides the default finding; if omitted, a default
-    "plan evaluation — human review required" finding is generated.
+    By default, the real plan_draft_evaluator runs. For testing only,
+    pass evaluator_override with allow_evaluation_override=True to
+    substitute a pre-built EvaluationReport. This gate prevents
+    accidental bypass of the semantic evaluator.
 
     Returns AgentCognitionFlowResult with all artifact refs.
     execution_allowed is False throughout.
@@ -127,15 +128,17 @@ def run_agent_cognition_flow(
     plan_draft_ref = f"deliberation/{plan_draft.receipt_id}.json"
 
     # 3. Evaluation — uses real plan draft evaluator
-    eval_report = evaluate_plan_draft_to_report(
-        plan_draft=plan_draft,
-        source_refs=source_refs,
-    )
-    if eval_findings is not None:
-        # Custom findings override evaluator output
-        eval_report = eval_report.model_copy(update={"findings": list(eval_findings)})
-    if eval_status in ("pass", "warn", "block"):
-        eval_report = eval_report.model_copy(update={"status": eval_status})
+    if evaluator_override is not None:
+        if not allow_evaluation_override:
+            raise ValueError(
+                "evaluator_override requires allow_evaluation_override=True"
+            )
+        eval_report = evaluator_override
+    else:
+        eval_report = evaluate_plan_draft_to_report(
+            plan_draft=plan_draft,
+            source_refs=source_refs,
+        )
     eval_ref = write_evaluation_report(
         report=eval_report,
         receipt_root=root,
