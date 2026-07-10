@@ -218,10 +218,12 @@ def _dependency_grouping(root: Path) -> bool:
     if len(dist_names) != len(set(dist_names)):
         return False
 
-    # Rule 2: Every declared dependency (base + dev) has exactly one entry
+    # Rule 2: Every declared dependency (all groups) has exactly one entry
     declared_base = project.get("project", {}).get("dependencies", [])
-    declared_dev = groups.get("dev", [])
-    all_declared = {_distribution_name(r) for r in declared_base + declared_dev}
+    declared_all = list(declared_base)
+    for _group_name, group_deps in groups.items():
+        declared_all.extend(group_deps)
+    all_declared = {_distribution_name(r) for r in declared_all}
     manifest_dists = {e["distribution"] for e in entries}
     if all_declared != manifest_dists:
         return False

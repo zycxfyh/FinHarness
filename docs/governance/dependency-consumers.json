@@ -1,6 +1,6 @@
 {
   "schema": "finharness.dependency_consumer_manifest.v1",
-  "status": "audit",
+  "status": "current",
   "debt_ref": "ENG-DEBT-0005",
   "source_roots": [
     "pyproject.toml",
