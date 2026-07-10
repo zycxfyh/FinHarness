@@ -81,7 +81,7 @@
     {
       "id": "ENG-DEBT-0002",
       "title": "Paper-validation legacy isolation and removal boundary",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "governance-boundary",
       "surface": "paper-validation",
@@ -89,17 +89,17 @@
         "PR #102 paper validation routes",
         "Execution Kernel migration #116-#151"
       ],
-      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated, and database/HTTP tests cover several cannot-graduate-to-live invariants. The threat model still records missing end-to-end broker-registry and machine-checkable consumer-audit guards, and no canonical consumer manifest exists.",
+      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated. A machine-verifiable consumer manifest (SEC-02A), AST-level transitive import boundary (SEC-02B), and broker-registry runtime isolation spy test (SEC-02C) close all three threat-model gaps (TM-PV-001/002/003). The canonical verifier imports and exercises the audit module directly, the import graph reports zero forbidden transitive findings, and the golden-path API test proves zero broker-registry calls.",
       "desired_state": "The threat model and executable boundary tests prohibit real adapters, credentials, and live graduation through the legacy surface; deletion criteria identify consumers and historical-read obligations without expanding the legacy API.",
       "risk_if_ignored": "Future contributors may extend a legacy compatibility chain into a second execution system or treat paper-shaped objects as a broker integration scaffold.",
-      "next_action": "Add a canonical consumer manifest, AST-based execution/network import guard, and runtime broker-registry isolation test; then reconcile the threat-model gaps before closing the debt.",
+      "next_action": "Keep the consumer manifest, import boundary, and registry isolation tests current when routes or paper modules change.",
       "non_goals": [
         "live broker integration",
         "paper-to-live migration path",
         "new paper-validation product features"
       ],
       "blocked_by": [],
-      "target_slice": "SEC-BOUNDARY-01",
+      "target_slice": "SEC-BOUNDARY-02",
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-15",
@@ -107,9 +107,15 @@
         "src/finharness/api/routes_paper_validation.py",
         "docs/security/finharness-threat-model.md",
         "tests/test_paper_validation_legacy_boundary.py",
-        "docs/governance/removal-ledger.yml"
+        "docs/governance/removal-ledger.yml",
+        "docs/governance/paper-validation-consumers.json",
+        "src/finharness/paper_validation_boundary_audit.py",
+        "tests/test_paper_validation_consumer_manifest.py",
+        "tests/test_paper_validation_import_boundary.py",
+        "tests/test_paper_validation_broker_registry_isolation.py"
       ],
-      "verification": "paper_validation_legacy_boundary"
+      "verification": "paper_validation_legacy_boundary",
+      "resolution_ref": "SEC-02A / #235, SEC-02B / #236, SEC-02C / #237, SEC-02D / #238"
     },
     {
       "id": "ENG-DEBT-0003",

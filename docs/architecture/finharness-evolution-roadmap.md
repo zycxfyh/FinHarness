@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 8 resolved; 2 active | Security consumer isolation and dependency ownership remain prerequisites, not optional cleanup. |
+| Engineering debt | 9 resolved; 1 active | Security boundary closed (SEC-02A-D), dependency ownership (DEPS-02A-E) remains. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -211,13 +211,11 @@ owns authority and policy changes.
 The following block is mechanically checked against the canonical register.
 
 <!-- active-debt:start -->
-- `ENG-DEBT-0002` — paper-validation isolation still lacks a canonical consumer manifest and execution/network import + broker-registry guards.
 - `ENG-DEBT-0005` — dependency groups are empty and no import/task consumer audit exists.
 <!-- active-debt:end -->
 
 Rules:
 
-- ENG-DEBT-0002 blocks claiming the paper legacy deletion boundary complete.
 - ENG-DEBT-0005 blocks new optional dependencies and claims of runtime/research
   install separation.
 - Neither item blocks the isolated Agent Loop contract work in Phase 3.
@@ -237,7 +235,7 @@ Do not squash away their logical boundaries during review.
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | TRUTH-04 (complete locally) | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
-| SEC-BOUNDARY-01/02 correction | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, canonical consumer manifest, AST execution/network import guard, broker-registry isolation, deletion criteria. | Active: existing 19 tests remain useful; ENG-DEBT-0002 closes only when the stronger verifier and threat-model gap reconciliation pass. | No paper feature, live path, or new route. |
+| SEC-BOUNDARY-02 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary: canonical consumer manifest (SEC-02A), AST import guard (SEC-02B), broker-registry isolation (SEC-02C). | Closed: ENG-DEBT-0002 resolved; threat-model gaps reconciled. | No paper feature, live path, or new route. |
 | DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | Complete: ENG-DEBT-0008 resolved; Node 22 unified, Rust removed. | No dependency upgrades. |
 
 Use `security-best-practices` for execution/API control changes and the installed `playwright` for frontend golden paths.

@@ -134,6 +134,7 @@ def scan_paper_consumers(root: Path) -> list[dict[str, object]]:
                 "src/finharness/statecore/paper_accounts.py",
                 "src/finharness/statecore/paper_order_tickets.py",
                 "src/finharness/statecore/paper_executions.py",
+                "src/finharness/api/legacy_headers.py",
             }:
                 continue
             if _is_paper_consumer_file(py_file) and relative not in registered:
