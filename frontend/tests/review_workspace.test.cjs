@@ -16,6 +16,8 @@ function loadCockpitWindow() {
   const dom = new JSDOM(html, { runScripts: "outside-only" });
   dom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8"));
+  dom.window.eval(fs.readFileSync(path.join(frontendDir, "state.js"), "utf-8"));
+  dom.window.eval(fs.readFileSync(path.join(frontendDir, "actions.js"), "utf-8"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "app.js"), "utf-8"));
   return dom.window;
 }
@@ -187,7 +189,10 @@ function renderForm() {
 let fetchCalls = [];
 window.fetch = (p, opts) => {
   fetchCalls.push([p, opts]);
-  return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+  return Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ execution_allowed: false }),
+  });
 };
 window.confirm = () => false;
 let form = renderForm();

@@ -81,7 +81,7 @@
     {
       "id": "ENG-DEBT-0002",
       "title": "Paper-validation legacy isolation and removal boundary",
-      "status": "resolved",
+      "status": "active",
       "priority": "P1",
       "category": "governance-boundary",
       "surface": "paper-validation",
@@ -89,10 +89,10 @@
         "PR #102 paper validation routes",
         "Execution Kernel migration #116-#151"
       ],
-      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated. The threat model includes a dedicated legacy-isolation and deletion boundary with consumer audit, 7 isolation rules, 6 deletion criteria, and 20 named CHECK constraints verified at the database level.",
+      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated, and database/HTTP tests cover several cannot-graduate-to-live invariants. The threat model still records missing end-to-end broker-registry and machine-checkable consumer-audit guards, and no canonical consumer manifest exists.",
       "desired_state": "The threat model and executable boundary tests prohibit real adapters, credentials, and live graduation through the legacy surface; deletion criteria identify consumers and historical-read obligations without expanding the legacy API.",
       "risk_if_ignored": "Future contributors may extend a legacy compatibility chain into a second execution system or treat paper-shaped objects as a broker integration scaffold.",
-      "next_action": "Keep boundary tests and removal ledger current; delete paper surface only when all 6 deletion criteria are met.",
+      "next_action": "Add a canonical consumer manifest, AST-based execution/network import guard, and runtime broker-registry isolation test; then reconcile the threat-model gaps before closing the debt.",
       "non_goals": [
         "live broker integration",
         "paper-to-live migration path",
@@ -109,8 +109,7 @@
         "tests/test_paper_validation_legacy_boundary.py",
         "docs/governance/removal-ledger.yml"
       ],
-      "verification": "paper_validation_legacy_boundary",
-      "resolution_ref": "SEC-BOUNDARY-01"
+      "verification": "paper_validation_legacy_boundary"
     },
     {
       "id": "ENG-DEBT-0003",
@@ -153,7 +152,7 @@
       "introduced_by": [
         "Incremental additions to task check"
       ],
-      "current_state": "check:fast (lint+typecheck+unit), check:ci (merge gate with integration+frontend+governance+rules), and check:research (full suite with experiments+eval) expose cost boundaries; check is alias for check:ci.",
+      "current_state": "check:fast owns lint, typecheck, and unit tests; check:ci composes check:fast with integration, frontend, governance, and rules; check:research composes check:ci with experiments and eval smoke; check aliases check:ci.",
       "desired_state": "Named fast, CI, and research layers expose cost and dependency boundaries while the documented default preserves the intended merge gate.",
       "risk_if_ignored": "The standard signal becomes slower and more brittle, encouraging contributors to skip checks or misread research-tool failures as core regressions.",
       "next_action": "Keep check:ci as the documented merge gate; audit new checks for appropriate layer placement.",
@@ -176,14 +175,14 @@
     {
       "id": "ENG-DEBT-0005",
       "title": "Dependency grouping and dead dependency review",
-      "status": "resolved",
+      "status": "active",
       "priority": "P1",
       "category": "dependency-management",
       "surface": "dependencies",
       "introduced_by": [
         "Research, Agent, eval, and trading-analysis dependency accumulation"
       ],
-      "current_state": "Six named dependency groups (data, research, agent, eval, paper, security) exist alongside the dev group; main dependencies remain in base for runtime compatibility.",
+      "current_state": "Six named dependency-group keys exist but all are empty, no import/task consumer manifest exists, and every optional research, Agent, evaluation, data, paper, and security dependency remains in the base runtime set.",
       "desired_state": "Runtime-critical dependencies are separated from optional data, research, Agent, evaluation, paper, and security groups after an import/task audit proves their consumers.",
       "risk_if_ignored": "Install time, vulnerability surface, resolution conflicts, and ownership ambiguity grow with each capability slice.",
       "next_action": "Populate groups after a full import/task consumer audit; remove only dependencies proven unused.",
@@ -202,8 +201,7 @@
         "uv.lock",
         "Taskfile.yml"
       ],
-      "verification": "dependency_grouping",
-      "resolution_ref": "DEPS-01"
+      "verification": "dependency_grouping"
     },
     {
       "id": "ENG-DEBT-0006",
@@ -215,7 +213,7 @@
       "introduced_by": [
         "Multiple bounded contexts accumulated in statecore/models.py"
       ],
-      "current_state": "Nine personal-finance models (Account, Snapshot, Position, Liability, FinancialGoal, CashflowEvent, TaxEvent, InsurancePolicy, DocumentRef) extracted to personal_finance_models.py; models.py retains compatibility re-exports.",
+      "current_state": "Nine personal-finance models are extracted to personal_finance_models.py, shared primitives live in model_base.py, the extracted module no longer imports the compatibility models surface, and models.py retains identity-preserving re-exports.",
       "desired_state": "Models are split by bounded context while models.py retains compatibility re-exports and metadata/OpenAPI/schema behavior remains stable.",
       "risk_if_ignored": "Schema ownership, migration review, and fixture isolation become harder as unrelated bounded contexts continue sharing one module.",
       "next_action": "Keep re-exports current; future extraction of higher-coupling models requires separate architectural decisions.",
@@ -231,10 +229,12 @@
       "review_due": "2026-08-31",
       "evidence_refs": [
         "src/finharness/statecore/models.py",
-        "src/finharness/statecore/personal_finance_models.py"
+        "src/finharness/statecore/model_base.py",
+        "src/finharness/statecore/personal_finance_models.py",
+        "tests/test_statecore_model_split.py"
       ],
       "verification": "statecore_model_split",
-      "resolution_ref": "STATECORE-01"
+      "resolution_ref": "STATECORE-01 + post-merge semantic correction"
     },
     {
       "id": "ENG-DEBT-0007",
@@ -246,7 +246,7 @@
       "introduced_by": [
         "Incremental cockpit tab and write-form additions"
       ],
-      "current_state": "api.js extracted with apiGet/apiPost/apiPatch; state.js exists as module boundary; ReviewActionShell governs write actions; all 9 frontend jsdom tests pass.",
+      "current_state": "api.js owns API helpers, state.js owns sealed runtime state, actions.js owns ReviewActionShell, and all three governed review forms use the shared shell. A semantic jsdom test proves module consumption and fail-closed execution_allowed handling.",
       "desired_state": "Governed write forms share one action-shell contract, and API/state/view modules are separated without changing vanilla-JS behavior or jsdom compatibility.",
       "risk_if_ignored": "Future cockpit and Agent-task surfaces will amplify global-state coupling and allow governance UX to drift between forms.",
       "next_action": "Keep ReviewActionShell as the canonical write pattern; extend to new forms.",
@@ -262,13 +262,14 @@
       "review_due": "2026-08-31",
       "evidence_refs": [
         "frontend/app.js",
+        "frontend/actions.js",
         "frontend/api.js",
         "frontend/state.js",
         "frontend/index.html",
-        "frontend/tests/"
+        "frontend/tests/module_boundaries.test.cjs"
       ],
       "verification": "frontend_module_split",
-      "resolution_ref": "FRONTEND-01"
+      "resolution_ref": "FRONTEND-01 + post-merge semantic correction"
     },
     {
       "id": "ENG-DEBT-0008",

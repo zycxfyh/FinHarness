@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 10 resolved; 0 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 8 resolved; 2 active | Security consumer isolation and dependency ownership remain prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -119,7 +119,7 @@ transport real tool arguments, consume observations to choose the next action,
 enforce `max_steps`, reduce all stop paths, link the final run receipt, persist
 the result, hydrate the workspace, or make the result searchable by work ID.
 
-### Phase H — Truth recovery and first enforcement (local stacked chain)
+### Phase H — Truth recovery and first enforcement (#228 ancestry)
 
 | Commit | Slice | Effect |
 | --- | --- | --- |
@@ -129,10 +129,23 @@ the result, hydrate the workspace, or make the result searchable by work ID.
 | `33fadd6` | EXEC-01 | Enforced immutable execution capabilities at service/command/API boundaries. |
 | `fcb4d86` | LOOP-01 | Added the intentionally red 15-contract Agent closure gate. |
 
-These commits are local and stacked on `origin/main` (latest: `d92407d`).
-SEC-BOUNDARY-01 (ENG-DEBT-0002) is prepared locally with the threat-model
-section, boundary tests, removal ledger, and debt-register resolution.
-Publication remains a separate user decision.
+The logical commits remained separate in git history and reached `main` through
+#228. The PR also added the first SEC-BOUNDARY-01 implementation.
+
+### Phase I — DeepSeek stabilization chain (#228–#233, audited 2026-07-10)
+
+| PR | Slice | Audited result |
+| --- | --- | --- |
+| #228 | SEC-BOUNDARY-01 | Useful database/HTTP/legacy guards, but premature closure: the threat model itself still names missing broker-registry and machine-checkable consumer guards. Debt reopened. |
+| #229 | DEVEX-02 | Valid: mise/CI converge on Node 22 and an unconsumed Rust install is removed. |
+| #230 | DEVEX-01 | Direction valid; post-merge correction makes CI and research layers compose their lower-cost layer instead of copying its command list. |
+| #231 | DEPS-01 | Invalid closure: six empty group keys are scaffolding, not dependency ownership or a dead-dependency review. Debt reopened. |
+| #232 | STATECORE-01 | Model movement valid; post-merge correction removes the new module's reverse dependency on the compatibility monolith and adds semantic metadata/re-export tests. |
+| #233 | FRONTEND-01 | Initial extraction was nominal: state remained in app.js and forms bypassed the shell. Post-merge correction extracts real state/actions and routes all three writes through the shared contract. |
+
+**Lesson:** CI success proves the checked contract, not the prose claim. A debt
+verifier must prove the desired semantics; file existence, symbol presence, or
+empty configuration keys are not closure evidence.
 
 ## 4. Responsibility Model
 
@@ -198,14 +211,16 @@ owns authority and policy changes.
 The following block is mechanically checked against the canonical register.
 
 <!-- active-debt:start -->
+- `ENG-DEBT-0002` — paper-validation isolation still lacks a canonical consumer manifest and execution/network import + broker-registry guards.
+- `ENG-DEBT-0005` — dependency groups are empty and no import/task consumer audit exists.
 <!-- active-debt:end -->
 
 Rules:
 
-- Items 1–2 block new security/toolchain claims.
-- Items 3–4 block dependency expansion and research/runtime coupling.
-- Items 5–6 block further model and cockpit surface growth, but not the
-  isolated Agent Loop contract work in Phase 3.
+- ENG-DEBT-0002 blocks claiming the paper legacy deletion boundary complete.
+- ENG-DEBT-0005 blocks new optional dependencies and claims of runtime/research
+  install separation.
+- Neither item blocks the isolated Agent Loop contract work in Phase 3.
 - A debt is closed only when `scripts/verify_debt_register.py` agrees.
 
 ## 6. Delivery Roadmap
@@ -222,7 +237,7 @@ Do not squash away their logical boundaries during review.
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | TRUTH-04 (complete locally) | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
-| SEC-BOUNDARY-01 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, cannot-graduate-to-live test, consumer/deletion criteria. | Complete: ENG-DEBT-0002 resolved; 19 boundary tests pass. | No paper feature, live path, or new route. |
+| SEC-BOUNDARY-01/02 correction | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, canonical consumer manifest, AST execution/network import guard, broker-registry isolation, deletion criteria. | Active: existing 19 tests remain useful; ENG-DEBT-0002 closes only when the stronger verifier and threat-model gap reconciliation pass. | No paper feature, live path, or new route. |
 | DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | Complete: ENG-DEBT-0008 resolved; Node 22 unified, Rust removed. | No dependency upgrades. |
 
 Use `security-best-practices` for execution/API control changes and the installed `playwright` for frontend golden paths.
@@ -232,7 +247,7 @@ Use `security-best-practices` for execution/API control changes and the installe
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | DEVEX-01 | Classical tooling | stage timing evidence | `check:fast`, `check:ci`, `check:research`; documented merge aggregate. | Complete: ENG-DEBT-0004 resolved; 3 named layers, check aliases check:ci. | No test deletion/quarantine. |
-| DEPS-01 | Classical packaging | DEVEX-01 | Import/task consumer inventory; scoped data/research/agent/eval/paper/security groups. | Complete: ENG-DEBT-0005 resolved; 6 named groups exist. | No speculative upgrades or removals. |
+| DEPS-01/02 correction | Classical packaging | DEVEX-01 | Machine-readable import/task consumer inventory; populated data/research/agent/eval/paper/security groups; base-only runtime proof. | Active: empty group keys do not count; ENG-DEBT-0005 closes only when the consumer manifest and grouped task/runtime probes pass. | No speculative upgrades or removals. |
 
 The purpose is ownership, not a smaller dependency count at any cost.
 
@@ -276,8 +291,8 @@ resume, or external-tool needs.
 
 | Slice | Plane | Deliverable | Exit gate |
 | --- | --- | --- | --- |
-| STATECORE-01 | Classical | Extract low-coupling personal-finance models; retain `models.py` re-exports. | Complete: ENG-DEBT-0006 resolved; 9 models extracted to personal_finance_models.py. |
-| FRONTEND-01 | Classical UI | Extract shared ReviewActionShell, `api.js`, and `state.js` before new views. | Complete: ENG-DEBT-0007 resolved; api.js extracted, ReviewActionShell governing writes. |
+| STATECORE-01 | Classical | Extract low-coupling personal-finance models behind an acyclic shared model base; retain `models.py` re-exports. | Complete after audit correction: 9 models extracted; class identity and metadata registration proven. |
+| FRONTEND-01 | Classical UI | Extract `api.js`, real shared `state.js`, and `actions.js` ReviewActionShell before new views. | Complete after audit correction: all three governed write forms use the shell; semantic jsdom boundary test passes. |
 
 These slices are refactors. They must not introduce product features, schema
 changes, or a frontend framework migration.
@@ -376,7 +391,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 0 active debts — all resolved without adding parallel registries;
+- reduce the 2 evidence-backed active debts to 0 without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.

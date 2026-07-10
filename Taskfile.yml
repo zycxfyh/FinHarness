@@ -45,9 +45,7 @@ tasks:
   check:ci:
     desc: CI merge gate — fast checks + integration + frontend + governance + rules
     cmds:
-      - task: lint
-      - task: typecheck
-      - task: test
+      - task: check:fast
       - task: test:integration
       - task: test:frontend
       - task: governance:check
@@ -56,13 +54,7 @@ tasks:
   check:research:
     desc: Full suite including expensive experiments and eval smoke (not in CI fast path)
     cmds:
-      - task: lint
-      - task: typecheck
-      - task: test
-      - task: test:integration
-      - task: test:frontend
-      - task: governance:check
-      - task: rules:audit
+      - task: check:ci
       - task: experiments
       - task: eval:smoke
 
@@ -124,6 +116,7 @@ tasks:
   test:frontend:
     desc: Run jsdom-based frontend DOM tests
     cmds:
+      - node frontend/tests/module_boundaries.test.cjs
       - node frontend/tests/revision_history.test.cjs
       - node frontend/tests/ips_policy.test.cjs
       - node frontend/tests/research_evidence.test.cjs

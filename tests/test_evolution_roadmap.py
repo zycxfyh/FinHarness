@@ -45,11 +45,11 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
         section = _marked_section(_roadmap(), "active-debt")
         documented = set(re.findall(r"ENG-DEBT-\d{4}", section))
 
-        self.assertEqual(documented, active)  # empty active block matches empty active set
+        self.assertEqual(documented, active)
         self.assertTrue(resolved.isdisjoint(documented))
-        self.assertEqual(len(active), 0)
-        self.assertEqual(len(resolved), 10)
-        self.assertIn("10 resolved; 0 active", _roadmap())
+        self.assertEqual(active, {"ENG-DEBT-0002", "ENG-DEBT-0005"})
+        self.assertEqual(len(resolved), 8)
+        self.assertIn("8 resolved; 2 active", _roadmap())
 
     def test_agent_acceptance_block_matches_executable_baseline(self) -> None:
         section = _marked_section(_roadmap(), "agent-open")
@@ -79,6 +79,9 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
         for commit in ("c7be442", "17ef59a", "3d6d1fa", "33fadd6", "fcb4d86"):
             with self.subTest(commit=commit):
                 self.assertIn(f"`{commit}`", text)
+        for pr_number in range(228, 234):
+            with self.subTest(pr_number=pr_number):
+                self.assertIn(f"#{pr_number}", text)
 
     def test_responsibility_boundaries_are_explicit(self) -> None:
         text = _roadmap()

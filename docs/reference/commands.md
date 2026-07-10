@@ -16,7 +16,10 @@ execution authorization.
 | --- | --- | --- |
 | `task status` | Show local lab/tool status. | Read-only. |
 | `task setup` | Sync dependencies from lockfiles. | May install/update local packages. |
-| `task check` | Standard local verification suite. | Main local gate. |
+| `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
+| `task check:fast` | Lint, typecheck, and unit tests. | Fast local feedback. |
+| `task check:ci` | Fast checks plus integration, frontend, governance, and rules. | Main merge gate. |
+| `task check:research` | CI gate plus experiments and eval smoke. | Full research validation. |
 | `task lint` | Run Python lint checks. | Ruff. |
 | `task typecheck` | Run mypy. | Strict on safety-critical core. |
 | `task test` | Compile Python and run fast unit tests. | No external services. |

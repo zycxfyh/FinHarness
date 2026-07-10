@@ -7,18 +7,25 @@ governed proposals that never carry execution authority.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from pydantic import field_validator
-from sqlalchemy import JSON, CheckConstraint, Column, String
-from sqlalchemy.engine.interfaces import Dialect
-from sqlalchemy.types import TypeDecorator
-from sqlmodel import Field, SQLModel
+from sqlalchemy import CheckConstraint
+from sqlmodel import Field
 
-STATE_CORE_SCHEMA_VERSION = "finharness.state_core.v1"
-AuthorityLevel = str
+from finharness.statecore.model_base import (
+    STATE_CORE_SCHEMA_VERSION,  # noqa: F401 - compatibility re-export
+    AuthorityLevel,
+    DecimalText,  # noqa: F401 - compatibility re-export
+    SourcedStateCoreBase,  # noqa: F401 - compatibility re-export
+    StateCoreBase,
+    json_dict_column,
+    json_list_column,
+    money_column,
+    utc_now_iso,
+)
+
 Decision = str
 ACTION_INTENT_TYPES: tuple[str, ...] = (
     "reduce_exposure",
@@ -93,70 +100,6 @@ PAPER_EXECUTION_STATUSES: tuple[str, ...] = (
     "simulated_rejected",
 )
 PAPER_ACCOUNT_STATUSES: tuple[str, ...] = ("active", "closed")
-
-
-def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def json_list_column() -> Any:
-    return Column(JSON, nullable=False)
-
-
-def json_dict_column() -> Any:
-    return Column(JSON, nullable=False)
-
-
-class DecimalText(TypeDecorator[Decimal]):
-    """Store ``Decimal`` exactly as TEXT.
-
-    SQLite ``NUMERIC`` affinity round-trips decimals through float, which
-    reintroduces the precision loss money columns must avoid. Storing the
-    canonical string keeps amounts exact for personal-finance state.
-    """
-
-    impl = String
-    cache_ok = True
-
-    def process_bind_param(self, value: Decimal | None, dialect: Dialect) -> str | None:
-        if value is None:
-            return None
-        return str(value)
-
-    def process_result_value(self, value: object, dialect: Dialect) -> Decimal | None:
-        if value is None:
-            return None
-        if isinstance(value, Decimal):
-            return value
-        # A pre-existing database may still have REAL/NUMERIC affinity on this
-        # column, so SQLite can hand back a float/int. Normalise via str() (its
-        # shortest round-trip repr) instead of Decimal(float), which would carry
-        # binary noise into the value.
-        return Decimal(str(value))
-
-
-def money_column(*, nullable: bool = False) -> Any:
-    """Column for an exact monetary/decimal amount."""
-    return Column(DecimalText, nullable=nullable)
-
-
-class StateCoreBase(SQLModel):
-    """Common governance columns shared by state-core tables."""
-
-    schema_version: str = STATE_CORE_SCHEMA_VERSION
-    as_of_utc: str = Field(default_factory=utc_now_iso)
-    authority_level: AuthorityLevel = "read_only"
-
-
-class SourcedStateCoreBase(StateCoreBase):
-    """State-core tables fully owned by the import source that produced them.
-
-    ``source`` names the adapter/import (e.g. ``personal_finance_export``,
-    ``beancount_ledger``) so a re-import can replace exactly its own rows instead
-    of accumulating stale rows through upsert. See ``replace_source_records``.
-    """
-
-    source: str = Field(default="")
 
 
 # ── Personal-finance models (extracted to personal_finance_models.py) ──
