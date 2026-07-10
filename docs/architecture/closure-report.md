@@ -239,7 +239,11 @@ and registry alignment suites.
 
 ---
 
-## Remaining Debt (Post-#151)
+## Remaining Debt (Post-#151, historical snapshot)
+
+This table records the state at the end of the #125–#151 paydown chain. The
+current canonical source is `docs/governance/debt-register.json`; the two
+items below continue as ENG-DEBT-0009 and ENG-DEBT-0010.
 
 After #150–#151, only 2 items remain partially addressed:
 

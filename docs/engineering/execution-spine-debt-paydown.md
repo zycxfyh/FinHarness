@@ -1,7 +1,11 @@
 # Execution Spine Debt Paydown Plan
 
-状态: v1 (2026-07-08)
+状态: historical / superseded (2026-07-10)
 目标: 把架构迁移后的残留债务按层分类、排序、逐 PR 消除。
+
+> 当前债务状态只以 `docs/governance/debt-register.json` 为准。本文件保留
+> #125–#151 的专项治理脉络，不再作为当前 backlog。原 DEBT-REG-001 与
+> DEBT-CTL-001 分别迁移为 ENG-DEBT-0009 与 ENG-DEBT-0010。
 
 ## 0. 原则
 
