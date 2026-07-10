@@ -357,6 +357,60 @@ tasks:
     cmds:
       - uv run python scripts/audit_rule_lineage.py
 
+  deps:probe-base:
+    desc: "Prove base runtime imports work without optional deps"
+    cmds:
+      - |
+        VENV=.venv-probes/base
+        rm -rf "$VENV"
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups
+        "$VENV/bin/python" scripts/probe_base_runtime.py
+
+  deps:probe-data:
+    desc: "Prove data group packages are importable"
+    cmds:
+      - |
+        VENV=.venv-probes/data
+        rm -rf "$VENV"
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group data
+        "$VENV/bin/python" scripts/probe_dependency_group.py data
+
+  deps:probe-research:
+    desc: "Prove research group packages are importable"
+    cmds:
+      - |
+        VENV=.venv-probes/research
+        rm -rf "$VENV"
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group research
+        "$VENV/bin/python" scripts/probe_dependency_group.py research
+
+  deps:probe-agent:
+    desc: "Prove agent group packages are importable"
+    cmds:
+      - |
+        VENV=.venv-probes/agent
+        rm -rf "$VENV"
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group agent
+        "$VENV/bin/python" scripts/probe_dependency_group.py agent
+
+  deps:probe-eval:
+    desc: "Prove eval group packages are importable"
+    cmds:
+      - |
+        VENV=.venv-probes/eval
+        rm -rf "$VENV"
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group eval
+        "$VENV/bin/python" scripts/probe_dependency_group.py eval
+
+  deps:probe-all:
+    desc: "Run all isolated dependency probes"
+    cmds:
+      - task: deps:probe-base
+      - task: deps:probe-data
+      - task: deps:probe-research
+      - task: deps:probe-agent
+      - task: deps:probe-eval
+
   eval:risk:
     desc: Evaluate generated finance risk note
     cmds:
