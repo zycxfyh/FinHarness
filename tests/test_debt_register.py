@@ -1,14 +1,19 @@
-"""Structural validation for the governed engineering debt register."""
+"""Structural and repository-truth validation for engineering debt."""
 
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from datetime import date
 from pathlib import Path
 
+import yaml
+from scripts.verify_debt_register import VERIFIERS, verify_register
+
 ROOT = Path(__file__).resolve().parents[1]
 REGISTER = ROOT / "docs" / "governance" / "debt-register.json"
+LEGACY_LEDGER = ROOT / "docs" / "governance" / "execution-spine-debt-ledger.yml"
 
 REQUIRED_FIELDS = {
     "id",
@@ -24,42 +29,42 @@ REQUIRED_FIELDS = {
     "non_goals",
     "blocked_by",
     "introduced_by",
-    "target_pr",
+    "target_slice",
     "created_at",
-    "review_due",
-}
-
-OPTIONAL_FIELDS = {
-    "resolution_ref",
-    "owner",
-    "evidence_refs",
     "last_reviewed_at",
+    "review_due",
+    "evidence_refs",
+    "verification",
 }
+OPTIONAL_FIELDS = {"resolution_ref"}
 
-ALLOWED_STATUSES = {"accepted", "active", "blocked", "resolved", "deferred"}
+ALLOWED_STATUSES = {"active", "blocked", "deferred", "resolved"}
 ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}
 ALLOWED_CATEGORIES = {
+    "architecture-inventory",
+    "dependency-management",
+    "documentation-governance",
+    "execution-control",
+    "frontend-structure",
     "governance-boundary",
     "receipt-integrity",
-    "tooling",
-    "dependency-management",
     "statecore-structure",
-    "frontend-structure",
-    "documentation-governance",
+    "tooling",
 }
 ALLOWED_SURFACES = {
     "api",
+    "architecture",
+    "dependencies",
+    "execution",
+    "frontend",
     "paper-validation",
     "statecore",
-    "frontend",
     "taskfile",
-    "dependencies",
     "toolchain",
-    "governance",
 }
 
-EXPECTED_DEBT_COUNT = 8
-ID_PATTERN = r"^ENG-DEBT-\d{4}$"
+EXPECTED_DEBT_COUNT = 10
+ID_PATTERN = re.compile(r"^ENG-DEBT-\d{4}$")
 
 
 def _register() -> dict:
@@ -70,184 +75,117 @@ class DebtRegisterTest(unittest.TestCase):
     def test_register_file_exists(self) -> None:
         self.assertTrue(REGISTER.exists(), f"missing debt register: {REGISTER}")
 
-    def test_register_top_level_shape(self) -> None:
+    def test_register_is_the_only_current_ledger(self) -> None:
         register = _register()
-        self.assertEqual(
-            register["schema"], "finharness.engineering_debt_register.v1"
-        )
+        legacy = yaml.safe_load(LEGACY_LEDGER.read_text(encoding="utf-8"))
+        self.assertEqual(register["schema"], "finharness.engineering_debt_register.v2")
         self.assertEqual(register["status"], "current")
-        self.assertIn("updated", register)
-        self.assertIn("description", register)
+        self.assertTrue(register["canonical"])
+        self.assertEqual(
+            register["supersedes"],
+            ["docs/governance/execution-spine-debt-ledger.yml"],
+        )
+        self.assertEqual(legacy["status"], "superseded")
+        self.assertEqual(legacy["superseded_by"], "docs/governance/debt-register.json")
 
-    def test_allowed_values_are_non_empty_sets(self) -> None:
-        register = _register()
-        self.assertTrue(register["allowed_statuses"])
-        self.assertTrue(register["allowed_priorities"])
-        self.assertTrue(register["allowed_categories"])
-        self.assertTrue(register["allowed_surfaces"])
+    def test_verification_contract_points_to_executable_script(self) -> None:
+        contract = _register()["verification_contract"]
+        script = ROOT / contract["script"]
+        self.assertTrue(script.exists())
+        self.assertEqual(script, ROOT / "scripts" / "verify_debt_register.py")
+        self.assertTrue(contract["rule"].strip())
 
-    def test_allowed_values_match_expected_sets(self) -> None:
+    def test_allowed_values_match_schema(self) -> None:
         register = _register()
         self.assertEqual(set(register["allowed_statuses"]), ALLOWED_STATUSES)
         self.assertEqual(set(register["allowed_priorities"]), ALLOWED_PRIORITIES)
         self.assertEqual(set(register["allowed_categories"]), ALLOWED_CATEGORIES)
         self.assertEqual(set(register["allowed_surfaces"]), ALLOWED_SURFACES)
 
-    def test_debts_is_non_empty_list(self) -> None:
+    def test_debt_count_and_ids_are_stable(self) -> None:
         debts = _register()["debts"]
-        self.assertIsInstance(debts, list)
-        self.assertGreater(len(debts), 0)
+        ids = [debt["id"] for debt in debts]
+        self.assertEqual(len(debts), EXPECTED_DEBT_COUNT)
+        self.assertEqual(len(ids), len(set(ids)))
+        for debt_id in ids:
+            with self.subTest(debt_id=debt_id):
+                self.assertRegex(debt_id, ID_PATTERN)
 
-    def test_debt_count_matches_expected(self) -> None:
-        debts = _register()["debts"]
-        self.assertEqual(
-            len(debts),
-            EXPECTED_DEBT_COUNT,
-            f"expected {EXPECTED_DEBT_COUNT} debts, got {len(debts)}",
-        )
-
-    def test_debt_ids_are_unique(self) -> None:
-        ids = [d["id"] for d in _register()["debts"]]
-        self.assertEqual(len(ids), len(set(ids)), f"duplicate debt IDs: {ids}")
-
-    def test_debt_ids_match_pattern(self) -> None:
-        import re
-
-        pattern = re.compile(ID_PATTERN)
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
-                self.assertRegex(
-                    debt["id"],
-                    pattern,
-                    f"id must match {ID_PATTERN}",
-                )
-
-    def test_every_debt_has_all_required_fields(self) -> None:
+    def test_every_debt_has_only_schema_fields(self) -> None:
         for debt in _register()["debts"]:
             with self.subTest(debt_id=debt.get("id", "MISSING_ID")):
                 actual = set(debt)
-                missing = REQUIRED_FIELDS - actual
-                extra = actual - REQUIRED_FIELDS - OPTIONAL_FIELDS
-                self.assertEqual(
-                    missing,
-                    set(),
-                    f"missing required fields: {missing}",
-                )
-                self.assertEqual(
-                    extra,
-                    set(),
-                    f"unexpected extra fields: {extra}",
-                )
+                self.assertEqual(REQUIRED_FIELDS - actual, set())
+                self.assertEqual(actual - REQUIRED_FIELDS - OPTIONAL_FIELDS, set())
 
-    def test_status_is_allowed(self) -> None:
+    def test_enumerated_values_are_allowed(self) -> None:
         for debt in _register()["debts"]:
             with self.subTest(debt_id=debt["id"]):
                 self.assertIn(debt["status"], ALLOWED_STATUSES)
-
-    def test_priority_is_allowed(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
                 self.assertIn(debt["priority"], ALLOWED_PRIORITIES)
-
-    def test_category_is_allowed(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
                 self.assertIn(debt["category"], ALLOWED_CATEGORIES)
-
-    def test_surface_is_allowed(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
                 self.assertIn(debt["surface"], ALLOWED_SURFACES)
 
-    def test_non_goals_is_non_empty_list(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
-                self.assertIsInstance(debt["non_goals"], list)
-                self.assertGreater(
-                    len(debt["non_goals"]),
-                    0,
-                    "non_goals must be a non-empty list",
-                )
-
-    def test_accepted_and_active_debts_have_next_action(self) -> None:
-        for debt in _register()["debts"]:
-            if debt["status"] in ("accepted", "active"):
-                with self.subTest(debt_id=debt["id"]):
-                    self.assertTrue(
-                        debt["next_action"].strip(),
-                        f"status={debt['status']} requires next_action",
-                    )
-
-    def test_resolved_debts_have_resolution_ref(self) -> None:
-        for debt in _register()["debts"]:
-            if debt["status"] == "resolved":
-                with self.subTest(debt_id=debt["id"]):
-                    self.assertIn("resolution_ref", debt)
-                    self.assertTrue(
-                        str(debt["resolution_ref"]).strip(),
-                        "resolved debt requires resolution_ref",
-                    )
-
-    def test_dates_are_iso_format(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
-                date.fromisoformat(debt["created_at"])
-                date.fromisoformat(debt["review_due"])
-
-    def test_review_due_not_before_created_at(self) -> None:
-        for debt in _register()["debts"]:
-            with self.subTest(debt_id=debt["id"]):
-                created = date.fromisoformat(debt["created_at"])
-                due = date.fromisoformat(debt["review_due"])
-                self.assertGreaterEqual(
-                    due,
-                    created,
-                    f"review_due {debt['review_due']} is before created_at {debt['created_at']}",
-                )
-
-    def test_blocked_debts_have_blocked_by_entries(self) -> None:
-        for debt in _register()["debts"]:
-            if debt["status"] == "blocked":
-                with self.subTest(debt_id=debt["id"]):
-                    self.assertIsInstance(debt["blocked_by"], list)
-                    self.assertGreater(
-                        len(debt["blocked_by"]),
-                        0,
-                        "blocked debt must have at least one blocked_by reference",
-                    )
-
-    def test_blocked_by_references_are_valid_debt_ids(self) -> None:
-        all_ids = {d["id"] for d in _register()["debts"]}
-        for debt in _register()["debts"]:
-            for ref_id in debt["blocked_by"]:
-                with self.subTest(debt_id=debt["id"], blocked_by=ref_id):
-                    self.assertIn(
-                        ref_id,
-                        all_ids,
-                        f"blocked_by references unknown debt id: {ref_id}",
-                    )
-
-    def test_text_fields_are_non_empty(self) -> None:
+    def test_text_and_list_fields_are_non_empty(self) -> None:
         text_fields = (
             "title",
             "current_state",
             "desired_state",
             "risk_if_ignored",
+            "next_action",
+            "target_slice",
+            "verification",
         )
-        for debt in _register()["debts"]:
-            for field in text_fields:
-                with self.subTest(debt_id=debt["id"], field=field):
-                    self.assertTrue(
-                        str(debt[field]).strip(),
-                        f"{field} must be non-empty",
-                    )
-
-    def test_blocked_by_and_introduced_by_are_lists(self) -> None:
+        list_fields = ("introduced_by", "non_goals", "evidence_refs")
         for debt in _register()["debts"]:
             with self.subTest(debt_id=debt["id"]):
+                for field in text_fields:
+                    self.assertTrue(str(debt[field]).strip(), f"empty {field}")
+                for field in list_fields:
+                    self.assertIsInstance(debt[field], list)
+                    self.assertTrue(debt[field], f"empty {field}")
                 self.assertIsInstance(debt["blocked_by"], list)
-                if "introduced_by" in debt:
-                    self.assertIsInstance(debt["introduced_by"], list)
+
+    def test_evidence_refs_exist(self) -> None:
+        for debt in _register()["debts"]:
+            for ref in debt["evidence_refs"]:
+                with self.subTest(debt_id=debt["id"], evidence_ref=ref):
+                    self.assertTrue((ROOT / ref).exists(), f"missing evidence: {ref}")
+
+    def test_named_verifiers_are_complete_and_unique(self) -> None:
+        names = [debt["verification"] for debt in _register()["debts"]]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(set(names), set(VERIFIERS))
+
+    def test_status_claims_match_repository_verifiers(self) -> None:
+        self.assertEqual(verify_register(ROOT, REGISTER), [])
+
+    def test_resolved_debts_have_resolution_refs(self) -> None:
+        for debt in _register()["debts"]:
+            if debt["status"] == "resolved":
+                with self.subTest(debt_id=debt["id"]):
+                    self.assertTrue(str(debt.get("resolution_ref", "")).strip())
+            else:
+                self.assertNotIn("resolution_ref", debt)
+
+    def test_dates_are_ordered_iso_dates(self) -> None:
+        for debt in _register()["debts"]:
+            with self.subTest(debt_id=debt["id"]):
+                created = date.fromisoformat(debt["created_at"])
+                reviewed = date.fromisoformat(debt["last_reviewed_at"])
+                due = date.fromisoformat(debt["review_due"])
+                self.assertGreaterEqual(reviewed, created)
+                self.assertGreaterEqual(due, reviewed)
+
+    def test_blocked_by_references_are_valid_and_acyclic_at_one_hop(self) -> None:
+        debts = {debt["id"]: debt for debt in _register()["debts"]}
+        for debt in debts.values():
+            if debt["status"] == "blocked":
+                self.assertTrue(debt["blocked_by"])
+            for ref_id in debt["blocked_by"]:
+                with self.subTest(debt_id=debt["id"], blocked_by=ref_id):
+                    self.assertIn(ref_id, debts)
+                    self.assertNotEqual(ref_id, debt["id"])
 
 
 if __name__ == "__main__":

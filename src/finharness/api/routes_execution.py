@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from finharness.api.dependencies import (
     EngineDependency,
+    ExecutionCapabilitiesDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
 )
@@ -84,6 +85,7 @@ def api_create_order_draft(
     body: CreateOrderDraftRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    capabilities: ExecutionCapabilitiesDependency,
     _write: WriteCapabilityDependency,
 ) -> dict[str, Any]:
     """Create an order draft."""
@@ -104,6 +106,7 @@ def api_create_order_draft(
         proposal_id=body.proposal_id,
         source_kind=body.source_kind,
         source_ref=body.source_ref,
+        capabilities=capabilities,
     )
     return {
         "order_draft_id": draft.order_draft_id,
@@ -125,6 +128,7 @@ def api_run_pretrade_check(
     body: RunPreTradeCheckRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    capabilities: ExecutionCapabilitiesDependency,
     _write: WriteCapabilityDependency,
 ) -> dict[str, Any]:
     """Run a pre-trade check on an order draft."""
@@ -134,6 +138,7 @@ def api_run_pretrade_check(
         order_draft_id=order_draft_id,
         findings=body.findings,
         required_approval_level=body.required_approval_level,
+        capabilities=capabilities,
     )
     return {
         "pretrade_check_id": check.pretrade_check_id,
@@ -148,6 +153,7 @@ def api_record_approval(
     body: RecordApprovalRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    capabilities: ExecutionCapabilitiesDependency,
     _write: WriteCapabilityDependency,
 ) -> dict[str, Any]:
     """Record an approval decision."""
@@ -158,6 +164,7 @@ def api_record_approval(
         decision=body.decision,
         reviewer_id=body.reviewer_id,
         rationale=body.rationale,
+        capabilities=capabilities,
     )
     return {
         "approval_id": approval.approval_id,
@@ -172,6 +179,7 @@ def api_stage_order(
     body: StageOrderRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    capabilities: ExecutionCapabilitiesDependency,
     _write: WriteCapabilityDependency,
 ) -> dict[str, Any]:
     """Stage an execution order."""
@@ -181,6 +189,7 @@ def api_stage_order(
         order_draft_id=order_draft_id,
         broker_connection_id=body.broker_connection_id,
         environment=body.environment,
+        capabilities=capabilities,
     )
     return {
         "execution_order_id": order.execution_order_id,
@@ -198,6 +207,7 @@ def api_submit_order(
     execution_order_id: str,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
+    capabilities: ExecutionCapabilitiesDependency,
     _write: WriteCapabilityDependency,
 ) -> dict[str, Any]:
     """Submit an execution order through its broker adapter."""
@@ -205,6 +215,7 @@ def api_submit_order(
         engine=engine,
         receipt_root=receipt_root,
         execution_order_id=execution_order_id,
+        capabilities=capabilities,
     )
     return {
         "execution_report_id": report.execution_report_id,
@@ -212,9 +223,7 @@ def api_submit_order(
         "report_type": report.report_type,
         "fill_status": report.fill_status,
         "filled_quantity": str(report.filled_quantity),
-        "average_fill_price": str(report.average_fill_price)
-        if report.average_fill_price
-        else None,
+        "average_fill_price": str(report.average_fill_price) if report.average_fill_price else None,
         "receipt_ref": report.receipt_ref,
     }
 
@@ -227,9 +236,7 @@ def api_get_order(
     """Read a single execution order."""
     with Session(engine) as session:
         order = session.exec(
-            select(ExecutionOrder).where(
-                ExecutionOrder.execution_order_id == execution_order_id
-            )
+            select(ExecutionOrder).where(ExecutionOrder.execution_order_id == execution_order_id)
         ).one_or_none()
         if order is None:
             raise HTTPException(status_code=404, detail="Execution order not found")

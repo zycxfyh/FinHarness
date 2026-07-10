@@ -1,6 +1,6 @@
 schema: finharness.removal_ledger.v1
 status: current
-updated: "2026-07-02"
+updated: "2026-07-10"
 description: >
   Governed ledger for delete, archive, deprecate, and downgrade decisions.
   Deletion is not an invisible cleanup action: every non-trivial removal records
@@ -136,3 +136,35 @@ entries:
     checks_required:
       - uv run python -m unittest tests.test_execution_legacy_bridge
       - uv run python -m unittest tests.test_simulated_broker_submit
+
+  - id: delete-paper-validation-legacy
+    target:
+      - src/finharness/api/routes_paper_validation.py
+      - src/finharness/statecore/paper_accounts.py
+      - src/finharness/statecore/paper_order_tickets.py
+      - src/finharness/statecore/paper_executions.py
+      - src/finharness/statecore/models.py#PaperAccount
+      - src/finharness/statecore/models.py#PaperOrderTicketCandidate
+      - src/finharness/statecore/models.py#PaperExecutionReceipt
+      - src/finharness/statecore/models.py#PaperPosition
+    action: delete
+    reason: >
+      Legacy execution-shaped shadow chain superseded by canonical Execution
+      Kernel (/execution/*). Threat-model isolation boundary established
+      (SEC-BOUNDARY-01) with 20 CHECK constraints, 7 isolation rules,
+      6 deletion criteria, and 19 boundary tests. Historical receipts
+      preserved as archeological evidence.
+    replacement:
+      - src/finharness/execution/services.py
+      - src/finharness/api/routes_execution.py
+      - src/finharness/execution/legacy_bridge.py
+      - src/finharness/statecore/execution_models.py
+    owner: execution
+    proposed_in_pr: unsubmitted
+    effective_pr: unsubmitted
+    status: proposed
+    remove_from_current_nav: false
+    checks_required:
+      - uv run python scripts/verify_debt_register.py
+      - uv run python -m unittest tests.test_paper_validation_legacy_boundary
+      - uv run python -m unittest tests.test_execution_legacy_bridge

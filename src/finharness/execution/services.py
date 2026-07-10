@@ -16,6 +16,11 @@ from uuid import uuid4
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from finharness.execution.capabilities import (
+    DEFAULT_EXECUTION_CAPABILITIES,
+    ExecutionCapabilities,
+    require_execution_capability,
+)
 from finharness.execution.receipts import (
     write_execution_receipt,
 )
@@ -69,8 +74,10 @@ def create_order_draft(
     proposal_id: str | None = None,
     source_kind: str = "",
     source_ref: str = "",
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> OrderDraft:
     """Create an order draft — the canonical entry point for execution."""
+    require_execution_capability(capabilities, "create_order_draft")
     draft_id = _new_id("od")
     created = _now_utc()
 
@@ -127,14 +134,16 @@ def run_pretrade_check(
     order_draft_id: str,
     findings: list[dict[str, Any]] | None = None,
     required_approval_level: str = "human",
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> PreTradeCheck:
     """Run a pre-trade check against an order draft."""
+    require_execution_capability(capabilities, "run_pretrade_check")
     check_id = _new_id("ptc")
     created = _now_utc()
     findings_json = __import__("json").dumps(findings or [])
 
     status = "pass"
-    for f in (findings or []):
+    for f in findings or []:
         if f.get("severity") == "block":
             status = "block"
             break
@@ -173,9 +182,7 @@ def run_pretrade_check(
         ).one_or_none()
         if draft:
             draft.draft_status = (
-                "pretrade_check_passed"
-                if status == "pass"
-                else "pretrade_check_blocked"
+                "pretrade_check_passed" if status == "pass" else "pretrade_check_blocked"
             )
             session.add(draft)
             session.commit()
@@ -192,8 +199,10 @@ def record_approval(
     decision: str,
     reviewer_id: str,
     rationale: str,
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> ApprovalRecord:
     """Record a human approval decision on an order draft."""
+    require_execution_capability(capabilities, "record_approval")
     approval_id = _new_id("appr")
     created = _now_utc()
 
@@ -247,12 +256,14 @@ def stage_execution_order(
     order_draft_id: str,
     broker_connection_id: str,
     environment: str = "live",
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> ExecutionOrder:
     """Stage an execution order from an approved draft.
 
     Raises ValueError if draft is rejected, cancelled, not pretrade-checked,
     or not yet approved.
     """
+    require_execution_capability(capabilities, "stage_execution_order")
     # ── pre-conditions ──
     with Session(engine) as session:
         draft = session.exec(
@@ -261,40 +272,27 @@ def stage_execution_order(
         if draft is None:
             raise ValueError(f"order draft not found: {order_draft_id}")
         if draft.draft_status in ("rejected", "cancelled"):
-            raise ValueError(
-                f"cannot stage {draft.draft_status} draft: {order_draft_id}"
-            )
+            raise ValueError(f"cannot stage {draft.draft_status} draft: {order_draft_id}")
         if draft.draft_status != "approved":
             raise ValueError(
-                f"draft must be approved before staging: "
-                f"current status={draft.draft_status}"
+                f"draft must be approved before staging: current status={draft.draft_status}"
             )
 
         # Verify PreTradeCheck exists and is not blocked
         ptc = session.exec(
-            select(PreTradeCheck).where(
-                PreTradeCheck.order_draft_id == order_draft_id
-            )
+            select(PreTradeCheck).where(PreTradeCheck.order_draft_id == order_draft_id)
         ).first()
         if ptc is None:
-            raise ValueError(
-                f"no PreTradeCheck found for draft: {order_draft_id}"
-            )
+            raise ValueError(f"no PreTradeCheck found for draft: {order_draft_id}")
         if ptc.check_status == "block":
-            raise ValueError(
-                f"cannot stage blocked pretrade check: {order_draft_id}"
-            )
+            raise ValueError(f"cannot stage blocked pretrade check: {order_draft_id}")
 
         # Verify ApprovalRecord exists
         approval = session.exec(
-            select(ApprovalRecord).where(
-                ApprovalRecord.order_draft_id == order_draft_id
-            )
+            select(ApprovalRecord).where(ApprovalRecord.order_draft_id == order_draft_id)
         ).first()
         if approval is None:
-            raise ValueError(
-                f"no ApprovalRecord found for draft: {order_draft_id}"
-            )
+            raise ValueError(f"no ApprovalRecord found for draft: {order_draft_id}")
 
         env_val = draft.environment
         actual_env = env_val.value if hasattr(env_val, "value") else str(env_val)
@@ -351,6 +349,7 @@ def submit_execution_order(
     receipt_root: str | Path,
     execution_order_id: str,
     broker_connection_id: str,
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> ExecutionOrder:
     """Submit an execution order to the broker adapter.
 
@@ -360,12 +359,11 @@ def submit_execution_order(
 
     Raises ValueError if the order is not in 'staged' status.
     """
+    require_execution_capability(capabilities, "submit_simulated_order")
     # ── pre-condition: must be staged ──
     with Session(engine) as session:
         order_check = session.exec(
-            select(ExecutionOrder).where(
-                ExecutionOrder.execution_order_id == execution_order_id
-            )
+            select(ExecutionOrder).where(ExecutionOrder.execution_order_id == execution_order_id)
         ).one_or_none()
         if order_check is None:
             raise ValueError(f"execution order not found: {execution_order_id}")
@@ -398,9 +396,7 @@ def submit_execution_order(
     # ── update status to submitted ──
     with Session(engine, expire_on_commit=False) as session:
         order = session.exec(
-            select(ExecutionOrder).where(
-                ExecutionOrder.execution_order_id == execution_order_id
-            )
+            select(ExecutionOrder).where(ExecutionOrder.execution_order_id == execution_order_id)
         ).one()
         order.execution_status = "submitted"
         order.submitted_at_utc = created
@@ -481,9 +477,7 @@ def record_execution_report(
     # Update execution order status
     with Session(engine) as session:
         order = session.exec(
-            select(ExecutionOrder).where(
-                ExecutionOrder.execution_order_id == execution_order_id
-            )
+            select(ExecutionOrder).where(ExecutionOrder.execution_order_id == execution_order_id)
         ).one_or_none()
         if order:
             if fill_status == "filled":

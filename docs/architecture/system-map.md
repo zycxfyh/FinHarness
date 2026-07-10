@@ -1,6 +1,6 @@
 # FinHarness System Map
 
-状态:current(2026-07-02)。目的:把 FinHarness 从"很多安全小块"看成几个
+状态:current(2026-07-10)。目的:把 FinHarness 从"很多安全小块"看成几个
 deep modules。每个 system 有固定形状:
 
 ```text
@@ -129,10 +129,12 @@ domain model / read model / write(command) model / adapters / invariants
 - **domain**:`statecore/execution_models.py` (BrokerConnection, ExecutionAccount,
   OrderDraft, PreTradeCheck, ApprovalRecord, ExecutionOrder, ExecutionReport,
   PositionDelta, ReconciliationReport)。
-- **services**:`execution/services.py`、`execution/receipts.py`。
+- **services**:`execution/services.py`、`execution/receipts.py`；五个公开状态变更
+  在任何 DB/receipt/status 写入前强制 `ExecutionCapabilities`。
 - **adapter**:`execution/broker.py` (BrokerAdapter Protocol)、
   `execution/adapters/simulated_broker.py`。
-- **commands**:`execution/commands.py` (submit_order)。
+- **commands**:`execution/commands.py` (submit_order)；simulated submit capability
+  在 adapter resolve/call 前强制执行。
 - **bridge**:`execution/legacy_bridge.py` (旧 ActionIntent/PaperValidation → Execution 分离)。
 - **API**:`api/routes_execution.py`:
   `POST /execution/order-drafts`、
@@ -144,6 +146,8 @@ domain model / read model / write(command) model / adapters / invariants
   `GET /execution/reports/{id}`。
 - **cockpit**:frontend Execution tab (Order Drafts / Execution Orders / Execution Reports)。
 - **invariants**:live-shaped model, simulated substrate;network_enabled=false;
+  默认 capability 允许 simulated lifecycle、拒绝 live submit 与 credential 管理；
+  disabled capability 在 service boundary fail closed；
   所有状态变更写 receipt;execution 对象不承载 agentic reasoning/review memo/
   permission trace(这些留在 agentic layers)。
 
@@ -220,6 +224,26 @@ domain model / read model / write(command) model / adapters / invariants
   default profile 不写核心状态;
   没有 live order、transfer、broker write API、receipt 删除/覆盖或 Agent approval。
 
+### 9b. Agent Cognition Runtime / Work Orchestrator (scaffolded)
+
+- **职责**:承载 receipt/projection cognition primitives、tool/runtime operating
+  surfaces、playbook/evaluator/search/memory/workspace interfaces,以及当前确定性
+  work orchestration scaffold。
+- **runtime**:`agent_cognition_flow.py`、`agent_run_receipts.py`、
+  `agent_runtime_receipts.py`、`agent_tool_registry.py`、
+  `agent_tool_availability.py`、`agent_tool_result_envelope.py`、
+  `agent_context_trust_map.py`、`agent_receipt_search.py`、`domain_memory.py`、
+  `playbook_loader.py`、`evaluator_registry.py`、`agent_operating_flow.py`、
+  `review_workspace.py`、`agent_work_loop.py`。
+- **status**:scaffolded。Operating Surface 可以单独消费;当前 full-work 入口仍是
+  预请求工具序列的 deterministic pipeline,不是 observation-driven Agent Work Loop。
+- **missing closure**:真实 tool arguments、observation→decision reducer、有效
+  `max_steps`、完整 stop paths、单一 linked receipt/result chain、WorkResult
+  persistence/search、full-path playbook/trust consumption、workspace hydration。
+- **invariants**:不得进入 Execution Kernel;不得以 smoke/component existence 宣称
+  lifecycle operational;Wave 3 session/resume 必须等待上述 closure 以及真实
+  interrupt/resume 压力。
+
 ### 10. Cockpit / Product API
 
 - **职责**:产品表面,让人阅读、比较、复核、拒绝、确认、归档。
@@ -250,7 +274,8 @@ domain model / read model / write(command) model / adapters / invariants
 ```text
 State Core <- Capital Map <- IPS / Decision Workflow <- Review System <- Cockpit
                            <- Research Evidence
-Agent Explanation reads through tools; it does not own source-of-truth.
+Agent Explanation and Agent Cognition read through tools; they do not own source-of-truth.
+Agent Cognition cannot call through to Execution Kernel commands.
 EOS Governance cuts across all systems.
 Archived Live-Trading Legacy has no dependency edge back into mainline.
 ```

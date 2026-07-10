@@ -2,6 +2,13 @@
 
 > Wave 2.2: establish a bounded, auditable, stoppable, learnable agent work cycle.
 
+> **Audit status (2026-07-10): acceptance criteria not met.** The implementation
+> on `main` is a deterministic work-orchestrator scaffold. It does not yet have
+> observation-driven next-action decisions, effective `max_steps`, complete
+> stop reducers, a linked final AgentRunReceipt, WorkResult persistence,
+> playbook/trust consumption in the full path, or workspace hydration. This
+> document remains the target contract, not evidence that Wave 2.2 shipped.
+
 ## What Wave 2.1 completed
 
 Wave 2.1 hardened the Agent Operating Surface from "surface objects exist"
@@ -149,6 +156,18 @@ eligibility.
 
 ## Wave 2.2 acceptance criteria
 
+Executable closure gate:
+
+```bash
+task agent:work-loop-acceptance
+```
+
+As of 2026-07-10 it is intentionally red: **4/15 contracts pass and 11 remain
+open**. It is not part of `task check`. `task agent:work-loop-acceptance-report`
+prints the same repository evidence with a zero diagnostic exit. A future
+implementation may change this baseline only by closing a real contract and
+updating the architecture status in the same slice.
+
 给定一个 AgentWorkRequest，FinHarness 可以在有限预算内完成一项 agent
 work cycle，并输出：
 
@@ -168,17 +187,25 @@ work cycle，并输出：
 - every result searchable
 - no execution boundary crossed
 
-## Post-Wave 2.2 state naming
+## Target state naming after semantic closure
 
 ```
 Agent Operating Cycle v0.1
 Agent Cognition Runtime overall v0.93
 ```
 
+The current state must be named:
+
+```text
+Agent Operating Surface: semantically consumable
+Deterministic Work Orchestrator: scaffolded
+Agent Work Loop: not semantically closed
+```
+
 ## Future waves
 
 | Wave | Trigger | Deliverable |
 |---|---|---|
-| Wave 3 | Real retry/resume/interrupt needs | AgentSession, WorkCheckpoint, ResumePolicy |
+| Wave 3 | Wave 2.2 semantic closure plus real retry/resume/interrupt needs | AgentSession, WorkCheckpoint, ResumePolicy |
 | Wave 4 | Periodic tasks / external tools | ScheduledCognitionJob, SubagentWorkEnvelope, MCPEvidenceAdapter |
 | Wave 5 | Stable proposal lifecycle | ExecutionCandidateReview, PreExecutionSimulation, ApprovalHandoff |

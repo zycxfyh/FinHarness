@@ -267,6 +267,8 @@ tasks:
     cmds:
       - uv run python -m unittest tests.test_docs_current_facts
       - uv run python -m unittest tests.test_system_catalog
+      - uv run python -m unittest tests.test_evolution_roadmap
+      - uv run python -m unittest tests.test_abstraction_inventory_execution
       - uv run python -m unittest tests.test_support_surface_registry
       - uv run python -m unittest tests.test_removal_ledger
 
@@ -302,6 +304,16 @@ tasks:
     desc: Run the real agent when OPENAI_API_KEY is configured
     cmds:
       - uv run python scripts/run_agent_once.py {{.CLI_ARGS}}
+
+  agent:work-loop-acceptance:
+    desc: "EXPECTED RED: require Agent Work Loop semantic closure (not in task check)"
+    cmds:
+      - uv run python scripts/run_agent_work_loop_acceptance.py
+
+  agent:work-loop-acceptance-report:
+    desc: Report Agent Work Loop semantic gaps without failing the command
+    cmds:
+      - uv run python scripts/run_agent_work_loop_acceptance.py --report-only
 
   eval:smoke:
     desc: Run promptfoo local echo eval

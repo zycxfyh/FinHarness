@@ -16,6 +16,11 @@ from sqlmodel import Session, select
 from finharness.execution.broker import (
     resolve_broker_adapter,
 )
+from finharness.execution.capabilities import (
+    DEFAULT_EXECUTION_CAPABILITIES,
+    ExecutionCapabilities,
+    require_execution_capability,
+)
 from finharness.execution.services import (
     record_execution_report,
     submit_execution_order,
@@ -32,6 +37,7 @@ def submit_order(
     engine: Engine,
     receipt_root: str | Path,
     execution_order_id: str,
+    capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> ExecutionReport:
     """Submit an execution order through its registered broker adapter.
 
@@ -44,18 +50,15 @@ def submit_order(
     For simulated adapters, the report is synthetic. For live adapters
     (not yet registered), this would contact a real broker API.
     """
+    require_execution_capability(capabilities, "submit_simulated_order")
     # Resolve order and broker connection
     with Session(engine) as session:
         order = session.exec(
-            select(ExecutionOrder).where(
-                ExecutionOrder.execution_order_id == execution_order_id
-            )
+            select(ExecutionOrder).where(ExecutionOrder.execution_order_id == execution_order_id)
         ).one()
         broker_id = order.broker_connection_id
         draft = session.exec(
-            select(OrderDraft).where(
-                OrderDraft.order_draft_id == order.order_draft_id
-            )
+            select(OrderDraft).where(OrderDraft.order_draft_id == order.order_draft_id)
         ).one()
 
     # Resolve adapter
@@ -67,6 +70,7 @@ def submit_order(
             receipt_root=receipt_root,
             execution_order_id=execution_order_id,
             broker_connection_id=broker_id,
+            capabilities=capabilities,
         )
         return record_execution_report(
             engine=engine,
@@ -84,6 +88,7 @@ def submit_order(
         receipt_root=receipt_root,
         execution_order_id=execution_order_id,
         broker_connection_id=broker_id,
+        capabilities=capabilities,
     )
 
     # Call adapter

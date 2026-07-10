@@ -8,6 +8,25 @@ permission platform.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+ExecutionCapabilityName = Literal[
+    "create_order_draft",
+    "run_pretrade_check",
+    "record_approval",
+    "stage_execution_order",
+    "submit_simulated_order",
+    "submit_live_order",
+    "manage_broker_credentials",
+]
+
+
+class ExecutionCapabilityDeniedError(PermissionError):
+    """Raised before effects when an execution capability is disabled."""
+
+    def __init__(self, capability: ExecutionCapabilityName) -> None:
+        self.capability = capability
+        super().__init__(f"Execution capability is disabled: {capability}")
 
 
 @dataclass(frozen=True)
@@ -36,3 +55,23 @@ DEFAULT_EXECUTION_CAPABILITIES = ExecutionCapabilities(
     submit_live_order=False,
     manage_broker_credentials=False,
 )
+
+DENY_ALL_EXECUTION_CAPABILITIES = ExecutionCapabilities(
+    create_order_draft=False,
+    run_pretrade_check=False,
+    record_approval=False,
+    stage_execution_order=False,
+    submit_simulated_order=False,
+    submit_live_order=False,
+    manage_broker_credentials=False,
+)
+
+
+def require_execution_capability(
+    capabilities: ExecutionCapabilities,
+    capability: ExecutionCapabilityName,
+) -> None:
+    """Fail closed when a named execution capability is disabled."""
+
+    if not getattr(capabilities, capability):
+        raise ExecutionCapabilityDeniedError(capability)

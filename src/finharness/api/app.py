@@ -24,6 +24,11 @@ from finharness.api.routes_proposals import router as proposal_router
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_risk import router as risk_router
 from finharness.api.routes_state import router as state_router
+from finharness.execution.capabilities import (
+    DEFAULT_EXECUTION_CAPABILITIES,
+    ExecutionCapabilities,
+    ExecutionCapabilityDeniedError,
+)
 from finharness.local_operator import LocalOperatorContext
 from finharness.market_data import ROOT
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
@@ -40,6 +45,7 @@ def create_app(
     receipt_root: str | None = None,
     market_data_receipt_root: str | None = None,
     local_operator_context: LocalOperatorContext | None = None,
+    execution_capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> FastAPI:
     api = FastAPI(
         title="FinHarness State API",
@@ -54,6 +60,7 @@ def create_app(
     if market_data_receipt_root is not None:
         api.state.market_data_receipt_root = market_data_receipt_root
     api.state.local_operator_context = local_operator_context
+    api.state.execution_capabilities = execution_capabilities
 
     @api.middleware("http")
     async def log_request(request: Request, call_next):
@@ -107,6 +114,22 @@ def create_app(
             content={
                 "detail": str(exc),
                 "execution_allowed": False,
+            },
+        )
+
+    @api.exception_handler(ExecutionCapabilityDeniedError)
+    async def execution_capability_denied(
+        _request: Request,
+        exc: ExecutionCapabilityDeniedError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": {
+                    "code": "execution_capability_denied",
+                    "capability": exc.capability,
+                    "message": str(exc),
+                }
             },
         )
 

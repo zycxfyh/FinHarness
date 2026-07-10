@@ -1,6 +1,8 @@
 # FinHarness 分层架构(Capital OS Layering)
 
-> 状态:current(2026-07-02)。这是 FinHarness **架构分层的单一事实源**,
+> 状态:current(2026-07-10)。这是 FinHarness **产品分层的事实源**;
+> system lifecycle/status 的 machine-readable 事实源是
+> [System Catalog](system-catalog.yml)。本文
 > 取代已归档的 [ten-layer-langgraph-map](../archive/ten-layer-trading-chain/architecture/ten-layer-langgraph-map.md)。
 > 产品方向仍以 [产品北极星](../product-north-star.md) 为准;本文是北极星
 > "状态 → 解释 → 方案 → 决策 → 行动 → 复盘 → 学习" 闭环的**工程落层**。
@@ -29,7 +31,7 @@ hypotheses → validation → proposal → risk-gate → execution → post-trad
 | **L1/L2** | StateCore / 资本地图 Capital Map | 我现在是什么状态? | `statecore/`、`exposure.py`、`/exposure`、`/dashboard/summary` | ✅ 有 |
 | **L3** | IPS / Policy / Authority Credentials | 这个状态适合我吗?未来授权必须站在哪个政策域内?Agent 是否有受限 authority credential? | `ips.py`、`api/routes_ips.py`、`statecore/capital_mandates.py`、`api/routes_capital_mandates.py`、`statecore/agent_authority_grants.py`、`api/routes_agent_authority_grants.py`、`InvestmentPolicyStatement`、`CapitalMandate`、`AgentAuthorityGrant` | ✅ 有(IPS v0 + CapitalMandate v0 + AgentAuthorityGrant v0;CapitalMandate 是政策域,AgentAuthorityGrant 是 mandate-bound credential,两者都不授权执行) |
 | **L4** | Proposal & Review 决策提案与审查 | 哪些事值得审查?如何留痕? | `allocation.py`、`statecore/proposals.py`、`decision_scaffold.py`、`risk_classification.py`、`routes_proposals.py`、`routes_review.py` | ✅ 有(candidate+proposal 合并为一层) |
-| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思? | `agent_context.py`、`agent_context_projection.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`proposal_queue_checks.py`、proposal review surface | ✅ v0:context packs + context projection/budget + default read/explain profile + ToolEntry metadata + evidence provider registry + runtime pipeline + review-draft proposal drafts + review-note artifacts + scaffold apply candidates + review provenance + queue checks + review-task lifecycle |
+| **L5** | Agent / 个人资本 Agent | 这些状态和提案是什么意思?下一步应观察什么? | `agent_context.py`、`agent_context_projection.py`、`agent_capabilities.py`、`agent_evidence.py`、`agent_tools.py`、`agent_runtime.py`、`agent_cognition_flow.py`、`agent_operating_flow.py`、`agent_work_loop.py`、proposal review surface | 🟡 Agent Operating Surface 可消费;work orchestrator scaffolded;observation-driven Agent Work Loop 尚未闭合 |
 | **L6** | Execution Kernel 执行内核 | 这个动作可以执行吗?执行后发生了什么? | `statecore/execution_models.py` (OrderDraft, PreTradeCheck, ApprovalRecord, ExecutionOrder, ExecutionReport, PositionDelta, ReconciliationReport, BrokerConnection, ExecutionAccount)、`execution/services.py`、`execution/receipts.py`、`execution/broker.py`、`execution/commands.py`、`execution/adapters/simulated_broker.py`、`api/routes_execution.py` | ✅ v0: full canonical execution lifecycle on simulated substrate; live-shaped model, live environment is legal, only SimulatedBrokerAdapter registered, no real external connectivity |
 | **L6-legacy** | ~~Action Intent Chain (legacy)~~ | _(superseded by L6 Execution Kernel)_ | ~~`action_intents.py`、`trade_plan_candidates.py`、`capital_objective_fits.py`、`paper_order_tickets.py` 等~~ | ↳ See `execution/legacy_bridge.py` for migration |
 

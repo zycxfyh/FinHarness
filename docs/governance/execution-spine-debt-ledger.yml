@@ -1,10 +1,12 @@
 schema: finharness.execution_spine_debt_ledger.v1
-status: current
-updated: "2026-07-08"
+status: superseded
+updated: "2026-07-10"
+superseded_by: docs/governance/debt-register.json
 description: >
-  Machine-readable debt ledger for the Execution Spine paydown program.
-  Each debt item is categorized by layer, prioritized, and linked to a
-  candidate PR. This is a planning artifact, not a runtime check.
+  Historical ledger for the 2026-07-08 Execution Spine paydown program.
+  It preserves the original PR chain and resolution notes but is no longer a
+  current planning or status source. Unresolved DEBT-REG-001 and DEBT-CTL-001
+  continue as ENG-DEBT-0009 and ENG-DEBT-0010 in the canonical register.
 
 allowed_priorities: [high, medium, low]
 allowed_statuses: [open, partially_addressed, resolved]
