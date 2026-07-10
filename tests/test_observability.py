@@ -176,7 +176,7 @@ class TraceReceiptIndexTest(unittest.TestCase):
                 receipt_root=root / "observability",
             )
 
-            result = subprocess.run(  # noqa: S603 - fixed local script, fixed args, temp input
+            result = subprocess.run(
                 [
                     sys.executable,
                     "scripts/read_observability_trace.py",
