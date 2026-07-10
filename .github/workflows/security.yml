@@ -27,8 +27,6 @@ jobs:
           node-version: "22"
           cache: "pnpm"
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
       - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
 
       - name: Install Python dependencies
