@@ -11,12 +11,9 @@ dependencies = [
     "opentelemetry-api>=1.42.1",
     "opentelemetry-sdk>=1.42.1",
     "pandas>=2.2.0",
-    "pandas-ta>=0.4.71b0",
-    "plotly>=5.20.0",
     "pydantic-settings>=2.14.2",
     "sqlmodel>=0.0.38",
     "structlog>=26.1.0",
-    "ta-lib>=0.6.8",
     "uvicorn[standard]>=0.40.0",
 ]
 
