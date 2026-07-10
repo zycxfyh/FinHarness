@@ -18,7 +18,15 @@ REQUIRED_SYSTEM_FIELDS = {
     "checks",
     "upgrade_trigger",
 }
-ALLOWED_STATUS = {"current", "thin", "planned", "archived"}
+ALLOWED_STATUS = {
+    "canonical",
+    "current",
+    "thin",
+    "scaffolded",
+    "legacy",
+    "planned",
+    "archived",
+}
 
 
 def _catalog() -> dict:
@@ -41,8 +49,9 @@ def _unittest_target_path(target: str) -> Path | None:
 class SystemCatalogTest(unittest.TestCase):
     def test_catalog_shape_is_complete(self) -> None:
         catalog = _catalog()
-        self.assertEqual(catalog["schema"], "finharness.system_catalog.v1")
+        self.assertEqual(catalog["schema"], "finharness.system_catalog.v2")
         self.assertEqual(catalog["status"], "current")
+        self.assertEqual(set(catalog["allowed_statuses"]), ALLOWED_STATUS)
         self.assertGreaterEqual(len(catalog["systems"]), 10)
         ids = [system["id"] for system in catalog["systems"]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -55,6 +64,49 @@ class SystemCatalogTest(unittest.TestCase):
                 self.assertTrue(system["docs"])
                 self.assertTrue(system["runtime_roots"])
                 self.assertTrue(system["checks"])
+
+    def test_required_architecture_statuses(self) -> None:
+        systems = {system["id"]: system for system in _catalog()["systems"]}
+        expected = {
+            "execution_kernel": "canonical",
+            "capital_action_intent": "legacy",
+            "paper_validation_runtime": "legacy",
+            "external_data_mature_wheels": "thin",
+            "agent_cognition_runtime": "scaffolded",
+            "archived_live_trading_legacy": "archived",
+        }
+        self.assertTrue(set(expected).issubset(systems))
+        for system_id, status in expected.items():
+            with self.subTest(system=system_id):
+                self.assertEqual(status, systems[system_id]["status"])
+
+    def test_high_risk_statuses_match_current_docs(self) -> None:
+        system_map = (ROOT / "docs" / "architecture" / "system-map.md").read_text(encoding="utf-8")
+        module_map = (ROOT / "docs" / "architecture" / "module-map.md").read_text(encoding="utf-8")
+        capital_layers = (ROOT / "docs" / "architecture" / "capital-os-layering.md").read_text(
+            encoding="utf-8"
+        )
+
+        required_system_map_claims = (
+            "Capital Action Intent (legacy",
+            "Paper Validation Runtime (legacy",
+            "Execution Kernel (canonical",
+            "Agent Cognition Runtime / Work Orchestrator (scaffolded)",
+        )
+        required_module_rows = (
+            "| Capital Action Intent | legacy |",
+            "| Paper Validation Runtime | legacy |",
+            "| Execution Kernel | canonical |",
+            "| Agent Cognition Runtime / Work Orchestrator | scaffolded |",
+        )
+        for claim in required_system_map_claims:
+            with self.subTest(system_map_claim=claim):
+                self.assertIn(claim, system_map)
+        for row in required_module_rows:
+            with self.subTest(module_map_row=row):
+                self.assertIn(row, module_map)
+        self.assertIn("system lifecycle/status", capital_layers)
+        self.assertIn("work orchestrator scaffolded", capital_layers)
 
     def test_catalog_paths_exist(self) -> None:
         catalog = _catalog()

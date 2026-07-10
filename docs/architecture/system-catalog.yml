@@ -1,6 +1,7 @@
-schema: finharness.system_catalog.v1
+schema: finharness.system_catalog.v2
 status: current
-updated: "2026-07-03"
+updated: "2026-07-10"
+allowed_statuses: [canonical, current, thin, scaffolded, legacy, planned, archived]
 source_docs:
   framework_index: docs/architecture/framework-index.md
   system_map: docs/architecture/system-map.md
@@ -122,8 +123,8 @@ systems:
 
   - id: capital_action_intent
     name: Capital Action Intent
-    status: current
-    summary: Receipt-backed ActionIntentCandidate bridge plus authority admission bindings, authority-aware system preflight, preflight-bound qualitative simulation reports, pre-trade plan candidates, objective-fit benefit cases, and human trade-plan review gates for staged capital action workflows.
+    status: legacy
+    summary: Superseded ActionIntent/TradePlan compatibility chain retained for historical receipt readability and migration through the Execution Kernel legacy bridge; no new callers.
     docs:
       - docs/architecture/system-map.md
       - docs/reference/interfaces.md
@@ -138,17 +139,17 @@ systems:
       - src/finharness/statecore/trade_plan_review_gates.py
       - src/finharness/action_intent_preflight.py
       - src/finharness/api/routes_action_intents.py
-    mature_posture: OMS/EMS-style command-intent separation with authority admission, pre-trade controls, preflight-bound downstream artifacts, objective-fit benefit cases, and supervisory review gates; define action intent, bind actor authority, let preflight consume latest/current binding evidence, bind simulation evidence, create pre-trade plan candidates, explain objective alignment and next safe paths, then record human allow/deny review before any authority contract or order ticket.
+    mature_posture: Compatibility-only. Preserve historical reads and migration evidence; do not add new objects, callers, or product capability to this chain.
     checks:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_action_intent_authority_bindings
       - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Action intents need numeric simulation engines, authority contracts, or broker adapters.
+    upgrade_trigger: Remove legacy writes after a real consumer audit proves no current callers; retain only bounded readers and migration support.
 
   - id: paper_validation_runtime
     name: Paper Validation Runtime
-    status: current
-    summary: "Paper-only runtime v0 for reviewed trade plans: paper order ticket candidates, simulated execution receipts, isolated paper accounts, paper positions, and account execution applications."
+    status: legacy
+    summary: "Superseded paper-order/account compatibility runtime retained for historical reads; new simulated execution uses the canonical Execution Kernel."
     docs:
       - docs/architecture/system-map.md
       - docs/product/capital-workbench-roadmap.md
@@ -157,11 +158,32 @@ systems:
       - src/finharness/statecore/paper_executions.py
       - src/finharness/statecore/paper_accounts.py
       - src/finharness/api/routes_paper_validation.py
-    mature_posture: Paper-state validation loop inspired by order/account/reality-model separation, but scoped to isolated local paper state before performance review or broker adapters.
+    mature_posture: Compatibility-only. Preserve historical receipts and bridge projections while new callers use the Execution Kernel simulated substrate.
     checks:
       - uv run python -m unittest tests.test_action_intents
       - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Paper validation needs performance review, mark-to-market PnL, scenario-vs-paper comparison, or cockpit paper pages.
+    upgrade_trigger: Remove legacy writes after consumer and receipt migration audits; build future paper review over canonical execution reports.
+
+  - id: execution_kernel
+    name: Execution Kernel
+    status: canonical
+    summary: Canonical deterministic execution lifecycle from OrderDraft through pre-trade, approval, staging, simulated submission, execution report, position delta, and reconciliation.
+    docs:
+      - docs/architecture/system-map.md
+      - docs/architecture/closure-report.md
+      - docs/reference/receipts.md
+    runtime_roots:
+      - src/finharness/statecore/execution_models.py
+      - src/finharness/execution/
+      - src/finharness/api/routes_execution.py
+    mature_posture: Classical execution kernel with receipt-backed services and an adapter protocol; only the simulated adapter is registered and real external execution remains capability-gated.
+    checks:
+      - uv run python -m unittest tests.test_execution_schema
+      - uv run python -m unittest tests.test_execution_services
+      - uv run python -m unittest tests.test_routes_execution
+      - uv run python -m unittest tests.test_execution_adapter_boundary
+      - uv run python -m unittest tests.test_execution_lifecycle_hardening
+    upgrade_trigger: Any real broker, credential, network, or funded-account path requires a separate C3 design, threat model, capability enforcement, and human gate.
 
   - id: research_evidence
     name: Research Evidence
@@ -182,7 +204,7 @@ systems:
 
   - id: external_data_mature_wheels
     name: External Data / Mature Wheels
-    status: current
+    status: thin
     summary: Read-only data and mature-tool adapters; external outputs are evidence, not authority.
     docs:
       - docs/architecture/mature-wheel-control-plane.md
@@ -231,6 +253,37 @@ systems:
       - uv run python -m unittest tests.test_agent_context
       - uv run python -m unittest tests.test_agent_tools
     upgrade_trigger: Agent scaffold-revision, simulation, approval-prep, or any stronger action path needs explicit profiles, tests, and receipt-backed command paths; execution remains absent.
+
+  - id: agent_cognition_runtime
+    name: Agent Cognition Runtime / Work Orchestrator
+    status: scaffolded
+    summary: Receipt/projection cognition primitives and semantically consumable operating surfaces exist; the current work entry point is a deterministic pre-requested pipeline, not an observation-driven Agent Work Loop.
+    docs:
+      - docs/architecture/agent-native-target-space.md
+      - docs/architecture/agent-operating-surface.md
+      - docs/architecture/agent-work-loop-plan.md
+    runtime_roots:
+      - src/finharness/agent_cognition_flow.py
+      - src/finharness/agent_run_receipts.py
+      - src/finharness/agent_runtime_receipts.py
+      - src/finharness/agent_tool_registry.py
+      - src/finharness/agent_tool_availability.py
+      - src/finharness/agent_tool_result_envelope.py
+      - src/finharness/agent_context_trust_map.py
+      - src/finharness/agent_receipt_search.py
+      - src/finharness/domain_memory.py
+      - src/finharness/playbook_loader.py
+      - src/finharness/evaluator_registry.py
+      - src/finharness/agent_operating_flow.py
+      - src/finharness/review_workspace.py
+      - src/finharness/agent_work_loop.py
+    mature_posture: Keep domain cognition contracts provider-neutral. Reuse mature runner/checkpoint infrastructure only after the local action-observation-decision reducer and artifact chain are semantically proven.
+    checks:
+      - uv run python -m unittest tests.test_agent_cognition_flow
+      - uv run pytest -q tests/test_agent_work_loop_models.py
+      - uv run python scripts/run_agent_operating_surface_smoke.py
+      - uv run python scripts/run_agent_work_loop_smoke.py
+    upgrade_trigger: Graduate from scaffolded only when real tool arguments, observation-driven decisions, effective step budgets, all stop paths, linked receipts, result persistence/search, playbook/trust consumption, and workspace hydration have semantic tests.
 
   - id: cockpit_api
     name: Cockpit / API
