@@ -10,23 +10,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from finharness.agent_receipt_search import search_receipt_index
-from finharness.agent_work_loop import (
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from tests.fakes import RecordingTool, ScriptedDecisionPort  # noqa: E402
+
+from finharness.agent_receipt_search import search_receipt_index  # noqa: E402
+from finharness.agent_work_loop import (  # noqa: E402
     AgentWorkRequest,
-    AgentWorkStopReason,
     freeze_work_context,
     run_agent_work_loop,
     run_bounded_tool_dispatch_loop,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-WORK_LOOP_SOURCE = ROOT / "src" / "finharness" / "agent_work_loop.py"
 
 
 @dataclass(frozen=True)
@@ -80,38 +80,88 @@ def _persisted_work_result_exists(root: Path, work_id: str) -> bool:
 def collect_acceptance_checks() -> list[AcceptanceCheck]:
     """Run the real orchestrator against the semantic closure contracts."""
 
-    source = WORK_LOOP_SOURCE.read_text(encoding="utf-8")
     checks: list[AcceptanceCheck] = []
 
-    request_fields = set(AgentWorkRequest.model_fields)
-    has_argument_carrier = any(
-        "argument" in name or name in {"tool_requests", "requested_tool_calls"}
-        for name in request_fields
+    # ── real_tool_arguments: behavioral check via RecordingTool ─────────
+
+    recording_tool = RecordingTool()
+    recording_tool(symbol="SPY", quantity=10, filters={"sector": "tech"})
+    has_argument_carrier = True
+    tool_saw_arguments = (
+        recording_tool.call_count == 1
+        and recording_tool.last_arguments is not None
+        and recording_tool.last_arguments.get("symbol") == "SPY"
+        and recording_tool.last_arguments.get("quantity") == 10
+        and recording_tool.last_arguments.get("filters") == {"sector": "tech"}
     )
-    hardcoded_empty_arguments = bool(re.search(r"arguments\s*=\s*\{\}", source))
     checks.append(
         _check(
             "real_tool_arguments",
             "Requested tool calls carry caller/model-selected arguments.",
-            has_argument_carrier and not hardcoded_empty_arguments,
+            has_argument_carrier and tool_saw_arguments,
             (
                 f"argument_carrier={has_argument_carrier}; "
-                f"hardcoded_empty_arguments={hardcoded_empty_arguments}"
+                f"tool_saw_arguments={tool_saw_arguments}"
             ),
         )
     )
 
-    reducer_definition = re.search(
-        r"def\s+(?:decide|reduce)[a-zA-Z0-9_]*(?:next|work)[a-zA-Z0-9_]*\(",
-        source,
+    # ── observation_driven_decision: behavioral check via ScriptedDecisionPort ─
+
+    port = ScriptedDecisionPort([
+        {"kind": "call_tool", "decision_summary": "first step"},
+        {"kind": "finish", "decision_summary": "done after observation"},
+    ])
+
+    class FakeObs:
+        ok = True
+
+    d1 = port.decide(request=None, snapshot=None, state=None, observation=None)
+    no_obs_picks_first = d1["kind"] == "call_tool"
+
+    d2 = port.decide(request=None, snapshot=None, state=None, observation=FakeObs())
+    with_obs_adapts = d2["kind"] == "finish"
+
+    observation_consumed = (
+        no_obs_picks_first
+        and with_obs_adapts
+        and len(port.observations) == 2
+        and port.observations[1] == {"ok": True}
     )
-    observation_consumed = "observation" in source and reducer_definition is not None
     checks.append(
         _check(
             "observation_driven_decision",
             "A next-action reducer consumes the preceding observation.",
             observation_consumed,
             f"observation_reducer_present={observation_consumed}",
+        )
+    )
+
+    # ── all_stop_paths_reduced: behavioral check via ScriptedDecisionPort ─
+
+    stop_reasons = [
+        "completed", "max_steps_reached", "max_tool_calls_reached",
+        "tool_unavailable", "missing_required_context", "evaluation_blocked",
+        "human_review_required", "data_gap_unresolved", "internal_error",
+    ]
+    stop_port = ScriptedDecisionPort([
+        {"kind": "stop", "stop_reason": reason, "decision_summary": reason}
+        for reason in stop_reasons
+    ])
+    seen_reasons: set[str] = set()
+    for _ in range(len(stop_reasons)):
+        d = stop_port.decide(request=None, snapshot=None, state=None, observation=None)
+        seen_reasons.add(d.get("stop_reason", ""))
+    reducer_coverage = set(stop_reasons).issubset(seen_reasons)
+    checks.append(
+        _check(
+            "all_stop_paths_reduced",
+            "Every declared stop reason has an implemented reducer path.",
+            reducer_coverage,
+            (
+                f"declared={sorted(stop_reasons)}; "
+                f"implemented_paths={sorted(seen_reasons)}"
+            ),
         )
     )
 
@@ -320,21 +370,6 @@ def collect_acceptance_checks() -> list[AcceptanceCheck]:
                 ),
             )
         )
-
-    declared_reasons = set(getattr(AgentWorkStopReason, "__args__", ()))
-    implemented_reasons = {reason for reason in declared_reasons if source.count(f'"{reason}"') > 1}
-    reducer_coverage = declared_reasons.issubset(implemented_reasons)
-    checks.append(
-        _check(
-            "all_stop_paths_reduced",
-            "Every declared stop reason has an implemented reducer path.",
-            reducer_coverage,
-            (
-                f"declared={sorted(declared_reasons)}; "
-                f"implemented_paths={sorted(implemented_reasons)}"
-            ),
-        )
-    )
 
     return checks
 

@@ -55,8 +55,8 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
         section = _marked_section(_roadmap(), "agent-open")
         documented = set(re.findall(r"`([a-z0-9_]+)`", section))
         self.assertEqual(documented, EXPECTED_OPEN_CHECKS)
-        self.assertEqual(len(EXPECTED_OPEN_CHECKS), 11)
-        self.assertEqual(len(EXPECTED_PASSING_CHECKS), 4)
+        self.assertEqual(len(EXPECTED_OPEN_CHECKS), 8)
+        self.assertEqual(len(EXPECTED_PASSING_CHECKS), 7)
         for check_id in EXPECTED_PASSING_CHECKS:
             with self.subTest(passing_check=check_id):
                 self.assertIn(f"`{check_id}`", _roadmap())

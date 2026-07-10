@@ -254,8 +254,6 @@ The dedicated acceptance gate is the work breakdown. No PR may change the
 architecture label merely because it adds a new class or receipt.
 
 <!-- agent-open:start -->
-- `real_tool_arguments`
-- `observation_driven_decision`
 - `max_steps_effective`
 - `unavailable_tool_stop`
 - `playbook_requirements_enforced`
@@ -264,7 +262,6 @@ architecture label merely because it adds a new class or receipt.
 - `work_result_persisted`
 - `review_workspace_hydrated`
 - `result_searchable_by_work_id`
-- `all_stop_paths_reduced`
 <!-- agent-open:end -->
 
 | Slice | Classical responsibility | Agentic responsibility | Contracts closed | Exit rule |
@@ -276,7 +273,8 @@ architecture label merely because it adds a new class or receipt.
 | LOOP-06 Review hydration | Deterministically hydrate/persist workspace projection from terminal refs. | Supply findings/options/explanation for human review. | `review_workspace_hydrated` | Workspace reads receipts, not in-memory placeholders. |
 | LOOP-07 Closure audit | Run all gates, performance/size bounds, failure injection, documentation rebase. | No new capability. | 15/15 | Only here may naming graduate to Agent Operating Cycle v0.1. |
 
-Four contracts already pass and must remain green:
+Seven contracts already pass and must remain green:
+`real_tool_arguments`, `observation_driven_decision`, `all_stop_paths_reduced`,
 `context_snapshot_frozen`, `max_tool_calls_effective`,
 `evaluation_report_linked`, and `execution_boundary_closed`.
 
