@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 9 resolved; 1 active | Security boundary closed (SEC-02A-D), dependency ownership (DEPS-02A-E) remains. |
+| Engineering debt | 10 resolved; 0 active | All debts closed. Paper-validation boundary and dependency ownership chains complete. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -211,13 +211,12 @@ owns authority and policy changes.
 The following block is mechanically checked against the canonical register.
 
 <!-- active-debt:start -->
-- `ENG-DEBT-0005` — dependency groups are empty and no import/task consumer audit exists.
+(no active debt)
 <!-- active-debt:end -->
 
 Rules:
 
-- ENG-DEBT-0005 blocks new optional dependencies and claims of runtime/research
-  install separation.
+- All 10 engineering debts are resolved as of Wave 3 Truthful Closure.
 - Neither item blocks the isolated Agent Loop contract work in Phase 3.
 - A debt is closed only when `scripts/verify_debt_register.py` agrees.
 

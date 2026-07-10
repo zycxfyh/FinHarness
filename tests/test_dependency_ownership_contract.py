@@ -34,27 +34,26 @@ class DependencyGroupingContractTest(unittest.TestCase):
         return tmp
 
     def test_paper_group_empty_should_not_fail(self) -> None:
-        """Empty paper group is intentionally empty — should not block closure."""
-        # This is a positive test: the current audit status is "audit" not "current"
-        # so the verifier returns False, but NOT because the group is empty.
+        """Empty paper group is intentionally empty — verifier passes with status=current."""
         from scripts.verify_debt_register import _dependency_grouping
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
-            _setup_minimal_project(tmp_root, self.manifest)
+            m = dict(self.manifest, status="current")
+            _setup_minimal_project(tmp_root, m)
             result = _dependency_grouping(tmp_root)
-            # False because status is "audit" not "current" — not because group is empty
-            self.assertFalse(result)
+            self.assertTrue(result, "Empty paper group must not block closure")
 
     def test_security_group_empty_should_not_fail(self) -> None:
-        """Empty security group is intentionally empty — should not block closure."""
+        """Empty security group is intentionally empty — verifier passes."""
         from scripts.verify_debt_register import _dependency_grouping
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
-            _setup_minimal_project(tmp_root, self.manifest)
+            m = dict(self.manifest, status="current")
+            _setup_minimal_project(tmp_root, m)
             result = _dependency_grouping(tmp_root)
-            self.assertFalse(result)  # Because status != "current"
+            self.assertTrue(result)
 
     def test_duplicate_distribution_fails(self) -> None:
         """Same distribution appearing twice fails the verifier."""

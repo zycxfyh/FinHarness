@@ -47,9 +47,9 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
 
         self.assertEqual(documented, active)
         self.assertTrue(resolved.isdisjoint(documented))
-        self.assertEqual(active, {"ENG-DEBT-0005"})
-        self.assertEqual(len(resolved), 9)
-        self.assertIn("9 resolved; 1 active", _roadmap())
+        self.assertEqual(active, set())
+        self.assertEqual(len(resolved), 10)
+        self.assertIn("10 resolved; 0 active", _roadmap())
 
     def test_agent_acceptance_block_matches_executable_baseline(self) -> None:
         section = _marked_section(_roadmap(), "agent-open")

@@ -181,33 +181,40 @@
     {
       "id": "ENG-DEBT-0005",
       "title": "Dependency grouping and dead dependency review",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "dependency-management",
       "surface": "dependencies",
       "introduced_by": [
         "Research, Agent, eval, and trading-analysis dependency accumulation"
       ],
-      "current_state": "Six named dependency-group keys exist but all are empty, no import/task consumer manifest exists, and every optional research, Agent, evaluation, data, paper, and security dependency remains in the base runtime set.",
+      "current_state": "26 retained dependencies are grouped by consumer evidence: base(9), data(5), research(5), agent(2), eval(1), dev(4). 3 unused deps removed. Consumer manifest is current, verifier contract corrected (empty groups OK), install probes prove isolated import.",
       "desired_state": "Runtime-critical dependencies are separated from optional data, research, Agent, evaluation, paper, and security groups after an import/task audit proves their consumers.",
       "risk_if_ignored": "Install time, vulnerability surface, resolution conflicts, and ownership ambiguity grow with each capability slice.",
-      "next_action": "Populate groups after a full import/task consumer audit; remove only dependencies proven unused.",
+      "next_action": "Keep consumer manifest, group assignments, and install probes current when adding or removing dependencies.",
       "non_goals": [
         "changing runtime behavior",
         "opportunistic version upgrades",
         "unverified mass dependency removal"
       ],
       "blocked_by": [],
-      "target_slice": "DEPS-01",
+      "target_slice": "DEPS-02",
       "created_at": "2026-07-06",
-      "last_reviewed_at": "2026-07-10",
+      "last_reviewed_at": "2026-07-11",
       "review_due": "2026-08-15",
       "evidence_refs": [
         "pyproject.toml",
         "uv.lock",
-        "Taskfile.yml"
+        "Taskfile.yml",
+        "docs/governance/dependency-consumers.json",
+        "scripts/probe_base_runtime.py",
+        "scripts/probe_dependency_group.py",
+        "tests/test_dependency_consumer_manifest.py",
+        "tests/test_dependency_ownership_contract.py",
+        "tests/test_dependency_install_probe_contract.py"
       ],
-      "verification": "dependency_grouping"
+      "verification": "dependency_grouping",
+      "resolution_ref": "DEPS-02A / #239, DEPS-02B / #240, DEPS-02C / #241, DEPS-02D / #242, DEPS-02E / #243"
     },
     {
       "id": "ENG-DEBT-0006",

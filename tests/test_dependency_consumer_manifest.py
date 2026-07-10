@@ -143,7 +143,7 @@ class DependencyConsumerManifestTest(unittest.TestCase):
             self.manifest["schema"],
             "finharness.dependency_consumer_manifest.v1",
         )
-        self.assertEqual(self.manifest["status"], "audit")
+        self.assertEqual(self.manifest["status"], "current")
         self.assertEqual(self.manifest["debt_ref"], "ENG-DEBT-0005")
         self.assertEqual(
             set(self.manifest["source_roots"]),
