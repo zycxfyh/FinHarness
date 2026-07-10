@@ -1,12 +1,13 @@
-"""Agent Work Loop v0 — bounded, auditable agent work cycle.
+"""Deterministic Agent Work Orchestrator scaffold.
 
 Agentic-space dimension: All Spaces.
 Operating surface: Track G — Agent Work Loop.
 
-A work loop accepts an AgentWorkRequest with explicit budget and
-produces an AgentWorkResult with full audit trail. It orchestrates
-the existing surfaces (registry, universe, context, trace, evaluation,
-workspace, search) into a single bounded execution unit.
+The current entry point accepts an AgentWorkRequest, freezes context, dispatches
+a pre-requested tool sequence, runs a deterministic cognition bridge, and
+returns an in-memory AgentWorkResult. It does not yet implement an
+observation-driven next-action reducer, effective step budgeting, final result
+persistence, full receipt linkage, or workspace hydration.
 
 Work loop is NOT: session, scheduler, execution, or multi-agent.
 """
@@ -123,8 +124,10 @@ def bind_playbook_to_work(playbook_name: str) -> AgentWorkPlaybookBinding:
     pb = load_cognition_playbook(playbook_name)
     if pb is None:
         return AgentWorkPlaybookBinding(
-            playbook_name=playbook_name, version="unknown",
-            findings=[f"playbook '{playbook_name}' not found"], bound=False,
+            playbook_name=playbook_name,
+            version="unknown",
+            findings=[f"playbook '{playbook_name}' not found"],
+            bound=False,
         )
 
     finding_msgs: list[str] = []
@@ -136,10 +139,12 @@ def bind_playbook_to_work(playbook_name: str) -> AgentWorkPlaybookBinding:
             bound = False
 
     return AgentWorkPlaybookBinding(
-        playbook_name=playbook_name, version=pb.version,
+        playbook_name=playbook_name,
+        version=pb.version,
         required_context_packs=pb.required_context_packs,
         recommended_evaluators=pb.recommended_evaluators,
-        findings=finding_msgs, bound=bound,
+        findings=finding_msgs,
+        bound=bound,
     )
 
 
@@ -150,6 +155,7 @@ def freeze_work_context(
     context_projection_payload: dict[str, object] | None = None,
 ) -> AgentWorkContextSnapshot:
     from finharness.agent_context_trust_map import extract_context_trust_map
+
     payload = context_projection_payload or {}
     extraction = extract_context_trust_map(payload)
     context_refs: list[str] = []
@@ -167,14 +173,15 @@ def freeze_work_context(
     trust_dict: dict[str, object] = {}
     for ref, trust in extraction.trust_by_ref.items():
         trust_dict[ref] = trust.model_dump()
-    findings_list: list[dict[str, object]] = [
-        f.model_dump() for f in extraction.findings
-    ]
+    findings_list: list[dict[str, object]] = [f.model_dump() for f in extraction.findings]
     return AgentWorkContextSnapshot(
-        work_id=work_id, profile_name=profile_name,
-        context_projection_payload=payload, context_trust_by_ref=trust_dict,
+        work_id=work_id,
+        profile_name=profile_name,
+        context_projection_payload=payload,
+        context_trust_by_ref=trust_dict,
         context_refs=list(dict.fromkeys(context_refs)),
-        source_refs=list(dict.fromkeys(source_refs)), findings=findings_list,
+        source_refs=list(dict.fromkeys(source_refs)),
+        findings=findings_list,
     )
 
 
@@ -188,7 +195,8 @@ def run_bounded_tool_dispatch_loop(
     from finharness.agent_tool_result_envelope import build_tool_result_envelope
 
     sink = AgentRuntimeTraceSink(
-        goal=request.goal, profile_name=request.profile_name,
+        goal=request.goal,
+        profile_name=request.profile_name,
         receipt_root=Path(request.receipt_root),
     )
     universe = capture_tool_universe_snapshot(request.profile_name)
@@ -202,13 +210,14 @@ def run_bounded_tool_dispatch_loop(
             break
         if tool_name not in available_tools:
             data_gaps.append(
-                f"tool_unavailable: {tool_name} not available for "
-                f"profile {request.profile_name!r}"
+                f"tool_unavailable: {tool_name} not available for profile {request.profile_name!r}"
             )
             tool_count += 1
             continue
         result = sink.dispatch(
-            profile_name=request.profile_name, tool_name=tool_name, arguments={},
+            profile_name=request.profile_name,
+            tool_name=tool_name,
+            arguments={},
         )
         env = build_tool_result_envelope(result)
         envelopes.append(env.model_dump())
@@ -220,6 +229,7 @@ def run_bounded_tool_dispatch_loop(
         stop_reason = "max_tool_calls_reached"
 
     from contextlib import suppress
+
     with suppress(ValueError):
         sink.finalize()
     return envelopes, stop_reason, data_gaps
@@ -244,7 +254,8 @@ def run_cognition_flow_from_work_result(
     all_source_refs = list(dict.fromkeys([*source_refs, *context_snapshot.source_refs]))
 
     flow = run_agent_cognition_flow(
-        goal=request.goal, profile_name=request.profile_name,
+        goal=request.goal,
+        profile_name=request.profile_name,
         objective=request.objective,
         option_claims=[f"Tool result analysis for: {request.goal}"],
         plan_steps=[f"Review results from {len(tool_envelopes)} tool calls"],
@@ -267,13 +278,13 @@ def run_agent_work_loop(
     request: AgentWorkRequest,
     context_projection_payload: dict[str, object] | None = None,
 ) -> AgentWorkResult:
-    """Run a complete agent work loop.
+    """Run the deterministic work-orchestration scaffold.
 
     1. Freeze context snapshot
     2. Run bounded tool dispatch loop
     3. Run cognition flow from tool results
     4. Update receipt search index
-    5. Produce hydrated AgentWorkResult
+    5. Produce an in-memory AgentWorkResult (workspace hydration is pending)
     """
     from finharness.agent_receipt_search import write_receipt_search_index
 
@@ -286,13 +297,16 @@ def run_agent_work_loop(
 
     # 2. Dispatch tools
     envelopes, stop_reason, data_gaps = run_bounded_tool_dispatch_loop(
-        request=request, context_snapshot=snap,
+        request=request,
+        context_snapshot=snap,
     )
 
     # 3. Run cognition flow
     flow = run_cognition_flow_from_work_result(
-        request=request, context_snapshot=snap,
-        tool_envelopes=envelopes, receipt_root=request.receipt_root,
+        request=request,
+        context_snapshot=snap,
+        tool_envelopes=envelopes,
+        receipt_root=request.receipt_root,
     )
 
     # 4. Determine outcome

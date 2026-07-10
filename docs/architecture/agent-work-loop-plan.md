@@ -2,6 +2,13 @@
 
 > Wave 2.2: establish a bounded, auditable, stoppable, learnable agent work cycle.
 
+> **Audit status (2026-07-10): acceptance criteria not met.** The implementation
+> on `main` is a deterministic work-orchestrator scaffold. It does not yet have
+> observation-driven next-action decisions, effective `max_steps`, complete
+> stop reducers, a linked final AgentRunReceipt, WorkResult persistence,
+> playbook/trust consumption in the full path, or workspace hydration. This
+> document remains the target contract, not evidence that Wave 2.2 shipped.
+
 ## What Wave 2.1 completed
 
 Wave 2.1 hardened the Agent Operating Surface from "surface objects exist"
@@ -168,17 +175,25 @@ work cycle，并输出：
 - every result searchable
 - no execution boundary crossed
 
-## Post-Wave 2.2 state naming
+## Target state naming after semantic closure
 
 ```
 Agent Operating Cycle v0.1
 Agent Cognition Runtime overall v0.93
 ```
 
+The current state must be named:
+
+```text
+Agent Operating Surface: semantically consumable
+Deterministic Work Orchestrator: scaffolded
+Agent Work Loop: not semantically closed
+```
+
 ## Future waves
 
 | Wave | Trigger | Deliverable |
 |---|---|---|
-| Wave 3 | Real retry/resume/interrupt needs | AgentSession, WorkCheckpoint, ResumePolicy |
+| Wave 3 | Wave 2.2 semantic closure plus real retry/resume/interrupt needs | AgentSession, WorkCheckpoint, ResumePolicy |
 | Wave 4 | Periodic tasks / external tools | ScheduledCognitionJob, SubagentWorkEnvelope, MCPEvidenceAdapter |
 | Wave 5 | Stable proposal lifecycle | ExecutionCandidateReview, PreExecutionSimulation, ApprovalHandoff |
