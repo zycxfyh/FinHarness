@@ -195,7 +195,7 @@ Agentic Plane:
 
 Control/Safety Plane:
   WriteCapability, simulated adapter boundary,
-  capability model, registry alignment,
+  service-enforced ExecutionCapabilities, registry alignment,
   no external side effect invariants
 ```
 

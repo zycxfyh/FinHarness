@@ -89,6 +89,14 @@ class CurrentDocsFactPolicyTest(unittest.TestCase):
         self.assertIn("Deterministic Work Orchestrator: scaffolded", plan)
         self.assertIn("Agent Work Loop: not semantically closed", plan)
 
+    def test_execution_interface_records_enforced_capabilities(self) -> None:
+        interfaces = (ROOT / "docs" / "reference" / "interfaces.md").read_text(encoding="utf-8")
+        system_map = (ROOT / "docs" / "architecture" / "system-map.md").read_text(encoding="utf-8")
+        self.assertIn("| ExecutionKernelInterface |", interfaces)
+        self.assertNotIn("no execution endpoints", interfaces)
+        self.assertIn("service boundary fail closed", system_map)
+        self.assertIn("拒绝 live submit 与 credential 管理", system_map)
+
 
 if __name__ == "__main__":
     unittest.main()

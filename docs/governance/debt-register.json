@@ -285,15 +285,15 @@
     {
       "id": "ENG-DEBT-0010",
       "title": "Execution capability enforcement",
-      "status": "active",
+      "status": "resolved",
       "priority": "P0",
       "category": "execution-control",
       "surface": "execution",
       "introduced_by": ["ExecutionCapabilities PR #142", "DEBT-CTL-001"],
-      "current_state": "ExecutionCapabilities and safe defaults exist only as vocabulary; execution services do not consume or enforce the flags.",
+      "current_state": "ExecutionCapabilities is enforced at the five public service mutations and the adapter-driven submit command. API construction injects an immutable deployment capability set, and denials return stable HTTP 403 before database, receipt, status, or adapter effects.",
       "desired_state": "Every execution command is fail-closed at the service boundary when its capability is disabled; simulated submission remains enabled by explicit default and live submission/credential management remain impossible.",
       "risk_if_ignored": "Capability documentation can diverge from runtime behavior, and future adapters may bypass the intended control plane through direct service calls.",
-      "next_action": "Implement EXEC-01: inject capabilities into execution services, deny disabled operations before writes, and add semantic denial/no-side-effect tests.",
+      "next_action": "Keep semantic denial/no-side-effect tests in the execution gate. Any real adapter, credential, or live-submit capability still requires a separate C3 design and threat-model update.",
       "non_goals": [
         "user/role permission platform",
         "live adapter enablement",
@@ -308,9 +308,13 @@
       "evidence_refs": [
         "src/finharness/execution/capabilities.py",
         "src/finharness/execution/services.py",
-        "tests/test_execution_capabilities.py"
+        "src/finharness/execution/commands.py",
+        "src/finharness/api/routes_execution.py",
+        "tests/test_execution_capabilities.py",
+        "tests/test_execution_capability_enforcement.py"
       ],
-      "verification": "execution_capability_enforcement"
+      "verification": "execution_capability_enforcement",
+      "resolution_ref": "EXEC-01 / tests.test_execution_capability_enforcement"
     }
   ]
 }

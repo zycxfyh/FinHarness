@@ -176,13 +176,14 @@ systems:
       - src/finharness/statecore/execution_models.py
       - src/finharness/execution/
       - src/finharness/api/routes_execution.py
-    mature_posture: Classical execution kernel with receipt-backed services and an adapter protocol; only the simulated adapter is registered and real external execution remains capability-gated.
+    mature_posture: Classical execution kernel with receipt-backed services, service-enforced immutable capabilities, and an adapter protocol; only simulated submission is enabled and real external execution remains absent.
     checks:
       - uv run python -m unittest tests.test_execution_schema
       - uv run python -m unittest tests.test_execution_services
       - uv run python -m unittest tests.test_routes_execution
       - uv run python -m unittest tests.test_execution_adapter_boundary
       - uv run python -m unittest tests.test_execution_lifecycle_hardening
+      - uv run python -m unittest tests.test_execution_capability_enforcement
     upgrade_trigger: Any real broker, credential, network, or funded-account path requires a separate C3 design, threat model, capability enforcement, and human gate.
 
   - id: research_evidence

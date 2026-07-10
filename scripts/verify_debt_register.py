@@ -159,6 +159,8 @@ def _execution_abstraction_inventory(root: Path) -> bool:
 
 def _execution_capability_enforcement(root: Path) -> bool:
     services = _read(root, "src/finharness/execution/services.py")
+    commands = _read(root, "src/finharness/execution/commands.py")
+    routes = _read(root, "src/finharness/api/routes_execution.py")
     tests = root / "tests" / "test_execution_capability_enforcement.py"
     enforced_flags = (
         "create_order_draft",
@@ -171,7 +173,12 @@ def _execution_capability_enforcement(root: Path) -> bool:
         (
             "ExecutionCapabilities" in services,
             "DEFAULT_EXECUTION_CAPABILITIES" in services,
-            all(f"capabilities.{flag}" in services for flag in enforced_flags),
+            all(
+                f'require_execution_capability(capabilities, "{flag}")' in services
+                for flag in enforced_flags
+            ),
+            'require_execution_capability(capabilities, "submit_simulated_order")' in commands,
+            "ExecutionCapabilitiesDependency" in routes,
             tests.exists(),
         )
     )

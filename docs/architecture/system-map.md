@@ -129,10 +129,12 @@ domain model / read model / write(command) model / adapters / invariants
 - **domain**:`statecore/execution_models.py` (BrokerConnection, ExecutionAccount,
   OrderDraft, PreTradeCheck, ApprovalRecord, ExecutionOrder, ExecutionReport,
   PositionDelta, ReconciliationReport)。
-- **services**:`execution/services.py`、`execution/receipts.py`。
+- **services**:`execution/services.py`、`execution/receipts.py`；五个公开状态变更
+  在任何 DB/receipt/status 写入前强制 `ExecutionCapabilities`。
 - **adapter**:`execution/broker.py` (BrokerAdapter Protocol)、
   `execution/adapters/simulated_broker.py`。
-- **commands**:`execution/commands.py` (submit_order)。
+- **commands**:`execution/commands.py` (submit_order)；simulated submit capability
+  在 adapter resolve/call 前强制执行。
 - **bridge**:`execution/legacy_bridge.py` (旧 ActionIntent/PaperValidation → Execution 分离)。
 - **API**:`api/routes_execution.py`:
   `POST /execution/order-drafts`、
@@ -144,6 +146,8 @@ domain model / read model / write(command) model / adapters / invariants
   `GET /execution/reports/{id}`。
 - **cockpit**:frontend Execution tab (Order Drafts / Execution Orders / Execution Reports)。
 - **invariants**:live-shaped model, simulated substrate;network_enabled=false;
+  默认 capability 允许 simulated lifecycle、拒绝 live submit 与 credential 管理；
+  disabled capability 在 service boundary fail closed；
   所有状态变更写 receipt;execution 对象不承载 agentic reasoning/review memo/
   permission trace(这些留在 agentic layers)。
 
