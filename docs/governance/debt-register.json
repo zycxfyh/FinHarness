@@ -229,15 +229,15 @@
     {
       "id": "ENG-DEBT-0008",
       "title": "Toolchain Node and Rust policy",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "tooling",
       "surface": "toolchain",
       "introduced_by": ["Local and CI toolchain evolution"],
-      "current_state": "mise pins Node 26.2.0 while browser/security workflows use Node 22; security CI installs Rust stable without an in-repository consumer explanation.",
+      "current_state": "mise and CI workflows use Node 22 (same major); security CI no longer installs Rust (no repository consumer found).",
       "desired_state": "Local and CI Node majors agree, and every CI toolchain install has a documented repository consumer or is removed.",
       "risk_if_ignored": "Local/CI divergence causes false signals, while unexplained toolchains increase CI time and maintenance ambiguity.",
-      "next_action": "Choose one supported Node major from actual frontend/tool compatibility and remove or explicitly justify the Rust install.",
+      "next_action": "Keep toolchain alignment check current when adding new CI toolchain dependencies.",
       "non_goals": [
         "changing Python or uv versions",
         "adding toolchains",
@@ -247,13 +247,14 @@
       "target_slice": "DEVEX-02",
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
-      "review_due": "2026-07-31",
+      "review_due": "2026-08-15",
       "evidence_refs": [
         "mise.toml",
         ".github/workflows/browser.yml",
         ".github/workflows/security.yml"
       ],
-      "verification": "toolchain_alignment"
+      "verification": "toolchain_alignment",
+      "resolution_ref": "DEVEX-02"
     },
     {
       "id": "ENG-DEBT-0009",

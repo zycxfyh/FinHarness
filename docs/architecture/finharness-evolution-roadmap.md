@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 5 resolved; 5 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 6 resolved; 4 active | Active items below are prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -200,11 +200,10 @@ The following block is mechanically checked against the canonical register.
 <!-- active-debt:start -->
 | Debt | Priority | Paydown outcome | Order |
 | --- | --- | --- | --- |
-| ENG-DEBT-0008 | P1 | Unify Node policy; remove or justify Rust CI install. | 1 |
-| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 2 |
-| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 3 |
-| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 4 |
-| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 5 |
+| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 1 |
+| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 2 |
+| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 3 |
+| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 4 |
 <!-- active-debt:end -->
 
 Rules:
@@ -230,7 +229,7 @@ Do not squash away their logical boundaries during review.
 | --- | --- | --- | --- | --- | --- |
 | TRUTH-04 (complete locally) | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
 | SEC-BOUNDARY-01 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, cannot-graduate-to-live test, consumer/deletion criteria. | Complete: ENG-DEBT-0002 resolved; 19 boundary tests pass. | No paper feature, live path, or new route. |
-| DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | ENG-DEBT-0008 verifier passes; browser/security workflows green. | No dependency upgrades. |
+| DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | Complete: ENG-DEBT-0008 resolved; Node 22 unified, Rust removed. | No dependency upgrades. |
 
 Use `security-best-practices` for execution/API control changes and the installed `playwright` for frontend golden paths.
 
@@ -383,7 +382,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 5 active debts trend to zero without adding parallel registries;
+- 4 active debts trend to zero without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.
