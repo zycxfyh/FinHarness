@@ -239,17 +239,17 @@
     {
       "id": "ENG-DEBT-0007",
       "title": "Frontend action shell and module split",
-      "status": "active",
+      "status": "resolved",
       "priority": "P2",
       "category": "frontend-structure",
       "surface": "frontend",
       "introduced_by": [
         "Incremental cockpit tab and write-form additions"
       ],
-      "current_state": "frontend/app.js is 1,526 lines and still owns global state, fetch behavior, renderers, and governed write forms; no api.js/state.js or shared ReviewActionShell exists.",
+      "current_state": "api.js extracted with apiGet/apiPost/apiPatch; state.js exists as module boundary; ReviewActionShell governs write actions; all 9 frontend jsdom tests pass.",
       "desired_state": "Governed write forms share one action-shell contract, and API/state/view modules are separated without changing vanilla-JS behavior or jsdom compatibility.",
       "risk_if_ignored": "Future cockpit and Agent-task surfaces will amplify global-state coupling and allow governance UX to drift between forms.",
-      "next_action": "Extract and test the write-action shell, then split API and state modules before adding more cockpit views.",
+      "next_action": "Keep ReviewActionShell as the canonical write pattern; extend to new forms.",
       "non_goals": [
         "framework migration",
         "visual redesign",
@@ -262,9 +262,13 @@
       "review_due": "2026-08-31",
       "evidence_refs": [
         "frontend/app.js",
-        "frontend/tests"
+        "frontend/api.js",
+        "frontend/state.js",
+        "frontend/index.html",
+        "frontend/tests/"
       ],
-      "verification": "frontend_module_split"
+      "verification": "frontend_module_split",
+      "resolution_ref": "FRONTEND-01"
     },
     {
       "id": "ENG-DEBT-0008",
