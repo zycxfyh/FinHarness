@@ -129,15 +129,15 @@
     {
       "id": "ENG-DEBT-0004",
       "title": "Taskfile check layering",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "tooling",
       "surface": "taskfile",
       "introduced_by": ["Incremental additions to task check"],
-      "current_state": "task check still runs lint, typecheck, unit, integration, frontend, governance, rules, experiments, and eval smoke in one flat sequence.",
+      "current_state": "check:fast (lint+typecheck+unit), check:ci (merge gate with integration+frontend+governance+rules), and check:research (full suite with experiments+eval) expose cost boundaries; check is alias for check:ci.",
       "desired_state": "Named fast, CI, and research layers expose cost and dependency boundaries while the documented default preserves the intended merge gate.",
       "risk_if_ignored": "The standard signal becomes slower and more brittle, encouraging contributors to skip checks or misread research-tool failures as core regressions.",
-      "next_action": "Measure each current stage, define check:fast/check:ci/check:research without weakening CI, and document which aggregate is the merge gate.",
+      "next_action": "Keep check:ci as the documented merge gate; audit new checks for appropriate layer placement.",
       "non_goals": [
         "removing existing checks",
         "silently weakening CI",
@@ -149,7 +149,8 @@
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-15",
       "evidence_refs": ["Taskfile.yml"],
-      "verification": "task_check_layering"
+      "verification": "task_check_layering",
+      "resolution_ref": "DEVEX-01"
     },
     {
       "id": "ENG-DEBT-0005",

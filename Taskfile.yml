@@ -31,7 +31,30 @@ tasks:
       - pnpm install --frozen-lockfile
 
   check:
-    desc: Run the standard local verification suite
+    desc: Merge gate — run the CI-required verification suite (alias for check:ci)
+    cmds:
+      - task: check:ci
+
+  check:fast:
+    desc: Fast local feedback — lint, typecheck, unit tests (no integration, no frontend, no eval)
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  check:ci:
+    desc: CI merge gate — fast checks + integration + frontend + governance + rules
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+      - task: test:integration
+      - task: test:frontend
+      - task: governance:check
+      - task: rules:audit
+
+  check:research:
+    desc: Full suite including expensive experiments and eval smoke (not in CI fast path)
     cmds:
       - task: lint
       - task: typecheck
