@@ -689,12 +689,18 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+agent = []
+data = []
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mypy", specifier = ">=2.1.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "ruff", specifier = ">=0.15.14" },
 ]
+eval = []
+paper = []
+research = []
+security = []
 
 [[package]]
 name = "fonttools"
