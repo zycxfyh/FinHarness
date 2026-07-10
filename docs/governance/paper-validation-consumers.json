@@ -1,0 +1,213 @@
+{
+  "schema": "finharness.paper_validation_consumers.v1",
+  "status": "current",
+  "debt_ref": "ENG-DEBT-0002",
+  "surface_roots": [
+    "src/finharness/api/routes_paper_validation.py",
+    "src/finharness/statecore/paper_accounts.py",
+    "src/finharness/statecore/paper_order_tickets.py",
+    "src/finharness/statecore/paper_executions.py"
+  ],
+  "entries": [
+    {
+      "consumer_id": "api-router-registration",
+      "kind": "api_router_registration",
+      "path": "src/finharness/api/app.py",
+      "relation": "includes_router",
+      "migration_state": "delete_when_no_callers",
+      "deletion_gate": "remove_include_router_and_import"
+    },
+    {
+      "consumer_id": "statecore-init-re-exports",
+      "kind": "python_import",
+      "path": "src/finharness/statecore/__init__.py",
+      "relation": "re-exports_paper_models",
+      "migration_state": "archeology_only",
+      "deletion_gate": "remove_paper_re-exports_from_init"
+    },
+    {
+      "consumer_id": "statecore-models-definitions",
+      "kind": "domain_module_self",
+      "path": "src/finharness/statecore/models.py",
+      "relation": "defines_paper_model_tables",
+      "migration_state": "archeology_only",
+      "deletion_gate": "drop_paper_tables_and_model_classes"
+    },
+    {
+      "consumer_id": "statecore-store-table-creation",
+      "kind": "python_import",
+      "path": "src/finharness/statecore/store.py",
+      "relation": "creates_paper_tables",
+      "migration_state": "archeology_only",
+      "deletion_gate": "remove_paper_table_creation_from_store"
+    },
+    {
+      "consumer_id": "legacy-bridge-paper-projection",
+      "kind": "legacy_bridge",
+      "path": "src/finharness/execution/legacy_bridge.py",
+      "relation": "projects_paper_records_to_execution_kernel_objects",
+      "migration_state": "legacy_required",
+      "deletion_gate": "purge_all_paper_records_then_delete_bridge"
+    },
+    {
+      "consumer_id": "pretrade-packet-legacy-projection",
+      "kind": "legacy_bridge",
+      "path": "src/finharness/execution/pretrade_packet.py",
+      "relation": "projects_paper_tickets_to_canonical_pretrade_packets",
+      "migration_state": "remove_when_records_purged",
+      "deletion_gate": "purge_paper_tickets_then_delete_pretrade_projection"
+    },
+    {
+      "consumer_id": "test-paper-validation-legacy-boundary",
+      "kind": "test_reference",
+      "path": "tests/test_paper_validation_legacy_boundary.py",
+      "relation": "tests_paper_legacy_isolation_boundary",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "delete_when_paper_routes_and_models_are_removed"
+    },
+    {
+      "consumer_id": "test-action-intents",
+      "kind": "test_reference",
+      "path": "tests/test_action_intents.py",
+      "relation": "uses_paper_accounts_in_test_seeding",
+      "migration_state": "migrate_to_execution_kernel",
+      "deletion_gate": "replace_paper_seeding_with_execution_kernel_seeding"
+    },
+    {
+      "consumer_id": "test-legacy-route-headers",
+      "kind": "test_reference",
+      "path": "tests/test_legacy_route_headers.py",
+      "relation": "tests_deprecated_paper_route_headers",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "delete_when_paper_routes_are_removed"
+    },
+    {
+      "consumer_id": "test-pretrade-packet",
+      "kind": "test_reference",
+      "path": "tests/test_pretrade_packet.py",
+      "relation": "tests_paper_ticket_projection_to_pretrade_packet",
+      "migration_state": "delete_when_no_callers",
+      "deletion_gate": "delete_when_pretrade_packet_is_removed"
+    },
+    {
+      "consumer_id": "test-statecore-api",
+      "kind": "test_reference",
+      "path": "tests/test_statecore_api.py",
+      "relation": "tests_paper_write_endpoint_capability_gates",
+      "migration_state": "migrate_to_execution_kernel",
+      "deletion_gate": "replace_paper_write_tests_with_execution_kernel_tests"
+    },
+    {
+      "consumer_id": "test-debt-register",
+      "kind": "test_reference",
+      "path": "tests/test_debt_register.py",
+      "relation": "references_ENG-DEBT-0002_paper_validation",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "remove_ENG-DEBT-0002_reference_after_closure"
+    },
+    {
+      "consumer_id": "test-abstraction-inventory-execution",
+      "kind": "test_reference",
+      "path": "tests/test_abstraction_inventory_execution.py",
+      "relation": "classifies_paper_validation_routes_in_abstraction_inventory",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "remove_paper_classification_after_routes_deletion"
+    },
+    {
+      "consumer_id": "test-execution-legacy-bridge",
+      "kind": "test_reference",
+      "path": "tests/test_execution_legacy_bridge.py",
+      "relation": "tests_legacy_bridge_paper_projection",
+      "migration_state": "remove_when_records_purged",
+      "deletion_gate": "delete_when_legacy_bridge_is_removed"
+    },
+    {
+      "consumer_id": "test-system-catalog",
+      "kind": "test_reference",
+      "path": "tests/test_system_catalog.py",
+      "relation": "asserts_paper_validation_runtime_status_is_legacy",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "remove_paper_runtime_classification_after_deletion"
+    },
+    {
+      "consumer_id": "test-paper-validation-consumer-manifest",
+      "kind": "test_reference",
+      "path": "tests/test_paper_validation_consumer_manifest.py",
+      "relation": "contract_tests_paper_consumer_manifest_accuracy",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "archive_when_ENG-DEBT-0002_is_closed"
+    },
+    {
+      "consumer_id": "debt-register-entry",
+      "kind": "governance_reference",
+      "path": "docs/governance/debt-register.json",
+      "relation": "tracks_ENG-DEBT-0002_paper_validation_legacy_boundary",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "mark_resolved_when_all_isolation_gates_pass"
+    },
+    {
+      "consumer_id": "receipt-backed-write-registry",
+      "kind": "write_registry",
+      "path": "docs/governance/receipt-backed-write-registry.json",
+      "relation": "registers_paper_write_endpoints",
+      "migration_state": "remove_when_records_purged",
+      "deletion_gate": "remove_paper_entries_when_routes_are_deleted"
+    },
+    {
+      "consumer_id": "removal-ledger",
+      "kind": "governance_reference",
+      "path": "docs/governance/removal-ledger.yml",
+      "relation": "lists_delete-paper-validation-legacy_entry",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "execute_removal_when_all_consumers_are_deleted"
+    },
+    {
+      "consumer_id": "threat-model-paper-section",
+      "kind": "governance_reference",
+      "path": "docs/security/finharness-threat-model.md",
+      "relation": "documents_paper_validation_isolation_rules_and_gaps",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "update_threat_model_when_all_gaps_are_closed"
+    },
+    {
+      "consumer_id": "abstraction-inventory",
+      "kind": "architecture_reference",
+      "path": "docs/engineering/abstraction-inventory.yml",
+      "relation": "classifies_paper_validation_as_legacy_surface",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "remove_classification_after_surface_deletion"
+    },
+    {
+      "consumer_id": "debt-verifier-script",
+      "kind": "governance_reference",
+      "path": "scripts/verify_debt_register.py",
+      "relation": "verifies_paper_validation_legacy_boundary_gates",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "update_verifier_when_ENG-DEBT-0002_is_closed"
+    },
+    {
+      "consumer_id": "evolution-roadmap",
+      "kind": "architecture_reference",
+      "path": "docs/architecture/finharness-evolution-roadmap.md",
+      "relation": "tracks_paper_validation_debt_in_roadmap",
+      "migration_state": "close_debt_when_boundary_complete",
+      "deletion_gate": "remove_roadmap_entry_when_boundary_is_closed"
+    },
+    {
+      "consumer_id": "module-map",
+      "kind": "architecture_reference",
+      "path": "docs/architecture/module-map.md",
+      "relation": "references_paper_validation_modules",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "remove_references_after_deletion"
+    },
+    {
+      "consumer_id": "system-catalog",
+      "kind": "architecture_reference",
+      "path": "docs/architecture/system-catalog.yml",
+      "relation": "classifies_paper_validation_runtime_as_legacy",
+      "migration_state": "keep_until_routes_deleted",
+      "deletion_gate": "remove_runtime_classification_after_deletion"
+    }
+  ]
+}
