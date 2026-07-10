@@ -156,47 +156,34 @@ function renderInlineList(parent, title, values) {
   parent.append(list);
 }
 
-async function apiGet(path) {
-  const response = await fetch(path, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-  return response.json();
-}
-
-async function apiPost(path, payload) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = body.detail ? JSON.stringify(body.detail) : response.statusText;
-    throw new Error(`${response.status} ${detail}`);
-  }
-  return body;
-}
-
-async function apiPatch(path, payload) {
-  const response = await fetch(path, {
-    method: "PATCH",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = body.detail ? JSON.stringify(body.detail) : response.statusText;
-    throw new Error(`${response.status} ${detail}`);
-  }
-  return body;
-}
+// ── ReviewActionShell: shared governed write-action contract ──
+const ReviewActionShell = {
+  /** Wrap an API POST with standard governance assertions.
+   *  Every governed write must:
+   *  1. Carry non-claims declaring no execution authority.
+   *  2. Confirm the response returns execution_allowed=false.
+   *  3. Surface failures without side effects. */
+  async submit(endpoint, payload) {
+    const start = performance.now();
+    try {
+      const body = await apiPost(endpoint, payload);
+      if (body.execution_allowed !== false) {
+        throw new Error("Governed write returned unexpected execution_allowed");
+      }
+      if (body.non_claims && Array.isArray(body.non_claims)) {
+        console.debug("ReviewActionShell: governance non-claims", body.non_claims);
+      }
+      console.debug("ReviewActionShell: write completed", {
+        endpoint,
+        duration_ms: Math.round(performance.now() - start),
+      });
+      return body;
+    } catch (err) {
+      console.error("ReviewActionShell: write failed", { endpoint, error: err.message });
+      throw err;
+    }
+  },
+};
 
 function activate(view) {
   state.activeView = view;

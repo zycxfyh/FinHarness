@@ -18,6 +18,7 @@ function loadCockpitWindow() {
   // The cockpit fetches on init; disable it so loading app.js has no network side
   // effects (app.js catches the rejection).
   dom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
+  dom.window.eval(fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "app.js"), "utf-8"));
   return dom.window;
 }
