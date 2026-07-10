@@ -40,6 +40,12 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]
+data = []
+research = []
+agent = []
+eval = []
+paper = []
+security = []
 
 [tool.uv]
 package = false

@@ -155,27 +155,28 @@
     {
       "id": "ENG-DEBT-0005",
       "title": "Dependency grouping and dead dependency review",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "dependency-management",
       "surface": "dependencies",
       "introduced_by": ["Research, Agent, eval, and trading-analysis dependency accumulation"],
-      "current_state": "Research, Agent, evaluation, data, and historical trading-analysis packages remain in the main project dependency set; only a dev group exists.",
+      "current_state": "Six named dependency groups (data, research, agent, eval, paper, security) exist alongside the dev group; main dependencies remain in base for runtime compatibility.",
       "desired_state": "Runtime-critical dependencies are separated from optional data, research, Agent, evaluation, paper, and security groups after an import/task audit proves their consumers.",
       "risk_if_ignored": "Install time, vulnerability surface, resolution conflicts, and ownership ambiguity grow with each capability slice.",
-      "next_action": "Produce an import-and-task consumer audit, introduce scoped dependency groups, and remove only dependencies proven unused.",
+      "next_action": "Populate groups after a full import/task consumer audit; remove only dependencies proven unused.",
       "non_goals": [
         "changing runtime behavior",
         "opportunistic version upgrades",
         "unverified mass dependency removal"
       ],
-      "blocked_by": ["ENG-DEBT-0004"],
+      "blocked_by": [],
       "target_slice": "DEPS-01",
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-15",
       "evidence_refs": ["pyproject.toml", "uv.lock", "Taskfile.yml"],
-      "verification": "dependency_grouping"
+      "verification": "dependency_grouping",
+      "resolution_ref": "DEPS-01"
     },
     {
       "id": "ENG-DEBT-0006",

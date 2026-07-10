@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 7 resolved; 3 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 8 resolved; 2 active | Active items below are prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -200,9 +200,8 @@ The following block is mechanically checked against the canonical register.
 <!-- active-debt:start -->
 | Debt | Priority | Paydown outcome | Order |
 | --- | --- | --- | --- |
-| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 1 |
-| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 2 |
-| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 3 |
+| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 1 |
+| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 2 |
 <!-- active-debt:end -->
 
 Rules:
@@ -237,7 +236,7 @@ Use `security-best-practices` for execution/API control changes and the installe
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | DEVEX-01 | Classical tooling | stage timing evidence | `check:fast`, `check:ci`, `check:research`; documented merge aggregate. | Complete: ENG-DEBT-0004 resolved; 3 named layers, check aliases check:ci. | No test deletion/quarantine. |
-| DEPS-01 | Classical packaging | DEVEX-01 | Import/task consumer inventory; scoped data/research/agent/eval/paper/security groups. | ENG-DEBT-0005 verifier passes; clean installs run owned tasks. | No speculative upgrades or removals. |
+| DEPS-01 | Classical packaging | DEVEX-01 | Import/task consumer inventory; scoped data/research/agent/eval/paper/security groups. | Complete: ENG-DEBT-0005 resolved; 6 named groups exist. | No speculative upgrades or removals. |
 
 The purpose is ownership, not a smaller dependency count at any cost.
 
@@ -381,7 +380,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 3 active debts trend to zero without adding parallel registries;
+- 2 active debts trend to zero without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.
