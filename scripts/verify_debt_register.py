@@ -53,7 +53,9 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
     routes = _read(root, "src/finharness/api/routes_paper_validation.py")
     threat_model = _read(root, "docs/security/finharness-threat-model.md")
     boundary_test = root / "tests" / "test_paper_validation_legacy_boundary.py"
+    consumer_audit = root / "docs" / "governance" / "paper-validation-consumers.json"
     removal_ledger = _read(root, "docs/governance/removal-ledger.yml")
+    boundary_text = boundary_test.read_text(encoding="utf-8") if boundary_test.exists() else ""
     return all(
         (
             'tags=["paper-validation", "legacy"]' in routes,
@@ -61,6 +63,9 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
             "WriteCapabilityDependency" in routes,
             "## Paper Validation Legacy Isolation Boundary" in threat_model,
             boundary_test.exists(),
+            consumer_audit.exists(),
+            "test_paper_modules_have_no_execution_or_network_imports" in boundary_text,
+            "test_runtime_consumers_match_manifest" in boundary_text,
             "delete-paper-validation-legacy" in removal_ledger,
         )
     )
@@ -90,28 +95,97 @@ def _receipt_backed_write_registry(root: Path) -> bool:
 
 def _task_check_layering(root: Path) -> bool:
     taskfile = _read(root, "Taskfile.yml")
-    layers = ("check:fast", "check:ci", "check:research")
-    return all(re.search(rf"^  {re.escape(layer)}:$", taskfile, re.MULTILINE) for layer in layers)
+
+    def dependencies(task_name: str) -> list[str]:
+        match = re.search(
+            rf"^  {re.escape(task_name)}:\n(?P<body>.*?)(?=^  \S[^\n]*:\n|\Z)",
+            taskfile,
+            re.MULTILINE | re.DOTALL,
+        )
+        if match is None:
+            return []
+        return re.findall(r"^\s+- task:\s+([^\s]+)\s*$", match.group("body"), re.MULTILINE)
+
+    return all(
+        (
+            dependencies("check") == ["check:ci"],
+            dependencies("check:fast") == ["lint", "typecheck", "test"],
+            dependencies("check:ci")
+            == [
+                "check:fast",
+                "test:integration",
+                "test:frontend",
+                "governance:check",
+                "rules:audit",
+            ],
+            dependencies("check:research") == ["check:ci", "experiments", "eval:smoke"],
+        )
+    )
 
 
 def _dependency_grouping(root: Path) -> bool:
     project = tomllib.loads(_read(root, "pyproject.toml"))
-    groups = set(project.get("dependency-groups", {}))
+    groups = project.get("dependency-groups", {})
     required_groups = {"data", "research", "agent", "eval", "paper", "security"}
-    return required_groups.issubset(groups)
+    audit_path = root / "docs" / "governance" / "dependency-consumers.json"
+    if not required_groups.issubset(groups) or not audit_path.exists():
+        return False
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    return all(
+        (
+            audit.get("status") == "current",
+            audit.get("debt_ref") == "ENG-DEBT-0005",
+            all(groups[name] for name in required_groups),
+            set(audit.get("groups", {})) == required_groups,
+        )
+    )
 
 
 def _statecore_model_split(root: Path) -> bool:
     extracted = root / "src" / "finharness" / "statecore" / "personal_finance_models.py"
+    base = root / "src" / "finharness" / "statecore" / "model_base.py"
+    semantic_test = root / "tests" / "test_statecore_model_split.py"
     models = _read(root, "src/finharness/statecore/models.py")
-    return extracted.exists() and "personal_finance_models" in models
+    extracted_text = extracted.read_text(encoding="utf-8") if extracted.exists() else ""
+    return all(
+        (
+            extracted.exists(),
+            base.exists(),
+            semantic_test.exists(),
+            "from finharness.statecore.personal_finance_models import" in models,
+            "from finharness.statecore.model_base import" in extracted_text,
+            "from finharness.statecore.models import" not in extracted_text,
+        )
+    )
 
 
 def _frontend_module_split(root: Path) -> bool:
     frontend = root / "frontend"
-    required_files = (frontend / "api.js", frontend / "state.js")
-    js_text = "\n".join(path.read_text(encoding="utf-8") for path in frontend.glob("*.js"))
-    return all(path.exists() for path in required_files) and "ReviewActionShell" in js_text
+    required_files = (frontend / "api.js", frontend / "state.js", frontend / "actions.js")
+    if not all(path.exists() for path in required_files):
+        return False
+    app = _read(root, "frontend/app.js")
+    state = _read(root, "frontend/state.js")
+    actions = _read(root, "frontend/actions.js")
+    index = _read(root, "frontend/index.html")
+    semantic_test = root / "frontend" / "tests" / "module_boundaries.test.cjs"
+    script_positions = [
+        index.find(path) for path in ("./api.js", "./state.js", "./actions.js", "./app.js")
+    ]
+    return all(
+        (
+            "window.FinHarness.state = Object.seal" in state,
+            "placeholder" not in state,
+            "const state = window.FinHarness.state" in app,
+            "window.FinHarness.ReviewActionShell" in actions,
+            "await apiPost(" not in app,
+            "await apiPatch(" not in app,
+            len(re.findall(r"ReviewActionShell\.(?:post|patch)\(", app)) == 3,
+            all(position >= 0 for position in script_positions),
+            script_positions == sorted(script_positions),
+            semantic_test.exists(),
+        )
+    )
 
 
 def _toolchain_alignment(root: Path) -> bool:

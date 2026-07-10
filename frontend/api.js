@@ -1,4 +1,6 @@
-// FinHarness Cockpit — API helpers (global scope).
+// FinHarness Cockpit — API helper namespace.
+
+(() => {
 
 async function apiGet(path) {
   const response = await fetch(path, { headers: { accept: "application/json" } });
@@ -41,3 +43,7 @@ async function apiPatch(path, payload) {
   }
   return body;
 }
+
+window.FinHarness = window.FinHarness || {};
+window.FinHarness.api = Object.freeze({ apiGet, apiPost, apiPatch });
+})();

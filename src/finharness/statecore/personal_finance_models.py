@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import Index
 from sqlmodel import Field
 
-from finharness.statecore.models import (
+from finharness.statecore.model_base import (
     SourcedStateCoreBase,
     StateCoreBase,
     json_dict_column,

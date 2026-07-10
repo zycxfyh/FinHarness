@@ -1,8 +1,6 @@
-const state = {
-  activeView: "overview",
-  selectedProposalId: null,
-  proposalFilter: "all",
-};
+const state = window.FinHarness.state;
+const { apiGet } = window.FinHarness.api;
+const ReviewActionShell = window.FinHarness.ReviewActionShell;
 
 const productNonClaims = [
   "Read-only cockpit summary.",
@@ -155,35 +153,6 @@ function renderInlineList(parent, title, values) {
   }
   parent.append(list);
 }
-
-// ── ReviewActionShell: shared governed write-action contract ──
-const ReviewActionShell = {
-  /** Wrap an API POST with standard governance assertions.
-   *  Every governed write must:
-   *  1. Carry non-claims declaring no execution authority.
-   *  2. Confirm the response returns execution_allowed=false.
-   *  3. Surface failures without side effects. */
-  async submit(endpoint, payload) {
-    const start = performance.now();
-    try {
-      const body = await apiPost(endpoint, payload);
-      if (body.execution_allowed !== false) {
-        throw new Error("Governed write returned unexpected execution_allowed");
-      }
-      if (body.non_claims && Array.isArray(body.non_claims)) {
-        console.debug("ReviewActionShell: governance non-claims", body.non_claims);
-      }
-      console.debug("ReviewActionShell: write completed", {
-        endpoint,
-        duration_ms: Math.round(performance.now() - start),
-      });
-      return body;
-    } catch (err) {
-      console.error("ReviewActionShell: write failed", { endpoint, error: err.message });
-      throw err;
-    }
-  },
-};
 
 function activate(view) {
   state.activeView = view;
@@ -599,7 +568,7 @@ function renderAttestationForm(parent, proposalId) {
     event.preventDefault();
     const data = new FormData(form);
     try {
-      await apiPost(`/proposals/${proposalId}/attest`, {
+      await ReviewActionShell.post(`/proposals/${proposalId}/attest`, {
         decision: data.get("decision"),
         attester: data.get("attester"),
         reason: data.get("reason"),
@@ -667,7 +636,7 @@ function renderScaffoldRevisionForm(parent, proposalId) {
     }
     const data = new FormData(form);
     try {
-      await apiPatch(`/proposals/${proposalId}/decision-scaffold`, {
+      await ReviewActionShell.patch(`/proposals/${proposalId}/decision-scaffold`, {
         attester: data.get("attester"),
         reason: data.get("reason"),
         decision_scaffold: {
@@ -897,7 +866,7 @@ function renderReviewEventForm(parent, proposalId) {
       return; // explicit confirm required; no write on cancel
     }
     try {
-      await apiPost(`/proposals/${proposalId}/review-events`, {
+      await ReviewActionShell.post(`/proposals/${proposalId}/review-events`, {
         kind,
         attester: data.get("attester"),
         reason: data.get("reason"),

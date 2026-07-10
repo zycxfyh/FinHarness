@@ -51,7 +51,7 @@ next work without pretending it has shipped.
 | --- | --- | --- | --- |
 | L0 Data Ingestion & Connectors | next | `DataConnector`, `RawDataArtifact`, `NormalizedDataFrame`, `DataReceipt`, `DataSourceRegistry` | First target after PR 103. |
 | L1 Data Lake / Catalog / Quality | next | `DataCatalog`, `DataQualityReport`, `FieldSchema`, `FreshnessPolicy`, `LineageGraph`, `ProviderFallback` | Must expose source, provider, freshness, coverage, missing fields, and point-in-time safety. |
-| L2 State Core / Capital Graph | current + planned | `PersonalCapitalGraph`, richer capital-state read models | State Core exists; graph language and richer queries are planned. |
+| L2 State Core / Capital Graph | current + planned | `statecore/model_base.py`, bounded-context model modules, `PersonalCapitalGraph`, richer capital-state read models | Shared model primitives and personal-finance models are split; higher-coupling contexts and graph queries remain planned. |
 | L3 Research Workspace | planned | `InstrumentProfile`, `EvidencePack`, `ResearchMemo`, watchlist, instrument page, filing reader | Research evidence exists, but workspace artifacts/pages are planned. |
 | L4 Scenario / What-if Engine | planned | `Scenario`, `WhatIfRun`, `PortfolioDelta`, `RiskImpactReport`, `DoNothingBaseline`, `ScenarioComparison` | Current action simulation is qualitative; scenario comparison is planned. |
 | L5 Simulated Execution / Paper Review | current + planned | `PaperPerformanceReview`, `ScenarioVsExecutionComparison`, `PaperPnLSeries`, `PaperLessonCandidate` | Canonical Execution Kernel provides the simulated lifecycle; the old PaperValidation runtime is legacy. Performance/review closure is planned. |
@@ -64,7 +64,7 @@ next work without pretending it has shipped.
 | Surface | Status | Files | Notes |
 | --- | --- | --- | --- |
 | Local API | current | `api/app.py` + routers | FastAPI, trace header, static cockpit mount. |
-| Cockpit frontend | current | `frontend/index.html`, `frontend/app.js`, `frontend/styles.css` | Vanilla JS product surface; review-only affordances. |
+| Cockpit frontend | current | `frontend/index.html`, `api.js`, `state.js`, `actions.js`, `app.js`, `styles.css` | Vanilla JS product surface; governed review writes use one fail-closed action shell. |
 | CLI tasks | current | `Taskfile.yml`, `scripts/*.py` | Use `task --list` for live list; `docs:current-check` guards current docs. |
 
 ## Tests And Checks
@@ -72,6 +72,9 @@ next work without pretending it has shipped.
 | Layer | Entry point |
 | --- | --- |
 | Standard suite | `task check` |
+| Fast local suite | `task check:fast` |
+| CI merge suite | `task check:ci` |
+| Research-complete suite | `task check:research` |
 | Fast Python checks | `task test` |
 | Frontend DOM checks | `task test:frontend` |
 | Optional browser smoke | `task test:browser` |

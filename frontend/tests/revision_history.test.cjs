@@ -19,6 +19,8 @@ function loadCockpitWindow() {
   // effects (app.js catches the rejection).
   dom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8"));
+  dom.window.eval(fs.readFileSync(path.join(frontendDir, "state.js"), "utf-8"));
+  dom.window.eval(fs.readFileSync(path.join(frontendDir, "actions.js"), "utf-8"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "app.js"), "utf-8"));
   return dom.window;
 }
