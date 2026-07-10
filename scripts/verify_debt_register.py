@@ -151,10 +151,21 @@ def _execution_abstraction_inventory(root: Path) -> bool:
         "PositionDelta",
         "ReconciliationReport",
         "Execution Services",
+        "Execution Capabilities",
+        "BrokerAdapter Registry",
         "SimulatedBrokerAdapter",
         "Execution Legacy Bridge",
+        "execution_routes",
     )
-    return all(f"- name: {name}" in inventory for name in required_names)
+    stale_targets = (
+        "/execution/pretrade-packets/",
+        "execution/paper/",
+        "wrapper_first",
+        "bridge_read_model_first",
+    )
+    return all(f"- name: {name}" in inventory for name in required_names) and not any(
+        target in inventory for target in stale_targets
+    )
 
 
 def _execution_capability_enforcement(root: Path) -> bool:

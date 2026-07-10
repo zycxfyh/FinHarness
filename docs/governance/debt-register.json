@@ -256,15 +256,15 @@
     {
       "id": "ENG-DEBT-0009",
       "title": "Execution Kernel abstraction inventory alignment",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "architecture-inventory",
       "surface": "architecture",
       "introduced_by": ["Execution Kernel PRs #116-#124", "DEBT-REG-001"],
-      "current_state": "The abstraction inventory was refreshed for Agent Cognition, but it still omits the canonical Execution Kernel models and service/adapter boundary and continues to describe legacy paper objects as a future execution migration.",
+      "current_state": "The abstraction inventory classifies all nine canonical Execution Kernel facts, services, enforced capabilities, adapter boundary, simulated adapter, routes, and legacy bridge. Legacy ActionIntent/PaperValidation entries point to current bridge/delete paths instead of nonexistent future execution routes.",
       "desired_state": "Canonical execution models, services, routes, adapter, and legacy bridge are classified; legacy ActionIntent/PaperValidation artifacts point to the already-existing kernel and deletion conditions.",
       "risk_if_ignored": "Architecture review can classify new work against a pre-migration map and accidentally extend legacy objects or duplicate canonical execution concepts.",
-      "next_action": "Rebase the abstraction inventory on the canonical system catalog and add current-fact assertions for all Execution Kernel artifacts.",
+      "next_action": "Keep inventory changes in the same slice as canonical system additions/removals and preserve no-new-callers semantics for legacy execution-shaped artifacts.",
       "non_goals": [
         "new execution runtime objects",
         "legacy receipt deletion",
@@ -278,9 +278,11 @@
       "evidence_refs": [
         "docs/engineering/abstraction-inventory.yml",
         "src/finharness/execution/services.py",
-        "src/finharness/statecore/execution_models.py"
+        "src/finharness/statecore/execution_models.py",
+        "tests/test_abstraction_inventory_execution.py"
       ],
-      "verification": "execution_abstraction_inventory"
+      "verification": "execution_abstraction_inventory",
+      "resolution_ref": "TRUTH-04 / tests.test_abstraction_inventory_execution"
     },
     {
       "id": "ENG-DEBT-0010",

@@ -3,7 +3,9 @@
 状态: v1 (2026-07-08)
 目标: 把 FinHarness 从 object-heavy agentic codebase 改造成 abstraction-classified agentic codebase。
 
-配套 inventory: [abstraction-inventory.yml](./abstraction-inventory.yml) — 52 个现有 artifacts 的分类归位。
+配套 inventory: [abstraction-inventory.yml](./abstraction-inventory.yml) — 当前
+artifact 分类以该 machine-readable inventory 及其 current-fact tests 为准，
+不再手写固定数量。
 
 ## 0. 核心诊断
 

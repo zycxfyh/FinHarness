@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 3 resolved; 7 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 4 resolved; 6 active | Active items below are prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -198,20 +198,19 @@ The following block is mechanically checked against the canonical register.
 <!-- active-debt:start -->
 | Debt | Priority | Paydown outcome | Order |
 | --- | --- | --- | --- |
-| ENG-DEBT-0009 | P1 | Rebase abstraction inventory on canonical Execution Kernel. | 1 |
-| ENG-DEBT-0002 | P1 | Threat-model and deletion boundary for legacy paper writes. | 2 |
-| ENG-DEBT-0008 | P1 | Unify Node policy; remove or justify Rust CI install. | 3 |
-| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 4 |
-| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 5 |
-| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 6 |
-| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 7 |
+| ENG-DEBT-0002 | P1 | Threat-model and deletion boundary for legacy paper writes. | 1 |
+| ENG-DEBT-0008 | P1 | Unify Node policy; remove or justify Rust CI install. | 2 |
+| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 3 |
+| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 4 |
+| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 5 |
+| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 6 |
 <!-- active-debt:end -->
 
 Rules:
 
-- Items 1–3 block new architecture/security claims.
-- Items 4–5 block dependency expansion and research/runtime coupling.
-- Items 6–7 block further model and cockpit surface growth, but not the
+- Items 1–2 block new security/toolchain claims.
+- Items 3–4 block dependency expansion and research/runtime coupling.
+- Items 5–6 block further model and cockpit surface growth, but not the
   isolated Agent Loop contract work in Phase 3.
 - A debt is closed only when `scripts/verify_debt_register.py` agrees.
 
@@ -219,15 +218,16 @@ Rules:
 
 ### Phase 0 — Truth and execution control (complete locally)
 
-TRUTH-01/02/03, EXEC-01, and LOOP-01 establish truthful status, one debt
-source, service-enforced execution capabilities, and a semantic closure gate.
+TRUTH-01/02/03/04, EXEC-01, and LOOP-01 establish truthful status, one debt
+source, current abstraction placement, service-enforced execution capabilities,
+and a semantic closure gate.
 Do not squash away their logical boundaries during review.
 
 ### Phase 1 — Architecture and safety stabilization
 
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
-| TRUTH-04 | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
+| TRUTH-04 (complete locally) | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
 | SEC-BOUNDARY-01 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, cannot-graduate-to-live test, consumer/deletion criteria. | ENG-DEBT-0002 verifier passes; threat-model review. | No paper feature, live path, or new route. |
 | DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | ENG-DEBT-0008 verifier passes; browser/security workflows green. | No dependency upgrades. |
 
@@ -383,7 +383,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 7 active debts trend to zero without adding parallel registries;
+- 6 active debts trend to zero without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.
