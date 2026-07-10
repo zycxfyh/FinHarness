@@ -69,15 +69,15 @@
     {
       "id": "ENG-DEBT-0002",
       "title": "Paper-validation legacy isolation and removal boundary",
-      "status": "active",
+      "status": "resolved",
       "priority": "P1",
       "category": "governance-boundary",
       "surface": "paper-validation",
       "introduced_by": ["PR #102 paper validation routes", "Execution Kernel migration #116-#151"],
-      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated. They still expose order/account-shaped compatibility writes, and the threat model does not yet contain a dedicated legacy-isolation and deletion boundary for this surface.",
+      "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated. The threat model includes a dedicated legacy-isolation and deletion boundary with consumer audit, 7 isolation rules, 6 deletion criteria, and 20 named CHECK constraints verified at the database level.",
       "desired_state": "The threat model and executable boundary tests prohibit real adapters, credentials, and live graduation through the legacy surface; deletion criteria identify consumers and historical-read obligations without expanding the legacy API.",
       "risk_if_ignored": "Future contributors may extend a legacy compatibility chain into a second execution system or treat paper-shaped objects as a broker integration scaffold.",
-      "next_action": "Apply the security threat-model workflow to the legacy paper surface, add a cannot-graduate-to-live boundary test, and record deletion criteria.",
+      "next_action": "Keep boundary tests and removal ledger current; delete paper surface only when all 6 deletion criteria are met.",
       "non_goals": [
         "live broker integration",
         "paper-to-live migration path",
@@ -87,13 +87,15 @@
       "target_slice": "SEC-BOUNDARY-01",
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
-      "review_due": "2026-07-31",
+      "review_due": "2026-08-15",
       "evidence_refs": [
         "src/finharness/api/routes_paper_validation.py",
         "docs/security/finharness-threat-model.md",
-        "tests/test_legacy_route_headers.py"
+        "tests/test_paper_validation_legacy_boundary.py",
+        "docs/governance/removal-ledger.yml"
       ],
-      "verification": "paper_validation_legacy_boundary"
+      "verification": "paper_validation_legacy_boundary",
+      "resolution_ref": "SEC-BOUNDARY-01"
     },
     {
       "id": "ENG-DEBT-0003",

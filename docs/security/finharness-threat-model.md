@@ -251,12 +251,155 @@ Non-capabilities:
 | `data/research/` | Strategy/method/reference asset inputs | TM-003 |
 | `data/security/` | Security policy inputs and fuzz corpus | TM-002, TM-006 |
 
+## Paper Validation Legacy Isolation Boundary
+
+Status: active (SEC-BOUNDARY-01)
+Debt: ENG-DEBT-0002
+Last reviewed: 2026-07-10
+
+### Scope
+
+The PaperValidation surface comprises four legacy StateCore models with
+associated API routes, domain modules, and receipt-backed writes:
+
+| Component | Type | Location |
+| --- | --- | --- |
+| `PaperAccount` | SQLModel table | `statecore/models.py` |
+| `PaperOrderTicketCandidate` | SQLModel table | `statecore/models.py` |
+| `PaperExecutionReceipt` | SQLModel table | `statecore/models.py` |
+| `PaperPosition` | SQLModel table | `statecore/models.py` |
+| Paper validation routes (6 endpoints) | FastAPI router | `api/routes_paper_validation.py` |
+| `paper_accounts.py` | Domain module | `statecore/paper_accounts.py` |
+| `paper_order_tickets.py` | Domain module | `statecore/paper_order_tickets.py` |
+| `paper_executions.py` | Domain module | `statecore/paper_executions.py` |
+
+### Threat Model
+
+**TM-PV-001: Live execution graduation through legacy surface.**
+
+A future contributor could add a `broker_order_id`, `venue`, or `execution_allowed`
+field to a paper model, create a broker-adapter path through the paper routes, or
+wire the paper ticket/execution flow into the Execution Kernel's
+submit_order/SimulatedBrokerAdapter path.
+
+Existing controls:
+- All four models have CHECK constraints (`live_execution_allowed = 0`,
+  `real_cash_at_risk = 0`, `submitted_to_broker = 0`, `authority_transition = 0`)
+  and Pydantic field validators that reject `True` for these fields.
+- The `_live_or_submit_marker()` function scans ticket and execution input dicts
+  for prohibited keys (`broker_order_id`, `execution_allowed`, `live`, `venue`,
+  `fix_tags`, etc.) and rejects at the domain boundary.
+- All API response models hardcode `live_execution_allowed: False`,
+  `real_cash_at_risk: False`, `submitted_to_broker: False`.
+- The router is `deprecated=True` with `tags=["paper-validation", "legacy"]` and
+  emits `X-FinHarness-Legacy-Surface` headers.
+- All write endpoints require `WriteCapabilityDependency`.
+- The legacy bridge classifies `PaperOrderTicketCandidate` and
+  `PaperExecutionReceipt` as deletion candidates, projected into canonical
+  Execution Kernel objects.
+
+Gaps: no dedicated boundary test proves these constraints end-to-end against a
+real database, a live FastAPI instance, and the broker adapter registry.
+
+**TM-PV-002: Second execution system through legacy extension.**
+
+A contributor could extend the paper ticket/execution chain with new fields
+(real account credentials, broker routing, FIX tag support) and treat the paper
+surface as a scaffold for a hidden second broker integration path.
+
+Existing controls: the canonical Execution Kernel (`/execution/*` routes,
+`execution/services.py`, `execution/broker.py`) is documented as the only
+execution path. The roadmap explicitly prohibits new paper-validation features
+and the debt register lists this as non-goal.
+
+Gaps: no import-level guard prevents paper modules from importing broker adapter
+classes or execution kernel commands.
+
+**TM-PV-003: Silent consumer bypass.**
+
+A developer could route a new cockpit tab, Agent tool, or automation directly to
+paper endpoints without realizing they are deprecated and structurally different
+from the canonical execution pipeline.
+
+Existing controls: the `deprecated=True` tag and legacy headers inform callers;
+the legacy bridge separates paper projections from execution facts.
+
+Gaps: the consumer inventory exists only in the roadmap and debt register, not in
+a machine-checkable consumer audit.
+
+### Isolation Rules (contract, not convention)
+
+1. PaperValidation models must never add `broker_order_id`, `venue`,
+   `fix_tags`, `credential_ref`, `broker_connection_id`, or any field that
+   implies live brokerage.
+2. PaperValidation routes must never import from `finharness.execution.broker`
+   or `finharness.execution.adapters`.
+3. PaperValidation routes must never call `submit_order`, `register_broker_adapter`,
+   or any Execution Kernel command.
+4. PaperValidation domain modules must never import `BrokerConnection`,
+   `ExecutionAccount`, `ExecutionOrder`, or `SimulatedBrokerAdapter`.
+5. Every paper model CHECK constraint `live_execution_allowed = 0` must remain
+   in place and verified by a database-level test.
+6. Every paper API response `live_execution_allowed: False` must remain hardcoded
+   and verified by an HTTP-level test.
+7. The paper ticket validator `_live_or_submit_marker` must continue to reject
+   live/broker-submit keys and be verified by a unit test.
+
+### Consumer Audit
+
+Direct consumers of the PaperValidation surface (`2026-07-10`):
+
+| Consumer | Type | Location | Migration path |
+| --- | --- | --- | --- |
+| `routes_paper_validation.py` | API router | `api/routes_paper_validation.py` | Delete when no callers remain. |
+| `api/app.py` | Router registration | `api/app.py:142` | Remove `include_router` line. |
+| `paper_accounts.py` | Domain module | `statecore/paper_accounts.py` | Archeology-only. |
+| `paper_order_tickets.py` | Domain module | `statecore/paper_order_tickets.py` | Archeology-only. |
+| `paper_executions.py` | Domain module | `statecore/paper_executions.py` | Archeology-only. |
+| `legacy_bridge.py` | Separation bridge | `execution/legacy_bridge.py` | Still needed while paper records exist. |
+| `pretrade_packet.py` | Legacy projection | `execution/pretrade_packet.py` | Delete when paper records are purged. |
+| `test_action_intents.py` | Test client | `tests/test_action_intents.py` | Replace with Execution Kernel API tests. |
+| `test_legacy_route_headers.py` | Deprecation test | `tests/test_legacy_route_headers.py` | Keep until routes are deleted. |
+| `test_pretrade_packet.py` | Legacy projection test | `tests/test_pretrade_packet.py` | Delete when pretrade_packet is deleted. |
+| `test_receipt_backed_write_registry.py` | Write registry | `tests/test_receipt_backed_write_registry.py` | Remove paper entries when routes are deleted. |
+| `abstraction-inventory.yml` | Architecture inventory | `docs/engineering/abstraction-inventory.yml` | Keep classification; point to deletion conditions. |
+| `debt-register.json` | Governance | `docs/governance/debt-register.json` | Close ENG-DEBT-0002 when boundary is complete. |
+| `receipt-backed-write-registry.json` | Write registry | `docs/governance/receipt-backed-write-registry.json` | Remove paper entries when routes are deleted. |
+
+### Deletion Criteria
+
+PaperValidation may be deleted when ALL of the following are true:
+
+1. **No API callers.** Every external or internal HTTP client has migrated to
+   canonical `/execution/*` endpoints. Verified by zero-paper-route test.
+2. **No Agent tool surface.** No Agent tool or skill references paper endpoints.
+   Verified by grep on Agent tool definitions.
+3. **No frontend forms.** No cockpit tab or JS module posts to paper routes.
+   Verified by grep on `frontend/`.
+4. **Historical receipts preserved.** All `paper-executions/`, `paper-order-tickets/`,
+   and `paper-accounts/` receipt files remain under `data/receipts/` as
+   archeological evidence. No new receipts of these kinds are created.
+   Verified by receipt-kind audit.
+5. **Legacy bridge updated.** The legacy bridge continues to project existing
+   paper records into canonical Execution Kernel facts for historical queries.
+   New bridge runs do not find unprocessed paper records.
+6. **Abstraction inventory records deletion.** The inventory classifies
+   PaperValidation as `status: removed` with deletion date and PR reference.
+
+### Non-requirements (explicit deferral)
+
+- No live broker integration through paper surface.
+- No paper-to-live migration path.
+- No new paper-validation product features.
+- No schema migration of paper tables to execution tables.
+
 ## Quality Check
 
 - Entry points covered: Taskfile, API, proposal/review commands, research
   assets, external data, receipts, GitHub workflows, archived live-trading code.
 - Trust boundaries covered in threats: operator input, provider credentials,
-  external data, asset JSON, receipts, CI/supply chain, archive/current split.
+  external data, asset JSON, receipts, CI/supply chain, archive/current split,
+  legacy paper-validation isolation.
 - Runtime vs CI/dev separated: Capital OS runtime is modeled separately from
   GitHub workflows and release gates.
 - Non-claim: this threat model does not authorize live trading, investment

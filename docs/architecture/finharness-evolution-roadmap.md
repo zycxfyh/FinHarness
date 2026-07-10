@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 4 resolved; 6 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 5 resolved; 5 active | Active items below are prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -129,8 +129,10 @@ the result, hydrate the workspace, or make the result searchable by work ID.
 | `33fadd6` | EXEC-01 | Enforced immutable execution capabilities at service/command/API boundaries. |
 | `fcb4d86` | LOOP-01 | Added the intentionally red 15-contract Agent closure gate. |
 
-These commits are local and stacked on `origin/main`; publication remains a
-separate user decision.
+These commits are local and stacked on `origin/main` (latest: `d92407d`).
+SEC-BOUNDARY-01 (ENG-DEBT-0002) is prepared locally with the threat-model
+section, boundary tests, removal ledger, and debt-register resolution.
+Publication remains a separate user decision.
 
 ## 4. Responsibility Model
 
@@ -198,12 +200,11 @@ The following block is mechanically checked against the canonical register.
 <!-- active-debt:start -->
 | Debt | Priority | Paydown outcome | Order |
 | --- | --- | --- | --- |
-| ENG-DEBT-0002 | P1 | Threat-model and deletion boundary for legacy paper writes. | 1 |
-| ENG-DEBT-0008 | P1 | Unify Node policy; remove or justify Rust CI install. | 2 |
-| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 3 |
-| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 4 |
-| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 5 |
-| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 6 |
+| ENG-DEBT-0008 | P1 | Unify Node policy; remove or justify Rust CI install. | 1 |
+| ENG-DEBT-0004 | P1 | Measured fast/CI/research check layers without weakening merge gates. | 2 |
+| ENG-DEBT-0005 | P1 | Consumer-audited dependency groups after check layering. | 3 |
+| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 4 |
+| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 5 |
 <!-- active-debt:end -->
 
 Rules:
@@ -228,11 +229,10 @@ Do not squash away their logical boundaries during review.
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | TRUTH-04 (complete locally) | Classical governance | TRUTH-02 | Execution models/services/routes/adapter/bridge classified in abstraction inventory; legacy targets point to existing kernel. | ENG-DEBT-0009 verifier passes; docs-current green. | No runtime refactor. |
-| SEC-BOUNDARY-01 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, cannot-graduate-to-live test, consumer/deletion criteria. | ENG-DEBT-0002 verifier passes; threat-model review. | No paper feature, live path, or new route. |
+| SEC-BOUNDARY-01 | Classical + Human security | TRUTH-04 | Dedicated paper-legacy trust boundary, cannot-graduate-to-live test, consumer/deletion criteria. | Complete: ENG-DEBT-0002 resolved; 19 boundary tests pass. | No paper feature, live path, or new route. |
 | DEVEX-02 | Classical toolchain | none | One Node major across mise/CI; Rust removed or tied to a named consumer. | ENG-DEBT-0008 verifier passes; browser/security workflows green. | No dependency upgrades. |
 
-Use the installed `security-threat-model` workflow for SEC-BOUNDARY-01 and
-`security-best-practices` for execution/API control changes.
+Use `security-best-practices` for execution/API control changes and the installed `playwright` for frontend golden paths.
 
 ### Phase 2 — Reliable delivery and dependency ownership
 
@@ -383,7 +383,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 6 active debts trend to zero without adding parallel registries;
+- 5 active debts trend to zero without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.
