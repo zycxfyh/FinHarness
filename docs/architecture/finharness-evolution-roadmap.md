@@ -39,7 +39,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
 | Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 8 resolved; 2 active | Active items below are prerequisites, not optional cleanup. |
+| Engineering debt | 9 resolved; 1 active | Active items below are prerequisites, not optional cleanup. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -200,8 +200,7 @@ The following block is mechanically checked against the canonical register.
 <!-- active-debt:start -->
 | Debt | Priority | Paydown outcome | Order |
 | --- | --- | --- | --- |
-| ENG-DEBT-0006 | P2 | Compatibility-preserving StateCore bounded-context split. | 1 |
-| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 2 |
+| ENG-DEBT-0007 | P2 | Shared governed action shell and frontend API/state modules. | 1 |
 <!-- active-debt:end -->
 
 Rules:
@@ -280,7 +279,7 @@ resume, or external-tool needs.
 
 | Slice | Plane | Deliverable | Exit gate |
 | --- | --- | --- | --- |
-| STATECORE-01 | Classical | Extract low-coupling personal-finance models; retain `models.py` re-exports. | ENG-DEBT-0006 verifier; metadata, OpenAPI, migration and import compatibility. |
+| STATECORE-01 | Classical | Extract low-coupling personal-finance models; retain `models.py` re-exports. | Complete: ENG-DEBT-0006 resolved; 9 models extracted to personal_finance_models.py. |
 | FRONTEND-01 | Classical UI | Extract shared ReviewActionShell, `api.js`, and `state.js` before new views. | ENG-DEBT-0007 verifier; jsdom plus installed Playwright golden paths. |
 
 These slices are refactors. They must not introduce product features, schema
@@ -380,7 +379,7 @@ service, receipt, or capability tests.
 Near-term:
 
 - one current system catalog and one current engineering-debt register;
-- 2 active debts trend to zero without adding parallel registries;
+- 1 active debt trending to zero without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.

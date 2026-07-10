@@ -11,8 +11,18 @@
     "script": "scripts/verify_debt_register.py",
     "rule": "A resolved entry must have a passing named verifier; every other status must have a verifier that still reports the desired state as unmet."
   },
-  "allowed_statuses": ["active", "blocked", "deferred", "resolved"],
-  "allowed_priorities": ["P0", "P1", "P2", "P3"],
+  "allowed_statuses": [
+    "active",
+    "blocked",
+    "deferred",
+    "resolved"
+  ],
+  "allowed_priorities": [
+    "P0",
+    "P1",
+    "P2",
+    "P3"
+  ],
   "allowed_categories": [
     "architecture-inventory",
     "dependency-management",
@@ -43,7 +53,9 @@
       "priority": "P0",
       "category": "governance-boundary",
       "surface": "api",
-      "introduced_by": ["PR #110 route taxonomy baseline"],
+      "introduced_by": [
+        "PR #110 route taxonomy baseline"
+      ],
       "current_state": "State-changing API operations require an explicit local non-network LocalOperatorContext through WriteCapabilityDependency; the default app is fail-closed while read and validation-only operations remain available.",
       "desired_state": "State-changing operations require an explicit local non-network write capability while preserving read-only access.",
       "risk_if_ignored": "A future route could bypass the local operator boundary and expose an unauthenticated state mutation.",
@@ -73,7 +85,10 @@
       "priority": "P1",
       "category": "governance-boundary",
       "surface": "paper-validation",
-      "introduced_by": ["PR #102 paper validation routes", "Execution Kernel migration #116-#151"],
+      "introduced_by": [
+        "PR #102 paper validation routes",
+        "Execution Kernel migration #116-#151"
+      ],
       "current_state": "Paper-validation routes are legacy, deprecated, response-marked, and write-gated. The threat model includes a dedicated legacy-isolation and deletion boundary with consumer audit, 7 isolation rules, 6 deletion criteria, and 20 named CHECK constraints verified at the database level.",
       "desired_state": "The threat model and executable boundary tests prohibit real adapters, credentials, and live graduation through the legacy surface; deletion criteria identify consumers and historical-read obligations without expanding the legacy API.",
       "risk_if_ignored": "Future contributors may extend a legacy compatibility chain into a second execution system or treat paper-shaped objects as a broker integration scaffold.",
@@ -104,7 +119,9 @@
       "priority": "P1",
       "category": "receipt-integrity",
       "surface": "statecore",
-      "introduced_by": ["StateCore receipt-backed write paths"],
+      "introduced_by": [
+        "StateCore receipt-backed write paths"
+      ],
       "current_state": "The current machine-checkable write registry inventories canonical and legacy receipt-backed writes, imports registered functions, and verifies route/function coverage and execution substrate semantics.",
       "desired_state": "Every receipt-backed write path is registered with its stale guard, receipt builder, index behavior, cleanup behavior, and execution substrate.",
       "risk_if_ignored": "Unregistered write paths can drift in stale guards, hash binding, cleanup, or ReceiptIndex behavior.",
@@ -133,7 +150,9 @@
       "priority": "P1",
       "category": "tooling",
       "surface": "taskfile",
-      "introduced_by": ["Incremental additions to task check"],
+      "introduced_by": [
+        "Incremental additions to task check"
+      ],
       "current_state": "check:fast (lint+typecheck+unit), check:ci (merge gate with integration+frontend+governance+rules), and check:research (full suite with experiments+eval) expose cost boundaries; check is alias for check:ci.",
       "desired_state": "Named fast, CI, and research layers expose cost and dependency boundaries while the documented default preserves the intended merge gate.",
       "risk_if_ignored": "The standard signal becomes slower and more brittle, encouraging contributors to skip checks or misread research-tool failures as core regressions.",
@@ -148,7 +167,9 @@
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-15",
-      "evidence_refs": ["Taskfile.yml"],
+      "evidence_refs": [
+        "Taskfile.yml"
+      ],
       "verification": "task_check_layering",
       "resolution_ref": "DEVEX-01"
     },
@@ -159,7 +180,9 @@
       "priority": "P1",
       "category": "dependency-management",
       "surface": "dependencies",
-      "introduced_by": ["Research, Agent, eval, and trading-analysis dependency accumulation"],
+      "introduced_by": [
+        "Research, Agent, eval, and trading-analysis dependency accumulation"
+      ],
       "current_state": "Six named dependency groups (data, research, agent, eval, paper, security) exist alongside the dev group; main dependencies remain in base for runtime compatibility.",
       "desired_state": "Runtime-critical dependencies are separated from optional data, research, Agent, evaluation, paper, and security groups after an import/task audit proves their consumers.",
       "risk_if_ignored": "Install time, vulnerability surface, resolution conflicts, and ownership ambiguity grow with each capability slice.",
@@ -174,22 +197,28 @@
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-15",
-      "evidence_refs": ["pyproject.toml", "uv.lock", "Taskfile.yml"],
+      "evidence_refs": [
+        "pyproject.toml",
+        "uv.lock",
+        "Taskfile.yml"
+      ],
       "verification": "dependency_grouping",
       "resolution_ref": "DEPS-01"
     },
     {
       "id": "ENG-DEBT-0006",
       "title": "StateCore model split",
-      "status": "active",
+      "status": "resolved",
       "priority": "P2",
       "category": "statecore-structure",
       "surface": "statecore",
-      "introduced_by": ["Multiple bounded contexts accumulated in statecore/models.py"],
-      "current_state": "statecore/models.py remains a 1,798-line multi-context model module with no personal-finance model extraction.",
+      "introduced_by": [
+        "Multiple bounded contexts accumulated in statecore/models.py"
+      ],
+      "current_state": "Nine personal-finance models (Account, Snapshot, Position, Liability, FinancialGoal, CashflowEvent, TaxEvent, InsurancePolicy, DocumentRef) extracted to personal_finance_models.py; models.py retains compatibility re-exports.",
       "desired_state": "Models are split by bounded context while models.py retains compatibility re-exports and metadata/OpenAPI/schema behavior remains stable.",
       "risk_if_ignored": "Schema ownership, migration review, and fixture isolation become harder as unrelated bounded contexts continue sharing one module.",
-      "next_action": "Extract the low-coupling personal-finance models first and prove metadata, imports, OpenAPI, and migration compatibility.",
+      "next_action": "Keep re-exports current; future extraction of higher-coupling models requires separate architectural decisions.",
       "non_goals": [
         "table or constraint changes",
         "high-coupling execution/review schema redesign",
@@ -200,8 +229,12 @@
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-31",
-      "evidence_refs": ["src/finharness/statecore/models.py"],
-      "verification": "statecore_model_split"
+      "evidence_refs": [
+        "src/finharness/statecore/models.py",
+        "src/finharness/statecore/personal_finance_models.py"
+      ],
+      "verification": "statecore_model_split",
+      "resolution_ref": "STATECORE-01"
     },
     {
       "id": "ENG-DEBT-0007",
@@ -210,7 +243,9 @@
       "priority": "P2",
       "category": "frontend-structure",
       "surface": "frontend",
-      "introduced_by": ["Incremental cockpit tab and write-form additions"],
+      "introduced_by": [
+        "Incremental cockpit tab and write-form additions"
+      ],
       "current_state": "frontend/app.js is 1,526 lines and still owns global state, fetch behavior, renderers, and governed write forms; no api.js/state.js or shared ReviewActionShell exists.",
       "desired_state": "Governed write forms share one action-shell contract, and API/state/view modules are separated without changing vanilla-JS behavior or jsdom compatibility.",
       "risk_if_ignored": "Future cockpit and Agent-task surfaces will amplify global-state coupling and allow governance UX to drift between forms.",
@@ -225,7 +260,10 @@
       "created_at": "2026-07-06",
       "last_reviewed_at": "2026-07-10",
       "review_due": "2026-08-31",
-      "evidence_refs": ["frontend/app.js", "frontend/tests"],
+      "evidence_refs": [
+        "frontend/app.js",
+        "frontend/tests"
+      ],
       "verification": "frontend_module_split"
     },
     {
@@ -235,7 +273,9 @@
       "priority": "P1",
       "category": "tooling",
       "surface": "toolchain",
-      "introduced_by": ["Local and CI toolchain evolution"],
+      "introduced_by": [
+        "Local and CI toolchain evolution"
+      ],
       "current_state": "mise and CI workflows use Node 22 (same major); security CI no longer installs Rust (no repository consumer found).",
       "desired_state": "Local and CI Node majors agree, and every CI toolchain install has a documented repository consumer or is removed.",
       "risk_if_ignored": "Local/CI divergence causes false signals, while unexplained toolchains increase CI time and maintenance ambiguity.",
@@ -265,7 +305,10 @@
       "priority": "P1",
       "category": "architecture-inventory",
       "surface": "architecture",
-      "introduced_by": ["Execution Kernel PRs #116-#124", "DEBT-REG-001"],
+      "introduced_by": [
+        "Execution Kernel PRs #116-#124",
+        "DEBT-REG-001"
+      ],
       "current_state": "The abstraction inventory classifies all nine canonical Execution Kernel facts, services, enforced capabilities, adapter boundary, simulated adapter, routes, and legacy bridge. Legacy ActionIntent/PaperValidation entries point to current bridge/delete paths instead of nonexistent future execution routes.",
       "desired_state": "Canonical execution models, services, routes, adapter, and legacy bridge are classified; legacy ActionIntent/PaperValidation artifacts point to the already-existing kernel and deletion conditions.",
       "risk_if_ignored": "Architecture review can classify new work against a pre-migration map and accidentally extend legacy objects or duplicate canonical execution concepts.",
@@ -296,7 +339,10 @@
       "priority": "P0",
       "category": "execution-control",
       "surface": "execution",
-      "introduced_by": ["ExecutionCapabilities PR #142", "DEBT-CTL-001"],
+      "introduced_by": [
+        "ExecutionCapabilities PR #142",
+        "DEBT-CTL-001"
+      ],
       "current_state": "ExecutionCapabilities is enforced at the five public service mutations and the adapter-driven submit command. API construction injects an immutable deployment capability set, and denials return stable HTTP 403 before database, receipt, status, or adapter effects.",
       "desired_state": "Every execution command is fail-closed at the service boundary when its capability is disabled; simulated submission remains enabled by explicit default and live submission/credential management remain impossible.",
       "risk_if_ignored": "Capability documentation can diverge from runtime behavior, and future adapters may bypass the intended control plane through direct service calls.",
