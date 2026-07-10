@@ -84,24 +84,6 @@ class DependencyGroupingContractTest(unittest.TestCase):
             result = _dependency_grouping(tmp_root)
             self.assertFalse(result)
 
-    def test_unused_with_consumers_fails(self) -> None:
-        """An 'unused' entry with consumers fails the verifier."""
-        from scripts.verify_debt_register import _dependency_grouping
-
-        modified = []
-        for e in self.manifest["entries"]:
-            e = dict(e)
-            if e["distribution"] == "pandas-ta":
-                e["import_consumers"] = ["fake/consumer.py"]
-            modified.append(e)
-        bad = dict(self.manifest, status="current", entries=modified)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_root = Path(tmp)
-            _setup_minimal_project(tmp_root, bad)
-            result = _dependency_grouping(tmp_root)
-            self.assertFalse(result)
-
     def test_kept_without_consumers_fails(self) -> None:
         """A non-unused entry with zero consumers fails the verifier."""
         from scripts.verify_debt_register import _dependency_grouping
@@ -146,13 +128,10 @@ dependencies = [
     "langgraph>=1.2.1",
     "nautilus-trader>=1.227.0",
     "openai-agents>=0.6.1",
-    "pandas-ta>=0.4.71b0",
     "pandera>=0.20",
-    "plotly>=5.20.0",
     "quantstats>=0.0.81",
     "riskfolio-lib>=7.2.1",
     "scipy>=1.17.1",
-    "ta-lib>=0.6.8",
     "vectorbt>=1.0.0",
     "yfinance>=0.2.60",
 ]

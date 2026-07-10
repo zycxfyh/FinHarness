@@ -260,17 +260,6 @@
       "confidence": "high"
     },
     {
-      "distribution": "pandas-ta",
-      "requirement": "pandas-ta>=0.4.71b0",
-      "declared_group": "base",
-      "recommended_group": "unused",
-      "import_modules": [],
-      "import_consumers": [],
-      "task_consumers": [],
-      "rationale": "No audited Python import or Taskfile consumer exists; this is a removal candidate, not deletion authorization.",
-      "confidence": "high"
-    },
-    {
       "distribution": "pandera",
       "requirement": "pandera>=0.20",
       "declared_group": "data",
@@ -286,17 +275,6 @@
         "test"
       ],
       "rationale": "Pandera owns the maintained data-quality schema boundary and its tests.",
-      "confidence": "high"
-    },
-    {
-      "distribution": "plotly",
-      "requirement": "plotly>=5.20.0",
-      "declared_group": "base",
-      "recommended_group": "unused",
-      "import_modules": [],
-      "import_consumers": [],
-      "task_consumers": [],
-      "rationale": "No audited Python import or Taskfile consumer exists; this is a removal candidate, not deletion authorization.",
       "confidence": "high"
     },
     {
@@ -452,17 +430,6 @@
       ],
       "task_consumers": [],
       "rationale": "The runtime logging facade imports structlog directly.",
-      "confidence": "high"
-    },
-    {
-      "distribution": "ta-lib",
-      "requirement": "ta-lib>=0.6.8",
-      "declared_group": "base",
-      "recommended_group": "unused",
-      "import_modules": [],
-      "import_consumers": [],
-      "task_consumers": [],
-      "rationale": "No audited talib import or Taskfile consumer exists; this is a removal candidate, not deletion authorization.",
       "confidence": "high"
     },
     {
