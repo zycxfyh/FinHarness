@@ -14,44 +14,70 @@
     {
       "distribution": "backtrader",
       "requirement": "backtrader>=1.9.78.123",
-      "declared_group": "base",
+      "declared_group": "research",
       "recommended_group": "research",
-      "import_modules": ["backtrader"],
-      "import_consumers": ["scripts/check_python_wheels.py"],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "import_modules": [
+        "backtrader"
+      ],
+      "import_consumers": [
+        "scripts/check_python_wheels.py"
+      ],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "Only the mature-wheel readiness probe imports Backtrader; it is research tooling, not a base runtime consumer.",
       "confidence": "high"
     },
     {
       "distribution": "beancount",
       "requirement": "beancount>=3.2.3",
-      "declared_group": "base",
+      "declared_group": "data",
       "recommended_group": "data",
-      "import_modules": ["beancount"],
-      "import_consumers": ["src/finharness/beancount_adapter.py"],
-      "task_consumers": ["beancount:import"],
+      "import_modules": [
+        "beancount"
+      ],
+      "import_consumers": [
+        "src/finharness/beancount_adapter.py"
+      ],
+      "task_consumers": [
+        "beancount:import"
+      ],
       "rationale": "The dependency is owned by the optional ledger-ingestion adapter and its explicit import task.",
       "confidence": "high"
     },
     {
       "distribution": "beanquery",
       "requirement": "beanquery>=0.2.0",
-      "declared_group": "base",
+      "declared_group": "data",
       "recommended_group": "data",
-      "import_modules": ["beanquery"],
-      "import_consumers": ["src/finharness/beancount_adapter.py"],
-      "task_consumers": ["beancount:import"],
+      "import_modules": [
+        "beanquery"
+      ],
+      "import_consumers": [
+        "src/finharness/beancount_adapter.py"
+      ],
+      "task_consumers": [
+        "beancount:import"
+      ],
       "rationale": "Beanquery is consumed only by the Beancount data adapter and its import task.",
       "confidence": "high"
     },
     {
       "distribution": "deepeval",
       "requirement": "deepeval>=3.7.0",
-      "declared_group": "base",
+      "declared_group": "eval",
       "recommended_group": "eval",
-      "import_modules": ["deepeval"],
-      "import_consumers": ["scripts/check_python_wheels.py"],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "import_modules": [
+        "deepeval"
+      ],
+      "import_consumers": [
+        "scripts/check_python_wheels.py"
+      ],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "DeepEval is only imported by the wheel-readiness probe; current eval tasks use promptfoo rather than DeepEval.",
       "confidence": "high"
     },
@@ -60,7 +86,9 @@
       "requirement": "fastapi>=0.137.1",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["fastapi"],
+      "import_modules": [
+        "fastapi"
+      ],
       "import_consumers": [
         "src/finharness/api/app.py",
         "src/finharness/api/dependencies.py",
@@ -80,7 +108,9 @@
         "src/finharness/api/routes_state.py",
         "src/finharness/local_operator.py"
       ],
-      "task_consumers": ["api:serve"],
+      "task_consumers": [
+        "api:serve"
+      ],
       "rationale": "FastAPI defines the maintained local API and its route-level governance boundaries, so it remains runtime-critical.",
       "confidence": "high"
     },
@@ -89,8 +119,12 @@
       "requirement": "keyring>=25.7.0",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["keyring"],
-      "import_consumers": ["src/finharness/config.py"],
+      "import_modules": [
+        "keyring"
+      ],
+      "import_consumers": [
+        "src/finharness/config.py"
+      ],
       "task_consumers": [],
       "rationale": "Configuration imports keyring directly for credential lookup; moving it requires a separately tested optional-provider boundary.",
       "confidence": "high"
@@ -98,9 +132,11 @@
     {
       "distribution": "langgraph",
       "requirement": "langgraph>=1.2.1",
-      "declared_group": "base",
+      "declared_group": "agent",
       "recommended_group": "agent",
-      "import_modules": ["langgraph"],
+      "import_modules": [
+        "langgraph"
+      ],
       "import_consumers": [
         "src/finharness/cognitive_graph.py",
         "src/finharness/engineering_delivery_graph.py",
@@ -122,23 +158,30 @@
     {
       "distribution": "nautilus-trader",
       "requirement": "nautilus-trader>=1.227.0",
-      "declared_group": "base",
+      "declared_group": "data",
       "recommended_group": "data",
-      "import_modules": ["nautilus_trader"],
+      "import_modules": [
+        "nautilus_trader"
+      ],
       "import_consumers": [
         "src/finharness/market_data.py",
         "tests/test_market_data.py"
       ],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "NautilusTrader supplies market-data types and catalog concepts; moving it requires keeping market-data imports outside base-only probes.",
       "confidence": "medium"
     },
     {
       "distribution": "openai-agents",
       "requirement": "openai-agents>=0.6.1",
-      "declared_group": "base",
+      "declared_group": "agent",
       "recommended_group": "agent",
-      "import_modules": ["agents"],
+      "import_modules": [
+        "agents"
+      ],
       "import_consumers": [
         "scripts/check_python_wheels.py",
         "scripts/run_agent_once.py",
@@ -159,8 +202,12 @@
       "requirement": "opentelemetry-api>=1.42.1",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["opentelemetry"],
-      "import_consumers": ["src/finharness/observability.py"],
+      "import_modules": [
+        "opentelemetry"
+      ],
+      "import_consumers": [
+        "src/finharness/observability.py"
+      ],
       "task_consumers": [],
       "rationale": "The maintained observability facade imports the OpenTelemetry trace API directly.",
       "confidence": "high"
@@ -170,8 +217,12 @@
       "requirement": "opentelemetry-sdk>=1.42.1",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["opentelemetry"],
-      "import_consumers": ["src/finharness/observability.py"],
+      "import_modules": [
+        "opentelemetry"
+      ],
+      "import_consumers": [
+        "src/finharness/observability.py"
+      ],
       "task_consumers": [],
       "rationale": "The maintained observability facade constructs an SDK TracerProvider at runtime.",
       "confidence": "high"
@@ -181,7 +232,9 @@
       "requirement": "pandas>=2.2.0",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["pandas"],
+      "import_modules": [
+        "pandas"
+      ],
       "import_consumers": [
         "experiments/riskfolio_allocation.py",
         "scripts/check_python_wheels.py",
@@ -198,7 +251,11 @@
         "tests/test_portfolio_risk.py",
         "tests/test_research_history_provider.py"
       ],
-      "task_consumers": ["experiments", "wheels:check", "wheels:data-check"],
+      "task_consumers": [
+        "experiments",
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "Pandas is shared by maintained data, quality, metrics, risk, and research-history modules and remains runtime-critical.",
       "confidence": "high"
     },
@@ -216,14 +273,18 @@
     {
       "distribution": "pandera",
       "requirement": "pandera>=0.20",
-      "declared_group": "base",
+      "declared_group": "data",
       "recommended_group": "data",
-      "import_modules": ["pandera"],
+      "import_modules": [
+        "pandera"
+      ],
       "import_consumers": [
         "src/finharness/data_quality.py",
         "tests/test_data_quality.py"
       ],
-      "task_consumers": ["test"],
+      "task_consumers": [
+        "test"
+      ],
       "rationale": "Pandera owns the maintained data-quality schema boundary and its tests.",
       "confidence": "high"
     },
@@ -243,8 +304,12 @@
       "requirement": "pydantic-settings>=2.14.2",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["pydantic_settings"],
-      "import_consumers": ["src/finharness/config.py"],
+      "import_modules": [
+        "pydantic_settings"
+      ],
+      "import_consumers": [
+        "src/finharness/config.py"
+      ],
       "task_consumers": [],
       "rationale": "The runtime settings object imports pydantic-settings directly.",
       "confidence": "high"
@@ -252,32 +317,51 @@
     {
       "distribution": "quantstats",
       "requirement": "quantstats>=0.0.81",
-      "declared_group": "base",
+      "declared_group": "research",
       "recommended_group": "research",
-      "import_modules": ["quantstats"],
-      "import_consumers": ["src/finharness/metrics.py"],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "import_modules": [
+        "quantstats"
+      ],
+      "import_consumers": [
+        "src/finharness/metrics.py"
+      ],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "QuantStats is owned by research metrics and the mature-wheel readiness probe.",
       "confidence": "high"
     },
     {
       "distribution": "riskfolio-lib",
       "requirement": "riskfolio-lib>=7.2.1",
-      "declared_group": "base",
+      "declared_group": "research",
       "recommended_group": "research",
-      "import_modules": ["riskfolio"],
-      "import_consumers": ["src/finharness/portfolio_risk.py"],
-      "task_consumers": ["experiments", "wheels:check", "wheels:data-check"],
+      "import_modules": [
+        "riskfolio"
+      ],
+      "import_consumers": [
+        "src/finharness/portfolio_risk.py"
+      ],
+      "task_consumers": [
+        "experiments",
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "Riskfolio-Lib is consumed by portfolio research/risk calculation and the research experiment surface.",
       "confidence": "high"
     },
     {
       "distribution": "scipy",
       "requirement": "scipy>=1.17.1",
-      "declared_group": "base",
+      "declared_group": "research",
       "recommended_group": "research",
-      "import_modules": ["scipy"],
-      "import_consumers": ["src/finharness/research_rigor.py"],
+      "import_modules": [
+        "scipy"
+      ],
+      "import_consumers": [
+        "src/finharness/research_rigor.py"
+      ],
       "task_consumers": [],
       "rationale": "SciPy is used by the research-rigor statistics module rather than the base service path.",
       "confidence": "high"
@@ -287,7 +371,9 @@
       "requirement": "sqlmodel>=0.0.38",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["sqlmodel"],
+      "import_modules": [
+        "sqlmodel"
+      ],
       "import_consumers": [
         "src/finharness/action_intent_preflight.py",
         "src/finharness/agent_context.py",
@@ -346,7 +432,10 @@
         "tests/test_statecore_store.py",
         "tests/test_statecore_vertical_reconstruction.py"
       ],
-      "task_consumers": ["api:serve", "test"],
+      "task_consumers": [
+        "api:serve",
+        "test"
+      ],
       "rationale": "SQLModel is the canonical StateCore and governed-write persistence substrate and is unequivocally runtime-critical.",
       "confidence": "high"
     },
@@ -355,8 +444,12 @@
       "requirement": "structlog>=26.1.0",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["structlog"],
-      "import_consumers": ["src/finharness/runtime_log.py"],
+      "import_modules": [
+        "structlog"
+      ],
+      "import_consumers": [
+        "src/finharness/runtime_log.py"
+      ],
       "task_consumers": [],
       "rationale": "The runtime logging facade imports structlog directly.",
       "confidence": "high"
@@ -377,35 +470,49 @@
       "requirement": "uvicorn[standard]>=0.40.0",
       "declared_group": "base",
       "recommended_group": "base",
-      "import_modules": ["uvicorn"],
-      "import_consumers": ["scripts/run_cockpit_smoke_server.py"],
-      "task_consumers": ["api:serve"],
+      "import_modules": [
+        "uvicorn"
+      ],
+      "import_consumers": [
+        "scripts/run_cockpit_smoke_server.py"
+      ],
+      "task_consumers": [
+        "api:serve"
+      ],
       "rationale": "Uvicorn is the declared local API entry point and is also used by the browser smoke server.",
       "confidence": "high"
     },
     {
       "distribution": "vectorbt",
       "requirement": "vectorbt>=1.0.0",
-      "declared_group": "base",
+      "declared_group": "research",
       "recommended_group": "research",
       "import_modules": [],
       "import_consumers": [],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "The wheel probe checks VectorBT dynamically with find_spec; no maintained module imports it yet, so ownership is research-only.",
       "confidence": "high"
     },
     {
       "distribution": "yfinance",
       "requirement": "yfinance>=0.2.60",
-      "declared_group": "base",
+      "declared_group": "data",
       "recommended_group": "data",
-      "import_modules": ["yfinance"],
+      "import_modules": [
+        "yfinance"
+      ],
       "import_consumers": [
         "scripts/check_python_wheels.py",
         "src/finharness/data_entry.py",
         "src/finharness/market_data.py"
       ],
-      "task_consumers": ["wheels:check", "wheels:data-check"],
+      "task_consumers": [
+        "wheels:check",
+        "wheels:data-check"
+      ],
       "rationale": "Yfinance is a provider adapter dependency for market/reference data and the network wheel probe.",
       "confidence": "high"
     },
@@ -414,9 +521,15 @@
       "requirement": "httpx>=0.28.1",
       "declared_group": "dev",
       "recommended_group": "dev",
-      "import_modules": ["httpx"],
-      "import_consumers": ["tests/asgi_test_client.py"],
-      "task_consumers": ["test"],
+      "import_modules": [
+        "httpx"
+      ],
+      "import_consumers": [
+        "tests/asgi_test_client.py"
+      ],
+      "task_consumers": [
+        "test"
+      ],
       "rationale": "HTTPX is used by the in-process ASGI test client and remains a development dependency.",
       "confidence": "high"
     },
@@ -427,7 +540,9 @@
       "recommended_group": "dev",
       "import_modules": [],
       "import_consumers": [],
-      "task_consumers": ["typecheck"],
+      "task_consumers": [
+        "typecheck"
+      ],
       "rationale": "Mypy is invoked directly by the typecheck task and remains a development dependency.",
       "confidence": "high"
     },
@@ -436,7 +551,9 @@
       "requirement": "pytest>=9.0.3",
       "declared_group": "dev",
       "recommended_group": "dev",
-      "import_modules": ["pytest"],
+      "import_modules": [
+        "pytest"
+      ],
       "import_consumers": [
         "tests/test_agent_cognition_flow.py",
         "tests/test_agent_receipt_search.py",
@@ -456,7 +573,9 @@
         "tests/test_playbook_loader.py",
         "tests/test_review_workspace.py"
       ],
-      "task_consumers": ["test"],
+      "task_consumers": [
+        "test"
+      ],
       "rationale": "Several unit modules use pytest fixtures and helpers even though discovery is launched through unittest.",
       "confidence": "high"
     },
@@ -467,7 +586,10 @@
       "recommended_group": "dev",
       "import_modules": [],
       "import_consumers": [],
-      "task_consumers": ["format", "lint"],
+      "task_consumers": [
+        "format",
+        "lint"
+      ],
       "rationale": "Ruff is invoked directly by the lint and format tasks and remains a development dependency.",
       "confidence": "high"
     }

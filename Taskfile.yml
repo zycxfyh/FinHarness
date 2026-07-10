@@ -27,7 +27,7 @@ tasks:
   setup:
     desc: Sync locked Python and JS dependencies
     cmds:
-      - uv sync --locked
+      - uv sync --locked --all-groups
       - pnpm install --frozen-lockfile
 
   check:
