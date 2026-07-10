@@ -267,6 +267,7 @@ tasks:
     cmds:
       - uv run python -m unittest tests.test_docs_current_facts
       - uv run python -m unittest tests.test_system_catalog
+      - uv run python -m unittest tests.test_evolution_roadmap
       - uv run python -m unittest tests.test_support_surface_registry
       - uv run python -m unittest tests.test_removal_ledger
 
