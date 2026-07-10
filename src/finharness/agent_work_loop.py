@@ -37,6 +37,18 @@ AgentWorkType = Literal[
     "planning_review",
 ]
 
+AgentWorkStopReason = Literal[
+    "completed",
+    "max_steps_reached",
+    "max_tool_calls_reached",
+    "tool_unavailable",
+    "missing_required_context",
+    "evaluation_blocked",
+    "human_review_required",
+    "data_gap_unresolved",
+    "internal_error",
+]
+
 AgentWorkOutcome = Literal[
     "succeeded",
     "partial",
@@ -317,3 +329,37 @@ def _new_id(prefix: str) -> str:
 
 def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def propose_memory_from_completed_work(
+    *,
+    result: AgentWorkResult,
+    context_snapshot: AgentWorkContextSnapshot,
+    receipt_root: str | Path,
+) -> str | None:
+    """Propose a domain memory draft from completed work.
+
+    Only proposes memory when the work outcome suggests a learnable
+    pattern: partial or failed outcome, data gaps present, or context
+    trust findings exist. Memory remains draft — never auto-promoted.
+    """
+    if result.outcome not in ("partial", "failed"):
+        return None
+    if not result.data_gaps:
+        return None
+
+    from finharness.domain_memory import propose_domain_memory
+
+    draft = propose_domain_memory(
+        proposed_by=f"agent:{result.profile_name}",
+        memory_type="planning_lesson",
+        content=(
+            f"Work '{result.goal}' ({result.work_type}) "
+            f"stopped with {result.outcome}: {result.stop_reason}. "
+            f"Data gaps: {'; '.join(result.data_gaps[:3])}"
+        ),
+        receipt_root=Path(receipt_root),
+        source_refs=context_snapshot.source_refs,
+        receipt_refs=result.tool_result_refs,
+    )
+    return draft.memory_id
