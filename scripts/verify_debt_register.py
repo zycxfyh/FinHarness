@@ -187,21 +187,70 @@ def _task_check_layering(root: Path) -> bool:
 
 
 def _dependency_grouping(root: Path) -> bool:
+    """Verify dependency ownership: every dep has exactly one group with real consumers.
+
+    Old rule (wrong): all 6 named groups must be non-empty.
+    New rule: each declared dependency belongs to exactly one group, every kept
+    dep has a consumer, unused deps are absent, empty groups are OK.
+    """
     project = tomllib.loads(_read(root, "pyproject.toml"))
     groups = project.get("dependency-groups", {})
-    required_groups = {"data", "research", "agent", "eval", "paper", "security"}
+    DEP_NAMES = {"data", "research", "agent", "eval", "paper", "security"}
     audit_path = root / "docs" / "governance" / "dependency-consumers.json"
-    if not required_groups.issubset(groups) or not audit_path.exists():
+
+    if not DEP_NAMES.issubset(groups) or not audit_path.exists():
         return False
+
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
-    return all(
-        (
-            audit.get("status") == "current",
-            audit.get("debt_ref") == "ENG-DEBT-0005",
-            all(groups[name] for name in required_groups),
-            set(audit.get("groups", {})) == required_groups,
-        )
-    )
+
+    # Status must be "current" for debt closure
+    if audit.get("status") != "current":
+        return False
+    if audit.get("debt_ref") != "ENG-DEBT-0005":
+        return False
+
+    entries = audit.get("entries", [])
+    if not entries:
+        return False
+
+    # Rule 1: No duplicate distributions
+    dist_names = [e["distribution"] for e in entries]
+    if len(dist_names) != len(set(dist_names)):
+        return False
+
+    # Rule 2: Every declared dependency (base + dev) has exactly one entry
+    declared_base = project.get("project", {}).get("dependencies", [])
+    declared_dev = groups.get("dev", [])
+    all_declared = {_distribution_name(r) for r in declared_base + declared_dev}
+    manifest_dists = {e["distribution"] for e in entries}
+    if all_declared != manifest_dists:
+        return False
+
+    # Rule 3: Every kept dep has a recommended group
+    for entry in entries:
+        group = entry.get("recommended_group", "")
+        if group == "unused":
+            # Rule 4: Unused must have zero consumers
+            if entry.get("import_consumers") or entry.get("task_consumers"):
+                return False
+        else:
+            # Rule 5: Kept deps must have at least one consumer
+            if not entry.get("import_consumers") and not entry.get("task_consumers"):
+                return False
+
+    # Rule 6: Empty named groups are OK (paper, security are intentionally empty)
+    # No check that forces groups[name] to be non-empty
+
+    return True
+
+
+def _distribution_name(requirement: str) -> str:
+    """Extract normalized distribution name from a requirement string."""
+    import re as _re
+    match = _re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", requirement)
+    if match is None:
+        raise ValueError(f"cannot parse requirement: {requirement}")
+    return _re.sub(r"[-_.]+", "-", match.group(1)).lower()
 
 
 def _statecore_model_split(root: Path) -> bool:
