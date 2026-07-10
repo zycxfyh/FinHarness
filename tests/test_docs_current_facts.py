@@ -88,6 +88,8 @@ class CurrentDocsFactPolicyTest(unittest.TestCase):
         self.assertIn("acceptance criteria not met", plan)
         self.assertIn("Deterministic Work Orchestrator: scaffolded", plan)
         self.assertIn("Agent Work Loop: not semantically closed", plan)
+        self.assertIn("task agent:work-loop-acceptance", plan)
+        self.assertIn("4/15 contracts pass and 11 remain", plan)
 
     def test_execution_interface_records_enforced_capabilities(self) -> None:
         interfaces = (ROOT / "docs" / "reference" / "interfaces.md").read_text(encoding="utf-8")

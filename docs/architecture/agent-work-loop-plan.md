@@ -156,6 +156,18 @@ eligibility.
 
 ## Wave 2.2 acceptance criteria
 
+Executable closure gate:
+
+```bash
+task agent:work-loop-acceptance
+```
+
+As of 2026-07-10 it is intentionally red: **4/15 contracts pass and 11 remain
+open**. It is not part of `task check`. `task agent:work-loop-acceptance-report`
+prints the same repository evidence with a zero diagnostic exit. A future
+implementation may change this baseline only by closing a real contract and
+updating the architecture status in the same slice.
+
 给定一个 AgentWorkRequest，FinHarness 可以在有限预算内完成一项 agent
 work cycle，并输出：
 

@@ -303,6 +303,16 @@ tasks:
     cmds:
       - uv run python scripts/run_agent_once.py {{.CLI_ARGS}}
 
+  agent:work-loop-acceptance:
+    desc: "EXPECTED RED: require Agent Work Loop semantic closure (not in task check)"
+    cmds:
+      - uv run python scripts/run_agent_work_loop_acceptance.py
+
+  agent:work-loop-acceptance-report:
+    desc: Report Agent Work Loop semantic gaps without failing the command
+    cmds:
+      - uv run python scripts/run_agent_work_loop_acceptance.py --report-only
+
   eval:smoke:
     desc: Run promptfoo local echo eval
     cmds:
