@@ -50,23 +50,86 @@ def _api_write_capability_gate(root: Path) -> bool:
 
 
 def _paper_validation_legacy_boundary(root: Path) -> bool:
-    routes = _read(root, "src/finharness/api/routes_paper_validation.py")
+    """Verify the paper-validation boundary through real semantic checks.
+
+    Replaces the old string-based check with actual audit module imports.
+    """
+    sys.path.insert(0, str(root / "src"))
+    try:
+        from finharness.paper_validation_boundary_audit import (
+            build_internal_import_graph,
+            find_forbidden_transitive_imports,
+            scan_paper_consumers,
+        )
+    except ImportError:
+        return False
+    finally:
+        if str(root / "src") == sys.path[0]:
+            sys.path.pop(0)
+
+    # Check 1: consumer manifest audit (SEC-02A)
+    consumer_findings = scan_paper_consumers(root)
+    manifest_ok = len(consumer_findings) == 0
+
+    # Check 2: transitive import boundary (SEC-02B)
+    graph = build_internal_import_graph(root)
+    forbidden_findings = find_forbidden_transitive_imports(
+        graph,
+        roots={
+            "src.finharness.api.routes_paper_validation",
+            "src.finharness.statecore.paper_accounts",
+            "src.finharness.statecore.paper_order_tickets",
+            "src.finharness.statecore.paper_executions",
+        },
+        forbidden_prefixes={
+            "finharness.execution.broker",
+            "finharness.execution.adapters",
+            "finharness.execution.commands",
+            "finharness.providers",
+            "finharness.agent_runtime",
+            "httpx",
+            "requests",
+            "urllib",
+            "socket",
+            "ccxt",
+            "alpaca",
+        },
+    )
+    import_ok = len(forbidden_findings) == 0
+
+    # Check 3: broker registry isolation test (SEC-02C)
+    registry_test = root / "tests" / "test_paper_validation_broker_registry_isolation.py"
+    registry_ok = registry_test.exists()
+
+    # Check 4: threat model gap closure
     threat_model = _read(root, "docs/security/finharness-threat-model.md")
-    boundary_test = root / "tests" / "test_paper_validation_legacy_boundary.py"
-    consumer_audit = root / "docs" / "governance" / "paper-validation-consumers.json"
+    threat_ok = (
+        "## Paper Validation Legacy Isolation Boundary" in threat_model
+        and "SEC-BOUNDARY-02" in threat_model
+    )
+
+    # Check 5: negative fixture exists in import boundary test
+    import_test = root / "tests" / "test_paper_validation_import_boundary.py"
+    import_test_text = import_test.read_text(encoding="utf-8") if import_test.exists() else ""
+    negative_import_ok = "test_transitive_import_chain_is_detected" in import_test_text
+
+    # Check 6: negative fixture exists in registry isolation test
+    registry_test_text = registry_test.read_text(encoding="utf-8") if registry_test.exists() else ""
+    negative_registry_ok = "test_registering_live_adapter_raises_value_error" in registry_test_text
+
+    # Check 7: removal ledger entry
     removal_ledger = _read(root, "docs/governance/removal-ledger.yml")
-    boundary_text = boundary_test.read_text(encoding="utf-8") if boundary_test.exists() else ""
+    removal_ok = "delete-paper-validation-legacy" in removal_ledger
+
     return all(
         (
-            'tags=["paper-validation", "legacy"]' in routes,
-            "deprecated=True" in routes,
-            "WriteCapabilityDependency" in routes,
-            "## Paper Validation Legacy Isolation Boundary" in threat_model,
-            boundary_test.exists(),
-            consumer_audit.exists(),
-            "test_paper_modules_have_no_execution_or_network_imports" in boundary_text,
-            "test_runtime_consumers_match_manifest" in boundary_text,
-            "delete-paper-validation-legacy" in removal_ledger,
+            manifest_ok,
+            import_ok,
+            registry_ok,
+            threat_ok,
+            negative_import_ok,
+            negative_registry_ok,
+            removal_ok,
         )
     )
 

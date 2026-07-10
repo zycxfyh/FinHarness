@@ -253,9 +253,10 @@ Non-capabilities:
 
 ## Paper Validation Legacy Isolation Boundary
 
-Status: active (SEC-BOUNDARY-01)
-Debt: ENG-DEBT-0002
+Status: closed (SEC-BOUNDARY-02)
+Debt: ENG-DEBT-0002 (resolved)
 Last reviewed: 2026-07-10
+Closed by: SEC-02A (#235), SEC-02B (#236), SEC-02C (#237), SEC-02D (#238)
 
 ### Scope
 
@@ -298,8 +299,9 @@ Existing controls:
   `PaperExecutionReceipt` as deletion candidates, projected into canonical
   Execution Kernel objects.
 
-Gaps: no dedicated boundary test proves these constraints end-to-end against a
-real database, a live FastAPI instance, and the broker adapter registry.
+Gaps: resolved by SEC-02C — broker registry runtime isolation test
+(`test_paper_validation_broker_registry_isolation.py`) proves zero
+register/resolve/submit calls across the full paper API golden path.
 
 **TM-PV-002: Second execution system through legacy extension.**
 
@@ -312,8 +314,9 @@ Existing controls: the canonical Execution Kernel (`/execution/*` routes,
 execution path. The roadmap explicitly prohibits new paper-validation features
 and the debt register lists this as non-goal.
 
-Gaps: no import-level guard prevents paper modules from importing broker adapter
-classes or execution kernel commands.
+Gaps: resolved by SEC-02B — AST-level transitive import boundary
+(`paper_validation_boundary_audit.py` + `test_paper_validation_import_boundary.py`)
+detects direct and multi-hop forbidden imports from paper modules.
 
 **TM-PV-003: Silent consumer bypass.**
 
@@ -324,8 +327,10 @@ from the canonical execution pipeline.
 Existing controls: the `deprecated=True` tag and legacy headers inform callers;
 the legacy bridge separates paper projections from execution facts.
 
-Gaps: the consumer inventory exists only in the roadmap and debt register, not in
-a machine-checkable consumer audit.
+Gaps: resolved by SEC-02A — machine-verifiable consumer manifest
+(`docs/governance/paper-validation-consumers.json` + `paper_validation_boundary_audit.py`
++ `test_paper_validation_consumer_manifest.py`). The AST scanner detects
+unregistered consumers and the contract test validates manifest completeness.
 
 ### Isolation Rules (contract, not convention)
 
