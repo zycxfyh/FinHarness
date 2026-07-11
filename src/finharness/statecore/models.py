@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import field_validator
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -184,6 +184,68 @@ class Attestation(StateCoreBase, table=True):
         if not value.strip():
             raise ValueError("attestation requires a named human and written reason")
         return value
+
+
+class DecisionRecord(StateCoreBase, table=True):
+    """Immutable planning decision bound to one exact proposal version.
+
+    Current validity is derived by comparing ``proposal_version_id`` with the
+    latest proposal receipt version.  The row is never mutated to simulate an
+    active/superseded state, so proposal revisions cannot leave two truth
+    sources disagreeing about validity.
+    """
+
+    __tablename__ = "decision_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "proposal_id",
+            "proposal_version_id",
+            name="uq_decision_records_proposal_version",
+        ),
+        CheckConstraint(
+            "decision IN ('accepted_for_planning', 'rejected', 'deferred')",
+            name="ck_decision_records_decision_closed",
+        ),
+        CheckConstraint(
+            "actor_identity_class IN ('human', 'agent')",
+            name="ck_decision_records_actor_class_closed",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_decision_records_execution_allowed_false",
+        ),
+    )
+
+    decision_record_id: str = Field(primary_key=True)
+    proposal_id: str = Field(foreign_key="proposals.proposal_id")
+    proposal_version_id: str
+    proposal_receipt_ref: str
+    proposal_content_hash: str
+    decision_case_version_id: str
+    scenario_version_id: str | None = None
+    decision: str
+    reason: str
+    actor_id: str
+    actor_identity_class: str
+    delegated_review_ref: str | None = None
+    next_review_condition: str | None = None
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    execution_allowed: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("reason", "actor_id")
+    @classmethod
+    def require_decision_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("decision record requires actor identity and written reason")
+        return value
+
+    @field_validator("execution_allowed")
+    @classmethod
+    def reject_decision_execution_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("planning DecisionRecord never carries execution authority")
+        return False
 
 
 REVIEW_EVENT_KINDS: tuple[str, ...] = (

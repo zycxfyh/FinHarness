@@ -33,6 +33,7 @@ from finharness.statecore.models import (
     CapitalMandate,
     CapitalObjectiveFit,
     CashflowEvent,
+    DecisionRecord,
     DocumentRef,
     FinancialGoal,
     InsurancePolicy,
@@ -72,6 +73,7 @@ StateCoreRecord = (
     | TaxEvent
     | InsurancePolicy
     | DocumentRef
+    | DecisionRecord
     | PaperAccount
     | PaperExecutionReceipt
     | PaperOrderTicketCandidate
