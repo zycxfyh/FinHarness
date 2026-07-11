@@ -40,20 +40,32 @@
 > trade-oriented,审查层 anti-unaudited,执行层只能 controlled execution。金融
 > 教育应保留真实金融语言;runtime 层负责防止低权限对象冒充建议、审批、订单或
 > 执行。能力地图见 [Financial Judgment Curriculum](product/financial-judgment-curriculum.md)。
+>
+> 修订(2026-07-11):北极星从“AI 辅助驾驶舱”提升为 **Agent-Native Personal
+> Capital Operating System**。人类拥有目标、资本宪法、授权和否决权；Capital
+> Agent 逐步拥有 observe → reason → plan → act → verify → learn 的目标闭环；
+> FinHarness Harness 负责准入、约束、审计、恢复、回滚和撤销；确定性金融引擎
+> 负责计算与效果正确性。当前 Human-in-the-loop 是起点，不是永久上限。
+> 控制权决策见 [Agent-Native Control Ownership ADR](adr/2026-07-11-agent-native-control-ownership.md)。
 
 ## 一句话定位
 
-FinHarness 是一个面向个人/家庭资产主体的 **AI 财务辅助驾驶舱**:它持续帮你
-**看清财务状态、发现风险、组织证据、生成候选方案、提醒关键动作**,并把每
-一次高风险决策放进**人工确认 + 可复盘**的流程里。
+FinHarness 是面向个人资本主体的 **Agent-Native Personal Capital Operating
+System**：用户声明资本目标、价值偏好、风险边界、禁止事项和可撤销授权，
+Capital Agent 持续观察资本世界，自主分解任务、搜集证据、模拟、行动、验证、
+复盘和学习；FinHarness 让这个闭环可信、可控、可恢复、可解释、可撤销。
 
 它更接近:
 **个人 CFO + 风控台 + 财务操作系统 + AI 运行时 + 决策证据库。**
 
 ## 北极星(一句话校验)
 
-> FinHarness 要做的不是 AI 替你管钱,而是让 AI 帮你把财务决策变得
-> **可见、可算、可解释、可复核、可追责**。
+> FinHarness 要让 Capital Agent 在人类资本宪法和 mandate 内持续实现目标，
+> 同时使每个事实、决定、动作和结果都**可见、可算、可解释、可验证、可恢复、
+> 可撤销、可追责**。
+
+这不是让模型拿着凭证任意行动。Agent 拥有目标级控制；Harness 拥有机器级
+准入和恢复；确定性引擎拥有效果正确性；Human Principal 拥有最终主权。
 
 ## 北极星指标:Financial Decision Clarity(2026-06-24 新增)
 
@@ -100,7 +112,7 @@ predicates:
 | B2 decision discipline | 高风险操作控制 | 让候选行动进入人工复核,而不是冲动执行 |
 | B3 bounded loss | 风险约束 | 限制可控路径中的计划风险,并暴露不可控尾部风险 |
 | B4 compounding judgment ([glossary](reference/glossary.md)) | 长期学习机制 | 把复盘 lesson 变成可追溯的规则/检查表改动 |
-| B5 boundary | 永久 non-goal | AI 不默认拥有高后果身份或执行权;READY/PASS 不授权 live action |
+| B5 boundary | 自主性准入 | Agent 不默认拥有高后果身份或执行权；READY/PASS 不授权 live action；未来只能由显式 mandate 和 autonomy gate 扩张。 |
 
 因此:治理、receipt、lesson-to-rule、risk gate 都是驾驶舱的刹车和证据层,
 不是用户每天打开 FinHarness 的理由。用户价值必须首先表现为"我现在怎么样、
@@ -168,8 +180,8 @@ FinHarness 的边界用能力层表达,不用防御式品类否定表达:
 
 ## 两条校验线(每个产品/工程决策都过一遍)
 
-1. **授权:** 这件事是在**增强人的财务判断**,还是在**诱导 AI 越权替人做
-   决定**?前者是 FinHarness,后者必须挡住。
+1. **授权:** 这件事是否位于明确、可撤销的 mandate 内？mandate 内允许 Agent
+   作出有效决定；超出范围必须升级，不能靠模型置信度自证权限。
 2. **可逆:** 如果这个建议/动作错了,代价是**便宜且可逆**的吗?
 
 两条一起用——授权那条容易自我欺骗,可逆这条更难骗过。几乎所有危险动作都会
@@ -177,25 +189,45 @@ FinHarness 的边界用能力层表达,不用防御式品类否定表达:
 
 ## 硬工程原则(不可放松)
 
-- **默认只读。** Agent 不默认拥有任何高后果授权(交易、转账、报税提交、改
-  风险上限……);任何未来有限代理身份都必须经专门授权对象、人类确认、limits、
-  kill switch、review cadence 和 receipt 约束。
+- **默认无高后果授权。** Agent 的自主度必须从 Human-in-the-loop，经
+  Human-on-the-loop，逐级到 Human-over-the-loop。每次升级都需要专门授权对象、
+  limits、expiry、kill switch、review cadence、receipt、恢复和撤销能力。
 - 每个建议必须带 **evidence / assumptions / limitations / claim boundaries**。
-- 每个高风险动作必须有**人工确认**(fail-closed:没确认就停)。
+- 当前未授权或超出 mandate 的高风险动作必须有**人工确认**。成熟 mandate 内
+  的有效 Agent decision 仍须通过 deterministic enforcement，但不永久要求
+  每一步点击确认。
 - 每个动作必须有 **receipt**(不可变文件证据)。
 - 任何"收益 / 合规 / 安全"声明都必须标**证据等级**。
 - 前端只能展示和复核边界,**不能放松后端边界**。
 
-## 五阶段路线(方向,不是排期)
+## 双轴自主性路线(方向,不是排期)
 
-1. 可信投资研究与风控证据系统(NOW,已在做的地基模块)。
-2. 个人资产驾驶舱:接入资产清单/现金流/账户快照/目标/负债/税务事件,**只读**。
-3. 决策工作流:AI 生成候选方案(再平衡、税损收割、现金储备、风险集中、年度
-   复盘),每个都带 evidence/assumptions/limitations/receipt。
-4. 人机协作 cockpit:前端做**阅读、比较、复核、批注、确认、拒绝、归档**,
-   不做"一键执行"。
-5. 有限自动化:只允许**低风险、可撤销、明确授权**的事务(提醒、整理文档、
-   起草、检查缺失材料)。高风险动作永远慢下来。
+金融世界可信度：
+
+```text
+W0 可信资本事实
+→ W1 版本化决策与 mandate
+→ W2 Scenario 世界
+→ W3 Outcome 与 Reconciliation
+→ W4 Learning 与有效政策消费
+```
+
+Agent 自主度：
+
+```text
+AUT0 Context-aware assistant
+→ AUT1 Tool-using reviewer
+→ AUT2 Observation-driven durable loop
+→ AUT3 Delegated Decision Review
+→ AUT4 Autonomous paper capital manager
+→ AUT5 Mandate-bound real-world operator
+→ AUT6 Continuous personal capital agent
+```
+
+Human-in-the-loop 是 AUT0–AUT2 的主要安全模式；AUT3 开始按 mandate 在
+in/on-the-loop 之间分级；AUT4 以 human-on-the-loop 监督 paper 管理；AUT5/AUT6
+只有在单独授权、安全、法律、恢复和 outcome 证据成立后，才进入
+human-over-the-loop 的持续资本管理。
 
 ## 三层结构(产品定位,2026-06-21 修正)
 

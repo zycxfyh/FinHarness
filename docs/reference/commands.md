@@ -18,7 +18,7 @@ execution authorization.
 | `task setup` | Sync dependencies from lockfiles. | May install/update local packages. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
 | `task check:fast` | Lint, typecheck, and unit tests. | Fast local feedback. |
-| `task check:ci` | Fast checks plus integration, frontend, governance, and rules. | Main merge gate. |
+| `task check:ci` | Fast checks, base-profile rebuild, integration, frontend, governance, and rules. | Main merge gate. |
 | `task check:research` | CI gate plus experiments and eval smoke. | Full research validation. |
 | `task lint` | Run Python lint checks. | Ruff. |
 | `task typecheck` | Run mypy. | Strict on safety-critical core. |
@@ -26,6 +26,12 @@ execution authorization.
 | `task test:integration` | Run slower graph/property integration tests. | Included in `task check`. |
 | `task test:frontend` | Run jsdom frontend tests. | Included in `task check`. |
 | `task test:browser` | Optional Playwright cockpit smoke. | Not in `task check`. |
+| `task deps:probe-base` | Rebuild base-only environment and import the real core API. | Included in `task check:ci`. |
+| `task deps:probe-data` | Rebuild base + data and import maintained data consumers. | No provider network calls. |
+| `task deps:probe-research` | Rebuild base + research and import research consumers. | No experiment execution. |
+| `task deps:probe-agent` | Rebuild the composed data + research + agent runtime profile. | Imports tools; does not call a model. |
+| `task deps:probe-eval` | Rebuild base + eval and import the eval wheel. | Does not run an evaluation. |
+| `task deps:probe-all` | Run all isolated dependency profiles. | CI also runs a profile matrix. |
 
 ## Current Product Loop
 

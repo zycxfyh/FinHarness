@@ -1,7 +1,7 @@
 # FinHarness Evolution Roadmap
 
 Status: current
-Updated: 2026-07-10
+Updated: 2026-07-11
 Owner: architecture + product governance
 
 This is the maintained plan for evolving FinHarness after the 2026-07-10
@@ -9,23 +9,33 @@ repository audit. It is not a product-completion claim. Current system status
 comes from `system-catalog.yml`; engineering debt comes from
 `docs/governance/debt-register.json`; Agent Work Loop closure comes from
 `task agent:work-loop-acceptance`.
+Long-term control ownership is governed by
+[`2026-07-11-agent-native-control-ownership.md`](../adr/2026-07-11-agent-native-control-ownership.md).
 
 ## 1. Executive Decision
 
-FinHarness should evolve as a **classical capital operating core with an
-agentic judgment layer**, not as an Agent framework that happens to contain
-financial objects.
+FinHarness should evolve toward an **Agent-native Personal Capital Operating
+System**. The human principal owns goals, capital constitution, delegation, and
+veto power. The Capital Agent owns the objective-level
+observe–reason–plan–act–verify–learn loop. FinHarness is the deterministic
+Harness that makes that autonomy admissible, observable, recoverable, and
+revocable. Classical engines provide effect correctness; they are not the
+permanent owner of workflow intent.
 
-The order of work is:
+The 2026-07-11 external-research and code audit rebases the order of work:
 
-1. keep repository truth executable;
-2. remove debt that distorts architecture, safety, and delivery signals;
-3. close the Agent action-observation-decision loop against semantic contracts;
-4. pay structural modularity debt before adding more cockpit or StateCore
-   surface;
-5. build product workflows over the canonical Execution Kernel;
-6. consider stronger authority only after paper evidence, threat models, human
-   gates, and explicit capability contracts exist.
+Near-term work repairs the evidence floor, capital world model, versioned
+decisions, and Agent loop together. These foundations do not exist to keep the
+Agent subordinate. They exist so that higher autonomy can be granted without
+replacing safety with prompt trust.
+
+The roadmap therefore advances on two axes:
+
+1. **World fidelity:** capital facts → versioned decisions → Scenario → Outcome
+   → Learning.
+2. **Agent autonomy:** context-aware assistance → tool use → observation-driven
+   loop → delegated Decision Review → autonomous paper management →
+   mandate-bound real action → continuous capital operation.
 
 This means velocity is measured by contracts closed and legacy surface removed,
 not by PR count, model count, receipt count, or version labels.
@@ -37,9 +47,12 @@ not by PR count, model count, receipt count, or version labels.
 | Execution Kernel | canonical | All new execution work uses `execution/*`; legacy ActionIntent/PaperValidation gets no new callers. |
 | ActionIntent + PaperValidation | legacy | Preserve reads/migration evidence; define deletion boundaries; do not extend product capability. |
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
-| Deterministic Work Orchestrator | scaffolded | It batches pre-requested tools and creates partial artifacts; it is not an Agent Work Loop. |
-| Agent Work Loop | 4/15 acceptance contracts pass; 11 open | No operational/closed naming, session layer, scheduling, resume, or authority expansion. |
-| Engineering debt | 10 resolved; 0 active | All debts closed. Paper-validation boundary and dependency ownership chains complete. |
+| Agent Operating Cycle v0.1 | current AUT2 foundation | One bounded cycle is observation-driven, admitted, durable, searchable, reviewable, and terminally reduced; cross-cycle session/resume is absent. |
+| Agent Work Loop / Agent Operating Cycle v0.1 | 15/15 acceptance contracts pass; AUT2 foundation current | Typed arguments, observation-driven decisions, independent budgets, preflight, autonomy admission, terminal receipts/results/search/workspace, and every declared stop reducer have behavioral evidence. This does not grant AUT3 decision authority. |
+| Registered engineering debt | 10 resolved; 0 active | All currently registered debts pass, but the register is incomplete: test collection, capital truth, decision versioning, execution monotonicity, API contracts, and architecture cycles are verified material debts to add. |
+| Python merge gate | false green | `check:ci` passed 954 unittest-discovered cases, but two known pytest-only Agent files contribute 38 tests while unittest runs 0 of them. |
+| Capital-state truth | partial | Position lacks valuation currency/time/source and mixed-currency totals are still calculated; Scenario and Agent cannot treat it as a trusted current baseline. |
+| Decision integrity | partial | Attestation binds `proposal_id`, not an immutable ProposalVersion receipt/hash; revisions do not supersede old decisions. |
 | Real external execution | absent | No live adapter, broker SDK, credential loader, funded-account path, or network submit. |
 
 ## 3. What the PR History Actually Says
@@ -149,62 +162,70 @@ empty configuration keys are not closure evidence.
 
 ## 4. Responsibility Model
 
-### 4.1 Three planes
+### 4.1 Four control roles
 
 ```text
-Agentic Judgment Plane
-  goal decomposition -> context relevance -> tool/argument choice
-  -> observation interpretation -> options/critique/explanation
-                    |
-                    v  typed requests / candidate artifacts
-Classical Software Plane
-  schema -> capability gate -> dispatcher -> deterministic services
-  -> database/receipts -> projections/search -> budgets/stop reducer
-                    |
-                    v  review evidence / explicit transition request
-Human Authority Plane
-  policy ownership -> evidence acceptance -> approval/attestation
-  -> capability grant/revocation -> exceptional risk decision
+Human Principal / Constitutional Plane
+  goals -> values -> capital constitution -> mandate -> veto/revocation
+                         |
+                         v
+Capital Agent / Teleological Control Plane
+  observe -> reason -> plan -> choose tools/skills -> act -> verify -> learn
+                         |
+                         v  typed requests / decisions / escalation
+FinHarness Harness / Admissibility and Recovery Plane
+  world model -> policy -> capability -> budget -> invariant -> receipt
+  -> transaction boundary -> monitoring -> recovery -> rollback/escalation
+                         |
+                         v
+Deterministic Financial Engines / Effect Plane
+  Decimal/FX/accounting -> risk/scenario math -> persistence
+  -> execution protocol -> reconciliation -> external effects
 ```
 
-The Agentic plane may choose and explain. The Classical plane validates,
-persists, executes deterministic commands, and proves effects. The Human plane
-owns authority and policy changes.
+The Human Principal has ultimate sovereignty but need not approve every step
+forever. The Capital Agent increasingly owns how an objective is achieved. The
+Harness decides whether a proposed decision or action is admissible under the
+current mandate and runtime state. Deterministic engines guarantee that an
+admitted calculation, transition, transaction, or broker operation is executed
+correctly.
 
 ### 4.2 Ownership matrix
 
 | Responsibility | Primary owner | Boundary rule |
 | --- | --- | --- |
-| Financial facts, accounts, positions, policies, proposals | Classical | Typed StateCore facts with migrations and invariant tests. |
-| Market/provider ingestion | Classical adapters | External output is evidence with freshness/provenance, never authority. |
-| Deterministic calculations and policy checks | Classical | Decimal/time semantics, reproducible inputs, no model judgment. |
-| Execution lifecycle and reconciliation | Classical | Agent cannot call adapters or mutate execution state directly. |
-| Capability, budget, timeout, stop, retry, idempotency | Classical | Enforced before effects; prompt text is not a security boundary. |
-| Tool registry, schema validation, dispatch, result envelope | Classical runtime membrane | Every Agent action crosses a typed, testable tool boundary. |
-| Goal decomposition and next-action selection | Agentic | Consumes frozen context and prior observations; remains provider-neutral at the contract. |
-| Tool and argument selection | Agentic through classical schema | Model chooses content; runtime validates profile, schema, budget, and side effect. |
-| Evidence interpretation, option generation, critique, explanation | Agentic | Produces review artifacts with refs, gaps, assumptions, and non-claims. |
-| Hard constraints and eligibility | Classical evaluators | Deterministic blockers cannot be overridden by Agent output. |
-| Qualitative evaluation | Agentic evaluator | Findings are evidence for review, not final authority. |
-| Memory candidate generation | Agentic | May propose; cannot silently promote or rewrite history. |
-| Memory storage, dedupe, provenance, promotion rule | Classical + Human | Promotion requires explicit policy/attestation. |
-| Review workspace projection | Classical | Deterministically hydrates receipts and findings for humans. |
-| Approval, attestation, policy change, authority grant | Human | Explicit identity/reason/freshness/confirmation; revocable and auditable. |
-| Observability, receipts, search, audit, release gates | Classical | Complete even on failure/partial/denial paths. |
+| Goals, values, irreversible prohibitions, delegation ceiling | Human Principal | Constitutional choices cannot be inferred from model confidence. |
+| Mandate grant, expansion, suspension, revocation, exceptional override | Human Principal + Harness | Explicit, scoped, expiring, revocable, and receipt-backed. |
+| Goal decomposition, planning, tool/skill choice, action ordering, replanning | Capital Agent | Agent owns strategy within mandate; Harness validates admissibility. |
+| Evidence interpretation, counterargument, Scenario design, explanation | Capital Agent | Claims bind facts, assumptions, gaps, and uncertainty. |
+| Monitoring, anomaly response, outcome evaluation, lesson proposal | Capital Agent | May autonomously continue, stop, or escalate within the granted level. |
+| Financial facts and world-model versions | Harness + deterministic adapters | Typed, migrated, fresh, reconciled, and provenance-bound. |
+| Capability, budget, timeout, idempotency, stop/retry ceiling | Harness | Enforced before effects; prompt text is never the boundary. |
+| Policy/mandate admissibility, escalation, kill switch, recovery | Harness | Same gate applies to every entry point and survives restart. |
+| Tool registry, schema validation, dispatch, receipt, search | Harness | Every Agent action crosses a typed and testable membrane. |
+| Decimal/FX/accounting/risk/Scenario calculations | Deterministic engines | Reproducible inputs and versioned math; no free-form model arithmetic. |
+| Persistence, transaction, execution protocol, reconciliation | Deterministic engines | Effect correctness and atomicity remain classical even when Agent chose the action. |
+| Human review workspace | Harness projection | Human can supervise, inspect, intervene, or revoke at every autonomy level. |
 
 ### 4.3 Non-negotiable boundary laws
 
-1. A model response never mutates StateCore by itself.
-2. Agent choices enter classical software as typed requests.
-3. Classical commands validate capability, authority, freshness, schema, and
-   idempotency before effects.
-4. Every effect has a durable receipt; every failed/partial work cycle has a
-   linked terminal trace.
-5. Execution remains entirely classical. Agentic output may create a review
-   candidate only through an explicitly graduated tool.
-6. Human approval is not inferred from conversation or model confidence.
-7. Legacy routes receive compatibility fixes and deletion work only.
-8. A maturity/version label changes only after its executable acceptance gate.
+1. Raw model text never mutates StateCore or calls a broker; Agent decisions
+   enter the Harness as typed requests.
+2. Outside the active mandate, Agent output is a candidate. Inside the mandate,
+   an Agent decision may become effective after deterministic admissibility.
+3. Harness gates validate authority, freshness, policy, schema, budget,
+   idempotency, and autonomy level before effects.
+4. The Agent may own whether, when, why, and in what order to act. The Execution
+   Kernel owns atomic submission, state transitions, and reconciliation.
+5. Every effect has a durable receipt; every failed, partial, denied, or
+   escalated cycle has a linked terminal trace and recovery state.
+6. Human approval is never inferred. Human involvement evolves explicitly from
+   in-the-loop to on-the-loop to over-the-loop as evidence supports delegation.
+7. Mandate expansion, high-impact irreversible action, constitutional conflict,
+   and unresolved ambiguity always escalate to the Human Principal.
+8. Legacy routes receive compatibility fixes and deletion work only.
+9. A maturity or autonomy label changes only after its executable acceptance
+   gate passes.
 
 ## 5. Debt Paydown Before Expansion
 
@@ -217,10 +238,52 @@ The following block is mechanically checked against the canonical register.
 Rules:
 
 - All 10 engineering debts are resolved as of Wave 3 Truthful Closure.
-- Neither item blocks the isolated Agent Loop contract work in Phase 3.
+- Their registered status does not block isolated Agent contract work.
 - A debt is closed only when `scripts/verify_debt_register.py` agrees.
+- “No active registered debt” is not a claim that no material debt exists. The
+  2026-07-11 evidence audit identified new entries that E0-02 must register.
 
 ## 6. Delivery Roadmap
+
+The accepted detailed execution plan is
+[`2026-07-11-finharness-evolution-execution-plan.md`](../proposals/2026-07-11-finharness-evolution-execution-plan.md).
+Its workstreams are constrained by a two-axis maturity lattice, not one serial
+classical-first chain.
+
+```text
+World fidelity
+W0 trustworthy capital facts
+-> W1 versioned decisions and mandate
+-> W2 deterministic Scenario world
+-> W3 outcomes and reconciliation
+-> W4 learning with proven policy consumption
+
+Agent autonomy
+AUT0 context-aware assistant
+-> AUT1 tool-using reviewer
+-> AUT2 observation-driven durable loop
+-> AUT3 delegated Decision Review
+-> AUT4 autonomous paper capital manager
+-> AUT5 mandate-bound real-world operator
+-> AUT6 continuous personal capital agent
+```
+
+E0 evidence repair and E1 containment support both axes. D0/D1/P0/O0 raise
+world fidelity. LOOP/A0 slices raise Agent autonomy. Work can proceed in
+parallel where the cross-axis entry gate is satisfied; neither axis is a
+permanent servant of the other.
+
+| World × autonomy milestone | Minimum admissible capability |
+| --- | --- |
+| W0 + AUT1 | Agent may inspect state, detect missing data, and request evidence. |
+| W1 + AUT2 | Agent may autonomously assemble a complete review packet and replan from observations. |
+| W2 + AUT3 | Within a review mandate, Agent may complete Scenario comparison and make an effective planning decision; out-of-mandate cases escalate. |
+| W3 + AUT4 | Agent may run paper actions, monitor, reconcile, and replan under limits with human-on-the-loop. |
+| W4 + AUT5 | A separately authorized program may permit bounded real actions by asset, notional, frequency, loss, expiry, and kill switch. |
+| Mature AUT6 | Continuous capital management with human-over-the-loop constitutional control and exception handling. |
+
+AUT5 and AUT6 are north-star states, not authorization to implement live
+execution in the current program.
 
 ### Phase 0 — Truth and execution control (complete locally)
 
@@ -244,24 +307,17 @@ Use `security-best-practices` for execution/API control changes and the installe
 | Slice | Plane | Prerequisite | Deliverable | Exit gate | Explicit deferral |
 | --- | --- | --- | --- | --- | --- |
 | DEVEX-01 | Classical tooling | stage timing evidence | `check:fast`, `check:ci`, `check:research`; documented merge aggregate. | Complete: ENG-DEBT-0004 resolved; 3 named layers, check aliases check:ci. | No test deletion/quarantine. |
-| DEPS-01/02 correction | Classical packaging | DEVEX-01 | Machine-readable import/task consumer inventory; populated data/research/agent/eval/paper/security groups; base-only runtime proof. | Active: empty group keys do not count; ENG-DEBT-0005 closes only when the consumer manifest and grouped task/runtime probes pass. | No speculative upgrades or removals. |
+| DEPS-01/02 correction | Classical packaging | DEVEX-01 | Machine-readable import/task consumer inventory; evidence-owned groups; executable base/data/research/agent/eval profiles. | Complete after audit hardening: ENG-DEBT-0005 resolved; paper/security remain honestly empty, base imports the core API without optional wheels, the Agent profile explicitly composes data + research + agent, and isolated profiles run in CI. | No speculative upgrades or removals. |
 
 The purpose is ownership, not a smaller dependency count at any cost.
 
-### Phase 3 — Agent Work Loop semantic closure
+### Agent Harness foundation lane — formerly Phase 3
 
-The dedicated acceptance gate is the work breakdown. No PR may change the
-architecture label merely because it adds a new class or receipt.
+The dedicated 15-contract gate is the minimum Harness foundation for AUT2. It
+is not the end of the Agent product. No PR may change an autonomy label merely
+because it adds a new class or receipt.
 
 <!-- agent-open:start -->
-- `max_steps_effective`
-- `unavailable_tool_stop`
-- `playbook_requirements_enforced`
-- `final_agent_run_receipt_linked`
-- `tool_result_refs_are_artifacts`
-- `work_result_persisted`
-- `review_workspace_hydrated`
-- `result_searchable_by_work_id`
 <!-- agent-open:end -->
 
 | Slice | Classical responsibility | Agentic responsibility | Contracts closed | Exit rule |
@@ -271,16 +327,38 @@ architecture label merely because it adds a new class or receipt.
 | LOOP-04 Work preflight | Freeze/validate required context, trust policy, playbook and evaluator availability before dispatch. | Select playbook and interpret non-blocking guidance. | `playbook_requirements_enforced` | Missing required context stops before tool/cognition effects. |
 | LOOP-05 Terminal artifact chain | Finalize/link AgentRunReceipt, persist AgentWorkResult, store resolvable tool refs, index by work ID. | Produce terminal synthesis content and gaps. | `final_agent_run_receipt_linked`, `tool_result_refs_are_artifacts`, `work_result_persisted`, `result_searchable_by_work_id` | Success/partial/failure all produce one linked, searchable terminal chain. |
 | LOOP-06 Review hydration | Deterministically hydrate/persist workspace projection from terminal refs. | Supply findings/options/explanation for human review. | `review_workspace_hydrated` | Workspace reads receipts, not in-memory placeholders. |
-| LOOP-07 Closure audit | Run all gates, performance/size bounds, failure injection, documentation rebase. | No new capability. | 15/15 | Only here may naming graduate to Agent Operating Cycle v0.1. |
+| LOOP-07 Closure audit | Run all gates, performance/size bounds, failure injection, documentation rebase. | No new capability. | 15/15 | Only here may naming graduate to AUT2 / Agent Operating Cycle v0.1. |
 
-Seven contracts already pass and must remain green:
-`real_tool_arguments`, `observation_driven_decision`, `all_stop_paths_reduced`,
-`context_snapshot_frozen`, `max_tool_calls_effective`,
-`evaluation_report_linked`, and `execution_boundary_closed`.
+All fifteen contracts pass and must remain green:
+`real_tool_arguments`, `observation_driven_decision`,
+`context_snapshot_frozen`, `max_steps_effective`,
+`max_tool_calls_effective`, `unavailable_tool_stop`,
+`playbook_requirements_enforced`, `final_agent_run_receipt_linked`,
+`tool_result_refs_are_artifacts`, `work_result_persisted`,
+`review_workspace_hydrated`, `result_searchable_by_work_id`,
+`evaluation_report_linked`, `execution_boundary_closed`, and
+`all_stop_paths_reduced`.
+
+#### Implementation ledger — autonomy control foundation
+
+This ledger records the framework now proven by the 15-contract AUT2 gate:
+
+| Slice | Status | Evidence | Remaining boundary |
+| --- | --- | --- | --- |
+| AUT-CONTROL-01 W/A lattice and admission | implemented scaffold | `autonomy_control.py`; behavioral positive/negative tests | Produces evidence only; no dispatch or effect integration. |
+| AUT-CONTROL-02 StateCore authority adapter | implemented scaffold | `statecore/autonomy_adapter.py`; dynamic grant/mandate tests | Legacy vocabulary maps only through AUT3; no AUT4+ inference. |
+| AUT-CONTROL-03 Work context propagation | implemented scaffold | `AgentWorkRequest` / `AgentWorkResult` carry Agent, W/A, mandate and grant identifiers | Harness runtime ceiling remains separate from the Agent request. |
+| AUT-CONTROL-04 Dispatch admission binding | implemented | Every attempted dispatch crosses typed admission first; reports are persisted and denied attempts fail before runtime dispatch | Effect-command integration remains a later AUT4/AUT5 concern. |
+| AUT-CONTROL-05 Terminal control evidence | implemented | Admission, tool artifacts, AgentRunReceipt, WorkResult, search index and hydrated workspace form a terminal chain across declared stop paths | Restart/resume/session semantics remain a later durability wave, not part of AUT2. |
+
+The control plane may be developed in parallel with LOOP-02 through LOOP-06,
+The runtime may now be named AUT2 / Agent Operating Cycle v0.1. AUT3 still
+requires W1/W2 world prerequisites and an explicit delegated-review program.
 
 Do not add AgentSession, checkpoint/resume, scheduling, subagents, or MCP tools
-during Phase 3. Those are triggered only by a closed loop plus measured retry,
-resume, or external-tool needs.
+while building AUT2. Those are later Harness mechanisms triggered by measured
+continuous-operation, retry, delegation, or external-tool needs—not permanent
+non-goals.
 
 ### Phase 4 — Structural modularity
 
@@ -292,26 +370,30 @@ resume, or external-tool needs.
 These slices are refactors. They must not introduce product features, schema
 changes, or a frontend framework migration.
 
-### Phase 5 — Product workflows on canonical foundations
+### Product workflow lane — rebased by P0/A0/O0
 
-Entry criteria: Phases 1–3 complete; no P0/P1 architecture or control debt;
-Agent closure 15/15; canonical execution and review interfaces current.
+Entry criteria for W2 deterministic Scenario work are E0 evidence repair,
+trustworthy W0/D0 capital inputs, and W1/D1 versioned decisions. AUT2 may be
+built in parallel, but AUT3 delegated Decision Review requires both W1 and W2.
+Paper/execution autonomy requires W3/O0 hardening.
 
-Candidate sequence:
+Historical candidate sequence, superseded where the accepted plan is more
+specific:
 
 1. **Paper Execution Review** over ExecutionReport/PositionDelta/Reconciliation,
    with performance/PnL/scenario comparison as read models.
 2. **Agent Work Queue** exposing persisted WorkResult and hydrated workspace to
    humans; no autonomous apply.
-3. **Human-confirmed candidate application** only for an already-governed
-   classical command with freshness and rollback evidence.
-4. **Authority Contract design** only after paper behavior produces enough
+3. **Delegated candidate application** graduated from human-confirmed to
+   mandate-effective only after an already-governed command has freshness,
+   limits, rollback, and escalation evidence.
+4. **Authority Contract design** after paper behavior produces enough
    evidence to define scope, caps, expiry, revocation, monitoring, and kill
    switches.
 
 No new work may build on legacy PaperValidation or ActionIntent writes.
 
-### Phase 6 — External/live authority (not planned for implementation)
+### AUT5 — External/live authority (north star, not authorized in this program)
 
 This phase requires a new user decision and a separate C3 program:
 
@@ -324,7 +406,9 @@ This phase requires a new user decision and a separate C3 program:
 - independent monitoring, kill switch, incident and rollback plan;
 - paper-to-live evidence and human approval.
 
-Until all entry criteria exist, the correct implementation is no implementation.
+Until all entry criteria exist, current implementation remains simulated. This
+is an evidence gate for when autonomy may expand, not a permanent claim that a
+Capital Agent can never own an execution objective.
 
 ## 7. PR and Review Policy
 
@@ -388,6 +472,8 @@ Near-term:
 - one current system catalog and one current engineering-debt register;
 - reduce the 2 evidence-backed active debts to 0 without adding parallel registries;
 - Agent acceptance moves monotonically from 4/15 to 15/15;
+- Agent autonomy is named explicitly as AUT0/AUT1/AUT2 rather than inferred
+  from object count;
 - no new legacy callers, writes, models, or product docs;
 - every stacked slice passes its owned tests and full merge gate.
 
@@ -399,6 +485,11 @@ Product-stage:
 - state-changing commands show capability, authority, freshness, and human
   decision evidence;
 - failure and denial paths are as observable as success paths.
+- at each cross-axis milestone, the Agent completes more of the objective while
+  human attention moves from per-step approval toward supervision and exception
+  handling;
+- autonomy expansion is measured by mandate-contained completion, escalation
+  quality, intervention rate, recovery success, and absence of boundary breach.
 
 ## 11. Update Protocol
 

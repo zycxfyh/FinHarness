@@ -224,7 +224,23 @@ domain model / read model / write(command) model / adapters / invariants
   default profile 不写核心状态;
   没有 live order、transfer、broker write API、receipt 删除/覆盖或 Agent approval。
 
-### 9b. Agent Cognition Runtime / Work Orchestrator (scaffolded)
+### 9b. Agent Autonomy Control Plane (current AUT2 foundation)
+
+- **职责**:作为 Capital Agent 与有效决策/行动之间的 deterministic Harness
+  membrane；表达 W0-W4 世界保真度、AUT0-AUT6 自治阶梯、action requirements、
+  human-control mode 和 mandate/runtime admission。
+- **runtime**:`autonomy_control.py` 定义 typed action request、runtime state、
+  effective/candidate/escalate/blocked report；`statecore/autonomy_adapter.py` 动态
+  验证现有 `CapitalMandate` / `AgentAuthorityGrant` 并映射到 AUT0-AUT3；
+  `agent_work_loop.py` 当前只携带 Agent、W/A、mandate/grant 上下文。
+- **status**:current AUT2 foundation。Work-loop typed dispatch 在实际调用前消费
+  admission；admitted/denied paths 均进入 terminal AgentRunReceipt、WorkResult、
+  search index 与 hydrated workspace。effect command gate 不属于 AUT2。
+- **invariants**:admission report 是证据，不是 execution receipt 或 authority
+  transition；永远不从 profile 推断 AUT4+；capital-constitution change 必须升级给
+  Human Principal；未接入 effect boundary 前不得声称 enforcement operational。
+
+### 9c. Agent Cognition Runtime / Agent Operating Cycle v0.1 (current AUT2)
 
 - **职责**:承载 receipt/projection cognition primitives、tool/runtime operating
   surfaces、playbook/evaluator/search/memory/workspace interfaces,以及当前确定性
@@ -235,11 +251,13 @@ domain model / read model / write(command) model / adapters / invariants
   `agent_context_trust_map.py`、`agent_receipt_search.py`、`domain_memory.py`、
   `playbook_loader.py`、`evaluator_registry.py`、`agent_operating_flow.py`、
   `review_workspace.py`、`agent_work_loop.py`。
-- **status**:scaffolded。Operating Surface 可以单独消费;当前 full-work 入口仍是
-  预请求工具序列的 deterministic pipeline,不是 observation-driven Agent Work Loop。
-- **missing closure**:真实 tool arguments、observation→decision reducer、有效
-  `max_steps`、完整 stop paths、单一 linked receipt/result chain、WorkResult
-  persistence/search、full-path playbook/trust consumption、workspace hydration。
+- **status**:current AUT2 foundation（15/15）。Operating Surface 可以单独消费；
+  full-work 入口已有 typed
+  tool arguments、observation→decision port、独立 step/tool budgets、playbook preflight、
+  admission、tool artifacts、AgentRunReceipt、WorkResult persistence/search、
+  workspace hydration 与完整 stop reducer。
+- **later programs**:session/checkpoint/resume、scheduling、subagents、AUT3 delegated
+  Decision Review；这些不是 AUT2 完成度的一部分。
 - **invariants**:不得进入 Execution Kernel;不得以 smoke/component existence 宣称
   lifecycle operational;Wave 3 session/resume 必须等待上述 closure 以及真实
   interrupt/resume 压力。
@@ -275,6 +293,7 @@ domain model / read model / write(command) model / adapters / invariants
 State Core <- Capital Map <- IPS / Decision Workflow <- Review System <- Cockpit
                            <- Research Evidence
 Agent Explanation and Agent Cognition read through tools; they do not own source-of-truth.
+Agent Autonomy Control evaluates admissibility but currently performs no effect.
 Agent Cognition cannot call through to Execution Kernel commands.
 EOS Governance cuts across all systems.
 Archived Live-Trading Legacy has no dependency edge back into mainline.

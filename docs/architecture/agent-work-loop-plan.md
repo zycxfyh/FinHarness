@@ -2,12 +2,10 @@
 
 > Wave 2.2: establish a bounded, auditable, stoppable, learnable agent work cycle.
 
-> **Audit status (2026-07-10): acceptance criteria not met.** The implementation
-> on `main` is a deterministic work-orchestrator scaffold. It does not yet have
-> observation-driven next-action decisions, effective `max_steps`, complete
-> stop reducers, a linked final AgentRunReceipt, WorkResult persistence,
-> playbook/trust consumption in the full path, or workspace hydration. This
-> document remains the target contract, not evidence that Wave 2.2 shipped.
+> **Current status (2026-07-11): semantic acceptance met.** Agent Operating
+> Cycle v0.1 closes all 15 AUT2 foundation contracts. Session, scheduling,
+> checkpoint/resume, subagents, AUT3 delegated decisions, and effect authority
+> remain later programs.
 
 ## What Wave 2.1 completed
 
@@ -162,8 +160,8 @@ Executable closure gate:
 task agent:work-loop-acceptance
 ```
 
-As of 2026-07-10 it is intentionally red: **4/15 contracts pass and 11 remain
-open**. It is not part of `task check`. `task agent:work-loop-acceptance-report`
+As of 2026-07-11 the gate is green: **15/15 contracts pass and 0 remain open**.
+`task agent:work-loop-acceptance-report`
 prints the same repository evidence with a zero diagnostic exit. A future
 implementation may change this baseline only by closing a real contract and
 updating the architecture status in the same slice.
@@ -194,12 +192,12 @@ Agent Operating Cycle v0.1
 Agent Cognition Runtime overall v0.93
 ```
 
-The current state must be named:
+The current state is named:
 
 ```text
 Agent Operating Surface: semantically consumable
-Deterministic Work Orchestrator: scaffolded
-Agent Work Loop: not semantically closed
+Agent Operating Cycle v0.1: current AUT2 foundation
+Agent Cognition Runtime: v0.93, without session/resume/scheduling
 ```
 
 ## Future waves

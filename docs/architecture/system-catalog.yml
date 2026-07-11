@@ -257,8 +257,8 @@ systems:
 
   - id: agent_cognition_runtime
     name: Agent Cognition Runtime / Work Orchestrator
-    status: scaffolded
-    summary: Receipt/projection cognition primitives and semantically consumable operating surfaces exist; the current work entry point is a deterministic pre-requested pipeline, not an observation-driven Agent Work Loop.
+    status: current
+    summary: Agent Operating Cycle v0.1 passes the 15-contract AUT2 foundation gate with typed arguments, observation-driven decisions, independent budgets, playbook preflight, autonomy admission, terminal receipts/results/search/workspace, and all declared stop reducers. Session, resume, scheduling, and AUT3 authority are absent.
     docs:
       - docs/architecture/agent-native-target-space.md
       - docs/architecture/agent-operating-surface.md
@@ -284,7 +284,26 @@ systems:
       - uv run pytest -q tests/test_agent_work_loop_models.py
       - uv run python scripts/run_agent_operating_surface_smoke.py
       - uv run python scripts/run_agent_work_loop_smoke.py
-    upgrade_trigger: Graduate from scaffolded only when real tool arguments, observation-driven decisions, effective step budgets, all stop paths, linked receipts, result persistence/search, playbook/trust consumption, and workspace hydration have semantic tests.
+    upgrade_trigger: Add session/checkpoint/resume only for measured long-running recovery needs; AUT3 requires W1/W2 world prerequisites and a separately tested delegated-review mandate.
+
+  - id: agent_autonomy_control
+    name: Agent Autonomy Control Plane
+    status: current
+    summary: Deterministic Harness admission vocabulary and evaluator across W0-W4 world fidelity and AUT0-AUT6 autonomy, with a compatibility adapter for CapitalMandate and AgentAuthorityGrant. Every Agent work-loop dispatch crosses admission and persists non-executing evidence in the AUT2 terminal chain; effect commands remain outside this integration.
+    docs:
+      - docs/modules/agent-autonomy-control.md
+      - docs/architecture/finharness-evolution-roadmap.md
+      - docs/adr/2026-07-11-agent-native-control-ownership.md
+    runtime_roots:
+      - src/finharness/autonomy_control.py
+      - src/finharness/statecore/autonomy_adapter.py
+      - src/finharness/agent_work_loop.py
+    mature_posture: Keep admission local, typed, deterministic, and provider-neutral. Consider an external policy engine only after rule volume or multi-runtime consistency creates measured pressure.
+    checks:
+      - uv run python -m unittest tests.test_autonomy_control
+      - uv run python -m unittest tests.test_autonomy_statecore_adapter
+      - task agent:work-loop-acceptance-report
+    upgrade_trigger: Bind verified world versions and action-specific limit evaluators before AUT3; integrate effect commands only through separate AUT4/AUT5 authority programs.
 
   - id: cockpit_api
     name: Cockpit / API

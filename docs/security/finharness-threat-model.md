@@ -314,9 +314,12 @@ Existing controls: the canonical Execution Kernel (`/execution/*` routes,
 execution path. The roadmap explicitly prohibits new paper-validation features
 and the debt register lists this as non-goal.
 
-Gaps: resolved by SEC-02B — AST-level transitive import boundary
-(`paper_validation_boundary_audit.py` + `test_paper_validation_import_boundary.py`)
-detects direct and multi-hop forbidden imports from paper modules.
+Gaps: resolved by SEC-02B and the 2026-07-11 audit correction — the AST import
+graph uses canonical importable module names, includes package initialization and
+external leaf imports, fails on missing boundary roots, and detects direct,
+relative, and multi-hop forbidden imports. Dependency-free project paths prevent
+paper modules from importing network-capable market-data wheels merely to locate
+artifact roots.
 
 **TM-PV-003: Silent consumer bypass.**
 

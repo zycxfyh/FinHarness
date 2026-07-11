@@ -1,6 +1,6 @@
 # FinHarness Framework Index
 
-状态:current(2026-07-10)。这是 FinHarness 的“不要每次重新理解一遍”索引。
+状态:current(2026-07-11)。这是 FinHarness 的“不要每次重新理解一遍”索引。
 
 本页只回答四件事:
 
@@ -12,6 +12,10 @@
 更细的文件事实看 [Module Map](module-map.md);系统边界看
 [System Map](system-map.md);分层演进看 [Capital OS Layering](capital-os-layering.md)。
 产品能力路线看 [Capital Workbench Roadmap](../product/capital-workbench-roadmap.md)。
+2026-07-11 外部调研与代码校准看
+[External Research Synthesis](../notes/2026-07-11-external-research-synthesis.md)，
+分阶段实施门槛看
+[Evidence-First Evolution Execution Plan](../proposals/2026-07-11-finharness-evolution-execution-plan.md)。
 机器可读目录看 [System Catalog](system-catalog.yml);工程推进风险看
 [Engineering Leverage Map](engineering-leverage-map.md)。Agent L5 参考模式看
 [Agent Runtime Reference](agent-runtime-reference/README.md)。金融行业词与
@@ -20,32 +24,45 @@ FinHarness 原语的对应关系看
 
 ## One Sentence
 
-FinHarness 是一个 local-first **personal capital governance framework**:
-把个人资本状态、IPS/CapitalMandate、证据、proposal/review、Agent explanation、
-receipt、governance checks、Execution Kernel (simulated substrate) 和未来受控
-资本动作能力组织成可审计闭环。
+FinHarness 当前是一个 local-owned **Personal Capital Review and Decision
+Ledger**：把个人资本状态、证据、proposal/review、human DecisionRecord 方向、
+receipt、governance checks 和 simulated Execution substrate 组织成可审计的
+复核工作台。**Agent-Native Personal Capital Operating System** 是北极星，
+不是当前产品完成度声明。
 
 ## Framework Shape
 
 ```text
-personal data -> state core -> capital map -> IPS/policy/capital mandate
--> mandate-bound authority credentials
--> governed proposal -> human review -> receipt/lesson
--> Agent explanation + cockpit
-
-EOS governance cuts across the whole loop.
-External/mature wheels are adapters, not authority.
-Archived live-trading code has no edge back into mainline.
-Future delegated authority must cite an explicit CapitalMandate and its own
-authority object; CapitalMandate and AgentAuthorityGrant are not execution.
+Human Principal
+  goals + capital constitution + mandate + veto/revocation
+        ↓
+Capital Agent
+  observe -> reason -> plan -> act -> verify -> learn
+        ↓
+FinHarness Harness
+  world model + tools/skills + policy + receipts + recovery + escalation
+        ↓
+Deterministic Engines
+  accounting/FX/risk/Scenario + persistence + execution + reconciliation
 ```
+
+当前 Agent Operating Cycle v0.1 已达到 AUT2 foundation（15/15），仍处于
+Human-in-the-loop；这不是 AUT3 delegated decision authority。
+目标不是让确定性引擎永久拥有工作流，而是让 Agent 在 Harness 的机器边界内
+逐步获得目标级自治。External/mature wheels 负责 mechanics，不拥有目标或权限。
+
+Current executable truth: **Agent Operating Cycle v0.1 is the current AUT2
+foundation**. Structural evidence: `run_agent_operating_surface_smoke.py` (23 checks);
+`run_agent_work_loop_smoke.py` (18 structural checks). The dedicated behavioral
+gate is 15/15.
+This closure does not imply session/resume, scheduling, subagents, or AUT3 authority.
 
 ## System Summary
 
 | Part | Core summary | Primary docs | Runtime roots | Mature pattern / tool posture | Check / receipt |
 | --- | --- | --- | --- | --- | --- |
-| Product North Star | 产品类别和推进路线:个人资本判断层,从 awareness/review 逐步走向 paper validation 与受控资本动作。 | `docs/product-north-star.md`, `docs/product/*` | README, cockpit copy | Diataxis + product north-star discipline | `task docs:current-check` |
-| Evolution Roadmap | 当前系统真相、PR 因果脉络、classical/agentic/human 责任、债务顺序与未来 phase gates。 | `finharness-evolution-roadmap.md`, `system-catalog.yml`, `docs/governance/debt-register.json` | No runtime root; derives from current code/tests/history. | Contracts closed and legacy removed, not PR count or version labels. | `task docs:current-check`, `task agent:work-loop-acceptance-report` |
+| Product North Star | Agent-Native Personal Capital Operating System：Human Principal 拥有资本宪法，Capital Agent 拥有目标闭环，Harness 拥有准入/恢复，deterministic engines 拥有效果正确性。 | `docs/product-north-star.md`, `docs/product/*` | README, cockpit copy | autonomy ladder + product north-star discipline | `task docs:current-check` |
+| Evolution Roadmap | 当前系统真相、PR 因果脉络、classical/agentic/human 责任、债务顺序与未来 phase gates。 | `finharness-evolution-roadmap.md`, `docs/proposals/2026-07-11-finharness-evolution-execution-plan.md`, `docs/notes/2026-07-11-external-research-synthesis.md`, `system-catalog.yml`, `docs/governance/debt-register.json` | No runtime root; derives from current code/tests/history. | Contracts closed and user outcomes proven, not PR count, receipt count, or version labels. | `task docs:current-check`, `task agent:work-loop-acceptance-report` |
 | State Core | receipt-backed 状态镜像;SQLite 可查,receipt 是证据根。 | `system-map.md`, `module-map.md`, `reference/interfaces.md` | `statecore/`, `api/routes_state.py` | Event/receipt sourcing ideas,但保留本地简洁实现 | `task test`, StateCore tests |
 | Capital Map | 把状态变成 exposure、daily brief、dashboard summary。 | `system-map.md`, `tutorials/golden-path.md` | `exposure.py`, `daily_brief.py`, `daily_change_brief.py` | 财务报表/BI read-model 思路;不替代 ledger | `task brief:daily`, `task decisions:scan` |
 | IPS / Policy / Authority Credentials | 用户自己的投资政策声明、描述性 compliance check、未来授权前置的 human-attested CapitalMandate,以及 mandate-bound AgentAuthorityGrant credential。 | `capital-os-layering.md`, `system-map.md`, `docs/reference/financial-terminology-map.md`, `docs/adr/2026-07-02-capital-mandate-before-delegated-authority.md`, `docs/adr/2026-07-03-agent-authority-grants-are-mandate-bound-credentials.md` | `ips.py`, `api/routes_ips.py`, `statecore/capital_mandates.py`, `api/routes_capital_mandates.py`, `statecore/agent_authority_grants.py`, `api/routes_agent_authority_grants.py` | IPS / policy-as-code 思路;CapitalMandate 与 AgentAuthorityGrant 先用 receipt-backed local objects + dynamic validator,暂不上 OPA/Cedar;金融术语映射只作 design analogy,不是 compliance claim | `GOV-DOCS-003`, IPS/capital-mandate/agent-authority-grant tests |
@@ -56,8 +73,9 @@ authority object; CapitalMandate and AgentAuthorityGrant are not execution.
 | Execution Kernel | CANONICAL. OrderDraft → PreTradeCheck → ApprovalRecord → ExecutionOrder → SimulatedBrokerAdapter → ExecutionReport → PositionDelta → ReconciliationReport. Full lifecycle on simulated substrate, 9 receipt kinds, 8 API routes. | `system-map.md`, `closure-report.md` | `execution/services.py`, `execution/broker.py`, `execution/commands.py`, `execution/capabilities.py`, `api/routes_execution.py` | Execution-first architecture; simulated-only adapter boundary; service-enforced immutable ExecutionCapabilities | execution services / routes / lifecycle / adapter boundary / capability-enforcement tests |
 | Research Evidence | 只读历史/描述性证据,作为 candidate evidence,不生成行动。 | `docs/research/README.md`, `reference/interfaces.md` | `research_evidence.py`, `research_assets.py`, `research_enrichment.py` | vectorbt/Riskfolio/QuantStats 等成熟 wheel 走 adapter | `GOV-RESEARCH-*`, `task hardening:redteam` |
 | External Data / Mature Wheels | yfinance/OpenBB/ccxt/TA-Lib/Pandera/Riskfolio 等外部能力只做证据或计算适配。 | `mature-wheel-control-plane.md`, `docs/wheels.md` | `data_entry.py`, `market_data.py`, `providers/`, `portfolio_risk.py`, `data_quality.py` | adopt-not-invent;成熟件负责重活,FinHarness 负责边界和 receipt | adapter tests, `task wheels:check` |
-|| Agent Explanation | Agent 通过 context packs、capability profiles、`AgentToolEntry`、evidence provider registry、context projection policy 和 runtime pipeline 选择 actual tools;runtime 暴露 visible/hidden/unavailable tools、structured result/error/evidence envelope、profile-aware context budget、result budget;default profile 是 read/explain baseline,review-draft 可创建 append-only governed proposal draft,review-note 可创建 append-only `AgentReviewNoteDraft`,scaffold-candidate 可创建 apply candidate,system preflight 会重算 candidate readiness,不靠 prompt 承诺升级权限。 | `system-map.md`, `reference/interfaces.md` | `agent_context.py`, `agent_context_projection.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `scaffold_candidate_preflight.py`, `proposal_queue_checks.py`, `review_read.py`, `hermes_bridge.py` | Hermes-style spec/availability/dispatch/context budget/profile/toolset/provider registry/guardrail 思路;每个 Agent 能力必须带 typed governance artifact / review carrier;draft proposal、review note 和 apply candidate 都是 review objects,不是 approval | agent proposal/review-note/scaffold-candidate/preflight/capability/context/projection/evidence/runtime/tool tests, future evals |
-||| Agent Cognition Runtime v0.93 | Wave 0–2.1 delivered: 8D agentic space, deterministic cognition flow, semantic hardening, and Agent Operating Surface v0.4. Wave 2.2 is a deterministic work-orchestrator scaffold; the Agent Work Loop is not semantically closed. Smoke scripts: `run_agent_operating_surface_smoke.py` (23 checks), `run_agent_work_loop_smoke.py` (18 structural checks). Execution Kernel frozen. | `agent-work-loop-plan.md` | `agent_work_loop.py` composes a deterministic pipeline; observation-driven decisions, step reduction, final artifact linkage, persistence, and workspace hydration remain pending. | Receipt-first primitives and frozen context exist. Dedicated semantic gate is 4/15 passing with 11 open; no session/scheduler/execution. | agent surface tests + work-loop structural smoke + `task agent:work-loop-acceptance` (expected red) |
+| Agent Operating Surface (current AUT0/AUT1) | Agent 通过 context packs、capability profiles、`AgentToolEntry`、evidence registry、context policy 和 runtime pipeline 选择工具；当前 write profiles 只创建 governed review artifacts。 | `system-map.md`, `reference/interfaces.md` | `agent_context.py`, `agent_context_projection.py`, `agent_capabilities.py`, `agent_evidence.py`, `agent_tools.py`, `agent_runtime.py`, `proposal_queue_checks.py`, `review_read.py` | 当前权限是迁移起点；长期由 mandate + Harness gate 扩张，不靠 prompt 或 profile 自证。 | agent capability/context/evidence/runtime/tool tests |
+| Agent Autonomy Control Plane (current AUT2 foundation) | 把 Agent action 按 W0-W4/AUT0-AUT6、Harness runtime ceiling、mandate、scope、expiry 和 kill switch 判为 effective/candidate/escalate/blocked。 | `docs/modules/agent-autonomy-control.md`, `system-map.md`, `finharness-evolution-roadmap.md` | `autonomy_control.py`, `statecore/autonomy_adapter.py`, `agent_work_loop.py` | 已接入 work-loop dispatch 并进入 terminal chain；仍只产生 non-executing evidence，不接 effect commands，不推导 AUT3+。 | autonomy control + StateCore adapter + reducer tests |
+| Agent Harness / Autonomy | Agent Operating Cycle v0.1：typed arguments、observation-driven decision、独立 budgets、playbook preflight、dispatch admission、terminal receipts/results/search/workspace 与全部 stop reducers 已接通。15-contract gate 是 AUT2 地基，不是 Agent 产品终点。 | `agent-work-loop-plan.md`, `finharness-evolution-roadmap.md` | `agent_work_loop.py` | 下一阶梯是带 W1/W2 前置的 AUT3 delegated review；AUT4+ 不由 AUT2 自动推导。 | `task agent:work-loop-acceptance` (15/15) |
 | Cockpit / API | 本地产品表面:读、比较、复核、拒绝、确认、归档。 | `system-map.md`, `reference/interfaces.md` | `api/app.py`, `api/routes_*.py`, `frontend/` | Thin adapter + view contract;暂不引入重前端框架 | `task test:frontend`, route tests |
 | EOS Governance / Quality | change control、policy registry、docs-current、security、release、repo intelligence。 | `documentation-fact-governance.md`, `scaffolding-inventory.md`, `docs/engineering/*` | `tests/_policy_registry.py`, `hardening.py`, `repo_intelligence.py`, governance graphs | Python registry now;OPA/Conftest/Backstage/Temporal 只在痛点足够时引入 | `task governance:check`, `task check` |
 | Security / Supply Chain | threat model、SSDF map、CODEOWNERS、fuzz、SBOM/provenance baseline。 | `docs/security/*` | `.github/`, `hardening.py`, `data/security/` | OpenSSF Scorecard, CodeQL, Gitleaks, Trivy, SBOM/SLSA posture | `task security:fuzz`, `task security:scan` |
