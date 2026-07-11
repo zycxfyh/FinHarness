@@ -13,7 +13,7 @@ _PARENT = Path(__file__).resolve().parents[1]
 REAL_INV = _PARENT / "docs" / "governance" / "attestation-consumers.json"
 
 
-def _c(overrides: dict | None = None) -> dict:
+def _c(overrides=None):
     base = {
         "consumer_id": "ATT-CONS-001", "path": "src/finharness/statecore/models.py",
         "symbol": "Attestation", "line_start": 169, "line_end": 186,
@@ -63,15 +63,21 @@ def _tmp_validate(data, root=None):
     return failures
 
 
-class TestInventory(unittest.TestCase):
+def _hermetic_root():
+    """Create a hermetic temp directory with a valid consumer file."""
+    td = tempfile.TemporaryDirectory()
+    root = Path(td.name)
+    src = root / "src" / "finharness"
+    src.mkdir(parents=True)
+    (src / "models.py").write_text("class Attestation:\n    pass\n")
+    return td, root
 
-    # ── positive ──────────────────────────────────────────────────────
+
+class TestInventory(unittest.TestCase):
 
     def test_real_inventory_passes(self):
         f = validate_inventory(REAL_INV)
         self.assertEqual(f, [], f"Real inventory must pass: {f}")
-
-    # ── structural ────────────────────────────────────────────────────
 
     def test_duplicate_id_fails(self):
         f = _tmp_validate(_inv([_c(), _c({"consumer_id": "ATT-CONS-001"})]))
@@ -93,8 +99,6 @@ class TestInventory(unittest.TestCase):
         f = _tmp_validate(_inv([_c()], unclassified_hits=[{"f": "x"}]))
         self.assertTrue(any("unclassified_hits" in x for x in f), f)
 
-    # ── ID sequence ───────────────────────────────────────────────────
-
     def test_non_contiguous_ids_fail(self):
         data = _inv([_c({"consumer_id": "ATT-CONS-001"}),
                       _c({"consumer_id": "ATT-CONS-003"})])
@@ -104,8 +108,6 @@ class TestInventory(unittest.TestCase):
     def test_bad_id_format_fails(self):
         f = _tmp_validate(_inv([_c({"consumer_id": "BAD-001"})]))
         self.assertTrue(any("invalid consumer_id format" in x for x in f), f)
-
-    # ── summary drift ─────────────────────────────────────────────────
 
     def test_total_count_drift_fails(self):
         f = _tmp_validate(_inv([_c()],
@@ -132,29 +134,43 @@ class TestInventory(unittest.TestCase):
                      "by_disposition": {"preserve": 1}, "high_or_critical_count": 0}))
         self.assertTrue(any("high_or_critical_count" in x for x in f), f)
 
-    # ── exclusion validation ──────────────────────────────────────────
+    def test_wide_range_fails(self):
+        c = _c({"line_start": 1, "line_end": 300})
+        f = _tmp_validate(_inv([c]))
+        self.assertTrue(any("range too wide" in x for x in f), f)
+
+    def test_exclusion_wrong_term(self):
+        td, root = _hermetic_root()
+        try:
+            c = _c({"path": "src/finharness/models.py", "line_start": 1, "line_end": 2})
+            data = _inv([c])
+            data["exclusions"] = [{"path": "src/finharness/models.py",
+                                   "match_line": 1, "term": "Attestation", "reason": "test"}]
+            data["scope"]["scan_terms"] = ["Attestation"]
+            data["scope"]["source_roots"] = ["src"]
+            f = _tmp_validate(data, root=root)
+            self.assertEqual(f, [], f"Should pass: {f}")
+        finally:
+            td.cleanup()
 
     def test_exclusion_missing_path_fails(self):
-        f = _tmp_validate(_inv([_c()],
-            exclusions=[{"path": "nope.py", "match_line": 1, "term": "x", "reason": "test"}]))
+        exc = [{"path": "nope.py", "match_line": 1,
+                "term": "Attestation", "reason": "test"}]
+        f = _tmp_validate(_inv([_c()], exclusions=exc))
         self.assertTrue(any("path does not exist" in x for x in f), f)
 
-    # ── same-file blind spot ──────────────────────────────────────────
+    def test_exclusion_empty_reason_fails(self):
+        f = _tmp_validate(_inv([_c()],
+            exclusions=[{"path": "src/finharness/statecore/models.py",
+                         "match_line": 169, "term": "Attestation", "reason": ""}]))
+        self.assertTrue(any("empty reason" in x for x in f), f)
 
     def test_same_file_uncovered_hit_fails(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            src = root / "src" / "finharness"
-            src.mkdir(parents=True)
-            (src / "example.py").write_text("""from finharness.statecore.models import Attestation
-
-def existing_consumer():
-    return Attestation
-
-def newly_added_consumer():
-    return Attestation
-""")
-            c = _c({"path": "src/finharness/example.py", "line_start": 3, "line_end": 4})
+        td, root = _hermetic_root()
+        try:
+            (root / "src" / "finharness" / "models.py").write_text(
+                "class Attestation:\n    pass\n\ndef new_func():\n    return Attestation\n")
+            c = _c({"path": "src/finharness/models.py", "line_start": 1, "line_end": 2})
             data = _inv([c])
             data["scope"]["scan_terms"] = ["Attestation"]
             data["scope"]["source_roots"] = ["src"]
@@ -163,15 +179,22 @@ def newly_added_consumer():
                 any("unregistered hit" in x for x in f),
                 f"Second consumer not detected: {f}",
             )
-
-    # ── unregistered probe ────────────────────────────────────────────
+        finally:
+            td.cleanup()
 
     def test_unregistered_probe_fails(self):
-        probe = _PARENT / "src" / "finharness" / "_attestation_inventory_probe.py"
+        td, root = _hermetic_root()
         try:
-            probe.write_text("from finharness.statecore.models import Attestation\n")
-            f = validate_inventory(REAL_INV)
-            self.assertTrue(any("_attestation_inventory_probe" in x for x in f), str(f))
+            probe = root / "src" / "finharness" / "_probe.py"
+            probe.write_text("from models import Attestation\n")
+            c = _c({"path": "src/finharness/models.py", "line_start": 1, "line_end": 2})
+            data = _inv([c])
+            data["scope"]["scan_terms"] = ["Attestation"]
+            data["scope"]["source_roots"] = ["src"]
+            f = _tmp_validate(data, root=root)
+            self.assertTrue(
+                any("_probe.py" in x for x in f),
+                f"Probe not detected: {f}",
+            )
         finally:
-            if probe.exists():
-                probe.unlink()
+            td.cleanup()

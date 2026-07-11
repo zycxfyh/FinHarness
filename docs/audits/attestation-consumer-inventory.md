@@ -9,10 +9,10 @@
 The Attestation model currently serves **three distinct semantic roles** across the codebase:
 
 1. **Historical review evidence** (preserve): Timeline display, receipt replay, audit trails.
-2. **Review-completion proxy** (migrate): `open_for_review`, `_queue_status`, `status=attested`, `ReviewTaskLifecycle.completed`.
+2. **Review-completion proxy** (migrate): `open_for_review`, `_queue_status`, `status=attested`, `ReviewTaskLifecycle.completed`, `build_open_proposals_context`.
 3. **Canonical decision claim** (remove): Docstrings, non_claims, system-map that call attestation "the decision of record."
 
-Attestation has **no version binding** — it binds only to `proposal_id`, not to `proposal_version_id`, `proposal_content_hash`, `decision_case_version_id`, or `scenario_version_id`. This makes it unsuitable as a canonical decision artifact. The daily brief and annual review also consume Attestation for review-state gating and period aggregation.
+Attestation has **no version binding** — it binds only to `proposal_id`, not to `proposal_version_id`, `proposal_content_hash`, `decision_case_version_id`, or `scenario_version_id`. The daily brief, annual review, and agent context also consume Attestation for review-state gating and period aggregation.
 
 **Key conclusion**: Attestation remains historical review evidence, but current-state consumers that treat any Attestation as canonical review completion must be migrated to a version-bound DecisionRecord / DecisionValidity pair.
 

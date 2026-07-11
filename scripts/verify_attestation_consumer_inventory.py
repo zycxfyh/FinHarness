@@ -59,6 +59,7 @@ SCAN_GLOBS = [
     "frontend/**/*.html",
 ]
 
+MAX_RANGE_LINES = 250
 CID_RE = re.compile(r"^ATT-CONS-(\d{3})$")
 
 
@@ -96,7 +97,6 @@ def _should_scan(path: Path, root: Path) -> bool:
 
 
 def _scan_hits(scan_terms: list[str], root: Path = ROOT) -> list[ScanHit]:
-    """Return every (path, line, term) hit matching any scan term."""
     hits: list[ScanHit] = []
     for glob_pat in SCAN_GLOBS:
         for path in sorted(root.glob(glob_pat)):
@@ -150,7 +150,6 @@ def _parse_exclusions(exclusions: list[dict]) -> list[ExclusionEntry]:
 
 def _hit_covered(hit: ScanHit, ranges: list[ConsumerRange],
                  excl: list[ExclusionEntry]) -> bool:
-    """True when hit is covered by a consumer range or an exclusion entry."""
     for cr in ranges:
         if (hit.path == cr.path
                 and cr.line_start <= hit.line <= cr.line_end
@@ -167,8 +166,7 @@ def _hit_covered(hit: ScanHit, ranges: list[ConsumerRange],
 # ── per-consumer validation ───────────────────────────────────────────────────
 
 
-def _check_one(consumer: dict) -> list[str]:
-    """Structural + enum validation for a single consumer."""
+def _check_one(consumer: dict, root: Path = ROOT) -> list[str]:
     f: list[str] = []
     cid = consumer.get("consumer_id", "?")
     p = f"{cid}:"
@@ -176,7 +174,7 @@ def _check_one(consumer: dict) -> list[str]:
     if missing:
         f.append(f"{p} missing fields: {sorted(missing)}")
     f.extend(_check_one_enums(consumer, p))
-    f.extend(_check_one_path_lines(consumer, p))
+    f.extend(_check_one_path_lines(consumer, p, root))
     return f
 
 
@@ -201,10 +199,10 @@ def _check_one_enums(consumer: dict, p: str) -> list[str]:
     return f
 
 
-def _check_one_path_lines(consumer: dict, p: str) -> list[str]:
+def _check_one_path_lines(consumer: dict, p: str, root: Path = ROOT) -> list[str]:
     f: list[str] = []
     path_str = consumer.get("path", "")
-    if path_str and not (ROOT / path_str).is_file():
+    if path_str and not (root / path_str).is_file():
         f.append(f"{p} path does not exist: {path_str}")
     ls = consumer.get("line_start", 0)
     le = consumer.get("line_end", 0)
@@ -214,6 +212,12 @@ def _check_one_path_lines(consumer: dict, p: str) -> list[str]:
         f.append(f"{p} invalid line_end: {le}")
     if isinstance(ls, int) and isinstance(le, int) and ls > 0 and le > 0 and ls > le:
         f.append(f"{p} line_start > line_end: {ls} > {le}")
+    # Range size check — prevent whole-file masking
+    if isinstance(ls, int) and isinstance(le, int) and le - ls > MAX_RANGE_LINES:
+        just = consumer.get("wide_range_justification", "")
+        if not just.strip():
+            f.append(f"{p} range too wide ({le - ls} lines > {MAX_RANGE_LINES}); "
+                     f"provide wide_range_justification")
     mt = consumer.get("match_terms")
     if not isinstance(mt, list) or not mt:
         f.append(f"{p} match_terms is empty")
@@ -274,30 +278,74 @@ def _check_summary(consumers: list[dict], summary: dict) -> list[str]:
 # ── exclusion validation ──────────────────────────────────────────────────────
 
 
-def _check_exclusions(exclusions: list[dict], root: Path = ROOT) -> list[str]:
+def _check_exclusions(exclusions: list[dict], scan_terms: list[str],
+                      scan_hits: list[ScanHit], root: Path = ROOT) -> list[str]:
     f: list[str] = []
+    hit_set = {(h.path, h.line, h.term) for h in scan_hits}
+    valid_terms = set(scan_terms)
     seen_excl: set[tuple] = set()
     for i, exc in enumerate(exclusions):
-        idx = f"exclusion[{i}]"
-        p = exc.get("path", "")
-        ml = exc.get("match_line", 0)
-        term = exc.get("term", "")
-        reason = exc.get("reason", "")
-        if not p:
-            f.append(f"{idx}: empty path")
-            continue
-        if not (root / p).is_file():
-            f.append(f"{idx}: path does not exist: {p}")
-        if not isinstance(ml, int) or ml <= 0:
-            f.append(f"{idx}: invalid match_line: {ml}")
-        if not term:
-            f.append(f"{idx}: empty term")
-        if not reason.strip():
-            f.append(f"{idx}: empty reason")
-        key = (p, ml, term)
-        if key in seen_excl:
-            f.append(f"{idx}: duplicate exclusion: {key}")
-        seen_excl.add(key)
+        f.extend(_check_one_exclusion(i, exc, valid_terms, hit_set, seen_excl, root))
+    return f
+
+
+def _check_one_exclusion(i, exc, valid_terms, hit_set, seen_excl, root):
+    f: list[str] = []
+    idx = f"exclusion[{i}]"
+    p = exc.get("path", "")
+    ml = exc.get("match_line", 0)
+    term = exc.get("term", "")
+    reason = exc.get("reason", "")
+
+    f.extend(_check_excl_structure(idx, p, ml, term, reason, root))
+    if not f or any("empty path" in x for x in f):
+        return f
+    f.extend(_check_excl_term_match(idx, p, ml, term, valid_terms, root))
+    f.extend(_check_excl_hit_match(idx, p, ml, term, hit_set, seen_excl))
+    return f
+
+
+def _check_excl_structure(idx, p, ml, term, reason, root):
+    f = []
+    if not p:
+        f.append(f"{idx}: empty path")
+        return f
+    if not (root / p).is_file():
+        f.append(f"{idx}: path does not exist: {p}")
+    if not isinstance(ml, int) or ml <= 0:
+        f.append(f"{idx}: invalid match_line: {ml}")
+    if not term:
+        f.append(f"{idx}: empty term")
+    if not reason.strip():
+        f.append(f"{idx}: empty reason")
+    return f
+
+
+def _check_excl_term_match(idx, p, ml, term, valid_terms, root):
+    f = []
+    if term and term not in valid_terms:
+        f.append(f"{idx}: term '{term}' not in scope.scan_terms")
+    if (root / p).is_file() and term and ml > 0:
+        try:
+            lines = (root / p).read_text(errors="replace").split("\n")
+            if ml <= len(lines):
+                if term not in lines[ml - 1]:
+                    f.append(f"{idx}: term '{term}' not found at line {ml} in {p}")
+            else:
+                f.append(f"{idx}: line {ml} out of range ({len(lines)} lines) in {p}")
+        except OSError:
+            pass
+    return f
+
+
+def _check_excl_hit_match(idx, p, ml, term, hit_set, seen_excl):
+    f = []
+    key = (p, ml, term)
+    if key not in hit_set:
+        f.append(f"{idx}: no scan hit at {p}:{ml}:{term}")
+    if key in seen_excl:
+        f.append(f"{idx}: duplicate exclusion: {key}")
+    seen_excl.add(key)
     return f
 
 
@@ -326,24 +374,18 @@ def validate_inventory(inv_path: Path = INV, root: Path = ROOT) -> list[str]:
 
     scan_terms = data.get("scope", {}).get("scan_terms", [])
     if not scan_terms:
-        failures.append("scope.scan_terms is empty — cannot scan")
+        failures.append("scope.scan_terms is empty")
 
-    # Structural + enum validation
     for c in consumers:
-        failures.extend(_check_one(c))
+        failures.extend(_check_one(c, root))
 
-    # ID sequence
     failures.extend(_check_ids(consumers))
-
-    # Summary recalculation
     failures.extend(_check_summary(consumers, data.get("summary", {})))
 
-    # Exclusion validation
     exclusions = data.get("exclusions", [])
     scan_hits = _scan_hits(scan_terms, root)
-    failures.extend(_check_exclusions(exclusions, root))
+    failures.extend(_check_exclusions(exclusions, scan_terms, scan_hits, root))
 
-    # Hit-level coverage
     ranges = _parse_consumer_ranges(consumers)
     parsed_excl = _parse_exclusions(exclusions)
     for hit in scan_hits:

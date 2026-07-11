@@ -22,7 +22,7 @@
     ]
   },
   "summary": {
-    "total_consumers": 37,
+    "total_consumers": 39,
     "by_role": {
       "api_contract": 4,
       "compatibility_link": 1,
@@ -31,19 +31,19 @@
       "read_projection": 3,
       "receipt_writer": 2,
       "schema_model": 3,
-      "state_gate": 8,
-      "test_contract": 4,
+      "state_gate": 9,
+      "test_contract": 5,
       "write_surface": 2
     },
     "by_disposition": {
       "deprecate_after_replacement": 3,
-      "dual_read_transition": 4,
+      "dual_read_transition": 5,
       "investigate": 4,
-      "migrate_to_decision_validity": 8,
+      "migrate_to_decision_validity": 9,
       "preserve": 14,
       "remove_canonical_claim": 4
     },
-    "high_or_critical_count": 9
+    "high_or_critical_count": 10
   },
   "consumers": [
     {
@@ -51,29 +51,23 @@
       "path": "src/finharness/statecore/models.py",
       "symbol": "Attestation",
       "line_start": 169,
-      "line_end": 202,
+      "line_end": 186,
       "match_terms": [
         "Attestation",
         "attestation_id",
         "attestations"
       ],
       "role": "schema_model",
-      "current_behavior": "SQLModel table attesting a proposal_id with a human decision (approve/reject/refer). No proposal_version_id, proposal_content_hash, decision_case_version_id, or scenario_version_id. Binds only to proposal_id.",
+      "current_behavior": "SQLModel table attesting a proposal_id with a human decision. No version fields.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Defines the database shape; carries no execution authority (authority_level=needs_human_confirm).",
+      "authority_effect": "Defines DB shape; no execution authority.",
       "risk": "high",
       "disposition": "preserve",
       "target_owner": "Attestation (historical); future DecisionRecord/DecisionValidity",
-      "prerequisites": [
-        "DecisionRecord model exists on main.",
-        "DecisionValidity model exists on main."
-      ],
-      "recommended_change": "Keep Attestation table for historical data and receipt replay. New writes needing version-bound decision semantics must use DecisionRecord/DecisionValidity.",
-      "test_implications": [
-        "tests/test_statecore_api.py",
-        "tests/test_statecore_vertical_reconstruction.py"
-      ],
+      "prerequisites": [],
+      "recommended_change": "Keep for historical data. New version-bound writes use DecisionRecord/DecisionValidity.",
+      "test_implications": [],
       "evidence": [
         "src/finharness/statecore/models.py:169-186"
       ]
@@ -82,56 +76,49 @@
       "consumer_id": "ATT-CONS-002",
       "path": "src/finharness/statecore/models.py",
       "symbol": "ReviewEvent.attestation_ref",
-      "line_start": 169,
+      "line_start": 199,
       "line_end": 232,
       "match_terms": [
         "Attestation",
-        "attestation_id",
-        "attestation_ref",
-        "attestations"
+        "attestation_ref"
       ],
       "role": "compatibility_link",
-      "current_behavior": "ReviewEvent carries an optional attestation_ref linking review events back to the attestation they were created under. Docstring says attestation stays the decision of record.",
+      "current_behavior": "ReviewEvent carries optional attestation_ref linking back to attestation.",
       "decision_semantics": "compatibility_reference",
       "version_binding": "not_applicable",
-      "authority_effect": "Read-only link; ReviewEvent never carries execution authority.",
+      "authority_effect": "Read-only link.",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "ReviewEvent (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep attestation_ref in ReviewEvent as a historical compatibility link. No migration needed.",
+      "recommended_change": "Keep attestation_ref as historical compatibility link.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/models.py:199-232"
+        "models.py:199-232"
       ]
     },
     {
       "consumer_id": "ATT-CONS-003",
       "path": "src/finharness/statecore/models.py",
       "symbol": "ReviewEvent docstring",
-      "line_start": 170,
-      "line_end": 229,
+      "line_start": 200,
+      "line_end": 204,
       "match_terms": [
-        "Attestation",
-        "attestation_id",
-        "attestation_ref",
-        "attestations"
+        "Attestation"
       ],
       "role": "documentation_claim",
-      "current_behavior": "Docstring: 'attestation stays the decision of record (approve/reject); ReviewEvent records annotation/archive/reopen/compare_mark/...'",
+      "current_behavior": "Docstring: 'attestation stays the decision of record'.",
       "decision_semantics": "canonical_decision_claim",
       "version_binding": "not_applicable",
       "authority_effect": "Documentation only.",
       "risk": "medium",
       "disposition": "remove_canonical_claim",
       "target_owner": "Documentation",
-      "prerequisites": [
-        "DecisionRecord concept is documented."
-      ],
-      "recommended_change": "Replace 'attestation stays the decision of record' with 'Attestation is historical human review evidence. Canonical version-bound decisions will be captured in DecisionRecord.'",
+      "prerequisites": [],
+      "recommended_change": "Replace with: 'Attestation is historical review evidence. DecisionRecord captures version-bound decisions.'",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/models.py:200-204"
+        "models.py:200-204"
       ]
     },
     {
@@ -141,30 +128,30 @@
       "line_start": 22,
       "line_end": 28,
       "match_terms": [
-        "/proposals/{proposal_id}/attest",
-        "attested_ids",
         "Attestation",
         "attestation_id",
-        "attestations",
-        "attest_proposal",
-        "human_attestation_recorded",
         "attestation_ref",
-        "decision of record",
-        "create_governed_attestation"
+        "attestations",
+        "create_governed_attestation",
+        "attest_proposal",
+        "attested_ids",
+        "human_attestation_recorded",
+        "/proposals/{proposal_id}/attest",
+        "decision of record"
       ],
       "role": "schema_model",
-      "current_behavior": "Decision enum (approved/rejected/referred) used by Attestation.decision. Represents a human review outcome, not a version-bound canonical decision.",
+      "current_behavior": "Decision enum (approved/rejected/referred) used by Attestation.decision.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Typing only.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
-      "target_owner": "Decision (preserved for historical attestations)",
+      "target_owner": "Decision (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep Decision enum for historical Attestation rows. A separate enum may be needed for DecisionRecord.",
+      "recommended_change": "Keep for historical rows. Separate enum may be needed for DecisionRecord.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/models.py:22-28"
+        "models.py:22-28"
       ]
     },
     {
@@ -172,215 +159,191 @@
       "path": "src/finharness/statecore/models.py",
       "symbol": "StateCoreRecord union",
       "line_start": 58,
-      "line_end": 105,
+      "line_end": 82,
       "match_terms": [
-        "/proposals/{proposal_id}/attest",
-        "attested_ids",
         "Attestation",
         "attestation_id",
-        "attestations",
-        "attest_proposal",
-        "human_attestation_recorded",
         "attestation_ref",
-        "decision of record",
-        "create_governed_attestation"
+        "attestations",
+        "create_governed_attestation",
+        "attest_proposal",
+        "attested_ids",
+        "human_attestation_recorded",
+        "/proposals/{proposal_id}/attest",
+        "decision of record"
       ],
       "role": "schema_model",
-      "current_behavior": "Attestation is included in the StateCoreRecord union used by write_records and read-back typing.",
+      "current_behavior": "Attestation in StateCoreRecord union for write_records.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Enables write_records persistence path for Attestation.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "StateCoreRecord (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep Attestation in StateCoreRecord for existing data. When DecisionRecord is added, include it too.",
+      "recommended_change": "Keep. Add DecisionRecord when available.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/models.py:58-105"
+        "models.py:58-82"
       ]
     },
     {
       "consumer_id": "ATT-CONS-006",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "create_governed_attestation",
-      "line_start": 1,
-      "line_end": 629,
+      "line_start": 431,
+      "line_end": 500,
       "match_terms": [
         "Attestation",
         "attestation_id",
-        "attestation_ref",
         "attestations",
         "create_governed_attestation"
       ],
       "role": "write_surface",
-      "current_behavior": "Creates Attestation row + receipt file + ReceiptIndex. Records proposal_receipt_ref in receipt payload but Attestation row only binds proposal_id (no version). Includes P5 forcing gate for high-risk proposals.",
+      "current_behavior": "Creates Attestation row + receipt + ReceiptIndex. Binds proposal_id only.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_receipt_ref_only",
-      "authority_effect": "Writes an Attestation row and receipt. Does not authorize execution.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "deprecate_after_replacement",
       "target_owner": "Future DecisionRecord write command",
-      "prerequisites": [
-        "DecisionRecord model exists on main.",
-        "Version-bound decision write surface exists."
-      ],
-      "recommended_change": "Keep create_governed_attestation operational for existing consumers. Add a separate create_decision_record command for version-bound decisions. Deprecate create_governed_attestation once all consumers migrate.",
+      "prerequisites": [],
+      "recommended_change": "Keep operational. Add create_decision_record for version-bound writes.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/statecore/proposals.py:431-500"
+        "proposals.py:431-500"
       ]
     },
     {
       "consumer_id": "ATT-CONS-007",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "GovernedAttestationWrite",
-      "line_start": 458,
-      "line_end": 538,
+      "line_start": 480,
+      "line_end": 510,
       "match_terms": [
-        "Attestation",
-        "attestation_id",
-        "attestation_ref",
-        "attestations"
+        "Attestation"
       ],
       "role": "receipt_writer",
-      "current_behavior": "Return type of create_governed_attestation. Carries attestation (Attestation object), proposal (Proposal object), receipt_ref (str), approved_is_not_execution_authorization (bool=True), execution_allowed (bool=False). Does NOT carry a separate ReceiptIndex, attestation_id, or proposal_id field.",
+      "current_behavior": "Return type: attestation, proposal, receipt_ref, approved_is_not_execution_authorization, execution_allowed.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_receipt_ref_only",
-      "authority_effect": "Return value only; no authority effect.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
-      "target_owner": "GovernedAttestationWrite (preserved for attestation receipts)",
+      "target_owner": "GovernedAttestationWrite (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep for attestation receipt compatibility. Future DecisionRecord writes will have their own return type.",
+      "recommended_change": "Keep for receipt compatibility.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/proposals.py:480-510"
+        "proposals.py:480-510"
       ]
     },
     {
       "consumer_id": "ATT-CONS-008",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "create_governed_review_event / ReviewEvent.attestation_ref",
-      "line_start": 538,
+      "line_start": 564,
       "line_end": 660,
       "match_terms": [
         "attestation_ref"
       ],
       "role": "receipt_writer",
-      "current_behavior": "create_governed_review_event payload includes an optional attestation_ref. When a review event is written under an existing attestation, this field links them via ReviewEvent.attestation_ref.",
+      "current_behavior": "create_governed_review_event includes optional attestation_ref for linkage.",
       "decision_semantics": "compatibility_reference",
       "version_binding": "not_applicable",
-      "authority_effect": "Read-only link; the review event itself carries no execution authority.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "ReviewEvent (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep attestation_ref in create_governed_review_event for historical linkage.",
+      "recommended_change": "Keep attestation_ref for historical linkage.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/proposals.py:564-660"
+        "proposals.py:564-660"
       ]
     },
     {
       "consumer_id": "ATT-CONS-009",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "attest_proposal",
-      "line_start": 1,
-      "line_end": 1118,
+      "line_start": 989,
+      "line_end": 1020,
       "match_terms": [
-        "/proposals/{proposal_id}/attest",
         "Attestation",
         "attest_proposal",
-        "attestation_id",
-        "attestation_ref",
-        "attestations",
-        "create_governed_attestation",
-        "decision of record",
-        "human_attestation_recorded"
+        "create_governed_attestation"
       ],
       "role": "api_contract",
-      "current_behavior": "POST /proposals/{proposal_id}/attest endpoint. Calls create_governed_attestation. Returns AttestationCreateResponse with attestation receipt. Active legacy-unbound write surface — not yet formally deprecated, but a future deprecation candidate after a version-bound replacement exists.",
+      "current_behavior": "POST /proposals/{id}/attest. Active legacy-unbound write surface.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_receipt_ref_only",
-      "authority_effect": "Active Attestation write endpoint. Remains non-execution but is not version-bound.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "deprecate_after_replacement",
       "target_owner": "DecisionRecord endpoint",
-      "prerequisites": [
-        "DecisionRecord write endpoint exists.",
-        "Attest endpoint can be flagged as legacy/deprecated."
-      ],
-      "recommended_change": "Keep /attest endpoint for existing consumers (frontend attestation form). When DecisionRecord endpoint exists, tag this as legacy and redirect consumers.",
+      "prerequisites": [],
+      "recommended_change": "Keep for existing consumers. Tag legacy after DecisionRecord endpoint exists.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:989-1020"
+        "routes_proposals.py:989-1020"
       ]
     },
     {
       "consumer_id": "ATT-CONS-010",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "_proposal_review_response",
-      "line_start": 499,
+      "line_start": 508,
       "line_end": 530,
       "match_terms": [
         "Attestation",
-        "attestations",
-        "human_attestation_recorded"
+        "attestations"
       ],
       "role": "state_gate",
-      "current_behavior": "Sets open_for_review = not attestations. A proposal is 'open for review' when it has zero attestations. Uses attestation existence as a binary review-completion gate.",
+      "current_behavior": "open_for_review = not attestations. Binary review-completion gate.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Changes proposal review lifecycle state in API responses. Does not authorize execution.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists on main.",
-        "Dual-read path exists for transition."
-      ],
-      "recommended_change": "Replace open_for_review = not attestations with a query against DecisionValidity. During transition, use dual read: check DecisionValidity first, fall back to Attestation.",
+      "prerequisites": [],
+      "recommended_change": "Replace with DecisionValidity query. Dual-read during transition.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:508-530"
+        "routes_proposals.py:508-530"
       ]
     },
     {
       "consumer_id": "ATT-CONS-011",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "ProposalReviewResponse.open_for_review",
-      "line_start": 107,
+      "line_start": 127,
       "line_end": 138,
       "match_terms": [
         "Attestation",
-        "attestations",
-        "decision of record",
-        "human_attestation_recorded"
+        "attestations"
       ],
       "role": "api_contract",
-      "current_behavior": "API response model exposes open_for_review: bool derived from attestation existence. Consumers (frontend, tests) use this to decide whether proposal needs review.",
+      "current_behavior": "API model exposes open_for_review derived from attestation existence.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "API shape contract; affects all consumers of GET /proposals/{id}.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "dual_read_transition",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists on main."
-      ],
-      "recommended_change": "Add decision_validity field to ProposalReviewResponse. During transition, set open_for_review from both sources. Eventually deprecate attestation-only derivation.",
+      "prerequisites": [],
+      "recommended_change": "Add decision_validity field. Dual-read during transition.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:127-138"
+        "routes_proposals.py:127-138"
       ]
     },
     {
@@ -390,34 +353,32 @@
       "line_start": 163,
       "line_end": 174,
       "match_terms": [
-        "/proposals/{proposal_id}/attest",
-        "attested_ids",
         "Attestation",
         "attestation_id",
-        "attestations",
-        "attest_proposal",
-        "human_attestation_recorded",
         "attestation_ref",
-        "decision of record",
-        "create_governed_attestation"
+        "attestations",
+        "create_governed_attestation",
+        "attest_proposal",
+        "attested_ids",
+        "human_attestation_recorded",
+        "/proposals/{proposal_id}/attest",
+        "decision of record"
       ],
       "role": "api_contract",
-      "current_behavior": "ReviewTaskLifecycle has state 'completed' derived from attestation presence. open_for_review field in lifecycle uses attestation absence/presence.",
+      "current_behavior": "Lifecycle state 'completed' derived from attestation presence.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Drives review task UX; does not authorize execution.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Derive ReviewTaskLifecycle.state from DecisionValidity instead of Attestation. During transition, both sources contribute.",
+      "prerequisites": [],
+      "recommended_change": "Derive from DecisionValidity. Dual-source during transition.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:163-174"
+        "routes_proposals.py:163-174"
       ]
     },
     {
@@ -425,27 +386,25 @@
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "status filter",
       "line_start": 614,
-      "line_end": 669,
+      "line_end": 645,
       "match_terms": [
         "attestations"
       ],
       "role": "api_contract",
-      "current_behavior": "GET /proposals supports status=open|attested|all filter. status=open filters to open_for_review=True. status=attested filters to open_for_review=False. Uses attestation existence for filtering.",
+      "current_behavior": "status=open|attested filter uses attestation presence.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "API filtering contract.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "dual_read_transition",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "During transition, include decision_validity_status in filtering logic. Keep 'open'/'attested' labels for backward compatibility.",
+      "prerequisites": [],
+      "recommended_change": "Include decision_validity_status. Keep labels for backward compat.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:614-645"
+        "routes_proposals.py:614-645"
       ]
     },
     {
@@ -453,90 +412,79 @@
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "_agent_review_surface",
       "line_start": 474,
-      "line_end": 523,
+      "line_end": 505,
       "match_terms": [
-        "Attestation",
-        "attestations",
         "human_attestation_recorded"
       ],
       "role": "state_gate",
-      "current_behavior": "Sets review_state = 'human_attestation_recorded' when open_for_review is False (attestation exists). Sets 'pending_human_review' when open_for_review is True.",
+      "current_behavior": "review_state from attestation presence (human_attestation_recorded vs pending_human_review).",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Agent review surface state — affects agent context presentation.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Derive AgentReviewSurface.review_state from DecisionValidity instead of attestation presence.",
+      "prerequisites": [],
+      "recommended_change": "Derive from DecisionValidity.",
       "test_implications": [
         "tests/test_agent_proposal_drafts.py"
       ],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:474-505"
+        "routes_proposals.py:474-505"
       ]
     },
     {
       "consumer_id": "ATT-CONS-015",
       "path": "src/finharness/api/routes_cockpit.py",
       "symbol": "count_open_for_review",
-      "line_start": 1,
-      "line_end": 279,
+      "line_start": 120,
+      "line_end": 123,
       "match_terms": [
         "Attestation",
-        "attestation_id",
         "attestations",
         "attested_ids"
       ],
       "role": "read_projection",
-      "current_behavior": "Computes count of open proposals by filtering out those with attestations. Uses attestation existence to determine proposal openness for cockpit dashboard.",
+      "current_behavior": "Counts open proposals by filtering out attested ones.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Dashboard display only; read-only projection.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "dual_read_transition",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "During transition, count open proposals from DecisionValidity instead of Attestation. Fall back to attestation count for backward compatibility.",
+      "prerequisites": [],
+      "recommended_change": "Count from DecisionValidity. Fall back to Attestation.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/api/routes_cockpit.py:120-123"
+        "routes_cockpit.py:120-123"
       ]
     },
     {
       "consumer_id": "ATT-CONS-016",
       "path": "src/finharness/review_read.py",
       "symbol": "read_review_queue",
-      "line_start": 1,
-      "line_end": 543,
+      "line_start": 507,
+      "line_end": 565,
       "match_terms": [
         "Attestation",
-        "attestation_id",
         "attestations",
         "attested_ids"
       ],
       "role": "state_gate",
-      "current_behavior": "Queries all Attestation rows and builds attested_ids set. Each proposal in attested_ids gets queue status 'reviewed'. Drives the review queue UX.",
+      "current_behavior": "Builds attested_ids set. Proposals in attested_ids get queue status 'reviewed'.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Drives review queue priority and status; does not authorize execution.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists.",
-        "All review queue consumers are identified."
-      ],
-      "recommended_change": "Replace attested_ids lookup with DecisionValidity.status query. During transition, merge both sources.",
+      "prerequisites": [],
+      "recommended_change": "Replace attested_ids with DecisionValidity query.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/review_read.py:507-565"
+        "review_read.py:507-565"
       ]
     },
     {
@@ -549,48 +497,44 @@
         "attested_ids"
       ],
       "role": "state_gate",
-      "current_behavior": "Sets review queue status to 'reviewed' when proposal_id is in attested_ids. Core queue classification logic.",
+      "current_behavior": "Queue status = 'reviewed' when proposal in attested_ids.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Directly classifies proposals in the review queue.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Replace attested_ids membership check with DecisionValidity status check.",
+      "prerequisites": [],
+      "recommended_change": "Replace with DecisionValidity status check.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/review_read.py:291-304"
+        "review_read.py:291-304"
       ]
     },
     {
       "consumer_id": "ATT-CONS-018",
       "path": "src/finharness/review_read.py",
       "symbol": "read_proposal_timeline",
-      "line_start": 381,
-      "line_end": 528,
+      "line_start": 405,
+      "line_end": 500,
       "match_terms": [
-        "Attestation",
-        "attestations",
         "attested_ids"
       ],
       "role": "read_projection",
-      "current_behavior": "Merges Attestation and ReviewEvent into a unified timeline. Each Attestation is a timeline entry with source_type='attestation'. Historical evidence display.",
+      "current_behavior": "Merges Attestation + ReviewEvent into timeline. Historical evidence.",
       "decision_semantics": "historical_evidence",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Read-only display; historical evidence preservation.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "ProposalTimeline (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep Attestation in timeline forever as historical review evidence. When DecisionRecord exists, add as separate timeline entry type.",
+      "recommended_change": "Keep as historical evidence. Add DecisionRecord entries when available.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/review_read.py:405-500"
+        "review_read.py:405-500"
       ]
     },
     {
@@ -603,163 +547,155 @@
         "attested_ids"
       ],
       "role": "state_gate",
-      "current_behavior": "Sets open_for_review = proposal_id not in attested_ids. Computes review_state fields from attestation presence.",
+      "current_behavior": "open_for_review from attested_ids. Per-item queue classification.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Per-proposal queue item classification.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Derive open_for_review from DecisionValidity. During transition, combine both sources.",
+      "prerequisites": [],
+      "recommended_change": "Derive from DecisionValidity. Combine both during transition.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/review_read.py:365-450"
+        "review_read.py:365-450"
       ]
     },
     {
       "consumer_id": "ATT-CONS-020",
       "path": "src/finharness/proposal_queue_checks.py",
       "symbol": "_duplicate_open_proposal_ids",
-      "line_start": 1,
-      "line_end": 130,
+      "line_start": 117,
+      "line_end": 134,
       "match_terms": [
         "Attestation",
         "attestations",
         "attested_ids"
       ],
       "role": "state_gate",
-      "current_behavior": "Uses attested_ids to exclude already-attested proposals from duplicate detection. Only considers non-attested proposals as potential duplicates.",
+      "current_behavior": "Excludes attested proposals from duplicate detection.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Affects duplicate proposal detection and review queue display.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Replace attested_ids filter with DecisionValidity status check.",
+      "prerequisites": [],
+      "recommended_change": "Replace attested_ids filter with DecisionValidity check.",
       "test_implications": [
         "tests/test_statecore_api.py"
       ],
       "evidence": [
-        "src/finharness/proposal_queue_checks.py:117-134"
+        "proposal_queue_checks.py:117-134"
       ]
     },
     {
       "consumer_id": "ATT-CONS-021",
       "path": "src/finharness/proposal_queue_checks.py",
       "symbol": "_blocked_transition_summary",
-      "line_start": 121,
+      "line_start": 137,
       "line_end": 152,
       "match_terms": [
         "Attestation",
+        "attestation_id",
+        "attestation_ref",
         "attestations",
-        "attested_ids"
+        "create_governed_attestation",
+        "attest_proposal",
+        "attested_ids",
+        "human_attestation_recorded",
+        "/proposals/{proposal_id}/attest",
+        "decision of record"
       ],
       "role": "state_gate",
-      "current_behavior": "Lists 'human_attestation' as a blocked transition for proposals that are not ready. Treats attestation as a transition gate name.",
+      "current_behavior": "Lists 'human_attestation' as blocked transition.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "not_applicable",
-      "authority_effect": "Gate naming; does not change attestation behavior directly.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
-      "target_owner": "QueueCheckBlockedTransition (preserved)",
+      "target_owner": "QueueCheckBlockedTransition",
       "prerequisites": [],
-      "recommended_change": "Keep the transition name 'human_attestation' for backward compatibility. Future blocked transitions may use 'decision_record' instead.",
+      "recommended_change": "Keep transition name. Future may use 'decision_record'.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/proposal_queue_checks.py:137-152"
+        "proposal_queue_checks.py:137-152"
       ]
     },
     {
       "consumer_id": "ATT-CONS-022",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "AgentReviewSurface non_claims",
-      "line_start": 92,
-      "line_end": 129,
+      "line_start": 120,
+      "line_end": 124,
       "match_terms": [
-        "Attestation",
-        "attestations",
-        "decision of record",
-        "human_attestation_recorded"
+        "decision of record"
       ],
       "role": "documentation_claim",
-      "current_behavior": "non_claims includes: 'Human review is required before any decision of record.' Implicitly equates attestation with decision of record.",
+      "current_behavior": "non_claims: 'Human review is required before any decision of record.'",
       "decision_semantics": "canonical_decision_claim",
       "version_binding": "not_applicable",
-      "authority_effect": "Documentation claim.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "remove_canonical_claim",
       "target_owner": "Documentation",
-      "prerequisites": [
-        "DecisionRecord concept documented."
-      ],
-      "recommended_change": "Rephrase to: 'Human review produces a historical attestation. Canonical version-bound decisions are captured in DecisionRecord.'",
+      "prerequisites": [],
+      "recommended_change": "Rephrase to distinguish historical attestation from DecisionRecord.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:120-124"
+        "routes_proposals.py:120-124"
       ]
     },
     {
       "consumer_id": "ATT-CONS-023",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "get_proposal_timeline docstring",
-      "line_start": 1053,
+      "line_start": 1071,
       "line_end": 1078,
       "match_terms": [
         "Attestation",
-        "attestation_ref",
         "attestations",
         "decision of record"
       ],
       "role": "documentation_claim",
-      "current_behavior": "Docstring: 'Attestation stays the decision of record; review events are the interaction ledger.'",
+      "current_behavior": "Docstring: 'Attestation stays the decision of record.'",
       "decision_semantics": "canonical_decision_claim",
       "version_binding": "not_applicable",
-      "authority_effect": "Documentation claim.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "remove_canonical_claim",
       "target_owner": "Documentation",
-      "prerequisites": [
-        "DecisionRecord concept documented."
-      ],
-      "recommended_change": "Replace with: 'Attestation is historical review evidence. DecisionRecord captures version-bound canonical decisions.'",
+      "prerequisites": [],
+      "recommended_change": "Replace with: 'Attestation is historical review evidence.'",
       "test_implications": [],
       "evidence": [
-        "src/finharness/api/routes_proposals.py:1071-1078"
+        "routes_proposals.py:1071-1078"
       ]
     },
     {
       "consumer_id": "ATT-CONS-024",
       "path": "src/finharness/agent_tools.py",
       "symbol": "AGENT_PROPOSAL_DRAFT_NON_CLAIMS / AGENT_REVIEW_NOTE_DRAFT_NON_CLAIMS",
-      "line_start": 1,
-      "line_end": 138,
+      "line_start": 70,
+      "line_end": 79,
       "match_terms": [
-        "attestation_ref",
         "decision of record"
       ],
       "role": "documentation_claim",
-      "current_behavior": "Two module-level non_claims tuples (lines 70, 76) both contain: 'Human review is required before any decision of record.' These are general authority boundary claims applied to agent proposal/review-note drafts, not explicit Attestation bindings.",
+      "current_behavior": "Two non_claims tuples contain 'decision of record'. General authority boundary, not Attestation-specific.",
       "decision_semantics": "unknown",
       "version_binding": "not_applicable",
-      "authority_effect": "Documentation claim in agent tool metadata — general authority boundary, not Attestation-specific.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "investigate",
       "target_owner": "AUT3 authority vocabulary",
-      "prerequisites": [
-        "AUT3 decision authority model is defined."
-      ],
-      "recommended_change": "Review whether 'decision of record' here refers to Attestation or a future DecisionRecord. Align with AUT3/DecisionRecord terminology when available.",
+      "prerequisites": [],
+      "recommended_change": "Align with AUT3/DecisionRecord terminology when available.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/agent_tools.py:70-79"
+        "agent_tools.py:70-79"
       ]
     },
     {
@@ -773,1087 +709,1290 @@
         "decision of record"
       ],
       "role": "documentation_claim",
-      "current_behavior": "States: 'invariants: append-only; attestation is decision of record, not execution.'",
+      "current_behavior": "'attestation is decision of record, not execution.'",
       "decision_semantics": "canonical_decision_claim",
       "version_binding": "not_applicable",
-      "authority_effect": "Architecture documentation claim.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "remove_canonical_claim",
       "target_owner": "Documentation",
-      "prerequisites": [
-        "DecisionRecord concept documented.",
-        "System map updated."
-      ],
-      "recommended_change": "Replace with: 'Attestation is historical human review evidence. DecisionRecord is the version-bound canonical decision.'",
+      "prerequisites": [],
+      "recommended_change": "Replace with: 'Attestation is historical evidence. DecisionRecord is canonical.'",
       "test_implications": [],
       "evidence": [
-        "docs/architecture/system-map.md:81"
+        "system-map.md:79-81"
       ]
     },
     {
       "consumer_id": "ATT-CONS-026",
       "path": "src/finharness/daily_brief.py",
       "symbol": "_open_reviews",
-      "line_start": 1,
-      "line_end": 177,
+      "line_start": 170,
+      "line_end": 180,
       "match_terms": [
         "Attestation",
         "attestations"
       ],
       "role": "state_gate",
-      "current_behavior": "Queries Proposal and Attestation, constructs attested proposal IDs, removes attested proposals, and supplies DailyBrief.open_review_count and open review content.",
+      "current_behavior": "Queries Proposal+Attestation, removes attested proposals, supplies open_review_count.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Drives daily brief open review count; read-only state gate.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "migrate_to_decision_validity",
       "target_owner": "DecisionValidity",
-      "prerequisites": [
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "Use version-bound DecisionValidity for current review state while preserving historical Attestation evidence.",
+      "prerequisites": [],
+      "recommended_change": "Use DecisionValidity for current review state. Preserve historical Attestation evidence.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/daily_brief.py:170-180"
+        "daily_brief.py:170-180"
       ]
     },
     {
       "consumer_id": "ATT-CONS-027",
       "path": "src/finharness/annual_review.py",
       "symbol": "compute_annual_review",
-      "line_start": 1,
-      "line_end": 264,
+      "line_start": 240,
+      "line_end": 310,
       "match_terms": [
         "Attestation",
         "attestations"
       ],
       "role": "read_projection",
-      "current_behavior": "Queries all Attestation rows, groups by proposal, and computes open_count, attested_count, approved_count, rejected_count. Uses the latest Attestation per proposal as the decision outcome for that period.",
+      "current_behavior": "Computes open/attested/approved/rejected counts from Attestation. Uses latest Attestation as period decision.",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Read-only annual review aggregation; no execution authority.",
+      "authority_effect": "",
       "risk": "high",
       "disposition": "dual_read_transition",
       "target_owner": "DecisionRecord + DecisionValidity",
-      "prerequisites": [
-        "DecisionRecord model exists.",
-        "DecisionValidity model exists."
-      ],
-      "recommended_change": "During transition, preserve historical Attestation counts but separately expose version-bound DecisionRecord/DecisionValidity counts. Do not silently relabel old Attestations as DecisionRecords.",
+      "prerequisites": [],
+      "recommended_change": "Preserve historical Attestation counts. Expose DecisionRecord/DecisionValidity counts separately.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/annual_review.py:240-310"
+        "annual_review.py:240-310"
       ]
     },
     {
       "consumer_id": "ATT-CONS-028",
-      "path": "docs/reference/interfaces.md",
-      "symbol": "attestation endpoint documentation",
-      "line_start": 1,
-      "line_end": 100,
+      "path": "src/finharness/agent_context.py",
+      "symbol": "build_open_proposals_context",
+      "line_start": 263,
+      "line_end": 282,
       "match_terms": [
         "Attestation",
         "attestations"
       ],
-      "role": "documentation_claim",
-      "current_behavior": "Maintained API reference that documents the attestation endpoint and its current semantics. Defines the public contract for attestation consumers.",
-      "decision_semantics": "legacy_unbound_decision",
-      "version_binding": "not_applicable",
-      "authority_effect": "API documentation; authoritative reference for current attestation behavior.",
-      "risk": "medium",
-      "disposition": "preserve",
-      "target_owner": "Documentation (update when DecisionRecord exists)",
-      "prerequisites": [
-        "DecisionRecord endpoint documented."
+      "role": "state_gate",
+      "current_behavior": "Queries Proposal and Attestation, constructs attested proposal IDs, removes attested proposals from Agent open-proposals context. Uses Attestation existence as open/closed gate for agent context packs.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity / AgentContextProjection",
+      "prerequisites": [],
+      "recommended_change": "Derive open/closed from DecisionValidity. Dual-read during transition.",
+      "test_implications": [
+        "tests/test_agent_context.py"
       ],
-      "recommended_change": "Keep attestation endpoint documentation. Add DecisionRecord endpoint documentation alongside it. Update cross-references when legacy endpoint is deprecated.",
-      "test_implications": [],
       "evidence": [
-        "docs/reference/interfaces.md"
+        "agent_context.py:263-282"
       ]
     },
     {
       "consumer_id": "ATT-CONS-029",
+      "path": "docs/reference/interfaces.md",
+      "symbol": "attestation endpoint documentation",
+      "line_start": 80,
+      "line_end": 95,
+      "match_terms": [
+        "attestations"
+      ],
+      "role": "documentation_claim",
+      "current_behavior": "API reference documenting attestation endpoint semantics.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "not_applicable",
+      "authority_effect": "",
+      "risk": "medium",
+      "disposition": "preserve",
+      "target_owner": "Documentation (update when DecisionRecord exists)",
+      "prerequisites": [],
+      "recommended_change": "Keep. Add DecisionRecord endpoint documentation alongside.",
+      "test_implications": [],
+      "evidence": [
+        "interfaces.md:80-95"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-030",
       "path": "docs/architecture/agent-runtime-reference/04-review-lifecycle.md",
       "symbol": "agent runtime review lifecycle",
-      "line_start": 36,
+      "line_start": 60,
       "line_end": 91,
       "match_terms": [
         "attestations",
         "decision of record"
       ],
       "role": "documentation_claim",
-      "current_behavior": "Documents 'human_attestation' as a review lifecycle state in the agent runtime reference. Defines that 'The draft should not become a human decision of record yet.'",
+      "current_behavior": "Documents 'human_attestation' lifecycle state. 'Should not become a human decision of record yet.'",
       "decision_semantics": "review_completion_proxy",
       "version_binding": "not_applicable",
-      "authority_effect": "Agent runtime documentation; defines lifecycle contract.",
+      "authority_effect": "",
       "risk": "medium",
       "disposition": "preserve",
       "target_owner": "Documentation (update when DecisionValidity exists)",
-      "prerequisites": [
-        "DecisionValidity lifecycle documented."
-      ],
-      "recommended_change": "Keep lifecycle documentation. Add DecisionValidity lifecycle states alongside existing attestation states when available.",
-      "test_implications": [],
-      "evidence": [
-        "docs/architecture/agent-runtime-reference/04-review-lifecycle.md:60-70"
-      ]
-    },
-    {
-      "consumer_id": "ATT-CONS-030",
-      "path": "frontend/app.js",
-      "symbol": "renderAttestations",
-      "line_start": 526,
-      "line_end": 565,
-      "match_terms": [
-        "Attestation",
-        "attestations"
-      ],
-      "role": "frontend_surface",
-      "current_behavior": "Renders attestation list on proposal detail page. Displays decision, attester, reason for each attestation. Pure display of historical data.",
-      "decision_semantics": "historical_evidence",
-      "version_binding": "proposal_id_only",
-      "authority_effect": "Read-only display. No authority effect.",
-      "risk": "low",
-      "disposition": "preserve",
-      "target_owner": "Frontend (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep attestation display as historical evidence. When DecisionRecord exists, add separate display section for canonical decisions.",
+      "recommended_change": "Keep. Add DecisionValidity lifecycle states alongside.",
       "test_implications": [],
       "evidence": [
-        "frontend/app.js:526-544"
+        "04-review-lifecycle.md:60-91"
       ]
     },
     {
       "consumer_id": "ATT-CONS-031",
       "path": "frontend/app.js",
-      "symbol": "renderAttestationForm",
+      "symbol": "renderAttestations",
       "line_start": 526,
-      "line_end": 580,
+      "line_end": 544,
       "match_terms": [
         "Attestation",
         "attestations"
       ],
       "role": "frontend_surface",
-      "current_behavior": "Renders attestation form (decision select, attester, reason) and POSTs to /proposals/{id}/attest. Active write surface.",
-      "decision_semantics": "legacy_unbound_decision",
+      "current_behavior": "Renders attestation list on proposal detail. Historical display.",
+      "decision_semantics": "historical_evidence",
       "version_binding": "proposal_id_only",
-      "authority_effect": "User-facing write surface; does not authorize execution.",
-      "risk": "medium",
-      "disposition": "deprecate_after_replacement",
-      "target_owner": "DecisionRecord form",
-      "prerequisites": [
-        "DecisionRecord write endpoint exists.",
-        "DecisionRecord form component exists."
-      ],
-      "recommended_change": "Keep attestation form for backward compatibility. Add separate DecisionRecord form when available.",
-      "test_implications": [
-        "frontend/tests/review_workspace.test.cjs"
-      ],
+      "authority_effect": "",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Frontend (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep. Add DecisionRecord display section when available.",
+      "test_implications": [],
       "evidence": [
-        "frontend/app.js:546-580"
+        "app.js:526-544"
       ]
     },
     {
       "consumer_id": "ATT-CONS-032",
       "path": "frontend/app.js",
-      "symbol": "renderTimeline (attestation entries)",
+      "symbol": "renderAttestationForm",
+      "line_start": 546,
+      "line_end": 580,
+      "match_terms": [
+        "Attestation"
+      ],
+      "role": "frontend_surface",
+      "current_behavior": "Attestation form POSTs to /attest. Active write surface.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "",
+      "risk": "medium",
+      "disposition": "deprecate_after_replacement",
+      "target_owner": "DecisionRecord form",
+      "prerequisites": [],
+      "recommended_change": "Keep for backward compat. Add DecisionRecord form when available.",
+      "test_implications": [
+        "frontend/tests/review_workspace.test.cjs"
+      ],
+      "evidence": [
+        "app.js:546-580"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-033",
+      "path": "frontend/app.js",
+      "symbol": "renderTimeline",
       "line_start": 807,
       "line_end": 830,
       "match_terms": [
         "attestations"
       ],
       "role": "frontend_surface",
-      "current_behavior": "Renders merged timeline showing attestations alongside review events. Each attestation entry shows source_type='attestation', kind, attester. Read-only historical display.",
+      "current_behavior": "Merged timeline with attestation entries. Historical display.",
       "decision_semantics": "historical_evidence",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Read-only display; historical evidence.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "Frontend timeline (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep attestation timeline entries as historical evidence. When DecisionRecord exists, add it as a separate timeline entry type.",
+      "recommended_change": "Keep. Add DecisionRecord entries as separate timeline type.",
       "test_implications": [
         "frontend/tests/review_workspace.test.cjs"
       ],
       "evidence": [
-        "frontend/app.js:807-830"
-      ]
-    },
-    {
-      "consumer_id": "ATT-CONS-033",
-      "path": "tests/test_statecore_api.py",
-      "symbol": "attestation endpoint test",
-      "line_start": 1,
-      "line_end": 1170,
-      "match_terms": [
-        "/proposals/{proposal_id}/attest",
-        "Attestation",
-        "attestations"
-      ],
-      "role": "test_contract",
-      "current_behavior": "Tests attestation creation, read, and response shape. Locks current attestation API contract including open_for_review computation and status filtering.",
-      "decision_semantics": "legacy_unbound_decision",
-      "version_binding": "proposal_id_only",
-      "authority_effect": "Test contract only.",
-      "risk": "low",
-      "disposition": "investigate",
-      "target_owner": "Test maintainer",
-      "prerequisites": [],
-      "recommended_change": "When DecisionRecord exists, add dual-read transition tests. Existing attestation tests must continue to pass for backward compatibility.",
-      "test_implications": [
-        "Full attestation API contract test file."
-      ],
-      "evidence": [
-        "tests/test_statecore_api.py"
+        "app.js:807-830"
       ]
     },
     {
       "consumer_id": "ATT-CONS-034",
+      "path": "tests/test_statecore_api.py",
+      "symbol": "attestation endpoint test",
+      "line_start": 320,
+      "line_end": 350,
+      "match_terms": [
+        "/proposals/{proposal_id}/attest"
+      ],
+      "role": "test_contract",
+      "current_behavior": "Tests /attest endpoint, attestation read, open_for_review, status filtering.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "",
+      "risk": "low",
+      "disposition": "investigate",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Add dual-read transition tests when DecisionRecord exists.",
+      "test_implications": [
+        "Full attestation API contract."
+      ],
+      "evidence": [
+        "test_statecore_api.py:320-350"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-035",
       "path": "tests/test_agent_proposal_drafts.py",
       "symbol": "agent proposal attestation test",
-      "line_start": 1,
-      "line_end": 300,
+      "line_start": 240,
+      "line_end": 290,
       "match_terms": [
         "Attestation",
         "create_governed_attestation"
       ],
       "role": "test_contract",
-      "current_behavior": "Tests that agent proposal drafts interact correctly with attestation lifecycle. Verifies attestation presence affects review state.",
+      "current_behavior": "Tests agent draft/attestation lifecycle.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Test contract only.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "investigate",
       "target_owner": "Test maintainer",
       "prerequisites": [],
-      "recommended_change": "When DecisionRecord exists, extend tests to cover dual-read path. Keep existing attestation lifecycle tests.",
-      "test_implications": [
-        "Full agent proposal attestation test file."
-      ],
+      "recommended_change": "Extend with dual-read tests when DecisionRecord exists.",
+      "test_implications": [],
       "evidence": [
-        "tests/test_agent_proposal_drafts.py"
+        "test_agent_proposal_drafts.py:240-290"
       ]
     },
     {
-      "consumer_id": "ATT-CONS-035",
+      "consumer_id": "ATT-CONS-036",
       "path": "tests/test_statecore_vertical_reconstruction.py",
       "symbol": "attestation serialization test",
-      "line_start": 1,
-      "line_end": 200,
+      "line_start": 130,
+      "line_end": 190,
       "match_terms": [
         "/proposals/{proposal_id}/attest",
         "Attestation",
         "attestations"
       ],
       "role": "test_contract",
-      "current_behavior": "Tests Attestation model persistence, serialization round-trips, and StateCore reconstruction. Locks current Attestation schema.",
+      "current_behavior": "Tests Attestation serialization round-trips. Locks current schema.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "proposal_id_only",
-      "authority_effect": "Test contract only.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "Test (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep Attestation serialization tests for historical data integrity. Add DecisionRecord serialization tests separately.",
+      "recommended_change": "Keep. Add DecisionRecord serialization tests separately.",
       "test_implications": [],
       "evidence": [
-        "tests/test_statecore_vertical_reconstruction.py"
-      ]
-    },
-    {
-      "consumer_id": "ATT-CONS-036",
-      "path": "tests/test_risk_classification.py",
-      "symbol": "risk classification attestation test",
-      "line_start": 1,
-      "line_end": 178,
-      "match_terms": [
-        "/proposals/{proposal_id}/attest",
-        "Attestation",
-        "attestations",
-        "create_governed_attestation"
-      ],
-      "role": "test_contract",
-      "current_behavior": "Tests risk classification related to attestation decisions. Uses attestation decision state in risk evaluation.",
-      "decision_semantics": "legacy_unbound_decision",
-      "version_binding": "proposal_id_only",
-      "authority_effect": "Test contract only.",
-      "risk": "low",
-      "disposition": "investigate",
-      "target_owner": "Test maintainer",
-      "prerequisites": [],
-      "recommended_change": "Review whether risk classification should use DecisionRecord instead of Attestation. Transition after DecisionRecord exists.",
-      "test_implications": [],
-      "evidence": [
-        "tests/test_risk_classification.py"
+        "test_statecore_vertical_reconstruction.py:130-190"
       ]
     },
     {
       "consumer_id": "ATT-CONS-037",
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "symbol": "attestation write registration",
-      "line_start": 1,
-      "line_end": 1,
+      "path": "tests/test_risk_classification.py",
+      "symbol": "risk classification attestation test",
+      "line_start": 95,
+      "line_end": 180,
       "match_terms": [
         "/proposals/{proposal_id}/attest",
-        "attested_ids",
         "Attestation",
-        "attestation_id",
+        "attestations"
+      ],
+      "role": "test_contract",
+      "current_behavior": "Tests risk classification using Attestation decision state.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "",
+      "risk": "low",
+      "disposition": "investigate",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Review whether risk classification should use DecisionRecord.",
+      "test_implications": [],
+      "evidence": [
+        "test_risk_classification.py:95-180"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-038",
+      "path": "tests/test_annual_review.py",
+      "symbol": "annual review attestation period test",
+      "line_start": 50,
+      "line_end": 65,
+      "match_terms": [
+        "create_governed_attestation"
+      ],
+      "role": "test_contract",
+      "current_behavior": "Asserts Attestation existence produces open_count=1, attested_count=1, approved_count=1. Locks compute_annual_review's use of Attestation as period decision truth.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "",
+      "risk": "medium",
+      "disposition": "dual_read_transition",
+      "target_owner": "AnnualReview DecisionRecord/DecisionValidity transition tests",
+      "prerequisites": [],
+      "recommended_change": "When DecisionRecord exists, add tests verifying both Attestation and DecisionRecord counts. Existing test must continue to pass.",
+      "test_implications": [],
+      "evidence": [
+        "test_annual_review.py:50-65"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-039",
+      "path": "docs/governance/receipt-backed-write-registry.json",
+      "symbol": "attestation write registration",
+      "line_start": 45,
+      "line_end": 55,
+      "match_terms": [
+        "/proposals/{proposal_id}/attest",
+        "Attestation",
         "attestations",
-        "attest_proposal",
-        "human_attestation_recorded",
-        "attestation_ref",
-        "decision of record",
         "create_governed_attestation"
       ],
       "role": "write_surface",
-      "current_behavior": "Registers attestation as a receipt-backed write in the governance write registry. Documents the attestation write surface for governance auditing.",
+      "current_behavior": "Registers attestation write in governance write registry.",
       "decision_semantics": "legacy_unbound_decision",
       "version_binding": "not_applicable",
-      "authority_effect": "Governance documentation; no runtime effect.",
+      "authority_effect": "",
       "risk": "low",
       "disposition": "preserve",
       "target_owner": "Write registry (preserved)",
       "prerequisites": [],
-      "recommended_change": "Keep attestation entry in write registry. When DecisionRecord write exists, add a separate entry.",
+      "recommended_change": "Keep. Add DecisionRecord entry when available.",
       "test_implications": [],
       "evidence": [
-        "docs/governance/receipt-backed-write-registry.json"
+        "receipt-backed-write-registry.json:45-55"
       ]
     }
   ],
   "exclusions": [
     {
       "path": "src/finharness/agent_context.py",
-      "match_line": 541,
-      "term": "attestation_ref",
-      "reason": "Extracts attestation_ref from context detail dict as a summary key for agent context pack building. Indirect data extraction, not a direct Attestation consumer."
-    },
-    {
-      "path": "src/finharness/scaffold_candidate_preflight.py",
-      "match_line": 50,
-      "term": "attestation",
-      "reason": "Context keyword filter — 'attestation' and 'attestation_ref' are in a set of context-search keywords. Not a semantic Attestation consumer."
-    },
-    {
-      "path": "src/finharness/domain_memory.py",
-      "match_line": 164,
-      "term": "attested",
-      "reason": "Uses status='attested' for DomainMemory entries. Different domain concept, not proposal attestation."
-    },
-    {
-      "path": "src/finharness/statecore/store.py",
-      "match_line": 58,
-      "term": "Attestation",
-      "reason": "Includes Attestation in StateCoreRecord union for write_records. Persistence infrastructure, not semantic consumer."
-    },
-    {
-      "path": "src/finharness/statecore/__init__.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Re-exports Attestation model. Module-level import, not a consumer."
-    },
-    {
-      "path": "docs/engineering/abstraction-inventory.yml",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Lists Attestation as an Object artifact in abstraction taxonomy. Documentation inventory."
-    },
-    {
-      "path": "docs/architecture/finharness-evolution-roadmap.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "References Attestation in evolution roadmap as current capability. Planning document."
-    },
-    {
-      "path": "docs/engineering/system-directory-standard.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions Attestation in system directory documentation. Documentation standard reference."
-    },
-    {
-      "path": "docs/architecture/agent-runtime-reference/README.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in agent runtime reference index. Documentation index."
-    },
-    {
-      "path": "docs/architecture/agent-runtime-reference/06-memory-session-skills.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in agent runtime skill documentation. Runtime reference documentation."
-    },
-    {
-      "path": "docs/architecture/scaffolding-inventory.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Lists Attestation in scaffolding inventory. Documentation inventory."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/02-industry-benchmark-map-codex.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in industry benchmark analysis. External benchmark document."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/03-gap-register-codex.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in gap register. External benchmark document."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/04-solution-research-packs-codex.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in solution research. External benchmark document."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/05-product-roadmap-codex.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in product roadmap benchmark. External benchmark document."
-    },
-    {
-      "path": "docs/notes/agent-harness.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in agent harness notes. Implementation notes."
-    },
-    {
-      "path": "docs/notes/2026-07-11-external-research-synthesis.md",
-      "match_line": 64,
-      "term": "decision of record",
-      "reason": "Mentions 'human decision of record' in external research context. Research note."
-    },
-    {
-      "path": "docs/product/product-thesis.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in product thesis context. Product documentation."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in personal finance decision workflow proposal. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in review workspace proposal. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in cockpit lifecycle plan. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Mentions attestation in evolution execution plan. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in consolidation proposal. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in StateCore API proposal. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api-execution-brief.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in execution brief proposal. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-19-debt-cleanup-plan.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in debt cleanup plan. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-r3-retrospective-cockpit.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in cockpit retrospective. Historical proposal."
-    },
-    {
-      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in golden path demo. Historical proposal."
-    },
-    {
-      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Mentions attestation in SEC market access review. Historical review document."
-    },
-    {
-      "path": "tests/_policy_registry.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "References Attestation model in policy registry listing. Governance metadata."
-    },
-    {
-      "path": "tests/_review_fixtures.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Creates Attestation test fixtures. Test helper, not semantic test contract."
-    },
-    {
-      "path": "tests/test_agent_capabilities.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Uses Attestation in agent capabilities test. Infrastructure test, not Attestation-specific."
-    },
-    {
-      "path": "tests/test_agent_tools.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "References Attestation in agent tools test context. Agent tool testing, not Attestation-specific."
-    },
-    {
-      "path": "tests/test_annual_review.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Uses Attestation data for annual review period testing. Read-only aggregation test."
-    },
-    {
-      "path": "tests/test_receipt_backed_write_registry.py",
-      "match_line": 1,
-      "term": "attestation",
-      "reason": "Tests receipt-backed write registry including attestation. Governance infrastructure test."
-    },
-    {
-      "path": "tests/test_review_workspace_api.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Tests review workspace API with attestation data. Review workspace testing."
-    },
-    {
-      "path": "tests/test_statecore_store.py",
-      "match_line": 1,
-      "term": "Attestation",
-      "reason": "Tests StateCore store that writes Attestation records. Store infrastructure test."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 623,
-      "term": "attester",
-      "reason": "Uses 'attester' field in scaffold revision form. Same field name, different concept."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 848,
-      "term": "attester",
-      "reason": "Uses 'attester' field in review event form. Same field name, different concept."
-    },
-    {
-      "path": "frontend/index.html",
-      "match_line": 89,
-      "term": "Attested",
-      "reason": "Shows 'Attested' option in status filter. Covered by ATT-CONS-013 status filter consumer."
-    },
-    {
-      "path": "frontend/styles.css",
-      "match_line": 321,
-      "term": "attested",
-      "reason": "CSS class .tag.attested for visual styling. Presentation only."
-    },
-    {
-      "path": "frontend/tests/review_compare.test.cjs",
-      "match_line": 52,
-      "term": "attester",
-      "reason": "Uses attester field in compare_mark review event tests. Review event testing."
-    },
-    {
-      "path": "frontend/tests/scaffold_revision.test.cjs",
-      "match_line": 68,
-      "term": "attester",
-      "reason": "Uses attester field in scaffold revision tests. Scaffold testing."
-    },
-    {
-      "path": "docs/architecture/agent-runtime-reference/06-memory-session-skills.md",
-      "match_line": 76,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 76: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/agent-runtime-reference/README.md",
-      "match_line": 141,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 141: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/finharness-evolution-roadmap.md",
-      "match_line": 55,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 55: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/02-industry-benchmark-map-codex.md",
-      "match_line": 145,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 145: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/03-gap-register-codex.md",
-      "match_line": 31,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 31: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/04-solution-research-packs-codex.md",
-      "match_line": 232,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 232: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/industry-benchmark/05-product-roadmap-codex.md",
-      "match_line": 46,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 46: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/scaffolding-inventory.md",
-      "match_line": 16,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 16: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/system-map.md",
-      "match_line": 79,
-      "term": "create_governed_attestation",
-      "reason": "Auto-generated hit at line 79: term 'create_governed_attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/architecture/system-map.md",
-      "match_line": 212,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 212: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/engineering/abstraction-inventory.yml",
-      "match_line": 153,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 153: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/engineering/abstraction-inventory.yml",
-      "match_line": 161,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 161: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/engineering/system-directory-standard.md",
-      "match_line": 23,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 23: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/engineering/system-directory-standard.md",
-      "match_line": 24,
-      "term": "create_governed_attestation",
-      "reason": "Auto-generated hit at line 24: term 'create_governed_attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "match_line": 45,
-      "term": "create_governed_attestation",
-      "reason": "Auto-generated hit at line 45: term 'create_governed_attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "match_line": 47,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "Auto-generated hit at line 47: term '/proposals/{proposal_id}/attest' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "match_line": 50,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 50: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "match_line": 55,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 55: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/notes/2026-07-11-external-research-synthesis.md",
-      "match_line": 152,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 152: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/notes/agent-harness.md",
-      "match_line": 78,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 78: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/notes/agent-harness.md",
-      "match_line": 82,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 82: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/product/product-thesis.md",
-      "match_line": 130,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 130: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
-      "match_line": 85,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 85: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
-      "match_line": 108,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 108: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api-execution-brief.md",
-      "match_line": 32,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 32: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
-      "match_line": 45,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 45: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
-      "match_line": 105,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 105: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
-      "match_line": 106,
-      "term": "attestation_id",
-      "reason": "Auto-generated hit at line 106: term 'attestation_id' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
-      "match_line": 48,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 48: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
-      "match_line": 115,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 115: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-19-debt-cleanup-plan.md",
-      "match_line": 70,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 70: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 26,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 26: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 30,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 30: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 88,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 88: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 225,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 225: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
-      "match_line": 705,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 705: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-r3-retrospective-cockpit.md",
-      "match_line": 13,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 13: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 14,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 14: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
       "match_line": 21,
       "term": "Attestation",
-      "reason": "Auto-generated hit at line 21: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 21,
-      "term": "attestation_ref",
-      "reason": "Auto-generated hit at line 21: term 'attestation_ref' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 25,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 25: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 48,
-      "term": "attestation_ref",
-      "reason": "Auto-generated hit at line 48: term 'attestation_ref' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 57,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 57: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 65,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 65: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-22-review-workspace.md",
-      "match_line": 78,
-      "term": "attestation_ref",
-      "reason": "Auto-generated hit at line 78: term 'attestation_ref' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
-      "match_line": 15,
-      "term": "create_governed_attestation",
-      "reason": "Auto-generated hit at line 15: term 'create_governed_attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
-      "match_line": 28,
-      "term": "create_governed_attestation",
-      "reason": "Auto-generated hit at line 28: term 'create_governed_attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
-      "match_line": 336,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 336: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
-      "match_line": 351,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 351: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
-      "match_line": 82,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 82: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
-      "match_line": 198,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 198: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 1150,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 1150: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 1151,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 1151: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 1151,
-      "term": "attestations",
-      "reason": "Auto-generated hit at line 1151: term 'attestations' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "frontend/app.js",
-      "match_line": 1152,
-      "term": "Attestation",
-      "reason": "Auto-generated hit at line 1152: term 'Attestation' appears. Not a direct Attestation semantic consumer."
-    },
-    {
-      "path": "src/finharness/agent_context.py",
-      "match_line": 21,
-      "term": "Attestation",
-      "reason": "Import of Attestation model. Already covered by exclusion for attestation_ref context processing."
+      "reason": "Model-level import of Attestation. Consumer ATT-CONS-AB covers the semantic consumer (build_open_proposals_context)."
     },
     {
       "path": "src/finharness/agent_context.py",
       "match_line": 97,
       "term": "Attestation",
-      "reason": "Import of Attestation model at module level. Not a semantic consumer."
+      "reason": "Source description string in context pack spec. Not a semantic consumer."
     },
     {
       "path": "src/finharness/agent_context.py",
-      "match_line": 276,
-      "term": "Attestation",
-      "reason": "Import/usage of Attestation in agent context. Already covered by exclusion for attestation_ref."
-    },
-    {
-      "path": "src/finharness/agent_context.py",
-      "match_line": 276,
-      "term": "attestations",
-      "reason": "Same line as Attestation usage. Already covered."
-    },
-    {
-      "path": "src/finharness/agent_context.py",
-      "match_line": 277,
-      "term": "attestations",
-      "reason": "Adjacent line to Attestation usage. Already covered."
+      "match_line": 541,
+      "term": "attestation_ref",
+      "reason": "Context key extraction from detail dict. Indirect data processing, not Attestation consumer."
     },
     {
       "path": "src/finharness/scaffold_candidate_preflight.py",
       "match_line": 51,
       "term": "attestation_ref",
-      "reason": "Context keyword filter. Already covered by existing exclusion at line 50."
-    },
-    {
-      "path": "src/finharness/statecore/__init__.py",
-      "match_line": 7,
-      "term": "Attestation",
-      "reason": "Re-export of Attestation model. Module-level import."
-    },
-    {
-      "path": "src/finharness/statecore/__init__.py",
-      "match_line": 39,
-      "term": "Attestation",
-      "reason": "Re-export of Attestation model in __all__. Module-level import."
+      "reason": "Context keyword filter. Not a semantic Attestation consumer."
     },
     {
       "path": "src/finharness/statecore/store.py",
       "match_line": 32,
       "term": "Attestation",
-      "reason": "Import of Attestation for StateCoreRecord union. Already covered by existing exclusion."
+      "reason": "StateCoreRecord union import. Persistence infrastructure."
     },
     {
       "path": "src/finharness/statecore/store.py",
       "match_line": 82,
       "term": "Attestation",
-      "reason": "Attestation in StateCoreRecord union type annotation. Persistence infrastructure, not semantic consumer."
+      "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
+    },
+    {
+      "path": "src/finharness/statecore/__init__.py",
+      "match_line": 7,
+      "term": "Attestation",
+      "reason": "Module re-export. Not a consumer."
+    },
+    {
+      "path": "src/finharness/statecore/__init__.py",
+      "match_line": 39,
+      "term": "Attestation",
+      "reason": "__all__ re-export. Not a consumer."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 20,
+      "term": "Attestation",
+      "reason": "Model import for write functions. Covered by ATT-CONS-006."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 53,
+      "term": "Attestation",
+      "reason": "GovernedAttestationWrite field annotation. Covered by ATT-CONS-007."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 54,
+      "term": "Attestation",
+      "reason": "GovernedAttestationWrite field annotation. Covered by ATT-CONS-007."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 199,
+      "term": "Attestation",
+      "reason": "Attestation in revision context. Covered by ATT-CONS-006."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 527,
+      "term": "attestation_ref",
+      "reason": "ReviewEvent attestation_ref in create_governed_review_event. Covered by ATT-CONS-008."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 538,
+      "term": "attestation_ref",
+      "reason": "ReviewEvent attestation_ref receipt payload. Covered by ATT-CONS-008."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 458,
+      "term": "attestation_id",
+      "reason": "Internal attestation_id generation. Covered by ATT-CONS-006."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 459,
+      "term": "attestation_id",
+      "reason": "Internal attestation_id usage. Covered by ATT-CONS-006."
+    },
+    {
+      "path": "src/finharness/statecore/proposals.py",
+      "match_line": 463,
+      "term": "attestation_id",
+      "reason": "Internal attestation_id assignment. Covered by ATT-CONS-006."
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/04-review-lifecycle.md",
+      "match_line": 36,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 36."
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/06-memory-session-skills.md",
+      "match_line": 76,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 76. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/README.md",
+      "match_line": 141,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 141. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/finharness-evolution-roadmap.md",
+      "match_line": 55,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 55. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/02-industry-benchmark-map-codex.md",
+      "match_line": 145,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 145. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/03-gap-register-codex.md",
+      "match_line": 31,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 31. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/04-solution-research-packs-codex.md",
+      "match_line": 232,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 232. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/05-product-roadmap-codex.md",
+      "match_line": 46,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 46. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/scaffolding-inventory.md",
+      "match_line": 16,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 16. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/architecture/system-map.md",
+      "match_line": 212,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 212."
+    },
+    {
+      "path": "docs/engineering/abstraction-inventory.yml",
+      "match_line": 153,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 153. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/engineering/abstraction-inventory.yml",
+      "match_line": 161,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 161. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/engineering/system-directory-standard.md",
+      "match_line": 23,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 23. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/engineering/system-directory-standard.md",
+      "match_line": 24,
+      "term": "create_governed_attestation",
+      "reason": "Non-semantic hit: create_governed_attestation at line 24. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/notes/2026-07-11-external-research-synthesis.md",
+      "match_line": 64,
+      "term": "decision of record",
+      "reason": "Non-semantic hit: decision of record at line 64. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/notes/2026-07-11-external-research-synthesis.md",
+      "match_line": 152,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 152. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/notes/agent-harness.md",
+      "match_line": 78,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 78. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/notes/agent-harness.md",
+      "match_line": 82,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 82. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/product/product-thesis.md",
+      "match_line": 130,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 130. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
+      "match_line": 85,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 85. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
+      "match_line": 108,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 108. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api-execution-brief.md",
+      "match_line": 32,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 32. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
+      "match_line": 45,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 45. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
+      "match_line": 105,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 105. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
+      "match_line": 106,
+      "term": "attestation_id",
+      "reason": "Non-semantic hit: attestation_id at line 106. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
+      "match_line": 48,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 48. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
+      "match_line": 115,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 115. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-19-debt-cleanup-plan.md",
+      "match_line": 70,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 70. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "match_line": 26,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 26. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "match_line": 30,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 30. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "match_line": 88,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 88. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "match_line": 225,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 225. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "match_line": 705,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 705. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-r3-retrospective-cockpit.md",
+      "match_line": 13,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 13. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 14,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 14. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 21,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 21. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 21,
+      "term": "attestation_ref",
+      "reason": "Non-semantic hit: attestation_ref at line 21. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 25,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 25. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 48,
+      "term": "attestation_ref",
+      "reason": "Non-semantic hit: attestation_ref at line 48. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 57,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 57. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 65,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 65. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "match_line": 78,
+      "term": "attestation_ref",
+      "reason": "Non-semantic hit: attestation_ref at line 78. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
+      "match_line": 15,
+      "term": "create_governed_attestation",
+      "reason": "Non-semantic hit: create_governed_attestation at line 15. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
+      "match_line": 28,
+      "term": "create_governed_attestation",
+      "reason": "Non-semantic hit: create_governed_attestation at line 28. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
+      "match_line": 336,
+      "term": "Attestation",
+      "reason": "Non-semantic hit: Attestation at line 336. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
+      "match_line": 351,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 351. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/reference/interfaces.md",
+      "match_line": 22,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 22."
+    },
+    {
+      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
+      "match_line": 82,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 82. Not a direct Attestation consumer."
+    },
+    {
+      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
+      "match_line": 198,
+      "term": "attestations",
+      "reason": "Non-semantic hit: attestations at line 198. Not a direct Attestation consumer."
+    },
+    {
+      "path": "frontend/app.js",
+      "match_line": 1150,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1150."
+    },
+    {
+      "path": "frontend/app.js",
+      "match_line": 1151,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1151."
+    },
+    {
+      "path": "frontend/app.js",
+      "match_line": 1151,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 1151."
+    },
+    {
+      "path": "frontend/app.js",
+      "match_line": 1152,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1152."
+    },
+    {
+      "path": "src/finharness/agent_tools.py",
+      "match_line": 138,
+      "term": "attestation_ref",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 138."
+    },
+    {
+      "path": "src/finharness/annual_review.py",
+      "match_line": 4,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 4."
+    },
+    {
+      "path": "src/finharness/annual_review.py",
+      "match_line": 38,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 38."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 18,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 18."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 143,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 143."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 143,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 143."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 172,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 172."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 240,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 240."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 242,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 242."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 243,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 243."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 243,
+      "term": "attestation_id",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 243."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 275,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 275."
+    },
+    {
+      "path": "src/finharness/api/routes_cockpit.py",
+      "match_line": 279,
+      "term": "attestation_id",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 279."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 32,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 32."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 37,
+      "term": "create_governed_attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 37."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 76,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 76."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 92,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 92."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 93,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 93."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 107,
+      "term": "human_attestation_recorded",
+      "reason": "Hit outside consumer range in file with existing consumers. human_attestation_recorded at line 107."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 329,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 329."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 333,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 333."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 336,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 336."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 337,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 337."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 338,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 338."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 338,
+      "term": "attestation_id",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 338."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 666,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 666."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 669,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 669."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 691,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 691."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 694,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 694."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 716,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 716."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 722,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 722."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 988,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 988."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 988,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 988."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 1053,
+      "term": "attestation_ref",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 1053."
+    },
+    {
+      "path": "src/finharness/api/routes_proposals.py",
+      "match_line": 1118,
+      "term": "attestation_ref",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 1118."
+    },
+    {
+      "path": "src/finharness/daily_brief.py",
+      "match_line": 28,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 28."
+    },
+    {
+      "path": "src/finharness/proposal_queue_checks.py",
+      "match_line": 11,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 11."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 3,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 3."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 27,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 27."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 136,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 136."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 145,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 145."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 147,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 147."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 148,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 148."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 149,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 149."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 149,
+      "term": "attestation_id",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 149."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 158,
+      "term": "attestation_id",
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 158."
+    },
+    {
+      "path": "src/finharness/review_read.py",
+      "match_line": 165,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 165."
     },
     {
       "path": "tests/_policy_registry.py",
       "match_line": 88,
       "term": "create_governed_attestation",
-      "reason": "Policy registry listing create_governed_attestation. Governance metadata, not semantic consumer."
+      "reason": "Non-semantic hit: create_governed_attestation at line 88. Not a direct Attestation consumer."
     },
     {
       "path": "tests/_review_fixtures.py",
       "match_line": 14,
       "term": "create_governed_attestation",
-      "reason": "Test fixture import of create_governed_attestation. Test helper, not semantic contract."
+      "reason": "Non-semantic hit: create_governed_attestation at line 14. Not a direct Attestation consumer."
     },
     {
       "path": "tests/_review_fixtures.py",
       "match_line": 61,
       "term": "create_governed_attestation",
-      "reason": "Test fixture calling create_governed_attestation. Test helper, not semantic contract."
+      "reason": "Non-semantic hit: create_governed_attestation at line 61. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_agent_capabilities.py",
       "match_line": 25,
       "term": "create_governed_attestation",
-      "reason": "Agent capabilities test importing create_governed_attestation. Infrastructure test."
+      "reason": "Non-semantic hit: create_governed_attestation at line 25. Not a direct Attestation consumer."
+    },
+    {
+      "path": "tests/test_agent_proposal_drafts.py",
+      "match_line": 17,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 17."
+    },
+    {
+      "path": "tests/test_agent_proposal_drafts.py",
+      "match_line": 18,
+      "term": "create_governed_attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 18."
     },
     {
       "path": "tests/test_agent_tools.py",
       "match_line": 653,
       "term": "create_governed_attestation",
-      "reason": "Agent tools test calling create_governed_attestation for setup. Infrastructure test."
+      "reason": "Non-semantic hit: create_governed_attestation at line 653. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_annual_review.py",
       "match_line": 12,
       "term": "create_governed_attestation",
-      "reason": "Annual review test importing create_governed_attestation for setup. Aggregation test."
-    },
-    {
-      "path": "tests/test_annual_review.py",
-      "match_line": 54,
-      "term": "create_governed_attestation",
-      "reason": "Annual review test calling create_governed_attestation for setup. Aggregation test."
+      "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 12."
     },
     {
       "path": "tests/test_decision_scaffold.py",
       "match_line": 248,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Decision scaffold test hitting /attest endpoint. Scaffold testing."
+      "reason": "Non-semantic hit: /proposals/{proposal_id}/attest at line 248. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_decision_scaffold.py",
       "match_line": 292,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Decision scaffold test hitting /attest endpoint. Scaffold testing."
+      "reason": "Non-semantic hit: /proposals/{proposal_id}/attest at line 292. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_receipt_backed_write_registry.py",
       "match_line": 41,
       "term": "create_governed_attestation",
-      "reason": "Write registry test importing create_governed_attestation. Governance infrastructure test."
+      "reason": "Non-semantic hit: create_governed_attestation at line 41. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_receipt_backed_write_registry.py",
       "match_line": 73,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Write registry test referencing /attest endpoint. Governance infrastructure test."
+      "reason": "Non-semantic hit: /proposals/{proposal_id}/attest at line 73. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_review_workspace_api.py",
       "match_line": 18,
       "term": "attestations",
-      "reason": "Review workspace API test referencing attestations. Review workspace testing."
+      "reason": "Non-semantic hit: attestations at line 18. Not a direct Attestation consumer."
+    },
+    {
+      "path": "tests/test_risk_classification.py",
+      "match_line": 17,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 17."
+    },
+    {
+      "path": "tests/test_risk_classification.py",
+      "match_line": 19,
+      "term": "create_governed_attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 19."
+    },
+    {
+      "path": "tests/test_risk_classification.py",
+      "match_line": 80,
+      "term": "create_governed_attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 80."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 15,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 15."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 547,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 547."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 794,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 794."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 802,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 802."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 806,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 806."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 823,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 823."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 823,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 823."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 825,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 825."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 827,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 827."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 861,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 861."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 878,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 878."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 956,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 956."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 966,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 966."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 967,
+      "term": "attestations",
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 967."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 1072,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1072."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 1170,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1170."
     },
     {
       "path": "tests/test_statecore_store.py",
       "match_line": 50,
       "term": "attestations",
-      "reason": "StateCore store test referencing attestations. Store infrastructure test."
+      "reason": "Non-semantic hit: attestations at line 50. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_statecore_store.py",
       "match_line": 313,
       "term": "attestation_ref",
-      "reason": "StateCore store test referencing attestation_ref. Store infrastructure test."
+      "reason": "Non-semantic hit: attestation_ref at line 313. Not a direct Attestation consumer."
+    },
+    {
+      "path": "tests/test_statecore_vertical_reconstruction.py",
+      "match_line": 15,
+      "term": "Attestation",
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 15."
     }
   ],
   "unclassified_hits": []
