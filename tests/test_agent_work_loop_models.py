@@ -163,6 +163,64 @@ class TestAgentWorkContextSnapshot:
 class TestBoundedDispatchLoop:
 
     def test_dispatch_loop_with_valid_tools(self) -> None:
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from finharness.agent_work_loop import (
+            AgentWorkRequest,
+            freeze_work_context,
+            run_bounded_tool_dispatch_loop,
+        )
+        from finharness.config import load_settings
+        from finharness.statecore.store import (
+            STATE_CORE_DB_ENV_VAR,
+            init_state_core,
+        )
+
+        prev_env = os.environ.get(STATE_CORE_DB_ENV_VAR)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                db_path = root / "state-core.sqlite"
+                receipt_root = root / "receipts"
+
+                engine = init_state_core(db_path)
+                engine.dispose()
+
+                os.environ[STATE_CORE_DB_ENV_VAR] = str(db_path)
+                load_settings.cache_clear()
+
+                req = AgentWorkRequest(
+                    goal="Test dispatch", profile_name="default",
+                    objective="Test", work_type="research_review",
+                    receipt_root=str(receipt_root),
+                    tool_requests=[{
+                        "tool_name": "get_capital_context_projection",
+                        "arguments": {"open_proposals_limit": 2},
+                    }],
+                    max_tool_calls=5,
+                )
+                snap = freeze_work_context(
+                    work_id=req.work_id, profile_name="default",
+                )
+                envelopes, _sr, _data_gaps = run_bounded_tool_dispatch_loop(
+                    request=req, context_snapshot=snap,
+                )
+                assert len(envelopes) == 1
+                assert _sr == "completed"
+                assert envelopes[0]["tool_name"] == (
+                    "get_capital_context_projection"
+                )
+        finally:
+            if prev_env is None:
+                os.environ.pop(STATE_CORE_DB_ENV_VAR, None)
+            else:
+                os.environ[STATE_CORE_DB_ENV_VAR] = prev_env
+            load_settings.cache_clear()
+
+    def test_dispatch_loop_reports_statecore_unavailable(self) -> None:
+        import os
         import tempfile
 
         from finharness.agent_work_loop import (
@@ -170,24 +228,44 @@ class TestBoundedDispatchLoop:
             freeze_work_context,
             run_bounded_tool_dispatch_loop,
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            req = AgentWorkRequest(
-                goal="Test dispatch", profile_name="default",
-                objective="Test", work_type="research_review",
-                receipt_root=tmp,
-                tool_requests=[{
-                    "tool_name": "get_capital_context_projection",
-                    "arguments": {"open_proposals_limit": 2},
-                }],
-                max_tool_calls=5,
+        from finharness.config import load_settings
+        from finharness.statecore.store import STATE_CORE_DB_ENV_VAR
+
+        prev_env = os.environ.get(STATE_CORE_DB_ENV_VAR)
+        try:
+            os.environ[STATE_CORE_DB_ENV_VAR] = (
+                "/tmp/nonexistent-statecore-for-test.sqlite"
             )
-            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
-            envelopes, _sr, _data_gaps = run_bounded_tool_dispatch_loop(
-                request=req, context_snapshot=snap,
-            )
-            assert len(envelopes) == 1
-            assert _sr == "completed"
-            assert envelopes[0]["tool_name"] == "get_capital_context_projection"
+            load_settings.cache_clear()
+
+            with tempfile.TemporaryDirectory() as tmp:
+                req = AgentWorkRequest(
+                    goal="Test unavailable", profile_name="default",
+                    objective="Test", work_type="research_review",
+                    receipt_root=tmp,
+                    tool_requests=[{
+                        "tool_name": "get_capital_context_projection",
+                        "arguments": {"open_proposals_limit": 2},
+                    }],
+                    max_tool_calls=5,
+                )
+                snap = freeze_work_context(
+                    work_id=req.work_id, profile_name="default",
+                )
+                envelopes, stop_reason, _data_gaps = (
+                    run_bounded_tool_dispatch_loop(
+                        request=req, context_snapshot=snap,
+                    )
+                )
+                assert len(envelopes) == 1
+                assert stop_reason == "tool_unavailable"
+                assert envelopes[0]["ok"] is False
+        finally:
+            if prev_env is None:
+                os.environ.pop(STATE_CORE_DB_ENV_VAR, None)
+            else:
+                os.environ[STATE_CORE_DB_ENV_VAR] = prev_env
+            load_settings.cache_clear()
 
     def test_dispatch_loop_respects_max_tool_calls(self) -> None:
         import tempfile
@@ -206,7 +284,9 @@ class TestBoundedDispatchLoop:
                                  "get_quote_snapshot"],
                 max_tool_calls=2,
             )
-            snap = freeze_work_context(work_id=req.work_id, profile_name="default")
+            snap = freeze_work_context(
+                work_id=req.work_id, profile_name="default",
+            )
             envelopes, stop_reason, _ = run_bounded_tool_dispatch_loop(
                 request=req, context_snapshot=snap,
             )
