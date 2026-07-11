@@ -17,12 +17,16 @@ execution authorization.
 | `task status` | Show local lab/tool status. | Read-only. |
 | `task setup` | Sync dependencies from lockfiles. | May install/update local packages. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
-| `task check:fast` | Lint, typecheck, and unit tests. | Fast local feedback. |
+| `task check:fast` | Lint, typecheck, and full Python test gate (compile + unittest + pytest). | Fast local feedback. |
 | `task check:ci` | Fast checks, base-profile rebuild, integration, frontend, governance, and rules. | Main merge gate. |
 | `task check:research` | CI gate plus experiments and eval smoke. | Full research validation. |
 | `task lint` | Run Python lint checks. | Ruff. |
 | `task typecheck` | Run mypy. | Strict on safety-critical core. |
-| `task test` | Compile Python and run fast unit tests. | No external services. |
+| `task test:compile` | Run Python compile check. | Syntax-only. |
+| `task test:unittest` | Run unittest discovery suite (`unittest.TestCase`-based tests). | No external services. |
+| `task test:pytest` | Run pytest-only test files from the pytest manifest. | Pytest-annotated test files only. |
+| `task test:all` | Compile + unittest + pytest (complete Python test gate). | Delegated by `task test` and `task check:fast`. |
+| `task test` | Compatibility alias for the complete Python test gate (`task test:all`). | Delegates to `test:all`. |
 | `task test:integration` | Run slower graph/property integration tests. | Included in `task check`. |
 | `task test:frontend` | Run jsdom frontend tests. | Included in `task check`. |
 | `task test:browser` | Optional Playwright cockpit smoke. | Not in `task check`. |

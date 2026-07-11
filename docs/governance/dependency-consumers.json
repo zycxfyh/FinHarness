@@ -540,12 +540,15 @@
         "tests/test_evaluator_registry.py",
         "tests/test_planning_policy_view.py",
         "tests/test_playbook_loader.py",
-        "tests/test_review_workspace.py"
+        "tests/test_pytest_runner_sentinel.py",
+        "tests/test_review_workspace.py",
+        "scripts/run_pytest_manifest.py"
       ],
       "task_consumers": [
-        "test"
+        "test:all",
+        "test:pytest"
       ],
-      "rationale": "Several unit modules use pytest fixtures and helpers even though discovery is launched through unittest.",
+      "rationale": "Pytest is the canonical runner for pytest-only test files; the manifest runner and sentinel both import pytest.",
       "confidence": "high"
     },
     {

@@ -1,3 +1,4 @@
+# finharness-test-runner: pytest
 """Tests for AgentWorkRequest / AgentWorkResult / ContextSnapshot models."""
 
 from __future__ import annotations

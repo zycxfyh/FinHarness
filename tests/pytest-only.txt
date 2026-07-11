@@ -1,0 +1,8 @@
+# pytest-only manifest — each line is a repo-relative path to a test file
+# that must be executed by the pytest runner (not unittest).
+# Empty lines and lines beginning with # are ignored.
+# No duplicate paths. Fail closed when manifest is empty or a path is missing.
+
+tests/test_agent_work_loop_models.py
+tests/test_agent_cognition_flow.py
+tests/test_pytest_runner_sentinel.py
