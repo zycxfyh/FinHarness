@@ -23,6 +23,10 @@ ReceiptKind = Literal[
     "option_set",
     "plan_draft",
     "domain_memory",
+    "agent_work_result",
+    "review_workspace",
+    "agent_tool_result",
+    "autonomy_admission",
     "all",
 ]
 
@@ -70,6 +74,10 @@ _KIND_DIR_MAP: dict[str, str] = {
     "option_set": "deliberation",
     "plan_draft": "deliberation",
     "domain_memory": "domain-memory",
+    "agent_work_result": "agent-work-results",
+    "review_workspace": "review-workspaces",
+    "agent_tool_result": "agent-tool-results",
+    "autonomy_admission": "autonomy-admissions",
 }
 
 
@@ -95,7 +103,12 @@ def build_receipt_search_index(receipt_root: Path) -> list[ReceiptSearchIndexEnt
                 continue
 
             receipt_id = str(payload.get("receipt_id", file_path.stem))
-            subject_id = str(payload.get("plan_id") or payload.get("subject_id") or "")
+            subject_id = str(
+                payload.get("work_id")
+                or payload.get("plan_id")
+                or payload.get("subject_id")
+                or ""
+            )
             status = str(payload.get("status") or payload.get("outcome") or "")
 
             # Collect refs
@@ -109,7 +122,7 @@ def build_receipt_search_index(receipt_root: Path) -> list[ReceiptSearchIndexEnt
 
             # Collect text for search
             text_parts: list[str] = []
-            for key in ("goal", "objective", "stop_reason", "content"):
+            for key in ("work_id", "goal", "objective", "stop_reason", "content"):
                 val = payload.get(key)
                 if isinstance(val, str) and val.strip():
                     text_parts.append(val)

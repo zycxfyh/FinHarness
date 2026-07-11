@@ -18,14 +18,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tests.fakes import RecordingTool, ScriptedDecisionPort  # noqa: E402
-
 from finharness.agent_receipt_search import search_receipt_index  # noqa: E402
 from finharness.agent_work_loop import (  # noqa: E402
+    AgentWorkDecision,
+    AgentWorkDecisionState,
     AgentWorkRequest,
+    AgentWorkStopReason,
+    AgentWorkToolRequest,
     freeze_work_context,
     run_agent_work_loop,
     run_bounded_tool_dispatch_loop,
+)
+from finharness.autonomy_control import (  # noqa: E402
+    AgentAutonomyLevel,
+    WorldFidelityLevel,
 )
 
 
@@ -82,88 +88,104 @@ def collect_acceptance_checks() -> list[AcceptanceCheck]:
 
     checks: list[AcceptanceCheck] = []
 
-    # ── real_tool_arguments: behavioral check via RecordingTool ─────────
-
-    recording_tool = RecordingTool()
-    recording_tool(symbol="SPY", quantity=10, filters={"sector": "tech"})
-    has_argument_carrier = True
-    tool_saw_arguments = (
-        recording_tool.call_count == 1
-        and recording_tool.last_arguments is not None
-        and recording_tool.last_arguments.get("symbol") == "SPY"
-        and recording_tool.last_arguments.get("quantity") == 10
-        and recording_tool.last_arguments.get("filters") == {"sector": "tech"}
-    )
-    checks.append(
-        _check(
-            "real_tool_arguments",
-            "Requested tool calls carry caller/model-selected arguments.",
-            has_argument_carrier and tool_saw_arguments,
-            (
-                f"argument_carrier={has_argument_carrier}; "
-                f"tool_saw_arguments={tool_saw_arguments}"
-            ),
+    with tempfile.TemporaryDirectory() as typed_tmp:
+        typed_root = Path(typed_tmp)
+        typed_request = AgentWorkRequest(
+            goal="Acceptance: typed arguments",
+            profile_name="default",
+            objective="Prove arguments reach a production tool dispatch",
+            work_type="research_review",
+            receipt_root=str(typed_root),
+            tool_requests=[
+                AgentWorkToolRequest(
+                    tool_name="get_capital_context_projection",
+                    arguments={"open_proposals_limit": 3},
+                )
+            ],
         )
-    )
-
-    # ── observation_driven_decision: behavioral check via ScriptedDecisionPort ─
-
-    port = ScriptedDecisionPort([
-        {"kind": "call_tool", "decision_summary": "first step"},
-        {"kind": "finish", "decision_summary": "done after observation"},
-    ])
-
-    class FakeObs:
-        ok = True
-
-    d1 = port.decide(request=None, snapshot=None, state=None, observation=None)
-    no_obs_picks_first = d1["kind"] == "call_tool"
-
-    d2 = port.decide(request=None, snapshot=None, state=None, observation=FakeObs())
-    with_obs_adapts = d2["kind"] == "finish"
-
-    observation_consumed = (
-        no_obs_picks_first
-        and with_obs_adapts
-        and len(port.observations) == 2
-        and port.observations[1] == {"ok": True}
-    )
-    checks.append(
-        _check(
-            "observation_driven_decision",
-            "A next-action reducer consumes the preceding observation.",
-            observation_consumed,
-            f"observation_reducer_present={observation_consumed}",
+        typed_snapshot = freeze_work_context(
+            work_id=typed_request.work_id,
+            profile_name=typed_request.profile_name,
         )
-    )
-
-    # ── all_stop_paths_reduced: behavioral check via ScriptedDecisionPort ─
-
-    stop_reasons = [
-        "completed", "max_steps_reached", "max_tool_calls_reached",
-        "tool_unavailable", "missing_required_context", "evaluation_blocked",
-        "human_review_required", "data_gap_unresolved", "internal_error",
-    ]
-    stop_port = ScriptedDecisionPort([
-        {"kind": "stop", "stop_reason": reason, "decision_summary": reason}
-        for reason in stop_reasons
-    ])
-    seen_reasons: set[str] = set()
-    for _ in range(len(stop_reasons)):
-        d = stop_port.decide(request=None, snapshot=None, state=None, observation=None)
-        seen_reasons.add(d.get("stop_reason", ""))
-    reducer_coverage = set(stop_reasons).issubset(seen_reasons)
-    checks.append(
-        _check(
-            "all_stop_paths_reduced",
-            "Every declared stop reason has an implemented reducer path.",
-            reducer_coverage,
-            (
-                f"declared={sorted(stop_reasons)}; "
-                f"implemented_paths={sorted(seen_reasons)}"
-            ),
+        typed_envelopes, typed_stop, _ = run_bounded_tool_dispatch_loop(
+            request=typed_request,
+            context_snapshot=typed_snapshot,
         )
-    )
+        arguments_transported = (
+            len(typed_envelopes) == 1
+            and typed_envelopes[0].get("request_argument_keys")
+            == ["open_proposals_limit"]
+            and typed_envelopes[0].get("request_arguments_sha256")
+            and typed_envelopes[0].get("error_code") != "SCHEMA_VALIDATION_FAILED"
+            and typed_stop == "completed"
+        )
+        argument_keys = (
+            typed_envelopes[0].get("request_argument_keys") if typed_envelopes else []
+        )
+        argument_error = (
+            typed_envelopes[0].get("error_code") if typed_envelopes else None
+        )
+        checks.append(
+            _check(
+                "real_tool_arguments",
+                "Requested tool calls carry caller/model-selected arguments.",
+                bool(arguments_transported),
+                (
+                    f"argument_keys={argument_keys}; "
+                    f"error={argument_error}; "
+                    f"stop_reason={typed_stop}"
+                ),
+            )
+        )
+
+        observed_kinds: list[str] = []
+
+        def observation_port(state: AgentWorkDecisionState) -> AgentWorkDecision:
+            observed_kinds.append(state.observation.kind)
+            if state.observation.kind == "work_started":
+                return AgentWorkDecision(
+                    action="dispatch",
+                    tool_request=AgentWorkToolRequest(
+                        tool_name="get_capital_context_projection",
+                        arguments={"open_proposals_limit": 2},
+                    ),
+                )
+            return AgentWorkDecision(action="complete")
+
+        observation_request = AgentWorkRequest(
+            goal="Acceptance: observation reducer",
+            profile_name="default",
+            objective="Choose the next action from the preceding observation",
+            work_type="research_review",
+            receipt_root=str(typed_root),
+            max_steps=3,
+        )
+        observation_snapshot = freeze_work_context(
+            work_id=observation_request.work_id,
+            profile_name=observation_request.profile_name,
+        )
+        observation_envelopes, observation_stop, _ = run_bounded_tool_dispatch_loop(
+            request=observation_request,
+            context_snapshot=observation_snapshot,
+            decision_port=observation_port,
+        )
+        observation_consumed = (
+            observed_kinds == ["work_started", "tool_result"]
+            and len(observation_envelopes) == 1
+            and observation_stop == "completed"
+        )
+        checks.append(
+            _check(
+                "observation_driven_decision",
+                "A next-action reducer consumes the preceding observation.",
+                observation_consumed,
+                (
+                    f"observed_kinds={observed_kinds}; "
+                    f"envelopes={len(observation_envelopes)}; "
+                    f"stop_reason={observation_stop}"
+                ),
+            )
+        )
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -290,6 +312,80 @@ def collect_acceptance_checks() -> list[AcceptanceCheck]:
         )
         full_result = run_agent_work_loop(request=full_request)
 
+        completed_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: explicit completion",
+                profile_name="default",
+                objective="Complete after no further tool is needed",
+                work_type="research_review",
+                receipt_root=str(root),
+            )
+        )
+        data_gap_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: unresolved data gap",
+                profile_name="default",
+                objective="Reduce a schema data gap",
+                work_type="evidence_triage",
+                receipt_root=str(root),
+                tool_requests=[
+                    AgentWorkToolRequest(
+                        tool_name="get_quote_snapshot",
+                        arguments={},
+                    )
+                ],
+            )
+        )
+        evaluation_blocked_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: runtime autonomy ceiling",
+                profile_name="default",
+                objective="Fail closed above the Harness ceiling",
+                work_type="evidence_triage",
+                receipt_root=str(root),
+                requested_autonomy=AgentAutonomyLevel.AUT6_CONTINUOUS_AGENT,
+                tool_requests=[
+                    AgentWorkToolRequest(
+                        tool_name="get_capital_context_projection",
+                        arguments={"open_proposals_limit": 1},
+                    )
+                ],
+            )
+        )
+        human_review_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: mandate-required review write",
+                profile_name="review-draft",
+                objective="Keep an out-of-mandate write as a candidate",
+                work_type="proposal_review",
+                receipt_root=str(root),
+                requested_autonomy=AgentAutonomyLevel.AUT2_DURABLE_LOOP,
+                tool_requests=[
+                    AgentWorkToolRequest(
+                        tool_name="draft_governed_proposal_from_context",
+                        arguments={},
+                    )
+                ],
+            ),
+            runtime_autonomy_ceiling=AgentAutonomyLevel.AUT2_DURABLE_LOOP,
+            runtime_world_fidelity=WorldFidelityLevel.W1_VERSIONED_DECISIONS,
+        )
+
+        def failing_decision_port(state: AgentWorkDecisionState) -> AgentWorkDecision:
+            del state
+            raise RuntimeError("acceptance decision failure")
+
+        internal_error_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: decision failure",
+                profile_name="default",
+                objective="Reduce a decision-provider exception",
+                work_type="research_review",
+                receipt_root=str(root),
+            ),
+            decision_port=failing_decision_port,
+        )
+
         run_receipt_linked = _ref_exists(root, full_result.agent_run_receipt_ref)
         checks.append(
             _check(
@@ -370,6 +466,32 @@ def collect_acceptance_checks() -> list[AcceptanceCheck]:
                 ),
             )
         )
+
+    declared_reasons = set(getattr(AgentWorkStopReason, "__args__", ()))
+    observed_reasons = {
+        step_stop,
+        tool_stop,
+        unavailable_result.stop_reason,
+        playbook_result.stop_reason,
+        full_result.stop_reason,
+        completed_result.stop_reason,
+        data_gap_result.stop_reason,
+        evaluation_blocked_result.stop_reason,
+        human_review_result.stop_reason,
+        internal_error_result.stop_reason,
+    }
+    reducer_coverage = declared_reasons.issubset(observed_reasons)
+    checks.append(
+        _check(
+            "all_stop_paths_reduced",
+            "Every declared stop reason has an exercised production reducer path.",
+            reducer_coverage,
+            (
+                f"declared={sorted(declared_reasons)}; "
+                f"observed_production_paths={sorted(observed_reasons)}"
+            ),
+        )
+    )
 
     return checks
 

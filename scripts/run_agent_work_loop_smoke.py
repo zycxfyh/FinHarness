@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Agent Work Orchestrator structural smoke v0.
+"""Agent Operating Cycle structural smoke v0.1.
 
-Checks that the current deterministic scaffold can compose request, context
-snapshot, bounded dispatch, cognition artifacts, and search-index update. This
-does not prove successful tool semantics, observation-driven decisions,
-workspace hydration, result persistence, or complete receipt linkage.
+Checks that the current cycle can compose request, context snapshot, bounded
+dispatch, cognition artifacts, and search-index update. The separate
+15-contract behavioral gate proves semantic AUT2 foundation closure.
 """
 
 from __future__ import annotations
@@ -47,7 +46,10 @@ def main() -> int:
             objective="Verify allocation",
             work_type="research_review",
             receipt_root=str(root),
-            requested_tools=["get_quote_snapshot"],
+            tool_requests=[{
+                "tool_name": "get_capital_context_projection",
+                "arguments": {"open_proposals_limit": 2},
+            }],
             max_tool_calls=5,
         )
         failures += _check("Work ID generated", req.work_id.startswith("awr_"))
@@ -122,7 +124,7 @@ def main() -> int:
 
     print("\n" + "=" * 50)
     if failures == 0:
-        print("ALL STRUCTURAL CHECKS PASSED — semantic loop closure remains pending.")
+        print("ALL STRUCTURAL CHECKS PASSED — see the 15-contract behavioral gate.")
     else:
         print(f"{failures} CHECK(S) FAILED")
     return 0 if failures == 0 else 1

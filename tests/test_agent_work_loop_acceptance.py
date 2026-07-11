@@ -6,26 +6,24 @@ import unittest
 
 from scripts.run_agent_work_loop_acceptance import collect_acceptance_checks
 
-# LOOP-01B: behavioral fakes pass 3 contracts that previously failed on source inspection
-EXPECTED_OPEN_CHECKS = {
-    "final_agent_run_receipt_linked",
-    "max_steps_effective",
-    "playbook_requirements_enforced",
-    "result_searchable_by_work_id",
-    "review_workspace_hydrated",
-    "tool_result_refs_are_artifacts",
-    "unavailable_tool_stop",
-    "work_result_persisted",
-}
+EXPECTED_OPEN_CHECKS: set[str] = set()
 
 EXPECTED_PASSING_CHECKS = {
     "all_stop_paths_reduced",
     "context_snapshot_frozen",
     "evaluation_report_linked",
     "execution_boundary_closed",
+    "final_agent_run_receipt_linked",
+    "max_steps_effective",
     "max_tool_calls_effective",
     "observation_driven_decision",
+    "playbook_requirements_enforced",
     "real_tool_arguments",
+    "result_searchable_by_work_id",
+    "review_workspace_hydrated",
+    "tool_result_refs_are_artifacts",
+    "unavailable_tool_stop",
+    "work_result_persisted",
 }
 
 

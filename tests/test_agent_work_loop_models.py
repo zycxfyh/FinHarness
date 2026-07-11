@@ -174,7 +174,10 @@ class TestBoundedDispatchLoop:
                 goal="Test dispatch", profile_name="default",
                 objective="Test", work_type="research_review",
                 receipt_root=tmp,
-                requested_tools=["get_quote_snapshot"],
+                tool_requests=[{
+                    "tool_name": "get_capital_context_projection",
+                    "arguments": {"open_proposals_limit": 2},
+                }],
                 max_tool_calls=5,
             )
             snap = freeze_work_context(work_id=req.work_id, profile_name="default")
@@ -183,7 +186,7 @@ class TestBoundedDispatchLoop:
             )
             assert len(envelopes) == 1
             assert _sr == "completed"
-            assert envelopes[0]["tool_name"] == "get_quote_snapshot"
+            assert envelopes[0]["tool_name"] == "get_capital_context_projection"
 
     def test_dispatch_loop_respects_max_tool_calls(self) -> None:
         import tempfile
@@ -229,9 +232,14 @@ class TestBoundedDispatchLoop:
             envelopes, _sr, _data_gaps = run_bounded_tool_dispatch_loop(
                 request=req, context_snapshot=snap,
             )
-            assert len(envelopes) == 0
+            # Failed attempts are still traced and persisted as result artifacts.
+            assert len(envelopes) == 1
+            assert envelopes[0]["error_code"] == "TOOL_UNREGISTERED"
+            assert envelopes[0]["artifact_ref"]
+            assert envelopes[0]["autonomy_admission_ref"]
+            assert _sr == "tool_unavailable"
             assert len(_data_gaps) > 0
-            assert "tool_unavailable" in _data_gaps[0]
+            assert "TOOL_UNREGISTERED" in _data_gaps[0]
 
     def test_dispatch_loop_empty_tools(self) -> None:
         import tempfile

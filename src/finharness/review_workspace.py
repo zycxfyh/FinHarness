@@ -16,6 +16,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict
 
 from finharness.agent_cognition_flow import AgentCognitionFlowResult
+from finharness.statecore.receipt_io import atomic_write_json, resolve_under
 
 
 class EvaluationFindingSummary(BaseModel):
@@ -200,3 +201,18 @@ def build_review_workspace_projection_from_receipts(
         authority_eligibility=authority_eligibility,
         evaluation_findings=eval_findings,
     )
+
+
+def write_review_workspace_projection(
+    projection: ReviewWorkspaceProjection,
+    *,
+    receipt_root: str | Path,
+) -> str:
+    """Persist a hydrated workspace and return a root-relative reference."""
+
+    relative = Path("review-workspaces") / f"{projection.workspace_id}.json"
+    atomic_write_json(
+        resolve_under(receipt_root, relative),
+        projection.model_dump(mode="json"),
+    )
+    return relative.as_posix()

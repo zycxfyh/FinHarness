@@ -49,6 +49,12 @@ class AgentToolResultEnvelope(BaseModel):
     output_kind: str
     error_code: str | None = None
     truncated: bool = False
+    request_argument_keys: list[str] = Field(default_factory=list)
+    request_arguments_sha256: str | None = None
+    autonomy_admission_ref: str | None = None
+    autonomy_disposition: str | None = None
+    artifact_ref: str | None = None
+    agent_run_receipt_ref: str | None = None
     execution_allowed: bool = False
     authority_transition: bool = False
 
