@@ -22,7 +22,7 @@ from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
 from finharness.exposure import ExposureReport, compute_exposure
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import (
     Attestation,

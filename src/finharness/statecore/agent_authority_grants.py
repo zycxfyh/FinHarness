@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
 )

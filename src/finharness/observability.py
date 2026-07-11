@@ -22,7 +22,7 @@ from uuid import uuid4
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.receipt_io import atomic_write_json, resolve_under
 
 TRACE_HEADER = "X-FinHarness-Trace-Id"

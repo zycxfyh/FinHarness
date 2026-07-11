@@ -14,8 +14,8 @@ from finharness.execution.capabilities import (
     ExecutionCapabilities,
 )
 from finharness.local_operator import LocalOperatorContext, require_write_capability
-from finharness.market_data import RECEIPT_ROOT as DEFAULT_MARKET_DATA_RECEIPT_ROOT
-from finharness.market_data import ROOT
+from finharness.project_paths import MARKET_DATA_RECEIPT_ROOT as DEFAULT_MARKET_DATA_RECEIPT_ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.store import ensure_state_core_schema, open_state_core
 
 DEFAULT_STATE_CORE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "state-core"

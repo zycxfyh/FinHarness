@@ -27,12 +27,24 @@ from finharness.data_quality import (
     data_quality_backend_version,
     price_outlier_flags,
 )
+from finharness.project_paths import (
+    MARKET_DATA_NORMALIZED_ROOT as NORMALIZED_ROOT,
+)
+from finharness.project_paths import (
+    MARKET_DATA_RAW_ROOT as RAW_ROOT,
+)
+from finharness.project_paths import (
+    MARKET_DATA_RECEIPT_ROOT as RECEIPT_ROOT,
+)
+from finharness.project_paths import (
+    NAUTILUS_CATALOG_ROOT,
+    display_path,
+)
+from finharness.project_paths import (
+    ROOT as PROJECT_ROOT,
+)
 
-ROOT = Path(__file__).resolve().parents[2]
-RAW_ROOT = ROOT / "data" / "raw" / "market-data"
-NORMALIZED_ROOT = ROOT / "data" / "normalized" / "market-data"
-RECEIPT_ROOT = ROOT / "data" / "receipts" / "market-data"
-NAUTILUS_CATALOG_ROOT = ROOT / "data" / "catalog" / "nautilus"
+ROOT = PROJECT_ROOT
 AdjustmentMode = Literal["raw", "auto_adjust"]
 DEFAULT_DATA_BIAS_CONTROLS = [
     "survivorship_uncontrolled",
@@ -147,13 +159,6 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
     )
-
-
-def display_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(ROOT))
-    except ValueError:
-        return str(path)
 
 
 def normalize_ohlcv(frame: pd.DataFrame) -> pd.DataFrame:

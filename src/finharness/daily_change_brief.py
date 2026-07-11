@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from sqlalchemy import Engine
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.runtime_log import get_logger
 from finharness.statecore.diff import SnapshotDiff, diff_snapshots
 from finharness.statecore.models import ReceiptIndex, Snapshot

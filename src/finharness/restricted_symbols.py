@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from finharness.market_data import ROOT, display_path
+from finharness.project_paths import ROOT, display_path
 
 RESTRICTED_SYMBOLS_ENV_VAR = "FINHARNESS_RESTRICTED_SYMBOLS_PATH"
 DEFAULT_RESTRICTED_SYMBOLS_PATH = ROOT / "data" / "security" / "restricted-symbols.json"

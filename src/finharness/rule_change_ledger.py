@@ -27,7 +27,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.lesson_loop import LessonDraft
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 
 RULE_CHANGE_STATE_ROOT = ROOT / "data" / "state" / "rule-changes"
 RULE_CHANGE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "rule-changes"

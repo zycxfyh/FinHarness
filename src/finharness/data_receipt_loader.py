@@ -12,7 +12,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from finharness.market_data import RECEIPT_ROOT, DataReceipt
+from finharness.market_data import DataReceipt
+from finharness.project_paths import MARKET_DATA_RECEIPT_ROOT as RECEIPT_ROOT
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,7 @@ from uuid import uuid4
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.decision_scaffold import ALL_FIELDS, ensure_forcing, normalize
 from finharness.statecore.models import (
     REVIEW_EVENT_KINDS,

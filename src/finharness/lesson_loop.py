@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from finharness.market_data import ROOT, display_path
+from finharness.project_paths import ROOT, display_path
 
 LESSON_DRAFT_DOC_ROOT = ROOT / "docs" / "lessons" / "drafts"
 LESSON_RECEIPT_ROOT = ROOT / "data" / "receipts" / "lessons"

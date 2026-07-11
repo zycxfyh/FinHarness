@@ -1,5 +1,9 @@
-"""Read-only local API for the FinHarness cockpit foundation."""
+"""Local API package without eager application construction.
 
-from finharness.api.app import app, create_app
+Importing a route module must not import every optional API surface through the
+package initializer. Application construction lives at ``finharness.api.app``.
+"""
 
-__all__ = ["app", "create_app"]
+from __future__ import annotations
+
+__all__: list[str] = []

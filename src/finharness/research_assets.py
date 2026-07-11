@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 
 RESEARCH_DATA_ROOT = ROOT / "data" / "research"
 STRATEGY_SPEC_ROOT = RESEARCH_DATA_ROOT / "strategy-specs"

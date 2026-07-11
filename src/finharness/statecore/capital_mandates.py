@@ -18,7 +18,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
 from finharness.ips import DEFAULT_IPS_RECEIPT_ROOT, current_ips
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.models import CapitalMandate, InvestmentPolicyStatement, ReceiptIndex
 from finharness.statecore.receipt_io import (
     atomic_write_json,

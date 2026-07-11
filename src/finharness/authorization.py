@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from finharness.market_data import ROOT, display_path
+from finharness.project_paths import ROOT, display_path
 
 AUTHORIZATION_REGISTRY_ENV_VAR = "FINHARNESS_AUTHORIZATION_REGISTRY_PATH"
 DEFAULT_AUTHORIZATION_REGISTRY_PATH = (

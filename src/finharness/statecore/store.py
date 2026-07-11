@@ -11,7 +11,7 @@ from sqlalchemy import Connection, Engine, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.execution_models import (
     ApprovalRecord,
     BrokerConnection,

@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from sqlalchemy import Engine
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.models import ReceiptIndex
 from finharness.statecore.store import StateCoreStoreError, upsert_records
 

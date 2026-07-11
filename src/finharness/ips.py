@@ -30,7 +30,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
 from finharness.exposure import ExposureReport
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.models import InvestmentPolicyStatement, ReceiptIndex
 from finharness.statecore.observations import ObservationThresholds
 from finharness.statecore.receipt_io import (

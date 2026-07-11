@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.agent_authority_grants import (
     AgentAuthorityGrantValidationResult,
     validate_agent_authority_grant,

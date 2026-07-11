@@ -33,7 +33,7 @@ from finharness.lesson_loop import (
     build_proposed_rule_changes,
     scan_receipts,
 )
-from finharness.market_data import ROOT, display_path
+from finharness.project_paths import ROOT, display_path
 from finharness.rule_change_ledger import audit_untraceable, is_traceable, load_rule_changes
 from finharness.statecore.models import Attestation, Proposal, ReceiptIndex, utc_now_iso
 from finharness.statecore.proposal_revisions import walk_proposal_revisions

@@ -8,7 +8,7 @@ from pathlib import Path
 import keyring
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.statecore.receipt_index import DEFAULT_RECEIPT_ROOT
 from finharness.statecore.store import DEFAULT_STATE_CORE_DB_PATH
 

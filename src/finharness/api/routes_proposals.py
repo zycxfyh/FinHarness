@@ -15,7 +15,7 @@ from finharness.api.dependencies import (
     ReceiptRootDependency,
     WriteCapabilityDependency,
 )
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import (
     ProposalQueueChecks,
     build_proposal_queue_checks,

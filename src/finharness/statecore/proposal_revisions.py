@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from finharness.market_data import ROOT, display_path
+from finharness.project_paths import ROOT, display_path
 
 PROPOSAL_RECEIPT_KIND = "state_core_proposal"
 

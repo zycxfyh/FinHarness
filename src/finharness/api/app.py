@@ -15,8 +15,6 @@ from finharness.api.routes_agent_authority_grants import (
 )
 from finharness.api.routes_capital_mandates import router as capital_mandate_router
 from finharness.api.routes_cockpit import router as cockpit_router
-from finharness.api.routes_data_catalog import router as data_catalog_router
-from finharness.api.routes_data_quality import router as data_quality_router
 from finharness.api.routes_execution import router as execution_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
@@ -30,13 +28,33 @@ from finharness.execution.capabilities import (
     ExecutionCapabilityDeniedError,
 )
 from finharness.local_operator import LocalOperatorContext
-from finharness.market_data import ROOT
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
+from finharness.project_paths import ROOT
 from finharness.runtime_log import configure_logging, get_logger
 from finharness.statecore.store import StateCoreStoreError, ensure_state_core_schema
 
 configure_logging()
 logger = get_logger(__name__)
+
+_OPTIONAL_DATA_IMPORTS = {
+    "beancount",
+    "beanquery",
+    "nautilus_trader",
+    "pandera",
+    "yfinance",
+}
+
+
+def _load_optional_data_routers():
+    """Load data routes only when their owned dependency group is installed."""
+    try:
+        from finharness.api.routes_data_catalog import router as data_catalog_router
+        from finharness.api.routes_data_quality import router as data_quality_router
+    except ModuleNotFoundError as exc:
+        if exc.name not in _OPTIONAL_DATA_IMPORTS:
+            raise
+        return (), exc.name
+    return (data_catalog_router, data_quality_router), None
 
 
 def create_app(
@@ -47,6 +65,7 @@ def create_app(
     local_operator_context: LocalOperatorContext | None = None,
     execution_capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> FastAPI:
+    data_routers, missing_data_dependency = _load_optional_data_routers()
     api = FastAPI(
         title="FinHarness State API",
         summary="Governed cockpit API -- read + explicit local writes.",
@@ -61,6 +80,8 @@ def create_app(
         api.state.market_data_receipt_root = market_data_receipt_root
     api.state.local_operator_context = local_operator_context
     api.state.execution_capabilities = execution_capabilities
+    api.state.data_surface_available = missing_data_dependency is None
+    api.state.data_surface_missing_dependency = missing_data_dependency
 
     @api.middleware("http")
     async def log_request(request: Request, call_next):
@@ -99,6 +120,9 @@ def create_app(
             "execution_allowed": False,
             "checks": {
                 "api": "ok",
+                "data_surface": (
+                    "available" if api.state.data_surface_available else "optional-not-installed"
+                ),
             },
             "non_claims": [
                 "Health check only.",
@@ -143,8 +167,8 @@ def create_app(
     api.include_router(agent_authority_grant_router)
     api.include_router(capital_mandate_router)
     api.include_router(ips_router)
-    api.include_router(data_catalog_router)
-    api.include_router(data_quality_router)
+    for data_router in data_routers:
+        api.include_router(data_router)
     api.include_router(execution_router)
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():

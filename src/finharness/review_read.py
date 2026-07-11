@@ -21,7 +21,7 @@ from sqlalchemy import desc
 from sqlmodel import Session, col, select
 
 from finharness.annual_review import load_latest_annual_review
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import build_proposal_queue_checks
 from finharness.rule_change_ledger import is_traceable, load_rule_changes
 from finharness.statecore.models import Attestation, Proposal, ReceiptIndex, ReviewEvent

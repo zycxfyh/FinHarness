@@ -30,7 +30,7 @@ from sqlalchemy import Engine
 
 from finharness.exposure import ExposureReport, compute_exposure
 from finharness.ips import current_ips, thresholds_from_ips
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.research_enrichment import NoopResearchEnricher, ResearchEnricher
 from finharness.statecore.observations import ObservationThresholds
 from finharness.statecore.proposals import GovernedProposalWrite, create_governed_proposal
