@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +34,11 @@ from finharness.agent_work_loop import (  # noqa: E402
 from finharness.autonomy_control import (  # noqa: E402
     AgentAutonomyLevel,
     WorldFidelityLevel,
+)
+from finharness.config import load_settings  # noqa: E402
+from finharness.statecore.store import (  # noqa: E402
+    STATE_CORE_DB_ENV_VAR,
+    init_state_core,
 )
 
 
@@ -55,6 +62,32 @@ def _check(
         passed=passed,
         evidence=evidence,
     )
+
+
+@contextmanager
+def _isolated_acceptance_state_core():
+    """Create a temporary StateCore database so acceptance checks are hermetic.
+
+    Production tools (e.g. get_capital_context_projection) require a
+    StateCore database to pass availability checks.  Without this context
+    manager, clean checkout environments (no developer database) return
+    TOOL_UNAVAILABLE and the acceptance gate breaks.
+    """
+    prev = os.environ.get(STATE_CORE_DB_ENV_VAR)
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "state-core.sqlite"
+        engine = init_state_core(db_path)
+        engine.dispose()
+        os.environ[STATE_CORE_DB_ENV_VAR] = str(db_path)
+        load_settings.cache_clear()
+        try:
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop(STATE_CORE_DB_ENV_VAR, None)
+            else:
+                os.environ[STATE_CORE_DB_ENV_VAR] = prev
+            load_settings.cache_clear()
 
 
 def _ref_exists(root: Path, ref: str | None) -> bool:
@@ -84,6 +117,17 @@ def _persisted_work_result_exists(root: Path, work_id: str) -> bool:
 
 
 def collect_acceptance_checks() -> list[AcceptanceCheck]:
+    """Run the real orchestrator against the semantic closure contracts.
+
+    Always wraps execution in an isolated StateCore database so the
+    acceptance gate is hermetic and does not leak a developer-local
+    state-core dependency into CI or transient environments.
+    """
+    with _isolated_acceptance_state_core():
+        return _collect_acceptance_checks()
+
+
+def _collect_acceptance_checks() -> list[AcceptanceCheck]:
     """Run the real orchestrator against the semantic closure contracts."""
 
     checks: list[AcceptanceCheck] = []
