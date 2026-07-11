@@ -21,7 +21,7 @@ from finharness.hardening import (
     summarize_pip_audit_results,
     summarize_trivy_results,
 )
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 
 COMMAND_TIMEOUT_SECONDS = 120.0
 

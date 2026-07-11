@@ -43,9 +43,10 @@ tasks:
       - task: test
 
   check:ci:
-    desc: CI merge gate — fast checks + integration + frontend + governance + rules
+    desc: CI merge gate — fast checks + base profile + integration + frontend + governance + rules
     cmds:
       - task: check:fast
+      - task: deps:probe-base
       - task: test:integration
       - task: test:frontend
       - task: governance:check
@@ -385,12 +386,12 @@ tasks:
         "$VENV/bin/python" scripts/probe_dependency_group.py research
 
   deps:probe-agent:
-    desc: "Prove agent group packages are importable"
+    desc: "Prove the agent profile (base + data + research + agent) is importable"
     cmds:
       - |
         VENV=.venv-probes/agent
         rm -rf "$VENV"
-        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group agent
+        UV_PROJECT_ENVIRONMENT="$VENV" uv sync --locked --no-default-groups --group data --group research --group agent
         "$VENV/bin/python" scripts/probe_dependency_group.py agent
 
   deps:probe-eval:

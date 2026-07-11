@@ -44,6 +44,15 @@ class DependencyInstallProbeContractTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_probe_dependency_group_rejects_unknown_group(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/probe_dependency_group.py"), "unknown"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown dependency group", result.stderr)
+
     def test_probe_dependency_group_runs_for_each_named_group(self) -> None:
         """Each group probe runs and reports pass/fail."""
         for group in ("data", "research", "agent", "eval"):

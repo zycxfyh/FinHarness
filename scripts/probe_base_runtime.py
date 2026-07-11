@@ -6,6 +6,7 @@ Run in an environment with only base dependencies installed.
 
 from __future__ import annotations
 
+import importlib
 import sys
 
 PASS = 0
@@ -29,12 +30,12 @@ FORBIDDEN = {
 }
 
 
-def _check_import(module: str) -> bool:
+def _check_import(module: str) -> tuple[bool, str | None]:
     try:
-        __import__(module)
-        return True
-    except ImportError:
-        return False
+        importlib.import_module(module)
+        return True, None
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 def main() -> int:
@@ -42,28 +43,47 @@ def main() -> int:
 
     # Required base imports
     required = [
-        ("fastapi", "FastAPI"),
-        ("sqlmodel", "SQLModel"),
-        ("structlog", "structlog"),
-        ("pandas", "pandas"),
-        ("uvicorn", "uvicorn"),
-        ("keyring", "keyring"),
+        "fastapi",
+        "keyring",
+        "opentelemetry.sdk.trace",
+        "opentelemetry.trace",
+        "pandas",
+        "pydantic_settings",
+        "sqlmodel",
+        "structlog",
+        "uvicorn",
+        "finharness.project_paths",
+        "finharness.statecore.store",
+        "finharness.api.routes_paper_validation",
+        "finharness.api.app",
     ]
-    for module, _name in required:
-        if not _check_import(module):
-            errors.append(f"MISSING base import: {module}")
+    for module in required:
+        available, detail = _check_import(module)
+        if not available:
+            errors.append(f"MISSING base import: {module} ({detail})")
 
     # Forbidden optional imports
     for module in sorted(FORBIDDEN):
-        if _check_import(module):
+        available, _detail = _check_import(module)
+        if available:
             errors.append(f"FORBIDDEN optional import leaked: {module}")
+
+    if not errors:
+        from finharness.api.app import app
+
+        paths = set(app.openapi()["paths"])
+        for required_path in ("/health", "/paper-accounts", "/execution/orders"):
+            if required_path not in paths:
+                errors.append(f"MISSING base API route: {required_path}")
+        if "/data/catalog" in paths or app.state.data_surface_available:
+            errors.append("FORBIDDEN optional data surface active in base-only runtime")
 
     if errors:
         for err in errors:
             print(f"FAIL: {err}", file=sys.stderr)
         return FAIL
 
-    print("PASS: base runtime probe — all core imports available, no optional leaks")
+    print("PASS: base FinHarness runtime imports and core routes work without optional groups")
     return PASS
 
 

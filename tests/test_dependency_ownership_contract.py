@@ -103,6 +103,22 @@ class DependencyGroupingContractTest(unittest.TestCase):
             result = _dependency_grouping(tmp_root)
             self.assertFalse(result)
 
+    def test_recommended_group_must_match_declared_group(self) -> None:
+        from scripts.verify_debt_register import _dependency_grouping
+
+        modified = []
+        for entry in self.manifest["entries"]:
+            entry = dict(entry)
+            if entry["distribution"] == "yfinance":
+                entry["recommended_group"] = "research"
+            modified.append(entry)
+        bad = dict(self.manifest, status="current", entries=modified)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            _setup_minimal_project(tmp_root, bad)
+            self.assertFalse(_dependency_grouping(tmp_root))
+
 
 def _setup_minimal_project(tmp_root: Path, manifest: dict) -> None:
     """Create minimal project files needed by the verifier."""
@@ -112,27 +128,14 @@ def _setup_minimal_project(tmp_root: Path, manifest: dict) -> None:
 name = "finharness"
 dependencies = [
     "fastapi>=0.137.1",
-    "pandas>=2.2.0",
-    "sqlmodel>=0.0.38",
-    "structlog>=26.1.0",
-    "uvicorn[standard]>=0.40.0",
     "keyring>=25.7.0",
     "opentelemetry-api>=1.42.1",
     "opentelemetry-sdk>=1.42.1",
+    "pandas>=2.2.0",
     "pydantic-settings>=2.14.2",
-    "backtrader>=1.9.78.123",
-    "beancount>=3.2.3",
-    "beanquery>=0.2.0",
-    "deepeval>=3.7.0",
-    "langgraph>=1.2.1",
-    "nautilus-trader>=1.227.0",
-    "openai-agents>=0.6.1",
-    "pandera>=0.20",
-    "quantstats>=0.0.81",
-    "riskfolio-lib>=7.2.1",
-    "scipy>=1.17.1",
-    "vectorbt>=1.0.0",
-    "yfinance>=0.2.60",
+    "sqlmodel>=0.0.38",
+    "structlog>=26.1.0",
+    "uvicorn[standard]>=0.40.0",
 ]
 
 [dependency-groups]
@@ -142,14 +145,51 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.14",
 ]
-data = []
-research = []
-agent = []
-eval = []
+data = [
+    "beancount>=3.2.3",
+    "beanquery>=0.2.0",
+    "nautilus-trader>=1.227.0",
+    "pandera>=0.20",
+    "yfinance>=0.2.60",
+]
+research = [
+    "backtrader>=1.9.78.123",
+    "quantstats>=0.0.81",
+    "riskfolio-lib>=7.2.1",
+    "scipy>=1.17.1",
+    "vectorbt>=1.0.0",
+]
+agent = [
+    "langgraph>=1.2.1",
+    "openai-agents>=0.6.1",
+]
+eval = ["deepeval>=3.7.0"]
 paper = []
 security = []
 """
     pyproject.write_text(pyproject_text)
+
+    taskfile = tmp_root / "Taskfile.yml"
+    taskfile.write_text(
+        "tasks:\n"
+        "  deps:probe-base:\n"
+        "  deps:probe-data:\n"
+        "  deps:probe-research:\n"
+        "  deps:probe-agent:\n"
+        "  deps:probe-eval:\n"
+        "  deps:probe-all:\n"
+    )
+
+    scripts = tmp_root / "scripts"
+    scripts.mkdir()
+    (scripts / "probe_base_runtime.py").write_text("")
+    (scripts / "probe_dependency_group.py").write_text("")
+
+    workflow = tmp_root / ".github" / "workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "dependency-profiles.yml").write_text(
+        "profile: [base, data, research, agent, eval]\n"
+    )
 
     # Manifest
     manifest_dir = tmp_root / "docs" / "governance"

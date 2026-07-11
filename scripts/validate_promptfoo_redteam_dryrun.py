@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 
 FORBIDDEN_TARGET_TOKENS = ("openai:", "anthropic:", "http", "alpaca", "okx", "live")
 REQUIRED_METADATA_FALSE = (

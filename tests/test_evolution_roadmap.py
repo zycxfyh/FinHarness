@@ -15,6 +15,8 @@ from tests.test_agent_work_loop_acceptance import (
 ROOT = Path(__file__).resolve().parents[1]
 ROADMAP = ROOT / "docs" / "architecture" / "finharness-evolution-roadmap.md"
 DEBT_REGISTER = ROOT / "docs" / "governance" / "debt-register.json"
+NORTH_STAR = ROOT / "docs" / "product-north-star.md"
+CONTROL_OWNERSHIP_ADR = ROOT / "docs" / "adr" / "2026-07-11-agent-native-control-ownership.md"
 
 
 def _roadmap() -> str:
@@ -34,7 +36,7 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Status: current", text)
-        self.assertIn("Updated: 2026-07-10", text)
+        self.assertIn("Updated: 2026-07-11", text)
         self.assertIn("| Evolution Roadmap |", framework)
         self.assertIn("finharness-evolution-roadmap.md", framework)
 
@@ -55,8 +57,8 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
         section = _marked_section(_roadmap(), "agent-open")
         documented = set(re.findall(r"`([a-z0-9_]+)`", section))
         self.assertEqual(documented, EXPECTED_OPEN_CHECKS)
-        self.assertEqual(len(EXPECTED_OPEN_CHECKS), 8)
-        self.assertEqual(len(EXPECTED_PASSING_CHECKS), 7)
+        self.assertEqual(len(EXPECTED_OPEN_CHECKS), 0)
+        self.assertEqual(len(EXPECTED_PASSING_CHECKS), 15)
         for check_id in EXPECTED_PASSING_CHECKS:
             with self.subTest(passing_check=check_id):
                 self.assertIn(f"`{check_id}`", _roadmap())
@@ -86,16 +88,38 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
     def test_responsibility_boundaries_are_explicit(self) -> None:
         text = _roadmap()
         required = (
-            "Agentic Judgment Plane",
-            "Classical Software Plane",
-            "Human Authority Plane",
-            "A model response never mutates StateCore by itself.",
-            "Execution remains entirely classical.",
-            "Human approval is not inferred from conversation or model confidence.",
+            "Human Principal / Constitutional Plane",
+            "Capital Agent / Teleological Control Plane",
+            "FinHarness Harness / Admissibility and Recovery Plane",
+            "Deterministic Financial Engines / Effect Plane",
+            "Outside the active mandate, Agent output is a candidate.",
+            "The Agent may own whether, when, why, and in what order to act.",
+            "Human approval is never inferred.",
         )
         for statement in required:
             with self.subTest(statement=statement):
                 self.assertIn(statement, text)
+
+    def test_agent_native_north_star_keeps_control_owners_and_autonomy_ladder(self) -> None:
+        north_star = NORTH_STAR.read_text(encoding="utf-8")
+        adr = CONTROL_OWNERSHIP_ADR.read_text(encoding="utf-8")
+        combined = f"{north_star}\n{adr}"
+        required = (
+            "Agent-Native Personal Capital Operating System",
+            "Human Principal",
+            "Capital Agent",
+            "FinHarness Harness",
+            "Deterministic engines",
+            "AUT2 Observation-driven durable loop",
+            "AUT4 Autonomous paper capital manager",
+            "AUT5 Mandate-bound real-world operator",
+            "Human-over-the-loop",
+            "outside mandate -> Agent output is a candidate",
+            "inside mandate  -> Agent decision may become effective after Harness enforcement",
+        )
+        for statement in required:
+            with self.subTest(statement=statement):
+                self.assertIn(statement, combined)
 
     def test_future_slices_have_ordered_gates(self) -> None:
         text = _roadmap()
@@ -119,14 +143,13 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
                 self.assertIn(slice_id, text)
         self.assertIn("Only here may naming graduate", text)
         self.assertIn(
-            "Until all entry criteria exist, the correct implementation is no implementation.", text
+            "Until all entry criteria exist, current implementation remains simulated.", text
         )
 
-    def test_roadmap_does_not_restore_wave_completion_claim(self) -> None:
+    def test_roadmap_uses_contract_evidence_for_aut2(self) -> None:
         text = _roadmap()
-        former_claim = "Wave 2.2 " + "complete"
-        self.assertNotIn(former_claim, text)
-        self.assertIn("not an Agent Work Loop", text)
+        self.assertIn("15/15 acceptance contracts pass", text)
+        self.assertIn("This does not grant AUT3 decision authority", text)
 
 
 if __name__ == "__main__":

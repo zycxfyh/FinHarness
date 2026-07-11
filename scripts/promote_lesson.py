@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from finharness.lesson_loop import LessonDraft
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.rule_change_ledger import (
     RuleChangePromotionError,
     promote_lesson_to_rule_change,

@@ -22,19 +22,22 @@ FORBIDDEN_PREFIXES = (
 )
 
 FORBIDDEN_EXTERNAL = (
+    "aiohttp",
+    "alpaca",
+    "ccxt",
     "httpx",
     "requests",
-    "urllib",
     "socket",
-    "ccxt",
-    "alpaca",
+    "urllib",
+    "urllib3",
+    "yfinance",
 )
 
-PAPER_ROOTS = (
-    "src/finharness/api/routes_paper_validation.py",
-    "src/finharness/statecore/paper_accounts.py",
-    "src/finharness/statecore/paper_order_tickets.py",
-    "src/finharness/statecore/paper_executions.py",
+PAPER_MODULES = (
+    "finharness.api.routes_paper_validation",
+    "finharness.statecore.paper_accounts",
+    "finharness.statecore.paper_order_tickets",
+    "finharness.statecore.paper_executions",
 )
 
 
@@ -50,18 +53,18 @@ class PaperValidationTransitiveImportBoundaryTest(unittest.TestCase):
 
         graph = build_internal_import_graph(ROOT)
         self.assertGreater(len(graph.nodes), 0, "Import graph must not be empty")
+        self.assertTrue(set(PAPER_MODULES).issubset(graph.nodes))
 
         findings = find_forbidden_transitive_imports(
             graph,
-            roots=set(PAPER_ROOTS),
+            roots=set(PAPER_MODULES),
             forbidden_prefixes=set(FORBIDDEN_PREFIXES),
         )
         self.assertEqual(
-            findings, [],
+            findings,
+            [],
             "Found forbidden transitive imports from paper modules:\n"
-            + "\n".join(
-                f"  {f.code}: {' -> '.join(f.path)}" for f in findings
-            ),
+            + "\n".join(f"  {f.code}: {' -> '.join(f.path)}" for f in findings),
         )
 
     def test_no_paper_module_transitively_imports_forbidden_external(self) -> None:
@@ -74,15 +77,14 @@ class PaperValidationTransitiveImportBoundaryTest(unittest.TestCase):
         graph = build_internal_import_graph(ROOT)
         findings = find_forbidden_transitive_imports(
             graph,
-            roots=set(PAPER_ROOTS),
+            roots=set(PAPER_MODULES),
             forbidden_prefixes=set(FORBIDDEN_EXTERNAL),
         )
         self.assertEqual(
-            findings, [],
+            findings,
+            [],
             "Found forbidden external imports from paper modules:\n"
-            + "\n".join(
-                f"  {f.code}: {' -> '.join(f.path)}" for f in findings
-            ),
+            + "\n".join(f"  {f.code}: {' -> '.join(f.path)}" for f in findings),
         )
 
 
@@ -103,13 +105,14 @@ class PaperValidationTransitiveNegativeFixtureTest(unittest.TestCase):
             graph = build_internal_import_graph(tmp_root)
             findings = find_forbidden_transitive_imports(
                 graph,
-                roots={"src.paper_root"},
+                roots={"paper_root"},
                 forbidden_prefixes={"finharness.execution.commands"},
             )
             self.assertGreater(
-                len(findings), 0,
+                len(findings),
+                0,
                 "Transitive import chain must be detected: "
-                "paper_root -> paper_helper -> finharness.execution.commands"
+                "paper_root -> paper_helper -> finharness.execution.commands",
             )
 
     def test_direct_forbidden_import_is_detected(self) -> None:
@@ -126,11 +129,66 @@ class PaperValidationTransitiveNegativeFixtureTest(unittest.TestCase):
             graph = build_internal_import_graph(tmp_root)
             findings = find_forbidden_transitive_imports(
                 graph,
-                roots={"src.paper_direct"},
+                roots={"paper_direct"},
                 forbidden_prefixes={"finharness.execution.broker"},
             )
             self.assertEqual(len(findings), 1)
             self.assertEqual(findings[0].code, "forbidden_transitive_import")
+
+    def test_external_forbidden_import_is_detected(self) -> None:
+        from finharness.paper_validation_boundary_audit import (
+            build_internal_import_graph,
+            find_forbidden_transitive_imports,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            src = tmp_root / "src"
+            src.mkdir()
+            (src / "paper_external.py").write_text("import requests\n")
+            graph = build_internal_import_graph(tmp_root)
+            findings = find_forbidden_transitive_imports(
+                graph,
+                roots={"paper_external"},
+                forbidden_prefixes={"requests"},
+            )
+            self.assertEqual(len(findings), 1)
+
+    def test_relative_transitive_import_is_detected(self) -> None:
+        from finharness.paper_validation_boundary_audit import (
+            build_internal_import_graph,
+            find_forbidden_transitive_imports,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            package = tmp_root / "src" / "paper_fixture"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text("")
+            (package / "helper.py").write_text(
+                "from finharness.execution.commands import submit_order\n"
+            )
+            (package / "root.py").write_text("from .helper import submit_order\n")
+            graph = build_internal_import_graph(tmp_root)
+            findings = find_forbidden_transitive_imports(
+                graph,
+                roots={"paper_fixture.root"},
+                forbidden_prefixes={"finharness.execution.commands"},
+            )
+            self.assertEqual(len(findings), 1)
+
+    def test_missing_root_is_a_finding_not_a_vacuous_pass(self) -> None:
+        from finharness.paper_validation_boundary_audit import (
+            ImportGraph,
+            find_forbidden_transitive_imports,
+        )
+
+        findings = find_forbidden_transitive_imports(
+            ImportGraph(),
+            roots={"missing.paper.root"},
+            forbidden_prefixes={"requests"},
+        )
+        self.assertEqual([finding.code for finding in findings], ["missing_boundary_root"])
 
 
 def _setup_transitive_fixture(tmp_root: Path) -> None:
@@ -138,12 +196,8 @@ def _setup_transitive_fixture(tmp_root: Path) -> None:
     src = tmp_root / "src"
     src.mkdir()
     (src / "__init__.py").write_text("")
-    (src / "paper_helper.py").write_text(
-        "from finharness.execution.commands import submit_order\n"
-    )
-    (src / "paper_root.py").write_text(
-        "from src.paper_helper import submit_order\n"
-    )
+    (src / "paper_helper.py").write_text("from finharness.execution.commands import submit_order\n")
+    (src / "paper_root.py").write_text("from paper_helper import submit_order\n")
 
 
 def _setup_direct_fixture(tmp_root: Path) -> None:
@@ -151,9 +205,7 @@ def _setup_direct_fixture(tmp_root: Path) -> None:
     src = tmp_root / "src"
     src.mkdir()
     (src / "__init__.py").write_text("")
-    (src / "paper_direct.py").write_text(
-        "from finharness.execution.broker import submit_order\n"
-    )
+    (src / "paper_direct.py").write_text("from finharness.execution.broker import submit_order\n")
 
 
 if __name__ == "__main__":

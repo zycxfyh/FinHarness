@@ -69,27 +69,26 @@ class CurrentDocsFactPolicyTest(unittest.TestCase):
         )
         self.assertIn(f"`run_agent_work_loop_smoke.py` ({work_count} structural checks)", framework)
 
-    def test_agent_work_loop_status_is_not_overclaimed(self) -> None:
+    def test_agent_work_loop_status_matches_behavioral_gate(self) -> None:
         framework = (ROOT / "docs" / "architecture" / "framework-index.md").read_text(
             encoding="utf-8"
         )
         smoke = (ROOT / "scripts" / "run_agent_work_loop_smoke.py").read_text(encoding="utf-8")
 
-        self.assertIn("Agent Work Loop is not semantically closed", framework)
+        self.assertIn("Agent Operating Cycle v0.1 is the current AUT2", framework)
         former_delivery_claim = "Wave 0" + "\N{EN DASH}" + "2.2 delivered"
         self.assertNotIn(former_delivery_claim, framework)
         self.assertNotIn("Agent Work Loop is operational", smoke)
-        self.assertIn("semantic loop closure remains pending", smoke)
+        self.assertIn("15-contract behavioral gate", smoke)
 
-    def test_agent_work_loop_plan_records_unmet_acceptance(self) -> None:
+    def test_agent_work_loop_plan_records_semantic_acceptance(self) -> None:
         plan = (ROOT / "docs" / "architecture" / "agent-work-loop-plan.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("acceptance criteria not met", plan)
-        self.assertIn("Deterministic Work Orchestrator: scaffolded", plan)
-        self.assertIn("Agent Work Loop: not semantically closed", plan)
+        self.assertIn("semantic acceptance met", plan)
+        self.assertIn("Agent Operating Cycle v0.1: current AUT2 foundation", plan)
         self.assertIn("task agent:work-loop-acceptance", plan)
-        self.assertIn("4/15 contracts pass and 11 remain", plan)
+        self.assertIn("15/15 contracts pass and 0 remain", plan)
 
     def test_execution_interface_records_enforced_capabilities(self) -> None:
         interfaces = (ROOT / "docs" / "reference" / "interfaces.md").read_text(encoding="utf-8")

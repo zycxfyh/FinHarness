@@ -72,7 +72,7 @@ class SystemCatalogTest(unittest.TestCase):
             "capital_action_intent": "legacy",
             "paper_validation_runtime": "legacy",
             "external_data_mature_wheels": "thin",
-            "agent_cognition_runtime": "scaffolded",
+            "agent_cognition_runtime": "current",
             "archived_live_trading_legacy": "archived",
         }
         self.assertTrue(set(expected).issubset(systems))
@@ -91,13 +91,13 @@ class SystemCatalogTest(unittest.TestCase):
             "Capital Action Intent (legacy",
             "Paper Validation Runtime (legacy",
             "Execution Kernel (canonical",
-            "Agent Cognition Runtime / Work Orchestrator (scaffolded)",
+            "Agent Cognition Runtime / Agent Operating Cycle v0.1 (current AUT2)",
         )
         required_module_rows = (
             "| Capital Action Intent | legacy |",
             "| Paper Validation Runtime | legacy |",
             "| Execution Kernel | canonical |",
-            "| Agent Cognition Runtime / Work Orchestrator | scaffolded |",
+            "| Agent Cognition Runtime / Agent Operating Cycle v0.1 | current AUT2 foundation |",
         )
         for claim in required_system_map_claims:
             with self.subTest(system_map_claim=claim):
@@ -106,7 +106,7 @@ class SystemCatalogTest(unittest.TestCase):
             with self.subTest(module_map_row=row):
                 self.assertIn(row, module_map)
         self.assertIn("system lifecycle/status", capital_layers)
-        self.assertIn("work orchestrator scaffolded", capital_layers)
+        self.assertIn("Agent Operating Cycle v0.1 / AUT2 foundation (15/15)", capital_layers)
 
     def test_catalog_paths_exist(self) -> None:
         catalog = _catalog()

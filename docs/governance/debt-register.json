@@ -188,7 +188,7 @@
       "introduced_by": [
         "Research, Agent, eval, and trading-analysis dependency accumulation"
       ],
-      "current_state": "26 retained dependencies are grouped by consumer evidence: base(9), data(5), research(5), agent(2), eval(1), dev(4). 3 unused deps removed. Consumer manifest is current, verifier contract corrected (empty groups OK), install probes prove isolated import.",
+      "current_state": "26 retained dependencies are grouped by consumer evidence: base(9), data(5), research(5), agent(2), eval(1), dev(4). Three unused direct dependencies were removed. The base probe imports the real FinHarness core API without optional wheels; data and research profiles import their maintained consumers; the Agent runtime profile explicitly composes data + research + agent; a CI matrix rebuilds every profile from the lockfile.",
       "desired_state": "Runtime-critical dependencies are separated from optional data, research, Agent, evaluation, paper, and security groups after an import/task audit proves their consumers.",
       "risk_if_ignored": "Install time, vulnerability surface, resolution conflicts, and ownership ambiguity grow with each capability slice.",
       "next_action": "Keep consumer manifest, group assignments, and install probes current when adding or removing dependencies.",
@@ -206,7 +206,9 @@
         "pyproject.toml",
         "uv.lock",
         "Taskfile.yml",
+        ".github/workflows/dependency-profiles.yml",
         "docs/governance/dependency-consumers.json",
+        "src/finharness/project_paths.py",
         "scripts/probe_base_runtime.py",
         "scripts/probe_dependency_group.py",
         "tests/test_dependency_consumer_manifest.py",

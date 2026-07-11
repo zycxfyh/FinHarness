@@ -8,6 +8,7 @@ Run in an environment with only that group's dependencies installed.
 
 from __future__ import annotations
 
+import importlib
 import sys
 
 GROUP_IMPORTS: dict[str, list[str]] = {
@@ -17,6 +18,26 @@ GROUP_IMPORTS: dict[str, list[str]] = {
     "eval": ["deepeval"],
 }
 
+GROUP_PROJECT_IMPORTS: dict[str, list[str]] = {
+    "data": [
+        "finharness.api.app",
+        "finharness.beancount_adapter",
+        "finharness.market_data",
+    ],
+    "research": [
+        "finharness.metrics",
+        "finharness.portfolio_risk",
+        "finharness.research_rigor",
+    ],
+    "agent": [
+        "finharness.agent_tools",
+        "finharness.cognitive_graph",
+    ],
+    "eval": [],
+    "paper": [],
+    "security": [],
+}
+
 
 def main() -> int:
     if len(sys.argv) < 2:
@@ -24,22 +45,30 @@ def main() -> int:
         return 1
 
     group = sys.argv[1]
-    if group not in GROUP_IMPORTS:
-        print(f"PASS: group {group} has no import requirements (empty group OK)")
-        return 0
+    if group not in GROUP_PROJECT_IMPORTS:
+        print(f"FAIL: unknown dependency group: {group}", file=sys.stderr)
+        return 1
 
-    expected = GROUP_IMPORTS[group]
+    expected = [*GROUP_IMPORTS.get(group, []), *GROUP_PROJECT_IMPORTS[group]]
     errors = []
     for module in expected:
         try:
-            __import__(module)
-        except ImportError:
-            errors.append(module)
+            importlib.import_module(module)
+        except Exception as exc:
+            errors.append(f"{module} ({type(exc).__name__}: {exc})")
 
     if errors:
-        for module in errors:
-            print(f"FAIL: group={group} cannot import {module}", file=sys.stderr)
+        for error in errors:
+            print(f"FAIL: group={group} cannot import {error}", file=sys.stderr)
         return 1
+
+    if group == "data":
+        from finharness.api.app import app
+
+        paths = set(app.openapi()["paths"])
+        if "/data/catalog" not in paths or not app.state.data_surface_available:
+            print("FAIL: data group installed but data API surface is unavailable", file=sys.stderr)
+            return 1
 
     print(f"PASS: group={group} — all {len(expected)} packages importable")
     return 0

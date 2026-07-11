@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import ast
 import json
+from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _MANIFEST_RELATIVE = "docs/governance/paper-validation-consumers.json"
@@ -77,10 +79,7 @@ def _is_paper_import(node: ast.Import) -> bool:
 
 def _is_paper_attribute(node: ast.Attribute) -> bool:
     """Check attribute access to paper symbols: e.g. paper_accounts.create()."""
-    return (
-        isinstance(node.value, ast.Name)
-        and node.value.id in _PAPER_SYMBOL_NAMES
-    )
+    return isinstance(node.value, ast.Name) and node.value.id in _PAPER_SYMBOL_NAMES
 
 
 def _is_paper_name(node: ast.Name) -> bool:
@@ -138,14 +137,16 @@ def scan_paper_consumers(root: Path) -> list[dict[str, object]]:
             }:
                 continue
             if _is_paper_consumer_file(py_file) and relative not in registered:
-                findings.append({
-                    "code": "unregistered_paper_validation_consumer",
-                    "path": relative,
-                    "detail": (
-                        f"File {relative} references paper-validation symbols "
-                        "but is not registered in the consumer manifest"
-                    ),
-                })
+                findings.append(
+                    {
+                        "code": "unregistered_paper_validation_consumer",
+                        "path": relative,
+                        "detail": (
+                            f"File {relative} references paper-validation symbols "
+                            "but is not registered in the consumer manifest"
+                        ),
+                    }
+                )
 
     # Also check for stale manifest entries (paths that no longer exist or
     # that no longer actually consume paper symbols)
@@ -154,13 +155,15 @@ def scan_paper_consumers(root: Path) -> list[dict[str, object]]:
         entry_path = entry["path"]
         full_path = root / entry_path
         if not full_path.exists():
-            findings.append({
-                "code": "stale_manifest_entry",
-                "path": entry_path,
-                "consumer_id": entry["consumer_id"],
-                "detail": f"Manifest entry {entry['consumer_id']} references "
-                          f"non-existent path: {entry_path}",
-            })
+            findings.append(
+                {
+                    "code": "stale_manifest_entry",
+                    "path": entry_path,
+                    "consumer_id": entry["consumer_id"],
+                    "detail": f"Manifest entry {entry['consumer_id']} references "
+                    f"non-existent path: {entry_path}",
+                }
+            )
         elif entry_path.endswith(".py") and not _is_paper_consumer_file(full_path):
             # The file exists but no longer imports paper symbols
             pass  # Not an error — the entry may reference non-code consumers
@@ -169,8 +172,6 @@ def scan_paper_consumers(root: Path) -> list[dict[str, object]]:
 
 
 # ── AST import graph for transitive boundary analysis ─────────────────────────
-
-from dataclasses import dataclass, field  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -195,11 +196,7 @@ class BoundaryFinding:
 
 @dataclass
 class ImportGraph:
-    """Internal import graph for a Python codebase.
-
-    Nodes are module paths (relative posix strings).
-    Edges are ImportEdge objects.
-    """
+    """Import graph with canonical module names and external leaf nodes."""
 
     nodes: set[str] = field(default_factory=set)
     edges: list[ImportEdge] = field(default_factory=list)
@@ -215,68 +212,75 @@ class ImportGraph:
         return self._adjacency.get(module, set())
 
 
-def _resolve_relative_import(source_path: str, target: str) -> str | None:
-    """Resolve a relative import target to an absolute module path.
+def _module_name(root: Path, file_path: Path) -> str:
+    relative = file_path.relative_to(root)
+    if relative.parts[0] == "src":
+        relative = Path(*relative.parts[1:])
+    relative = relative.parent if file_path.name == "__init__.py" else relative.with_suffix("")
+    return ".".join(relative.parts)
 
-    Returns None if resolution fails.
-    """
-    if not target.startswith("."):
-        return target
-    source_dir = Path(source_path).parent
-    level = 0
-    while level < len(target) and target[level] == ".":
-        level += 1
-    remainder = target[level:]
+
+def _resolve_import_from(
+    *,
+    source_module: str,
+    source_is_package: bool,
+    module: str | None,
+    level: int,
+) -> str:
+    if level == 0:
+        return module or ""
+    package_parts = source_module.split(".")
+    if not source_is_package:
+        package_parts = package_parts[:-1]
+    parent_hops = level - 1
+    if parent_hops > len(package_parts):
+        return ""
+    base = package_parts[: len(package_parts) - parent_hops]
+    if module:
+        base.extend(module.split("."))
+    return ".".join(base)
+
+
+def _extract_imports(
+    file_path: Path,
+    *,
+    source_module: str,
+    internal_modules: set[str],
+) -> list[tuple[str, int]]:
+    """Extract canonical import targets, including external leaf modules."""
+    imports: list[tuple[str, int]] = []
     try:
-        for _ in range(level - 1):
-            source_dir = source_dir.parent
-        resolved = source_dir / remainder.replace(".", "/")
-        # Try .py file
-        py_file = resolved.with_suffix(".py")
-        if py_file.exists():
-            # Reconstruct module path
-            parts = list(py_file.with_suffix("").parts)
-            return ".".join(parts)
-        # Try __init__.py
-        init_file = resolved / "__init__.py"
-        if init_file.exists():
-            parts = list(resolved.parts)
-            return ".".join(parts)
-    except (ValueError, OSError):
-        pass
-    return None
-
-
-def _extract_imports(file_path: Path) -> list[tuple[str, str | None, int]]:
-    """Extract (module_name, imported_name, lineno) from a .py file.
-
-    module_name is the target module (absolute or relative).
-    imported_name is the specific name imported, or None for wildcard.
-    """
-    imports: list[tuple[str, str | None, int]] = []
-    try:
-        tree = ast.parse(
-            file_path.read_text(encoding="utf-8"), filename=str(file_path)
-        )
+        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
     except (SyntaxError, UnicodeDecodeError):
         return imports
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                imports.append((alias.name, alias.asname, node.lineno))
-        elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append((alias.name, node.lineno))
+        elif isinstance(node, ast.ImportFrom):
+            target = _resolve_import_from(
+                source_module=source_module,
+                source_is_package=file_path.name == "__init__.py",
+                module=node.module,
+                level=node.level,
+            )
+            if not target:
+                continue
+            imports.append((target, node.lineno))
             for alias in node.names:
-                imports.append((node.module, alias.name, node.lineno))
+                submodule = f"{target}.{alias.name}"
+                if submodule in internal_modules:
+                    imports.append((submodule, node.lineno))
     return imports
 
 
 def build_internal_import_graph(root: Path) -> ImportGraph:
-    """Build an import graph for all Python files under root/src and root/tests.
+    """Build a graph for project modules plus every directly imported leaf.
 
-    Only includes internal project imports (modules under root).
-    External/third-party imports are recorded as nodes but their internal
-    successors are not traversed.
+    Source files use importable names such as ``finharness.api.app`` rather than
+    filesystem names such as ``src.finharness.api.app``. Third-party and stdlib
+    imports remain leaf nodes so network-capable imports can be prohibited.
     """
     graph = ImportGraph()
     scan_dirs = ["src", "tests", "scripts"]
@@ -290,54 +294,39 @@ def build_internal_import_graph(root: Path) -> ImportGraph:
         for py_file in scan_root.rglob("*.py"):
             if "archive" in py_file.parts:
                 continue
-            # Normalize to module path
-            if py_file.name == "__init__.py":
-                mod_path = (
-                    py_file.parent.relative_to(root).as_posix().replace("/", ".")
-                )
-            else:
-                mod_path = (
-                    py_file.with_suffix("")
-                    .relative_to(root)
-                    .as_posix()
-                    .replace("/", ".")
-                )
-            internal_modules[mod_path] = py_file
+            internal_modules[_module_name(root, py_file)] = py_file
+
+    graph.nodes.update(internal_modules)
 
     # Build edges by parsing all files
     for py_file in internal_modules.values():
         rel = py_file.relative_to(root).as_posix()
-        if py_file.name == "__init__.py":
-            source_mod = (
-                py_file.parent.relative_to(root).as_posix().replace("/", ".")
-            )
-        else:
-            source_mod = (
-                py_file.with_suffix("")
-                .relative_to(root)
-                .as_posix()
-                .replace("/", ".")
-            )
-
-        for target_mod, _imported_name, lineno in _extract_imports(py_file):
-            # Resolve relative imports
-            resolved = _resolve_relative_import(rel, target_mod)
-            if resolved is None:
-                resolved = target_mod
-
-            # Only include edges where target is internal
-            internal_prefixes = ("finharness.", "src.", "tests.", "scripts.")
-            if resolved in internal_modules or any(
-                resolved.startswith(p) for p in internal_prefixes
-            ):
+        source_mod = _module_name(root, py_file)
+        module_parts = source_mod.split(".")
+        for length in range(1, len(module_parts)):
+            package_module = ".".join(module_parts[:length])
+            if package_module in internal_modules:
                 graph.add_edge(
                     ImportEdge(
                         source_module=source_mod,
-                        target_module=resolved,
+                        target_module=package_module,
                         source_path=rel,
-                        lineno=lineno,
+                        lineno=0,
                     )
                 )
+        for target_mod, lineno in _extract_imports(
+            py_file,
+            source_module=source_mod,
+            internal_modules=set(internal_modules),
+        ):
+            graph.add_edge(
+                ImportEdge(
+                    source_module=source_mod,
+                    target_module=target_mod,
+                    source_path=rel,
+                    lineno=lineno,
+                )
+            )
 
     return graph
 
@@ -355,13 +344,23 @@ def find_forbidden_transitive_imports(
     """
     findings: list[BoundaryFinding] = []
 
-    for root_module in roots:
+    for root_module in sorted(roots):
+        if root_module not in graph.nodes:
+            findings.append(
+                BoundaryFinding(
+                    code="missing_boundary_root",
+                    source_module=root_module,
+                    target_module=root_module,
+                    path=(root_module,),
+                )
+            )
+            continue
         # BFS from this root
         visited: dict[str, tuple[str, ...]] = {root_module: (root_module,)}
-        queue: list[str] = [root_module]
+        queue: deque[str] = deque([root_module])
 
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             current_path = visited[current]
 
             for successor in graph.successors(current):
@@ -372,8 +371,7 @@ def find_forbidden_transitive_imports(
 
                 # Check if successor is forbidden
                 if any(
-                    successor == fp or successor.startswith(fp + ".")
-                    for fp in forbidden_prefixes
+                    successor == fp or successor.startswith(fp + ".") for fp in forbidden_prefixes
                 ):
                     findings.append(
                         BoundaryFinding(
@@ -385,6 +383,7 @@ def find_forbidden_transitive_imports(
                     )
                     continue  # Don't traverse further from forbidden targets
 
-                queue.append(successor)
+                if successor in graph._adjacency:
+                    queue.append(successor)
 
     return findings

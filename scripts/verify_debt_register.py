@@ -76,10 +76,10 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
     forbidden_findings = find_forbidden_transitive_imports(
         graph,
         roots={
-            "src.finharness.api.routes_paper_validation",
-            "src.finharness.statecore.paper_accounts",
-            "src.finharness.statecore.paper_order_tickets",
-            "src.finharness.statecore.paper_executions",
+            "finharness.api.routes_paper_validation",
+            "finharness.statecore.paper_accounts",
+            "finharness.statecore.paper_order_tickets",
+            "finharness.statecore.paper_executions",
         },
         forbidden_prefixes={
             "finharness.execution.broker",
@@ -91,6 +91,8 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
             "requests",
             "urllib",
             "socket",
+            "urllib3",
+            "yfinance",
             "ccxt",
             "alpaca",
         },
@@ -176,6 +178,7 @@ def _task_check_layering(root: Path) -> bool:
             dependencies("check:ci")
             == [
                 "check:fast",
+                "deps:probe-base",
                 "test:integration",
                 "test:frontend",
                 "governance:check",
@@ -228,27 +231,73 @@ def _dependency_grouping(root: Path) -> bool:
     if all_declared != manifest_dists:
         return False
 
-    # Rule 3: Every kept dep has a recommended group
+    declared_groups = _declared_dependency_groups(declared_base, groups)
+    if declared_groups is None or not _dependency_entries_valid(entries, declared_groups):
+        return False
+
+    # Empty named groups are OK (paper, security are intentionally empty).
+    return _dependency_probe_contract(root)
+
+
+def _declared_dependency_groups(
+    declared_base: list[str], groups: dict[str, list[str]]
+) -> dict[str, str] | None:
+    declared_groups = {
+        _distribution_name(requirement): "base" for requirement in declared_base
+    }
+    for group_name, group_deps in groups.items():
+        for requirement in group_deps:
+            distribution = _distribution_name(requirement)
+            if distribution in declared_groups:
+                return None
+            declared_groups[distribution] = group_name
+    return declared_groups
+
+
+def _dependency_entries_valid(
+    entries: list[dict[str, object]], declared_groups: dict[str, str]
+) -> bool:
     for entry in entries:
-        group = entry.get("recommended_group", "")
-        if group == "unused":
-            # Rule 4: Unused must have zero consumers
-            if entry.get("import_consumers") or entry.get("task_consumers"):
-                return False
-        else:
-            # Rule 5: Kept deps must have at least one consumer
-            if not entry.get("import_consumers") and not entry.get("task_consumers"):
-                return False
-
-    # Rule 6: Empty named groups are OK (paper, security are intentionally empty)
-    # No check that forces groups[name] to be non-empty
-
+        distribution = str(entry.get("distribution", ""))
+        group = str(entry.get("recommended_group", ""))
+        actual_group = declared_groups.get(distribution)
+        if entry.get("declared_group") != actual_group or group != actual_group:
+            return False
+        import_consumers = entry.get("import_consumers")
+        task_consumers = entry.get("task_consumers")
+        if group == "unused" and (import_consumers or task_consumers):
+            return False
+        if group != "unused" and not import_consumers and not task_consumers:
+            return False
     return True
+
+
+def _dependency_probe_contract(root: Path) -> bool:
+    taskfile = _read(root, "Taskfile.yml")
+    workflow_path = root / ".github" / "workflows" / "dependency-profiles.yml"
+    required_probe_tasks = {
+        "deps:probe-base",
+        "deps:probe-data",
+        "deps:probe-research",
+        "deps:probe-agent",
+        "deps:probe-eval",
+        "deps:probe-all",
+    }
+    if not all(f"  {task_name}:" in taskfile for task_name in required_probe_tasks):
+        return False
+    if not all(
+        (root / path).is_file()
+        for path in ("scripts/probe_base_runtime.py", "scripts/probe_dependency_group.py")
+    ) or not workflow_path.is_file():
+        return False
+    workflow = workflow_path.read_text(encoding="utf-8")
+    return all(profile in workflow for profile in ("base", "data", "research", "agent", "eval"))
 
 
 def _distribution_name(requirement: str) -> str:
     """Extract normalized distribution name from a requirement string."""
     import re as _re
+
     match = _re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", requirement)
     if match is None:
         raise ValueError(f"cannot parse requirement: {requirement}")

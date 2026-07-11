@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from finharness.market_data import ROOT
+from finharness.project_paths import ROOT
 from finharness.repo_intelligence import classify_security_surface
 from finharness.research_assets import resolve_research_assets
 
