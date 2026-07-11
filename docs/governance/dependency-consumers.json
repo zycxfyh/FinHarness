@@ -366,6 +366,7 @@
         "src/finharness/api/routes_proposals.py",
         "src/finharness/api/routes_state.py",
         "src/finharness/daily_brief.py",
+        "src/finharness/delegated_review.py",
         "src/finharness/execution/commands.py",
         "src/finharness/execution/legacy_bridge.py",
         "src/finharness/execution/pretrade_packet.py",
