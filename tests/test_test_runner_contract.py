@@ -128,10 +128,10 @@ class TestRunnerContractTest(unittest.TestCase):
                 path = ROOT / entry
                 self.assertTrue(path.is_file(), f"Manifest entry does not exist: {entry}")
                 # Security: all entries under tests/
-                self.assertTrue(
-                    str(path.resolve()).startswith(str((ROOT / "tests").resolve())),
-                    f"Manifest entry outside tests/: {entry}",
-                )
+                try:
+                    path.resolve().relative_to((ROOT / "tests").resolve())
+                except ValueError:
+                    self.fail(f"Manifest entry outside tests/: {entry}")
 
     # ── Marker ↔ manifest consistency ──────────────────────────────────────
 
