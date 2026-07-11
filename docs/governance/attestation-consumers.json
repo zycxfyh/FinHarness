@@ -1,0 +1,1036 @@
+{
+  "schema": "finharness.attestation_consumer_inventory.v1",
+  "baseline_sha": "a24198a6fabcbf70a91063c22bbda837395326b4",
+  "scope": {
+    "source_roots": [
+      "src/finharness",
+      "tests",
+      "docs",
+      "frontend"
+    ],
+    "scan_terms": [
+      "Attestation",
+      "attestation_id",
+      "attestation_ref",
+      "attestations",
+      "create_governed_attestation",
+      "attest_proposal",
+      "attested_ids",
+      "human_attestation_recorded",
+      "/proposals/{proposal_id}/attest",
+      "decision of record"
+    ]
+  },
+  "summary": {
+    "total_consumers": 33,
+    "by_role": {
+      "api_contract": 4,
+      "compatibility_link": 1,
+      "documentation_claim": 5,
+      "frontend_surface": 3,
+      "read_projection": 2,
+      "receipt_writer": 2,
+      "schema_model": 3,
+      "state_gate": 7,
+      "test_contract": 4,
+      "write_surface": 2
+    },
+    "by_disposition": {
+      "preserve": 12,
+      "migrate_to_decision_validity": 7,
+      "dual_read_transition": 3,
+      "deprecate_after_replacement": 3,
+      "remove_canonical_claim": 5,
+      "investigate": 3
+    },
+    "high_or_critical_count": 8
+  },
+  "consumers": [
+    {
+      "consumer_id": "ATT-CONS-001",
+      "path": "src/finharness/statecore/models.py",
+      "symbol": "Attestation",
+      "line_start": 169,
+      "role": "schema_model",
+      "current_behavior": "SQLModel table attests a proposal_id with a human decision (approve/reject/refer). No proposal_version_id, proposal_content_hash, decision_case_version_id, or scenario_version_id. Binds only to proposal_id.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Defines the database shape; carries no execution authority (authority_level=needs_human_confirm).",
+      "risk": "high",
+      "disposition": "preserve",
+      "target_owner": "Attestation (historical); future DecisionRecord/DecisionValidity",
+      "prerequisites": [
+        "DecisionRecord model exists on main.",
+        "DecisionValidity model exists on main.",
+        "Migration path for existing attestation rows is documented."
+      ],
+      "recommended_change": "Keep Attestation table for historical data and receipt replay. New writes that need version-bound decision semantics must use a separate DecisionRecord/DecisionValidity model.",
+      "test_implications": [
+        "tests/test_statecore_api.py verifies attestation reads.",
+        "tests/test_statecore_vertical_reconstruction.py verifies attestation serialization round-trips."
+      ],
+      "evidence": [
+        "src/finharness/statecore/models.py:169-186"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-002",
+      "path": "src/finharness/statecore/models.py",
+      "symbol": "ReviewEvent.attestation_ref",
+      "line_start": 199,
+      "role": "compatibility_link",
+      "current_behavior": "ReviewEvent carries an optional attestation_ref field linking review events (annotation, archive, reopen, compare_mark) back to the attestation they were created under. The docstring explicitly says attestation stays the decision of record.",
+      "decision_semantics": "compatibility_reference",
+      "version_binding": "not_applicable",
+      "authority_effect": "Read-only link; ReviewEvent never carries execution authority.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "ReviewEvent (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep attestation_ref in ReviewEvent as a historical compatibility link. No migration needed.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/models.py:199-232"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-003",
+      "path": "src/finharness/statecore/models.py",
+      "symbol": "ReviewEvent docstring",
+      "line_start": 200,
+      "role": "documentation_claim",
+      "current_behavior": "Docstring claims: 'attestation stays the decision of record (approve/reject); ReviewEvent records annotation / archive / reopen / compare_mark / agent_review_note / agent_scaffold_revision_apply_candidate.'",
+      "decision_semantics": "canonical_decision_claim",
+      "version_binding": "not_applicable",
+      "authority_effect": "Documentation only; does not change behavior.",
+      "risk": "medium",
+      "disposition": "remove_canonical_claim",
+      "target_owner": "Documentation",
+      "prerequisites": [
+        "DecisionRecord concept is documented."
+      ],
+      "recommended_change": "Replace 'attestation stays the decision of record' with 'Attestation is the historical human review decision. Canonical, version-bound decisions will be captured in DecisionRecord.'",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/models.py:202-204"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-004",
+      "path": "src/finharness/statecore/models.py",
+      "symbol": "Decision",
+      "line_start": 22,
+      "role": "schema_model",
+      "current_behavior": "The Decision enum (approved/rejected/referred) is used by Attestation.decision. It represents a human review outcome, not a version-bound canonical decision.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Typing only; no authority effect.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Decision (preserved for historical attestations)",
+      "prerequisites": [],
+      "recommended_change": "Keep Decision enum for historical Attestation rows. A separate enum may be needed for DecisionRecord.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/models.py:22-28"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-005",
+      "path": "src/finharness/statecore/models.py",
+      "symbol": "StateCoreRecord union",
+      "line_start": 58,
+      "role": "schema_model",
+      "current_behavior": "Attestation is included in the StateCoreRecord union used by write_records and read-back typing.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Enables write_records persistence path for Attestation.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "StateCoreRecord (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep Attestation in StateCoreRecord for existing data. When DecisionRecord is added, it will also be added to StateCoreRecord.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/models.py:58-105"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-006",
+      "path": "src/finharness/statecore/proposals.py",
+      "symbol": "create_governed_attestation",
+      "line_start": 431,
+      "role": "write_surface",
+      "current_behavior": "Creates Attestation row + receipt file + ReceiptIndex. Records proposal_receipt_ref in receipt payload but the Attestation row only binds proposal_id (no version). Includes P5 forcing gate for high-risk proposals.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_receipt_ref_only",
+      "authority_effect": "Writes an Attestation row and receipt. Does not authorize execution.",
+      "risk": "medium",
+      "disposition": "deprecate_after_replacement",
+      "target_owner": "Future DecisionRecord write command",
+      "prerequisites": [
+        "DecisionRecord model exists on main.",
+        "Version-bound decision write surface exists on main.",
+        "Existing attestation migration path is documented."
+      ],
+      "recommended_change": "Keep create_governed_attestation operational for existing consumers. Add a separate create_decision_record command that writes version-bound decisions. Deprecate create_governed_attestation once all consumers migrate.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests the attest endpoint.",
+        "tests/test_agent_proposal_drafts.py tests attestation existence as review completion."
+      ],
+      "evidence": [
+        "src/finharness/statecore/proposals.py:431-500"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-007",
+      "path": "src/finharness/statecore/proposals.py",
+      "symbol": "GovernedAttestationWrite",
+      "line_start": 401,
+      "role": "receipt_writer",
+      "current_behavior": "Return type of create_governed_attestation. Carries attestation_id, proposal_id, receipt_ref, and ReceiptIndex.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_receipt_ref_only",
+      "authority_effect": "Return value only; no authority effect.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "GovernedAttestationWrite (preserved for attestation receipts)",
+      "prerequisites": [],
+      "recommended_change": "Keep for attestation receipt compatibility. Future DecisionRecord writes will have their own return type.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/proposals.py:401-429"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-008",
+      "path": "src/finharness/statecore/proposals.py",
+      "symbol": "RecordReviewEvent",
+      "line_start": 526,
+      "role": "receipt_writer",
+      "current_behavior": "RecordReviewEvent payload includes an optional attestation_ref. When a review event is written under an existing attestation, this field links them.",
+      "decision_semantics": "compatibility_reference",
+      "version_binding": "not_applicable",
+      "authority_effect": "Read-only link; the review event itself carries no execution authority.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "ReviewEvent (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep attestation_ref in RecordReviewEvent for historical linkage.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/statecore/proposals.py:526-632"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-009",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "attest_proposal",
+      "line_start": 989,
+      "role": "api_contract",
+      "current_behavior": "POST /proposals/{proposal_id}/attest endpoint. Calls create_governed_attestation. Returns AttestationCreateResponse with attestation receipt. Tagged 'review' and not 'legacy'.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_receipt_ref_only",
+      "authority_effect": "Deprecated on the legacy surface; the primary attest endpoint is still active. Does not authorize execution.",
+      "risk": "high",
+      "disposition": "deprecate_after_replacement",
+      "target_owner": "DecisionRecord endpoint",
+      "prerequisites": [
+        "DecisionRecord write endpoint exists.",
+        "Attest endpoint can be flagged as legacy/deprecated."
+      ],
+      "recommended_change": "Keep /attest endpoint for existing consumers (frontend attestation form). When DecisionRecord endpoint exists, tag this as legacy and redirect consumers.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests the attest endpoint."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:989-1020"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-010",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "_proposal_review_response",
+      "line_start": 508,
+      "role": "state_gate",
+      "current_behavior": "Sets open_for_review = not attestations. A proposal is considered 'open for review' when it has zero attestations. Uses attestation existence as a binary review-completion gate.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Changes proposal review lifecycle state in API responses. Does not authorize execution.",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists on main.",
+        "Dual-read path exists for transition period."
+      ],
+      "recommended_change": "Replace open_for_review = not attestations with a query against DecisionValidity. During transition, use dual read: check DecisionValidity first, fall back to Attestation.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests proposal review response status."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:508-530"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-011",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "ProposalReviewResponse.open_for_review",
+      "line_start": 127,
+      "role": "api_contract",
+      "current_behavior": "API response model exposes open_for_review: bool derived from attestation existence. Consumers (frontend, tests) use this to decide whether proposal needs review.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "API shape contract; affects all consumers of GET /proposals/{id}.",
+      "risk": "high",
+      "disposition": "dual_read_transition",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists on main.",
+        "Backward-compatible API transition plan."
+      ],
+      "recommended_change": "Add decision_validity field to ProposalReviewResponse. During transition, set open_for_review from both sources. Eventually deprecate attestation-only derivation.",
+      "test_implications": [
+        "tests/test_statecore_api.py validates response shape."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:127-138"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-012",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "ReviewTaskLifecycle.completed",
+      "line_start": 163,
+      "role": "api_contract",
+      "current_behavior": "ReviewTaskLifecycle has state 'completed' derived from attestation presence. open_for_review field in lifecycle also uses attestation absence/presence.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Drives review task UX; does not authorize execution.",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists.",
+        "ReviewTaskLifecycle compute path updated."
+      ],
+      "recommended_change": "Derive ReviewTaskLifecycle.state from DecisionValidity instead of Attestation. During transition, both sources contribute.",
+      "test_implications": [
+        "tests/test_statecore_api.py validates lifecycle state."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:163-174"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-013",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "status filter (open/attested)",
+      "line_start": 614,
+      "role": "api_contract",
+      "current_behavior": "GET /proposals supports status=open|attested|all filter. status=open filters to proposals with open_for_review=True. status=attested filters to open_for_review=False. Uses attestation existence for filtering.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "API filtering contract.",
+      "risk": "medium",
+      "disposition": "dual_read_transition",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "During transition, include decision_validity_status in filtering logic. Keep 'open'/'attested' labels for backward compatibility.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests status filter."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:614-645"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-014",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "_agent_review_surface",
+      "line_start": 474,
+      "role": "state_gate",
+      "current_behavior": "Sets review_state = 'human_attestation_recorded' when open_for_review is False (attestation exists). Sets 'pending_human_review' when open_for_review is True.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Agent review surface state — affects agent context presentation.",
+      "risk": "medium",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "Derive AgentReviewSurface.review_state from DecisionValidity instead of attestation presence.",
+      "test_implications": [
+        "tests/test_agent_proposal_drafts.py tests agent review surface."
+      ],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:474-505"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-015",
+      "path": "src/finharness/api/routes_cockpit.py",
+      "symbol": "count_open_for_review",
+      "line_start": 120,
+      "role": "read_projection",
+      "current_behavior": "Computes count of open proposals by filtering out those with attestations. Uses attestation existence to determine proposal openness for cockpit dashboard.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Dashboard display only; read-only projection.",
+      "risk": "low",
+      "disposition": "dual_read_transition",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "During transition, count open proposals from DecisionValidity instead of Attestation. Fall back to attestation count for backward compatibility.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/api/routes_cockpit.py:120-123"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-016",
+      "path": "src/finharness/review_read.py",
+      "symbol": "read_review_queue",
+      "line_start": 507,
+      "role": "state_gate",
+      "current_behavior": "Queries all Attestation rows and builds attested_ids set. Each proposal in attested_ids gets queue status 'reviewed'. This drives the review queue UX.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Drives review queue priority and status; does not authorize execution.",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists.",
+        "All review queue consumers are identified."
+      ],
+      "recommended_change": "Replace attested_ids lookup with DecisionValidity.status query. During transition, merge both sources.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests review queue."
+      ],
+      "evidence": [
+        "src/finharness/review_read.py:507-565"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-017",
+      "path": "src/finharness/review_read.py",
+      "symbol": "_queue_status",
+      "line_start": 291,
+      "role": "state_gate",
+      "current_behavior": "Sets review queue status to 'reviewed' when proposal_id is in attested_ids. This is the core queue classification logic.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Directly classifies proposals in the review queue.",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "Replace attested_ids membership check with DecisionValidity status check.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests queue status."
+      ],
+      "evidence": [
+        "src/finharness/review_read.py:291-304"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-018",
+      "path": "src/finharness/review_read.py",
+      "symbol": "read_proposal_timeline",
+      "line_start": 405,
+      "role": "read_projection",
+      "current_behavior": "Merges Attestation and ReviewEvent into a unified timeline. Each Attestation is presented as a timeline entry with source_type='attestation'. This is historical evidence display.",
+      "decision_semantics": "historical_evidence",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Read-only display; historical evidence preservation.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "ProposalTimeline (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep Attestation in timeline forever as historical review evidence. When DecisionRecord exists, add it as a separate timeline entry type.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/review_read.py:405-500"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-019",
+      "path": "src/finharness/review_read.py",
+      "symbol": "_build_review_queue_item",
+      "line_start": 365,
+      "role": "state_gate",
+      "current_behavior": "Sets open_for_review = proposal_id not in attested_ids. Computes review_state fields from attestation presence.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Per-proposal queue item classification.",
+      "risk": "high",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "Derive open_for_review from DecisionValidity. During transition, combine both sources.",
+      "test_implications": [
+        "tests/test_statecore_api.py validates queue items."
+      ],
+      "evidence": [
+        "src/finharness/review_read.py:365-450"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-020",
+      "path": "src/finharness/proposal_queue_checks.py",
+      "symbol": "_duplicate_open_proposal_ids",
+      "line_start": 117,
+      "role": "state_gate",
+      "current_behavior": "Uses attested_ids to exclude already-attested proposals from duplicate detection. Only considers non-attested proposals as potential duplicates.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Affects duplicate proposal detection and review queue display.",
+      "risk": "medium",
+      "disposition": "migrate_to_decision_validity",
+      "target_owner": "DecisionValidity",
+      "prerequisites": [
+        "DecisionValidity model exists."
+      ],
+      "recommended_change": "Replace attested_ids filter with DecisionValidity status check.",
+      "test_implications": [
+        "tests/test_statecore_api.py tests queue checks."
+      ],
+      "evidence": [
+        "src/finharness/proposal_queue_checks.py:117-134"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-021",
+      "path": "src/finharness/proposal_queue_checks.py",
+      "symbol": "_blocked_transition_summary",
+      "line_start": 137,
+      "role": "state_gate",
+      "current_behavior": "Lists 'human_attestation' as a blocked transition for proposals that are not ready. Treats attestation as a transition gate.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "not_applicable",
+      "authority_effect": "Gate naming; does not change attestation behavior directly.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "QueueCheckBlockedTransition (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep the transition name 'human_attestation' for backward compatibility. Future blocked transitions may use 'decision_record' instead.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/proposal_queue_checks.py:137-152"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-022",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "AgentReviewSurface non_claims",
+      "line_start": 120,
+      "role": "documentation_claim",
+      "current_behavior": "non_claims tuple includes: 'Human review is required before any decision of record.' Implicitly equates attestation with decision of record.",
+      "decision_semantics": "canonical_decision_claim",
+      "version_binding": "not_applicable",
+      "authority_effect": "Documentation claim; no direct authority effect.",
+      "risk": "low",
+      "disposition": "remove_canonical_claim",
+      "target_owner": "Documentation",
+      "prerequisites": [
+        "DecisionRecord concept documented."
+      ],
+      "recommended_change": "Rephrase to: 'Human review produces a historical attestation. Canonical, version-bound decisions are captured in DecisionRecord.'",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:120-124"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-023",
+      "path": "src/finharness/api/routes_proposals.py",
+      "symbol": "get_proposal_timeline docstring",
+      "line_start": 1071,
+      "role": "documentation_claim",
+      "current_behavior": "Docstring: 'Attestation stays the decision of record; review events are the interaction ledger.'",
+      "decision_semantics": "canonical_decision_claim",
+      "version_binding": "not_applicable",
+      "authority_effect": "Documentation claim; no direct authority effect.",
+      "risk": "low",
+      "disposition": "remove_canonical_claim",
+      "target_owner": "Documentation",
+      "prerequisites": [
+        "DecisionRecord concept documented."
+      ],
+      "recommended_change": "Replace with: 'Attestation is historical review evidence. DecisionRecord captures version-bound canonical decisions.'",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/api/routes_proposals.py:1075-1078"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-024",
+      "path": "src/finharness/agent_tools.py",
+      "symbol": "AgentToolEntry non_claims",
+      "line_start": 67,
+      "role": "documentation_claim",
+      "current_behavior": "Two AgentToolEntry definitions include non_claims: 'Human review is required before any decision of record.' Implicitly treats attestation as decision of record.",
+      "decision_semantics": "canonical_decision_claim",
+      "version_binding": "not_applicable",
+      "authority_effect": "Documentation claim in agent tool metadata.",
+      "risk": "low",
+      "disposition": "remove_canonical_claim",
+      "target_owner": "Documentation",
+      "prerequisites": [
+        "DecisionRecord concept documented."
+      ],
+      "recommended_change": "Rephrase agent tool non_claims to distinguish historical attestation from version-bound decision.",
+      "test_implications": [],
+      "evidence": [
+        "src/finharness/agent_tools.py:72-79"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-025",
+      "path": "docs/architecture/system-map.md",
+      "symbol": "system-map attestation claim",
+      "line_start": 81,
+      "role": "documentation_claim",
+      "current_behavior": "States: 'invariants: append-only; attestation is decision of record, not execution.'",
+      "decision_semantics": "canonical_decision_claim",
+      "version_binding": "not_applicable",
+      "authority_effect": "Architecture documentation claim.",
+      "risk": "medium",
+      "disposition": "remove_canonical_claim",
+      "target_owner": "Documentation",
+      "prerequisites": [
+        "DecisionRecord concept documented.",
+        "System map updated with DecisionRecord entry."
+      ],
+      "recommended_change": "Replace with: 'Attestation is historical human review evidence. DecisionRecord is the version-bound canonical decision.'",
+      "test_implications": [],
+      "evidence": [
+        "docs/architecture/system-map.md:81"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-026",
+      "path": "frontend/app.js",
+      "symbol": "renderAttestations",
+      "line_start": 526,
+      "role": "frontend_surface",
+      "current_behavior": "Renders attestation list on proposal detail page. Displays decision, attester, reason for each attestation. Pure display of historical data.",
+      "decision_semantics": "historical_evidence",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Read-only display. No authority effect.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Frontend (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep attestation display as historical evidence. When DecisionRecord exists, add a separate display section for canonical decisions.",
+      "test_implications": [],
+      "evidence": [
+        "frontend/app.js:526-544"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-027",
+      "path": "frontend/app.js",
+      "symbol": "renderAttestationForm",
+      "line_start": 546,
+      "role": "frontend_surface",
+      "current_behavior": "Renders attestation form (decision select, attester, reason) and POSTs to /proposals/{id}/attest. This is the active write surface.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "User-facing write surface; does not authorize execution.",
+      "risk": "medium",
+      "disposition": "deprecate_after_replacement",
+      "target_owner": "DecisionRecord form",
+      "prerequisites": [
+        "DecisionRecord write endpoint exists.",
+        "DecisionRecord form component exists."
+      ],
+      "recommended_change": "Keep attestation form for backward compatibility. Add a separate DecisionRecord form when available. Eventually switch default form to DecisionRecord.",
+      "test_implications": [
+        "frontend/tests/review_workspace.test.cjs tests attestation rendering."
+      ],
+      "evidence": [
+        "frontend/app.js:546-580"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-028",
+      "path": "frontend/app.js",
+      "symbol": "renderTimeline (attestation entries)",
+      "line_start": 807,
+      "role": "frontend_surface",
+      "current_behavior": "Renders merged timeline showing attestations alongside review events. Each attestation entry shows source_type='attestation', kind, attester. Read-only historical display.",
+      "decision_semantics": "historical_evidence",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Read-only display; historical evidence.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Frontend timeline (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep attestation timeline entries as historical evidence. When DecisionRecord exists, add it as a separate timeline entry type.",
+      "test_implications": [
+        "frontend/tests/review_workspace.test.cjs tests timeline attestation rendering."
+      ],
+      "evidence": [
+        "frontend/app.js:807-830"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-029",
+      "path": "tests/test_statecore_api.py",
+      "symbol": "attestation endpoint test",
+      "line_start": 1,
+      "role": "test_contract",
+      "current_behavior": "Tests attestation creation, read, and response shape. Locks current attestation API contract including open_for_review computation and status filtering.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Test contract only.",
+      "risk": "low",
+      "disposition": "investigate",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "When DecisionRecord exists, add dual-read transition tests that verify both attestation and DecisionRecord paths. Existing attestation tests must continue to pass for backward compatibility.",
+      "test_implications": [
+        "Full attestation API contract test file."
+      ],
+      "evidence": [
+        "tests/test_statecore_api.py"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-030",
+      "path": "tests/test_agent_proposal_drafts.py",
+      "symbol": "agent proposal attestation test",
+      "line_start": 1,
+      "role": "test_contract",
+      "current_behavior": "Tests that agent proposal drafts interact correctly with attestation lifecycle. Verifies attestation presence affects review state.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Test contract only.",
+      "risk": "low",
+      "disposition": "investigate",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "When DecisionRecord exists, extend tests to cover dual-read path. Keep existing attestation lifecycle tests.",
+      "test_implications": [
+        "Full agent proposal attestation test file."
+      ],
+      "evidence": [
+        "tests/test_agent_proposal_drafts.py"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-031",
+      "path": "tests/test_statecore_vertical_reconstruction.py",
+      "symbol": "attestation serialization test",
+      "line_start": 1,
+      "role": "test_contract",
+      "current_behavior": "Tests Attestation model persistence, serialization round-trips, and StateCore reconstruction. Locks current Attestation schema.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Test contract only.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Test (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep Attestation serialization tests for historical data integrity. Add DecisionRecord serialization tests separately.",
+      "test_implications": [],
+      "evidence": [
+        "tests/test_statecore_vertical_reconstruction.py"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-032",
+      "path": "tests/test_risk_classification.py",
+      "symbol": "risk classification attestation test",
+      "line_start": 1,
+      "role": "test_contract",
+      "current_behavior": "Tests risk classification related to attestation decisions. Uses attestation decision state in risk evaluation.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "proposal_id_only",
+      "authority_effect": "Test contract only.",
+      "risk": "low",
+      "disposition": "investigate",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Review whether risk classification should use DecisionRecord instead of Attestation. Transition after DecisionRecord exists.",
+      "test_implications": [],
+      "evidence": [
+        "tests/test_risk_classification.py"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-033",
+      "path": "docs/governance/receipt-backed-write-registry.json",
+      "symbol": "attestation write registration",
+      "line_start": 1,
+      "role": "write_surface",
+      "current_behavior": "Registers attestation as a receipt-backed write in the governance write registry. Documents the attestation write surface for governance auditing.",
+      "decision_semantics": "legacy_unbound_decision",
+      "version_binding": "not_applicable",
+      "authority_effect": "Governance documentation; no runtime effect.",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Write registry (preserved)",
+      "prerequisites": [],
+      "recommended_change": "Keep attestation entry in write registry. When DecisionRecord write exists, add a separate entry.",
+      "test_implications": [],
+      "evidence": [
+        "docs/governance/receipt-backed-write-registry.json"
+      ]
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "src/finharness/agent_context.py",
+      "reason": "Only uses attestation_ref as a context summary key for agent context pack building. This is derived data processing, not a direct Attestation consumer.",
+      "match_line": 541
+    },
+    {
+      "path": "src/finharness/scaffold_candidate_preflight.py",
+      "reason": "Uses attestation_ref as a context source for scaffold candidate preflight checks. Indirect reference through context data, not a direct Attestation consumer.",
+      "match_line": 51
+    },
+    {
+      "path": "src/finharness/domain_memory.py",
+      "reason": "Uses status='attested' for DomainMemory entries. This is an unrelated domain (memory, not proposal attestation). Same word, different concept.",
+      "match_line": 164
+    },
+    {
+      "path": "src/finharness/daily_brief.py",
+      "reason": "Mentions Attestation in context of daily brief data aggregation. Reads Attestation as part of general proposal state collection. No decision semantics attached.",
+      "match_line": 1
+    },
+    {
+      "path": "src/finharness/annual_review.py",
+      "reason": "Reads Attestation as part of annual review period summary. Collects historical attestation data for review. No current-state gate semantics.",
+      "match_line": 1
+    },
+    {
+      "path": "src/finharness/statecore/store.py",
+      "reason": "Includes Attestation in StateCoreRecord union type for write_records. This is a persistence infrastructure concern, not a semantic consumer.",
+      "match_line": 58
+    },
+    {
+      "path": "src/finharness/statecore/__init__.py",
+      "reason": "Re-exports Attestation model. Module-level import; not a consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/engineering/abstraction-inventory.yml",
+      "reason": "Lists Attestation as an Object artifact in the abstraction taxonomy. Documentation inventory, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/finharness-evolution-roadmap.md",
+      "reason": "References Attestation in evolution roadmap as a current capability. Planning document, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/engineering/system-directory-standard.md",
+      "reason": "Mentions Attestation in system directory documentation. Documentation standard reference, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/04-review-lifecycle.md",
+      "reason": "Documents human_attestation as a review lifecycle state for agent runtime. Runtime reference documentation, not a code consumer.",
+      "match_line": 64
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/06-memory-session-skills.md",
+      "reason": "Mentions attestation in agent runtime skill documentation. Runtime reference documentation, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/scaffolding-inventory.md",
+      "reason": "Lists Attestation in scaffolding inventory. Documentation inventory, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/notes/2026-07-11-external-research-synthesis.md",
+      "reason": "Mentions 'human decision of record' in external research context. Research note, not a code consumer.",
+      "match_line": 64
+    },
+    {
+      "path": "docs/product/product-thesis.md",
+      "reason": "Mentions attestation in product thesis context. Product documentation, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/reference/interfaces.md",
+      "reason": "Documents attestation endpoint in API interface reference. API documentation, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-21-decision-workflow-personal-finance.md",
+      "reason": "Mentions attestation in personal finance decision workflow proposal. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-22-review-workspace.md",
+      "reason": "Mentions attestation in review workspace proposal. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-19-b0-cockpit-gap-and-lifecycle-plan.md",
+      "reason": "Mentions attestation in cockpit lifecycle plan. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-07-11-finharness-evolution-execution-plan.md",
+      "reason": "Mentions attestation in evolution execution plan. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-13-consolidate-live-path-on-python-and-harden.md",
+      "reason": "Mentions attestation in consolidation proposal. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api-execution-brief.md",
+      "reason": "Mentions attestation in StateCore execution brief proposal. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "frontend/app.js",
+      "reason": "Uses 'attester' field name in scaffold revision form. Same field name, different concept (scaffold attester, not Attestation model).",
+      "match_line": 623
+    },
+    {
+      "path": "frontend/app.js",
+      "reason": "Uses 'attester' field name in review event form. Same field name, different concept (review event attester, not Attestation model).",
+      "match_line": 848
+    },
+    {
+      "path": "frontend/app.js",
+      "reason": "Uses decisionLabel for attestation display. Already covered by ATT-CONS-026 (renderAttestations).",
+      "match_line": 656
+    },
+    {
+      "path": "frontend/index.html",
+      "reason": "Shows 'Attested' option in status filter dropdown. Already covered by ATT-CONS-013 (status filter).",
+      "match_line": 89
+    },
+    {
+      "path": "frontend/styles.css",
+      "reason": "CSS class .tag.attested for visual styling. Presentation only, covered by frontend display consumers.",
+      "match_line": 321
+    },
+    {
+      "path": "frontend/tests/review_compare.test.cjs",
+      "reason": "Uses attester field in compare_mark review event tests. Review event testing, not Attestation model testing.",
+      "match_line": 52
+    },
+    {
+      "path": "frontend/tests/scaffold_revision.test.cjs",
+      "reason": "Uses attester field in scaffold revision tests. Scaffold testing, not Attestation model testing.",
+      "match_line": 68
+    },
+    {
+      "path": "docs/architecture/agent-runtime-reference/README.md",
+      "reason": "Mentions attestation in agent runtime reference index. Documentation index, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/02-industry-benchmark-map-codex.md",
+      "reason": "Mentions attestation in industry benchmark analysis. External benchmark document, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/03-gap-register-codex.md",
+      "reason": "Mentions attestation in gap register. External benchmark document, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/04-solution-research-packs-codex.md",
+      "reason": "Mentions attestation in solution research. External benchmark document, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/architecture/industry-benchmark/05-product-roadmap-codex.md",
+      "reason": "Mentions attestation in product roadmap benchmark. External benchmark document, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/notes/agent-harness.md",
+      "reason": "Mentions attestation in agent harness notes. Implementation notes, not a code consumer.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-17-state-core-and-api.md",
+      "reason": "Mentions attestation in StateCore API proposal. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-19-debt-cleanup-plan.md",
+      "reason": "Mentions attestation in debt cleanup plan. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-22-r3-retrospective-cockpit.md",
+      "reason": "Mentions attestation in cockpit retrospective. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/proposals/2026-06-23-golden-path-demo.md",
+      "reason": "Mentions attestation in golden path demo. Historical proposal document.",
+      "match_line": 1
+    },
+    {
+      "path": "docs/reviews/2026-06-15-sec-15c3-5-market-access-rule-review.md",
+      "reason": "Mentions attestation in SEC market access review. Historical review document.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/_policy_registry.py",
+      "reason": "References Attestation model in policy registry listing. Governance metadata, not a test contract.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/_review_fixtures.py",
+      "reason": "Creates Attestation test fixtures. Test helper, not a semantic test contract.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_agent_capabilities.py",
+      "reason": "Uses Attestation in agent capabilities test. Infrastructure test, not a direct Attestation contract test.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_agent_tools.py",
+      "reason": "References Attestation in agent tools test context. Agent tool testing, not Attestation-specific.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_annual_review.py",
+      "reason": "Uses Attestation data for annual review period testing. Read-only aggregation test.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_receipt_backed_write_registry.py",
+      "reason": "Tests receipt-backed write registry that includes attestation. Governance infrastructure test.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_review_workspace_api.py",
+      "reason": "Tests review workspace API that includes attestation data. Review workspace testing, not Attestation-specific.",
+      "match_line": 1
+    },
+    {
+      "path": "tests/test_statecore_store.py",
+      "reason": "Tests StateCore store that writes Attestation records. Store infrastructure test, not Attestation-specific.",
+      "match_line": 1
+    }
+  ],
+  "unclassified_hits": []
+}
