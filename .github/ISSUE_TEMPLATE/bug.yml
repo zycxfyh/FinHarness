@@ -1,0 +1,67 @@
+name: Bug / regression
+description: Report behavior that contradicts a current contract or previously passing path.
+title: "Bug: "
+labels:
+  - bug
+body:
+  - type: input
+    id: baseline
+    attributes:
+      label: Current main SHA
+      placeholder: main@<sha>
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected contract
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction and evidence
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Native blockers or related issues
+    validations:
+      required: true
+  - type: textarea
+    id: negative
+    attributes:
+      label: Regression fixture
+      description: Describe the fixture that fails before the fix and passes after it.
+    validations:
+      required: true
+  - type: textarea
+    id: persistence
+    attributes:
+      label: Restart / clean-environment scope
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollout, rollback, and affected claims
+    validations:
+      required: true
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Primary executor
+      options:
+        - Human
+        - Codex
+        - DeepSeek
+        - Deterministic
+    validations:
+      required: true

@@ -1,0 +1,78 @@
+name: Architecture / ADR
+description: Freeze a domain boundary, ontology, invariant, or architectural decision.
+title: "ADR: "
+labels:
+  - type:adr
+body:
+  - type: input
+    id: baseline
+    attributes:
+      label: Current main SHA
+      description: Resolve current remote main when the issue starts; an audit checkpoint is not a branch base.
+      placeholder: main@<sha>
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and decision
+      description: State the ambiguity, competing models, and the decision this ADR must freeze.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / audit
+      description: Link the program issue, audit, prior ADR, or incident that produced this work.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Native dependencies
+      description: Add GitHub blocked-by relationships after creation; explain why each dependency is required.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and invariant fixtures
+      description: Include at least one counterexample that must fail.
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Required evidence level
+      options:
+        - Semantic
+        - Runtime
+        - Restart
+        - Clean-env
+        - Product
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout, rollback, and affected claims
+      description: Include migration/rollback and current documentation or product claims that change.
+    validations:
+      required: true
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Primary executor
+      options:
+        - Human
+        - Codex
+        - DeepSeek
+        - Deterministic
+    validations:
+      required: true

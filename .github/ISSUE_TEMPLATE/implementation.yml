@@ -1,0 +1,100 @@
+name: Implementation vertical slice
+description: Deliver one bounded runtime or product behavior with executable evidence.
+title: "Slice: "
+labels:
+  - type:feature
+body:
+  - type: input
+    id: baseline
+    attributes:
+      label: Current main SHA
+      placeholder: main@<sha>
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user outcome
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / audit
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Native dependencies
+      description: Add GitHub blocked-by relationships after issue creation.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: negative
+    attributes:
+      label: Negative fixture
+      description: Describe the failure that proves the protected production path is exercised.
+    validations:
+      required: true
+  - type: textarea
+    id: persistence
+    attributes:
+      label: Restart / persistence evidence
+      description: State the restart evidence or why the slice is intentionally non-persistent.
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout and rollback
+    validations:
+      required: true
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Required evidence level
+      options:
+        - Structural
+        - Semantic
+        - Runtime
+        - Restart
+        - Clean-env
+        - Product
+    validations:
+      required: true
+  - type: textarea
+    id: docs
+    attributes:
+      label: Documentation claims affected
+    validations:
+      required: true
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Primary executor
+      options:
+        - Human
+        - Codex
+        - DeepSeek
+        - Deterministic
+    validations:
+      required: true

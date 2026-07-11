@@ -1,0 +1,73 @@
+name: Product experiment
+description: Test a product, pricing, retention, or workflow hypothesis with explicit evidence.
+title: "Experiment: "
+labels:
+  - type:experiment
+body:
+  - type: input
+    id: baseline
+    attributes:
+      label: Current main SHA
+      placeholder: main@<sha>
+    validations:
+      required: true
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis and target user
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / audit
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Native dependencies and product prerequisites
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Experiment protocol and scope
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success, failure, and stop signals
+      description: Prefer completed decisions, return/review behavior, and falsifiable outcomes over engagement counts.
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Privacy, safety, support, and rollback
+    validations:
+      required: true
+  - type: textarea
+    id: claims
+    attributes:
+      label: Documentation and product claims affected
+    validations:
+      required: true
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Primary executor
+      options:
+        - Human
+        - Codex
+        - DeepSeek
+        - Deterministic
+    validations:
+      required: true

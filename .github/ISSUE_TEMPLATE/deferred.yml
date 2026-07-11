@@ -1,0 +1,69 @@
+name: Deferred integration gate
+description: Specify a gated integration or autonomy capability without authorizing implementation.
+title: "Deferred: "
+labels:
+  - type:deferred-gate
+  - status:deferred
+  - priority:P3
+body:
+  - type: input
+    id: baseline
+    attributes:
+      label: Current main SHA
+      placeholder: main@<sha>
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why this remains deferred
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source / audit
+    validations:
+      required: true
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Native blockers and opening conditions
+      description: Add every opening condition as a GitHub blocked-by relationship.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Design-gate scope
+    validations:
+      required: true
+  - type: textarea
+    id: prohibited
+    attributes:
+      label: Explicitly prohibited before the gate opens
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Gate acceptance and negative fixtures
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback, revocation, and affected claims
+    validations:
+      required: true
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Primary executor
+      options:
+        - Human
+        - Codex
+        - DeepSeek
+        - Deterministic
+    validations:
+      required: true
