@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Verify attestation consumer inventory for structure, coverage, and consistency."""
+"""Verify attestation consumer inventory for structure, hit-level coverage, and consistency."""
 
 from __future__ import annotations
 
 import json
+import re
 import sys
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,17 +34,13 @@ ALLOWED_DISP = {
 }
 ALLOWED_RISK = {"low", "medium", "high", "critical"}
 REQ_FIELDS = {
-    "consumer_id", "path", "symbol", "line_start", "role", "current_behavior",
-    "decision_semantics", "version_binding", "authority_effect", "risk",
-    "disposition", "target_owner", "prerequisites", "recommended_change",
-    "test_implications", "evidence",
+    "consumer_id", "path", "symbol", "line_start", "line_end", "match_terms",
+    "role", "current_behavior", "decision_semantics", "version_binding",
+    "authority_effect", "risk", "disposition", "target_owner",
+    "prerequisites", "recommended_change", "test_implications", "evidence",
 }
 REQ_TEXT = {"current_behavior", "recommended_change"}
-SCAN_TERMS = [
-    "Attestation", "attestation_id", "attestation_ref", "attestations",
-    "create_governed_attestation", "attest_proposal", "attested_ids",
-    "human_attestation_recorded", "decision of record",
-]
+
 SKIP_PARTS = {
     ".git", ".venv", "node_modules", "dist", "build", "coverage",
     "__pycache__", ".mypy_cache", ".ruff_cache",
@@ -52,41 +51,137 @@ SKIP_PATHS = {
     "scripts/verify_attestation_consumer_inventory.py",
     "tests/test_attestation_consumer_inventory.py",
 }
-SCAN_ROOTS = ["src", "tests", "docs", "frontend"]
+SCAN_GLOBS = [
+    "src/finharness/**/*.py",
+    "tests/**/*.py",
+    "docs/**/*.md", "docs/**/*.json", "docs/**/*.yml", "docs/**/*.yaml",
+    "frontend/**/*.js", "frontend/**/*.ts", "frontend/**/*.tsx",
+    "frontend/**/*.html",
+]
+
+CID_RE = re.compile(r"^ATT-CONS-(\d{3})$")
 
 
-def _should_scan(path: Path) -> bool:
+@dataclass(frozen=True)
+class ScanHit:
+    path: str
+    line: int
+    term: str
+
+
+@dataclass
+class ConsumerRange:
+    path: str
+    line_start: int
+    line_end: int
+    match_terms: list[str]
+    consumer_id: str = ""
+
+
+@dataclass
+class ExclusionEntry:
+    path: str
+    match_line: int
+    term: str = ""
+    reason: str = ""
+
+
+# ── scanning ──────────────────────────────────────────────────────────────────
+
+
+def _should_scan(path: Path, root: Path) -> bool:
     if any(p in SKIP_PARTS for p in path.parts):
         return False
-    rel = str(path.relative_to(ROOT))
-    return rel not in SKIP_PATHS
+    return str(path.relative_to(root)) not in SKIP_PATHS
 
 
-def _scan_hits() -> set[str]:
-    hits: set[str] = set()
-    for root_name in SCAN_ROOTS:
-        root_dir = ROOT / root_name
-        if not root_dir.is_dir():
-            continue
-        for path in sorted(root_dir.rglob("*")):
-            if not path.is_file() or not _should_scan(path):
+def _scan_hits(scan_terms: list[str], root: Path = ROOT) -> list[ScanHit]:
+    """Return every (path, line, term) hit matching any scan term."""
+    hits: list[ScanHit] = []
+    for glob_pat in SCAN_GLOBS:
+        for path in sorted(root.glob(glob_pat)):
+            if not path.is_file() or not _should_scan(path, root):
                 continue
             try:
-                text = path.read_text(encoding="utf-8", errors="replace")
+                lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
             except (OSError, UnicodeDecodeError):
                 continue
-            if any(term in text for term in SCAN_TERMS):
-                hits.add(str(path.relative_to(ROOT)))
+            for i, line_text in enumerate(lines, start=1):
+                for term in scan_terms:
+                    if term in line_text:
+                        hits.append(ScanHit(
+                            path=str(path.relative_to(root)),
+                            line=i,
+                            term=term,
+                        ))
     return hits
 
 
+# ── consumer / exclusion parsing ──────────────────────────────────────────────
+
+
+def _parse_consumer_ranges(consumers: list[dict]) -> list[ConsumerRange]:
+    result: list[ConsumerRange] = []
+    for c in consumers:
+        result.append(ConsumerRange(
+            consumer_id=c.get("consumer_id", "?"),
+            path=c.get("path", ""),
+            line_start=c.get("line_start", 0),
+            line_end=c.get("line_end", 0),
+            match_terms=c.get("match_terms", []),
+        ))
+    return result
+
+
+def _parse_exclusions(exclusions: list[dict]) -> list[ExclusionEntry]:
+    result: list[ExclusionEntry] = []
+    for e in exclusions:
+        result.append(ExclusionEntry(
+            path=e.get("path", ""),
+            match_line=e.get("match_line", 0),
+            term=e.get("term", ""),
+            reason=e.get("reason", ""),
+        ))
+    return result
+
+
+# ── hit matching ──────────────────────────────────────────────────────────────
+
+
+def _hit_covered(hit: ScanHit, ranges: list[ConsumerRange],
+                 excl: list[ExclusionEntry]) -> bool:
+    """True when hit is covered by a consumer range or an exclusion entry."""
+    for cr in ranges:
+        if (hit.path == cr.path
+                and cr.line_start <= hit.line <= cr.line_end
+                and hit.term in cr.match_terms):
+            return True
+    for ex in excl:
+        if (hit.path == ex.path
+                and hit.line == ex.match_line
+                and hit.term == ex.term):
+            return True
+    return False
+
+
+# ── per-consumer validation ───────────────────────────────────────────────────
+
+
 def _check_one(consumer: dict) -> list[str]:
+    """Structural + enum validation for a single consumer."""
     f: list[str] = []
     cid = consumer.get("consumer_id", "?")
     p = f"{cid}:"
     missing = REQ_FIELDS - set(consumer)
     if missing:
         f.append(f"{p} missing fields: {sorted(missing)}")
+    f.extend(_check_one_enums(consumer, p))
+    f.extend(_check_one_path_lines(consumer, p))
+    return f
+
+
+def _check_one_enums(consumer: dict, p: str) -> list[str]:
+    f: list[str] = []
     if consumer.get("role") not in ALLOWED_ROLES:
         f.append(f"{p} unknown role: {consumer.get('role')}")
     if consumer.get("decision_semantics") not in ALLOWED_SEMANTICS:
@@ -97,47 +192,38 @@ def _check_one(consumer: dict) -> list[str]:
         f.append(f"{p} unknown disposition: {consumer.get('disposition')}")
     if consumer.get("risk") not in ALLOWED_RISK:
         f.append(f"{p} unknown risk: {consumer.get('risk')}")
+    cid = consumer.get("consumer_id", "")
+    if not CID_RE.match(cid):
+        f.append(f"{p} invalid consumer_id format, expected ATT-CONS-NNN: {cid}")
+    for req_field in REQ_TEXT:
+        if not str(consumer.get(req_field, "")).strip():
+            f.append(f"{p} {req_field} is empty")
+    return f
+
+
+def _check_one_path_lines(consumer: dict, p: str) -> list[str]:
+    f: list[str] = []
     path_str = consumer.get("path", "")
     if path_str and not (ROOT / path_str).is_file():
         f.append(f"{p} path does not exist: {path_str}")
     ls = consumer.get("line_start", 0)
+    le = consumer.get("line_end", 0)
     if not isinstance(ls, int) or ls <= 0:
         f.append(f"{p} invalid line_start: {ls}")
-    for field in REQ_TEXT:
-        if not str(consumer.get(field, "")).strip():
-            f.append(f"{p} {field} is empty")
+    if not isinstance(le, int) or le <= 0:
+        f.append(f"{p} invalid line_end: {le}")
+    if isinstance(ls, int) and isinstance(le, int) and ls > 0 and le > 0 and ls > le:
+        f.append(f"{p} line_start > line_end: {ls} > {le}")
+    mt = consumer.get("match_terms")
+    if not isinstance(mt, list) or not mt:
+        f.append(f"{p} match_terms is empty")
     return f
 
 
-def validate_inventory(inv_path: Path = INV) -> list[str]:
-    failures: list[str] = []
-    if not inv_path.is_file():
-        return [f"inventory not found: {inv_path}"]
-    try:
-        data = json.loads(inv_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        return [f"invalid JSON: {exc}"]
-    failures.extend(_check_top(data))
-    consumers = data.get("consumers")
-    if not isinstance(consumers, list):
-        return [*failures, "consumers must be a list"]
-    failures.extend(_check_consumers(consumers))
-    failures.extend(_check_summary(consumers, data.get("summary", {})))
-    failures.extend(_check_coverage(consumers, data.get("exclusions", [])))
-    return failures
+# ── consumer ID sequence check ────────────────────────────────────────────────
 
 
-def _check_top(data: dict) -> list[str]:
-    f: list[str] = []
-    if data.get("schema") != "finharness.attestation_consumer_inventory.v1":
-        f.append(f"unknown schema: {data.get('schema')}")
-    unclass = data.get("unclassified_hits", [])
-    if unclass:
-        f.append(f"{len(unclass)} unclassified_hits must be empty")
-    return f
-
-
-def _check_consumers(consumers: list[dict]) -> list[str]:
+def _check_ids(consumers: list[dict]) -> list[str]:
     f: list[str] = []
     seen: set[str] = set()
     for c in consumers:
@@ -145,31 +231,126 @@ def _check_consumers(consumers: list[dict]) -> list[str]:
         if cid in seen:
             f.append(f"duplicate consumer_id: {cid}")
         seen.add(cid)
-        f.extend(_check_one(c))
+    ids = [c.get("consumer_id", "") for c in consumers]
+    for i, cid in enumerate(ids, start=1):
+        expected = f"ATT-CONS-{i:03d}"
+        if cid != expected:
+            f.append(f"expected {expected} at position {i}, got {cid}")
     return f
+
+
+# ── summary recalculation ─────────────────────────────────────────────────────
 
 
 def _check_summary(consumers: list[dict], summary: dict) -> list[str]:
-    actual = len(consumers)
-    claimed = summary.get("total_consumers")
-    if claimed != actual:
-        return [f"summary.total_consumers={claimed} != {actual}"]
-    return []
-
-
-def _check_coverage(consumers: list[dict], exclusions: list[dict]) -> list[str]:
     f: list[str] = []
-    consumer_paths = {c["path"] for c in consumers if c.get("path")}
-    hits = _scan_hits()
-    excl_paths = {e["path"] for e in exclusions}
-    registered = consumer_paths | excl_paths | SKIP_PATHS
-    for hit in sorted(hits):
-        if hit not in registered:
-            f.append(f"unregistered hit: {hit}")
-    for exc in exclusions:
-        if not str(exc.get("reason", "")).strip():
-            f.append(f"exclusion has empty reason: {exc.get('path', '?')}")
+    roles = Counter(c.get("role") for c in consumers)
+    disps = Counter(c.get("disposition") for c in consumers)
+    hc = sum(1 for c in consumers if c.get("risk") in {"high", "critical"})
+    actual_count = len(consumers)
+
+    claimed_count = summary.get("total_consumers")
+    if claimed_count != actual_count:
+        f.append(f"summary.total_consumers: claimed={claimed_count}, actual={actual_count}")
+
+    claimed_roles = summary.get("by_role", {})
+    actual_roles = dict(roles)
+    if claimed_roles != actual_roles:
+        f.append(f"summary.by_role mismatch: claimed={claimed_roles}, actual={actual_roles}")
+
+    claimed_disps = summary.get("by_disposition", {})
+    actual_disps = dict(disps)
+    if claimed_disps != actual_disps:
+        f.append(f"summary.by_disposition mismatch: claimed={claimed_disps}, "
+                 f"actual={actual_disps}")
+
+    claimed_hc = summary.get("high_or_critical_count")
+    if claimed_hc != hc:
+        f.append(f"summary.high_or_critical_count: claimed={claimed_hc}, actual={hc}")
+
     return f
+
+
+# ── exclusion validation ──────────────────────────────────────────────────────
+
+
+def _check_exclusions(exclusions: list[dict], root: Path = ROOT) -> list[str]:
+    f: list[str] = []
+    seen_excl: set[tuple] = set()
+    for i, exc in enumerate(exclusions):
+        idx = f"exclusion[{i}]"
+        p = exc.get("path", "")
+        ml = exc.get("match_line", 0)
+        term = exc.get("term", "")
+        reason = exc.get("reason", "")
+        if not p:
+            f.append(f"{idx}: empty path")
+            continue
+        if not (root / p).is_file():
+            f.append(f"{idx}: path does not exist: {p}")
+        if not isinstance(ml, int) or ml <= 0:
+            f.append(f"{idx}: invalid match_line: {ml}")
+        if not term:
+            f.append(f"{idx}: empty term")
+        if not reason.strip():
+            f.append(f"{idx}: empty reason")
+        key = (p, ml, term)
+        if key in seen_excl:
+            f.append(f"{idx}: duplicate exclusion: {key}")
+        seen_excl.add(key)
+    return f
+
+
+# ── main entry ────────────────────────────────────────────────────────────────
+
+
+def validate_inventory(inv_path: Path = INV, root: Path = ROOT) -> list[str]:
+    failures: list[str] = []
+    if not inv_path.is_file():
+        return [f"inventory not found: {inv_path}"]
+    try:
+        data = json.loads(inv_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return [f"invalid JSON: {exc}"]
+
+    if data.get("schema") != "finharness.attestation_consumer_inventory.v1":
+        failures.append(f"unknown schema: {data.get('schema')}")
+
+    unclass = data.get("unclassified_hits", [])
+    if unclass:
+        failures.append(f"{len(unclass)} unclassified_hits must be empty")
+
+    consumers = data.get("consumers")
+    if not isinstance(consumers, list):
+        return [*failures, "consumers must be a list"]
+
+    scan_terms = data.get("scope", {}).get("scan_terms", [])
+    if not scan_terms:
+        failures.append("scope.scan_terms is empty — cannot scan")
+
+    # Structural + enum validation
+    for c in consumers:
+        failures.extend(_check_one(c))
+
+    # ID sequence
+    failures.extend(_check_ids(consumers))
+
+    # Summary recalculation
+    failures.extend(_check_summary(consumers, data.get("summary", {})))
+
+    # Exclusion validation
+    exclusions = data.get("exclusions", [])
+    scan_hits = _scan_hits(scan_terms, root)
+    failures.extend(_check_exclusions(exclusions, root))
+
+    # Hit-level coverage
+    ranges = _parse_consumer_ranges(consumers)
+    parsed_excl = _parse_exclusions(exclusions)
+    for hit in scan_hits:
+        if not _hit_covered(hit, ranges, parsed_excl):
+            failures.append(f"unregistered hit: {hit.path}:{hit.line}:{hit.term}")
+
+    return failures
 
 
 def main() -> int:
@@ -179,12 +360,12 @@ def main() -> int:
         for f in failures:
             print(f"  {f}")
         return 1
+
     data = json.loads(INV.read_text(encoding="utf-8"))
     s = data["summary"]
-    disp = s.get("by_disposition", {})
     print(f"OK: {len(data['consumers'])} consumers")
-    for d in sorted(disp):
-        print(f"  {d}: {disp[d]}")
+    for d in sorted(s.get("by_disposition", {})):
+        print(f"  {d}: {s['by_disposition'][d]}")
     print(f"  high/critical: {s.get('high_or_critical_count', '?')}")
     return 0
 
