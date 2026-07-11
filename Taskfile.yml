@@ -36,11 +36,11 @@ tasks:
       - task: check:ci
 
   check:fast:
-    desc: Fast local feedback — lint, typecheck, unit tests (no integration, no frontend, no eval)
+    desc: Fast local feedback — lint, typecheck, full Python test gate (compile + unittest + pytest)
     cmds:
       - task: lint
       - task: typecheck
-      - task: test
+      - task: test:all
 
   check:ci:
     desc: CI merge gate — fast checks + base profile + integration + frontend + governance + rules
@@ -203,11 +203,32 @@ tasks:
     cmds:
       - uv run ruff format .
 
-  test:
-    desc: Run Python compile and fast unit tests
+  test:compile:
+    desc: Python compile check
     cmds:
       - uv run python -m py_compile src/finharness/*.py experiments/*.py tests/*.py scripts/*.py
+
+  test:unittest:
+    desc: Run unittest discovery suite
+    cmds:
       - uv run python -m unittest discover -s tests
+
+  test:pytest:
+    desc: Run pytest-only test files from the pytest manifest
+    cmds:
+      - uv run python scripts/run_pytest_manifest.py
+
+  test:all:
+    desc: Complete Python test gate — compile + unittest + pytest
+    cmds:
+      - task: test:compile
+      - task: test:unittest
+      - task: test:pytest
+
+  test:
+    desc: Compatibility alias for the complete Python test gate
+    cmds:
+      - task: test:all
 
   api:serve:
     desc: Serve the local state API (read + governed non-execution write)

@@ -174,7 +174,7 @@ def _task_check_layering(root: Path) -> bool:
     return all(
         (
             dependencies("check") == ["check:ci"],
-            dependencies("check:fast") == ["lint", "typecheck", "test"],
+            dependencies("check:fast") == ["lint", "typecheck", "test:all"],
             dependencies("check:ci")
             == [
                 "check:fast",

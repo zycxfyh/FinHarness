@@ -38,7 +38,7 @@ systems:
       - src/finharness/api/routes_state.py
     mature_posture: Borrow event/receipt-sourcing ideas without adopting a heavy event platform.
     checks:
-      - task test
+      - task test:all
       - task governance:check
     upgrade_trigger: Multiple stores or remote writers require a stronger event/log abstraction.
 
@@ -97,7 +97,7 @@ systems:
     mature_posture: RFC and decision-record style; human review remains authority.
     checks:
       - task decisions:scan
-      - task test
+      - task test:all
     upgrade_trigger: More proposal generators need a shared candidate intake interface.
 
   - id: review_system
@@ -116,7 +116,7 @@ systems:
     mature_posture: Decision log plus risk/issue register discipline; attestation and risk severity hints are review evidence, not execution.
     checks:
       - task governance:check
-      - task test
+      - task test:all
       - uv run python -m unittest tests.test_review_read tests.test_review_workspace_api
       - uv run python -m unittest tests.test_risk_register
     upgrade_trigger: Review flows become collaborative or need role/permission separation.
@@ -219,7 +219,7 @@ systems:
     mature_posture: Adopt-not-invent; use mature wheels for heavy calculation and scanning.
     checks:
       - task wheels:check
-      - task test
+      - task test:all
     upgrade_trigger: Provider/data quality becomes a major operational pain or needs freshness SLAs.
 
   - id: agent_explanation
@@ -280,8 +280,8 @@ systems:
       - src/finharness/agent_work_loop.py
     mature_posture: Keep domain cognition contracts provider-neutral. Reuse mature runner/checkpoint infrastructure only after the local action-observation-decision reducer and artifact chain are semantically proven.
     checks:
-      - uv run python -m unittest tests.test_agent_cognition_flow
-      - uv run pytest -q tests/test_agent_work_loop_models.py
+      - task test:all
+      - task test:pytest
       - uv run python scripts/run_agent_operating_surface_smoke.py
       - uv run python scripts/run_agent_work_loop_smoke.py
     upgrade_trigger: Add session/checkpoint/resume only for measured long-running recovery needs; AUT3 requires W1/W2 world prerequisites and a separately tested delegated-review mandate.
@@ -318,7 +318,7 @@ systems:
     mature_posture: Thin adapter and view-contract discipline; avoid heavy frontend framework until needed.
     checks:
       - task test:frontend
-      - task test
+      - task test:all
     upgrade_trigger: Product surface complexity exceeds vanilla JS locality.
 
   - id: eos_governance_quality
