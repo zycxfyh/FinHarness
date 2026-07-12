@@ -225,9 +225,7 @@ async function renderOverview() {
   renderNonClaims(selectors.latestBrief, brief.non_claims);
 
   renderRows(selectors.controls, [
-    ["Execution endpoints", controls.api_execution_endpoints_present],
-    ["Execution substrate", controls.execution_substrate],
-    ["Live execution available", controls.live_execution_available],
+    ["Execution endpoints", controls.api_execution_endpoints_present], ["Execution substrate", controls.execution_substrate], ["Live execution available", controls.live_execution_available],
     ["Approval grants execution", controls.proposal_approval_is_execution_authorization],
     ["Raise limits via API", limits.raising_limits_via_api_allowed],
     ["Execution allowed", controls.execution_allowed],

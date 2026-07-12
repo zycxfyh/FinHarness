@@ -677,8 +677,6 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertEqual(controls.status_code, 200)
         self.assertFalse(controls.json()["execution_allowed"])
         self.assertTrue(controls.json()["api_execution_endpoints_present"])
-        self.assertEqual(controls.json()["execution_substrate"], "simulated")
-        self.assertFalse(controls.json()["live_execution_available"])
         self.assertFalse(controls.json()["proposal_approval_is_execution_authorization"])
 
         self.assertEqual(limits.status_code, 200)

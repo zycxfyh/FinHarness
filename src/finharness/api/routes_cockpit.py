@@ -82,8 +82,6 @@ class TimelineEntry(BaseModel):
 
 class ControlsStatusResponse(BaseModel):
     api_execution_endpoints_present: bool = True
-    execution_substrate: str = "simulated"
-    live_execution_available: bool = False
     proposal_approval_is_execution_authorization: bool = False
     execution_allowed: bool = False
     safeguards: tuple[str, ...]
@@ -302,9 +300,14 @@ async def timeline(
     )[:limit]
 
 
-@router.get("/controls/status", response_model=ControlsStatusResponse)
-async def controls_status() -> ControlsStatusResponse:
-    return ControlsStatusResponse(
+class ExecutionControlsStatusResponse(ControlsStatusResponse):
+    execution_substrate: str = "simulated"
+    live_execution_available: bool = False
+
+
+@router.get("/controls/status", response_model=ExecutionControlsStatusResponse)
+async def controls_status() -> ExecutionControlsStatusResponse:
+    return ExecutionControlsStatusResponse(
         safeguards=(
             "Ordinary Cockpit navigation does not expose the simulated execution preview.",
             "Proposal approval is recorded as human attestation, not execution authorization.",
