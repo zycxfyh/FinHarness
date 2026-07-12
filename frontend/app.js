@@ -225,7 +225,7 @@ async function renderOverview() {
   renderNonClaims(selectors.latestBrief, brief.non_claims);
 
   renderRows(selectors.controls, [
-    ["Execution endpoints", controls.api_execution_endpoints_present],
+    ["Execution endpoints", controls.api_execution_endpoints_present], ["Execution substrate", controls.execution_substrate], ["Live execution available", controls.live_execution_available],
     ["Approval grants execution", controls.proposal_approval_is_execution_authorization],
     ["Raise limits via API", limits.raising_limits_via_api_allowed],
     ["Execution allowed", controls.execution_allowed],
@@ -1362,21 +1362,9 @@ async function renderExecution() {
   clear(selectors.executionReports);
 
   try {
-    const orders = await (await fetch("/execution/orders?limit=20")).json();
+    const orders = await apiGet("/execution/orders?limit=20");
     const drafts = [];
-    const staged = [];
-    const submitted = [];
-    for (const o of orders || []) {
-      if (o.execution_status === "staged") staged.push(o);
-      else submitted.push(o);
-    }
-    // Show drafts via the orders' underlying draft IDs
-    for (const o of staged) {
-      try {
-        const draft = await (await fetch(`/execution/order-drafts/${o.order_draft_id}`)).json();
-        drafts.push(draft);
-      } catch (_) {}
-    }
+    // Draft reads are not exposed by the current typed router.
 
     if (!drafts.length && !orders.length) {
       selectors.executionDrafts.append(textElement("p", "empty-state", "No order drafts."));
@@ -1403,27 +1391,11 @@ async function renderExecution() {
       selectors.executionOrders.append(el);
     }
 
-    // Load reports for submitted orders
-    for (const o of submitted) {
-      try {
-        const resp = await fetch(`/execution/orders/${o.execution_order_id}`);
-        if (!resp.ok) continue;
-        const order = await resp.json();
-        // Try to find a report via the order's receipt or report lookup
-        const reportsResp = await fetch("/execution/reports/" + (order.receipt_ref || "nonexistent"));
-        if (reportsResp.ok) {
-          const r = await reportsResp.json();
-          const el = document.createElement("div");
-          el.className = "item-card";
-          el.append(textElement("span", "item-label", `${r.report_type}`));
-          el.append(textElement("span", "item-meta", `fill: ${r.fill_status} | qty: ${r.filled_quantity}`));
-          if (r.average_fill_price) el.append(textElement("span", "item-meta", `avg px: ${r.average_fill_price}`));
-          selectors.executionReports.append(el);
-        }
-      } catch (_) {}
-    }
-  } catch (_) {
-    selectors.executionDrafts.append(textElement("p", "empty-state", "Execution API unavailable."));
+    selectors.executionReports.append(
+      textElement("p", "empty-state", "Report discovery is unavailable in this simulated preview."),
+    );
+  } catch (error) {
+    throw error;
   }
 }
 

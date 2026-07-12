@@ -81,7 +81,7 @@ class TimelineEntry(BaseModel):
 
 
 class ControlsStatusResponse(BaseModel):
-    api_execution_endpoints_present: bool = False
+    api_execution_endpoints_present: bool = True
     proposal_approval_is_execution_authorization: bool = False
     execution_allowed: bool = False
     safeguards: tuple[str, ...]
@@ -300,13 +300,18 @@ async def timeline(
     )[:limit]
 
 
-@router.get("/controls/status", response_model=ControlsStatusResponse)
-async def controls_status() -> ControlsStatusResponse:
-    return ControlsStatusResponse(
+class ExecutionControlsStatusResponse(ControlsStatusResponse):
+    execution_substrate: str = "simulated"
+    live_execution_available: bool = False
+
+
+@router.get("/controls/status", response_model=ExecutionControlsStatusResponse)
+async def controls_status() -> ExecutionControlsStatusResponse:
+    return ExecutionControlsStatusResponse(
         safeguards=(
-            "Product BFF exposes read/review routes only.",
+            "Ordinary Cockpit navigation does not expose the simulated execution preview.",
             "Proposal approval is recorded as human attestation, not execution authorization.",
-            "Every response declares execution_allowed=false.",
+            "The only registered broker adapter is simulated; live execution is unavailable.",
         ),
         limitations=(
             "This endpoint summarizes product-surface controls only.",

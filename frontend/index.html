@@ -27,7 +27,6 @@
       <button class="tab" type="button" data-view="retrospective">Retrospective</button>
       <button class="tab" type="button" data-view="compare">Compare</button>
       <button class="tab" type="button" data-view="data-trust">Data Trust</button>
-      <button class="tab" type="button" data-view="execution">Execution</button>
     </nav>
 
     <main>
@@ -145,8 +144,9 @@
         </section>
       </section>
 
-      <section id="execution-view" class="view" aria-labelledby="execution-title">
-        <h2 id="execution-title">Execution</h2>
+      <section id="execution-view" class="view" aria-labelledby="execution-title" hidden>
+        <h2 id="execution-title">Advanced simulated lifecycle preview</h2>
+        <p class="boundary-tag">Simulated substrate only. Live execution is unavailable.</p>
         <section class="panel" aria-labelledby="execution-drafts-title">
           <h3 id="execution-drafts-title">Order Drafts</h3>
           <div id="execution-drafts" class="item-list"></div>
