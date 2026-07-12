@@ -70,6 +70,7 @@ IMPORT_TO_DISTRIBUTION = {
     "sqlmodel": "sqlmodel",
     "structlog": "structlog",
     "uvicorn": "uvicorn",
+    "uuid6": "uuid6",
     "vectorbt": "vectorbt",
     "yfinance": "yfinance",
 }
