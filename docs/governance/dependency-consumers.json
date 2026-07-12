@@ -452,6 +452,21 @@
       "confidence": "high"
     },
     {
+      "distribution": "uuid6",
+      "requirement": "uuid6>=2025.0.1",
+      "declared_group": "base",
+      "recommended_group": "base",
+      "import_modules": [
+        "uuid6"
+      ],
+      "import_consumers": [
+        "src/finharness/decision_ontology.py"
+      ],
+      "task_consumers": [],
+      "rationale": "The DecisionCaseVersion identity contract delegates RFC 9562 UUIDv7 generation to uuid6 while the runtime remains on Python 3.12; Python 3.14 stdlib parity is the removal trigger.",
+      "confidence": "high"
+    },
+    {
       "distribution": "vectorbt",
       "requirement": "vectorbt>=1.0.0",
       "declared_group": "research",
@@ -535,6 +550,7 @@
         "tests/test_authority_transition.py",
         "tests/test_capital_truth_contract.py",
         "tests/test_context_trust.py",
+        "tests/test_decision_ontology.py",
         "tests/test_deliberation_receipts.py",
         "tests/test_domain_memory.py",
         "tests/test_evaluation_report.py",

@@ -136,6 +136,7 @@ dependencies = [
     "sqlmodel>=0.0.38",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.40.0",
+    "uuid6>=2025.0.1",
 ]
 
 [dependency-groups]

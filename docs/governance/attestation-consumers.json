@@ -1989,6 +1989,30 @@
       "reason": "Non-semantic hit: attestation_ref at line 313. Not a direct Attestation consumer."
     },
     {
+      "path": "src/finharness/decision_ontology.py",
+      "match_line": 113,
+      "term": "attestation_id",
+      "reason": "Negative ontology boundary: review evidence is explicitly separated from DecisionCaseVersion basis, not consumed as decision basis."
+    },
+    {
+      "path": "tests/test_decision_ontology.py",
+      "match_line": 42,
+      "term": "attestation_id",
+      "reason": "Negative fixture proving attestation fields are rejected from DecisionCaseVersion basis."
+    },
+    {
+      "path": "docs/adr/2026-07-12-decision-ontology-and-version-triggers.md",
+      "match_line": 26,
+      "term": "Attestation",
+      "reason": "ADR non-consumer statement separating Attestation review evidence from case-basis identity."
+    },
+    {
+      "path": "docs/adr/2026-07-12-decision-ontology-and-version-triggers.md",
+      "match_line": 52,
+      "term": "Attestation",
+      "reason": "Version-trigger matrix classifies Attestation as review-only and non-versioning."
+    },
+    {
       "path": "tests/test_statecore_vertical_reconstruction.py",
       "match_line": 15,
       "term": "Attestation",
