@@ -150,7 +150,7 @@ def _content_hash(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _content_hash_of_row(proposal: Proposal) -> str:
+def proposal_content_hash(proposal: Proposal) -> str:
     return _content_hash(
         kind=proposal.kind,
         claim=proposal.claim,
@@ -274,7 +274,7 @@ def create_governed_proposal(
         with Session(engine) as session:
             existing = session.get(Proposal, resolved_proposal_id)
         if existing is not None:
-            if _content_hash_of_row(existing) == content_hash:
+            if proposal_content_hash(existing) == content_hash:
                 # Unchanged content: keep the existing latest revision, no new file.
                 return GovernedProposalWrite(
                     proposal=existing,
