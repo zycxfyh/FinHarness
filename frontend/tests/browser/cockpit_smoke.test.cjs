@@ -105,7 +105,12 @@ async function run() {
       "Overview view must be the active default view",
     );
     const tabCount = await page.locator("nav.tabs button.tab").count();
-    assert.equal(tabCount, 9, "expected the 9 cockpit tabs (incl. Execution)");
+    assert.equal(tabCount, 8, "expected only the 8 ordinary review/read tabs");
+    assert.equal(
+      await page.locator('nav.tabs button.tab[data-view="execution"]').count(),
+      0,
+      "simulated execution preview must not appear in ordinary navigation",
+    );
     await shot(page, "01-cockpit-load");
 
     // --- Golden path 2: Proposals view opens (seeded) --------------------------------
@@ -141,13 +146,34 @@ async function run() {
     const compareText = (await page.locator("#compare-block").textContent()) || "";
     assert.ok(compareText.trim().length > 0, "compare block must render content (seeded compare_mark)");
     await shot(page, "03-compare");
-
     assert.equal(
       pageErrors.length,
       0,
-      `cockpit golden paths must have no uncaught page error, saw:\n${pageErrors.join("\n")}`,
+      `golden paths must have no uncaught page error, saw:\n${pageErrors.join("\n")}`,
     );
-    console.log("D8 browser golden paths: PASS (3 paths, 0 page errors).");
+
+    // --- Negative path: API failure is visible and traceable -------------------------
+    await page.route("**/dashboard/summary", async (route) => {
+      await route.fulfill({
+        status: 503,
+        headers: {
+          "content-type": "application/json",
+          "x-finharness-trace-id": "trace_browser_negative",
+        },
+        body: JSON.stringify({ detail: { code: "state_unavailable", message: "fixture offline" } }),
+      });
+    });
+    await page.locator('button.tab[data-view="overview"]').click();
+    await page.waitForSelector("#latest-brief .error-text", { timeout: 15000 });
+    const visibleError = (await page.locator("#latest-brief .error-text").textContent()) || "";
+    assert.match(visibleError, /fixture offline/, "API failure must not render as empty success");
+    assert.match(visibleError, /trace_browser_negative/, "visible error must include its trace ID");
+    await shot(page, "04-api-failure-visible");
+    assert.ok(
+      pageErrors.every((entry) => entry.includes("503 (Service Unavailable)")),
+      `negative path emitted an unexpected browser error:\n${pageErrors.join("\n")}`,
+    );
+    console.log("D8 browser golden paths: PASS (3 paths + negative path, 0 page errors).");
   } finally {
     await browser.close();
     if (server) server.kill("SIGTERM");

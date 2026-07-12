@@ -2,12 +2,36 @@
 
 (() => {
 
+class ApiError extends Error {
+  constructor({ status, detail, traceId }) {
+    const message = typeof detail === "string" ? detail : JSON.stringify(detail || "Request failed");
+    super(`${status} ${message} (trace: ${traceId || "unavailable"})`);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+    this.traceId = traceId || null;
+  }
+}
+
+async function responseBody(response) {
+  return response.json().catch(() => ({}));
+}
+
+function apiError(response, body) {
+  return new ApiError({
+    status: response.status,
+    detail: body.detail || response.statusText,
+    traceId: response.headers.get("x-finharness-trace-id"),
+  });
+}
+
 async function apiGet(path) {
   const response = await fetch(path, { headers: { accept: "application/json" } });
+  const body = await responseBody(response);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw apiError(response, body);
   }
-  return response.json();
+  return body;
 }
 
 async function apiPost(path, payload) {
@@ -19,10 +43,9 @@ async function apiPost(path, payload) {
     },
     body: JSON.stringify(payload),
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await responseBody(response);
   if (!response.ok) {
-    const detail = body.detail ? JSON.stringify(body.detail) : response.statusText;
-    throw new Error(`${response.status} ${detail}`);
+    throw apiError(response, body);
   }
   return body;
 }
@@ -36,14 +59,13 @@ async function apiPatch(path, payload) {
     },
     body: JSON.stringify(payload),
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await responseBody(response);
   if (!response.ok) {
-    const detail = body.detail ? JSON.stringify(body.detail) : response.statusText;
-    throw new Error(`${response.status} ${detail}`);
+    throw apiError(response, body);
   }
   return body;
 }
 
 window.FinHarness = window.FinHarness || {};
-window.FinHarness.api = Object.freeze({ apiGet, apiPost, apiPatch });
+window.FinHarness.api = Object.freeze({ ApiError, apiGet, apiPost, apiPatch });
 })();

@@ -81,7 +81,9 @@ class TimelineEntry(BaseModel):
 
 
 class ControlsStatusResponse(BaseModel):
-    api_execution_endpoints_present: bool = False
+    api_execution_endpoints_present: bool = True
+    execution_substrate: str = "simulated"
+    live_execution_available: bool = False
     proposal_approval_is_execution_authorization: bool = False
     execution_allowed: bool = False
     safeguards: tuple[str, ...]
@@ -304,9 +306,9 @@ async def timeline(
 async def controls_status() -> ControlsStatusResponse:
     return ControlsStatusResponse(
         safeguards=(
-            "Product BFF exposes read/review routes only.",
+            "Ordinary Cockpit navigation does not expose the simulated execution preview.",
             "Proposal approval is recorded as human attestation, not execution authorization.",
-            "Every response declares execution_allowed=false.",
+            "The only registered broker adapter is simulated; live execution is unavailable.",
         ),
         limitations=(
             "This endpoint summarizes product-surface controls only.",
