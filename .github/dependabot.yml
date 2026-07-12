@@ -4,16 +4,60 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      frontend-tooling:
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      base-runtime:
+        patterns:
+          - "fastapi"
+          - "keyring"
+          - "opentelemetry-*"
+          - "pandas"
+          - "pydantic-settings"
+          - "sqlmodel"
+          - "structlog"
+          - "uvicorn"
+      data:
+        patterns:
+          - "beancount"
+          - "beanquery"
+          - "nautilus-trader"
+          - "pandera"
+          - "yfinance"
+      research:
+        patterns:
+          - "backtrader"
+          - "quantstats"
+          - "riskfolio-lib"
+          - "scipy"
+          - "vectorbt"
+      agent:
+        patterns:
+          - "langgraph"
+          - "openai-agents"
+          - "deepeval"
+      dev-tooling:
+        patterns:
+          - "httpx"
+          - "mypy"
+          - "pytest"
+          - "ruff"
 
   # Rust crate archived 2026-06-13 (docs/archive/legacy-rust-crate); no cargo
   # manifest on the build path, so the cargo ecosystem entry was removed.
