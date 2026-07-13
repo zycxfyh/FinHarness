@@ -8,6 +8,20 @@ source_docs:
   module_map: docs/architecture/module-map.md
   engineering_leverage_map: docs/architecture/engineering-leverage-map.md
 systems:
+  - id: shared_artifact_store
+    name: Shared Artifact and Receipt Store
+    status: current
+    summary: Domain-neutral immutable-byte, descriptor, integrity-audit, index, and recovery ports. STORE-00 is live for new artifact forms; existing domain receipts migrate separately with replay and rollback proof.
+    docs:
+      - docs/architecture/artifact-store-contract.md
+    runtime_roots:
+      - src/finharness/artifact_store.py
+      - src/finharness/statecore/receipt_io.py
+    mature_posture: Domain services own semantics and authority; the store owns durability and integrity. Descriptors and bytes are truth, while indexes are reconstructable.
+    checks:
+      - uv run python -m unittest tests.test_artifact_store
+    upgrade_trigger: Migrate an existing domain only with historical readability, replay comparison, rollback evidence, and no parallel registry.
+
   - id: product_north_star
     name: Product North Star
     status: current
