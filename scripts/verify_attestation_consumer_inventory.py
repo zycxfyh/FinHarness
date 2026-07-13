@@ -50,6 +50,7 @@ SKIP_PATHS = {
     "docs/audits/attestation-consumer-inventory.md",
     "scripts/verify_attestation_consumer_inventory.py",
     "tests/test_attestation_consumer_inventory.py",
+    "tests/test_current_doc_generation.py",
 }
 SCAN_GLOBS = [
     "src/finharness/**/*.py",

@@ -1902,9 +1902,9 @@
     },
     {
       "path": "tests/_policy_registry.py",
-      "match_line": 88,
+      "match_line": 90,
       "term": "create_governed_attestation",
-      "reason": "Non-semantic hit: create_governed_attestation at line 88. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: create_governed_attestation at line 90. Not a direct Attestation consumer."
     },
     {
       "path": "tests/_review_fixtures.py",

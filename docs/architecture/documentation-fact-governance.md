@@ -28,7 +28,10 @@ task docs:current-check
 | Architecture layering | `docs/architecture/capital-os-layering.md` | system-map, module-map |
 | Framework summary | `docs/architecture/framework-index.md` | README, docs task map |
 | Engineering leverage layers | `docs/architecture/engineering-leverage-map.md` | framework-index, docs task map |
-| Machine-readable system catalog | `docs/architecture/system-catalog.yml` | framework-index, repo intelligence follow-up |
+| System ownership and lifecycle | `docs/architecture/system-catalog.yml` | generated sections in framework-index and module-map |
+| Verified engineering debt | `docs/governance/debt-register.json` | evolution-roadmap active-debt block |
+| Implementation sequencing | `docs/architecture/finharness-evolution-roadmap.md` | framework navigation and execution planning |
+| Consumer classification | `docs/governance/attestation-consumers.json` | generated inventory Markdown |
 | Support surface lifecycle | `docs/architecture/support-surface-registry.yml` | docs-current check, support sweep planning |
 | System placement | `docs/architecture/system-map.md` | proposals, mini-RFCs, module-map |
 | Live task names | `Taskfile.yml` | command reference, README, golden path |
@@ -88,7 +91,21 @@ References:
 ## Current Machine Guard
 
 The source of truth for machine checks is the existing governance policy
-registry: `tests/_policy_registry.py`.
+registry: `tests/_policy_registry.py`. The current-doc set is no longer a
+hand-maintained Python tuple: it is the internal Markdown graph reachable from
+the entrypoints declared in `system-catalog.yml`. Historical roots declared by
+that catalog are deliberately excluded from current-fact traversal.
+
+Catalog-owned sections and the attestation audit view carry generated markers.
+Refresh them with:
+
+```bash
+task docs:generate-current-views
+```
+
+`task docs:current-check` runs the same renderer in check mode, validates every
+navigation-reachable current document's internal links and task references,
+and fails if a generated view differs from its source.
 
 Docs rules use `GOV-DOCS-*` ids and scan only the current-facts lane. The
 focused runner `tests/test_docs_current_facts.py` exists so a docs-only PR can
@@ -104,6 +121,9 @@ Current checks:
 - module-map does not list retired ten-layer/live-trading modules as current.
 - support surface registry entries have closed statuses, owners, review due
   dates, and existing source/dependency paths.
+- catalog-derived Framework Index and Module Map sections match the catalog;
+- attestation inventory Markdown matches the machine JSON exactly;
+- every internal link from a navigation-reachable current document resolves.
 
 Security docs have an adjacent focused guard:
 `tests/test_security_maturity_docs.py`. It checks the current threat model,
