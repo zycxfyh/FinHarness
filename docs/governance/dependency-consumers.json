@@ -108,6 +108,8 @@
         "src/finharness/api/routes_state.py",
         "src/finharness/identity.py",
         "src/finharness/local_operator.py",
+        "scripts/verify_debt_register.py",
+        "tests/test_debt_register.py",
         "tests/test_authenticated_identity.py",
         "tests/test_local_review_mode.py"
       ],

@@ -237,7 +237,8 @@ The following block is mechanically checked against the canonical register.
 
 Rules:
 
-- All 10 engineering debts are resolved as of Wave 3 Truthful Closure.
+- The canonical register may grow; status truth is evaluated per debt and never
+  inferred from a fixed total or a test count.
 - Their registered status does not block isolated Agent contract work.
 - A debt is closed only when `scripts/verify_debt_register.py` agrees.
 - “No active registered debt” is not a claim that no material debt exists. The

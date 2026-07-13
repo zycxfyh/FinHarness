@@ -9,16 +9,104 @@ resolved entry must return true and every non-resolved entry must return false.
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTER = ROOT / "docs" / "governance" / "debt-register.json"
 
 Verifier = Callable[[Path], bool]
+
+EVIDENCE_LEVELS = {
+    "structural",
+    "semantic",
+    "runtime",
+    "restart",
+    "clean-environment",
+    "product",
+}
+
+
+@dataclass(frozen=True)
+class VerifierSpec:
+    """Executable proof plus the bounded claim it is allowed to support."""
+
+    evaluate: Verifier
+    claim: str
+    owner: str
+    evidence_level: str
+    production_path: tuple[str, ...]
+    sunset: str
+
+
+def state_changing_routes_have_write_gate(app: Any, gate: Callable[..., Any]) -> bool:
+    """Inspect the real FastAPI dependency graph, not source/test name tokens."""
+
+    from fastapi.routing import APIRoute
+
+    validation_only = {("POST", "/agent-authority-grants/{grant_id}/validate")}
+
+    def dependency_calls(dependant: Any) -> set[Callable[..., Any]]:
+        calls: set[Callable[..., Any]] = set()
+        for dependency in dependant.dependencies:
+            if dependency.call is not None:
+                calls.add(dependency.call)
+            calls.update(dependency_calls(dependency))
+        return calls
+
+    def concrete_routes(routes: list[Any]) -> list[Any]:
+        concrete: list[Any] = []
+        for route in routes:
+            nested_router = getattr(route, "original_router", None)
+            if nested_router is not None:
+                concrete.extend(concrete_routes(nested_router.routes))
+            else:
+                concrete.append(route)
+        return concrete
+
+    checked = 0
+    for route in concrete_routes(app.routes):
+        if not isinstance(route, APIRoute):
+            continue
+        for method in route.methods & {"POST", "PUT", "PATCH", "DELETE"}:
+            if (method, route.path) in validation_only:
+                continue
+            checked += 1
+            if gate not in dependency_calls(route.dependant):
+                return False
+    return checked > 0
+
+
+def _run_proof_command(root: Path, command: list[str]) -> bool:
+    env = os.environ.copy()
+    python_path = str(root / "src")
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (python_path, env.get("PYTHONPATH", "")) if part
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
+def _run_unittest_modules(root: Path, *modules: str) -> bool:
+    return _run_proof_command(root, [sys.executable, "-m", "unittest", *modules])
 
 
 def _read(root: Path, relative_path: str) -> str:
@@ -26,27 +114,18 @@ def _read(root: Path, relative_path: str) -> str:
 
 
 def _api_write_capability_gate(root: Path) -> bool:
-    operator = _read(root, "src/finharness/local_operator.py")
-    dependencies = _read(root, "src/finharness/api/dependencies.py")
-    gate_tests = _read(root, "tests/test_statecore_api.py")
-    route_files = (
-        "src/finharness/api/routes_action_intents.py",
-        "src/finharness/api/routes_agent_authority_grants.py",
-        "src/finharness/api/routes_capital_mandates.py",
-        "src/finharness/api/routes_execution.py",
-        "src/finharness/api/routes_ips.py",
-        "src/finharness/api/routes_paper_validation.py",
-        "src/finharness/api/routes_proposals.py",
-    )
-    return all(
-        (
-            "class LocalOperatorContext" in operator,
-            "async def require_write_capability" in operator,
-            "WriteCapabilityDependency" in dependencies,
-            "test_all_state_changing_routes_have_write_capability_dependency" in gate_tests,
-            all("WriteCapabilityDependency" in _read(root, path) for path in route_files),
-        )
-    )
+    source_root = str(root / "src")
+    sys.path.insert(0, source_root)
+    try:
+        from finharness.api.app import create_app
+        from finharness.local_operator import require_write_capability
+
+        return state_changing_routes_have_write_gate(create_app(), require_write_capability)
+    except (ImportError, RuntimeError):
+        return False
+    finally:
+        if sys.path and sys.path[0] == source_root:
+            sys.path.pop(0)
 
 
 def _paper_validation_legacy_boundary(root: Path) -> bool:
@@ -99,27 +178,22 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
     )
     import_ok = len(forbidden_findings) == 0
 
-    # Check 3: broker registry isolation test (SEC-02C)
-    registry_test = root / "tests" / "test_paper_validation_broker_registry_isolation.py"
-    registry_ok = registry_test.exists()
-
-    # Check 4: threat model gap closure
+    # Check 3: threat model gap closure
     threat_model = _read(root, "docs/security/finharness-threat-model.md")
     threat_ok = (
         "## Paper Validation Legacy Isolation Boundary" in threat_model
         and "SEC-BOUNDARY-02" in threat_model
     )
 
-    # Check 5: negative fixture exists in import boundary test
-    import_test = root / "tests" / "test_paper_validation_import_boundary.py"
-    import_test_text = import_test.read_text(encoding="utf-8") if import_test.exists() else ""
-    negative_import_ok = "test_transitive_import_chain_is_detected" in import_test_text
+    # Check 4: destructive semantic and runtime fixtures execute successfully.
+    behavior_ok = _run_unittest_modules(
+        root,
+        "tests.test_paper_validation_consumer_manifest",
+        "tests.test_paper_validation_import_boundary",
+        "tests.test_paper_validation_broker_registry_isolation",
+    )
 
-    # Check 6: negative fixture exists in registry isolation test
-    registry_test_text = registry_test.read_text(encoding="utf-8") if registry_test.exists() else ""
-    negative_registry_ok = "test_registering_live_adapter_raises_value_error" in registry_test_text
-
-    # Check 7: removal ledger entry
+    # Check 5: removal ledger entry
     removal_ledger = _read(root, "docs/governance/removal-ledger.yml")
     removal_ok = "delete-paper-validation-legacy" in removal_ledger
 
@@ -127,35 +201,15 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
         (
             manifest_ok,
             import_ok,
-            registry_ok,
             threat_ok,
-            negative_import_ok,
-            negative_registry_ok,
+            behavior_ok,
             removal_ok,
         )
     )
 
 
 def _receipt_backed_write_registry(root: Path) -> bool:
-    registry = json.loads(_read(root, "docs/governance/receipt-backed-write-registry.json"))
-    entries = registry.get("entries", [])
-    required = {
-        "function",
-        "route_refs",
-        "receipt_kind",
-        "stale_guard",
-        "failure_cleanup",
-        "execution_substrate",
-        "real_external_execution_allowed",
-    }
-    return all(
-        (
-            registry.get("status") == "current",
-            registry.get("debt_ref") == "ENG-DEBT-0003",
-            len(entries) >= 20,
-            all(required.issubset(entry) for entry in entries),
-        )
-    )
+    return _run_unittest_modules(root, "tests.test_receipt_backed_write_registry")
 
 
 def _task_check_layering(root: Path) -> bool:
@@ -308,17 +362,16 @@ def _distribution_name(requirement: str) -> str:
 def _statecore_model_split(root: Path) -> bool:
     extracted = root / "src" / "finharness" / "statecore" / "personal_finance_models.py"
     base = root / "src" / "finharness" / "statecore" / "model_base.py"
-    semantic_test = root / "tests" / "test_statecore_model_split.py"
     models = _read(root, "src/finharness/statecore/models.py")
     extracted_text = extracted.read_text(encoding="utf-8") if extracted.exists() else ""
     return all(
         (
             extracted.exists(),
             base.exists(),
-            semantic_test.exists(),
             "from finharness.statecore.personal_finance_models import" in models,
             "from finharness.statecore.model_base import" in extracted_text,
             "from finharness.statecore.models import" not in extracted_text,
+            _run_unittest_modules(root, "tests.test_statecore_model_split"),
         )
     )
 
@@ -332,7 +385,6 @@ def _frontend_module_split(root: Path) -> bool:
     state = _read(root, "frontend/state.js")
     actions = _read(root, "frontend/actions.js")
     index = _read(root, "frontend/index.html")
-    semantic_test = root / "frontend" / "tests" / "module_boundaries.test.cjs"
     script_positions = [
         index.find(path) for path in ("./api.js", "./state.js", "./actions.js", "./app.js")
     ]
@@ -347,7 +399,7 @@ def _frontend_module_split(root: Path) -> bool:
             len(re.findall(r"ReviewActionShell\.(?:post|patch)\(", app)) == 3,
             all(position >= 0 for position in script_positions),
             script_positions == sorted(script_positions),
-            semantic_test.exists(),
+            _run_proof_command(root, ["node", "frontend/tests/module_boundaries.test.cjs"]),
         )
     )
 
@@ -377,88 +429,151 @@ def _toolchain_alignment(root: Path) -> bool:
 
 
 def _execution_abstraction_inventory(root: Path) -> bool:
-    inventory = _read(root, "docs/engineering/abstraction-inventory.yml")
-    required_names = (
-        "BrokerConnection",
-        "ExecutionAccount",
-        "OrderDraft",
-        "PreTradeCheck",
-        "ApprovalRecord",
-        "ExecutionOrder",
-        "ExecutionReport",
-        "PositionDelta",
-        "ReconciliationReport",
-        "Execution Services",
-        "Execution Capabilities",
-        "BrokerAdapter Registry",
-        "SimulatedBrokerAdapter",
-        "Execution Legacy Bridge",
-        "execution_routes",
-    )
-    stale_targets = (
-        "/execution/pretrade-packets/",
-        "execution/paper/",
-        "wrapper_first",
-        "bridge_read_model_first",
-    )
-    return all(f"- name: {name}" in inventory for name in required_names) and not any(
-        target in inventory for target in stale_targets
-    )
+    return _run_unittest_modules(root, "tests.test_abstraction_inventory_execution")
 
 
 def _execution_capability_enforcement(root: Path) -> bool:
-    services = _read(root, "src/finharness/execution/services.py")
-    commands = _read(root, "src/finharness/execution/commands.py")
-    routes = _read(root, "src/finharness/api/routes_execution.py")
-    tests = root / "tests" / "test_execution_capability_enforcement.py"
-    enforced_flags = (
-        "create_order_draft",
-        "run_pretrade_check",
-        "record_approval",
-        "stage_execution_order",
-        "submit_simulated_order",
-    )
-    return all(
-        (
-            "ExecutionCapabilities" in services,
-            "DEFAULT_EXECUTION_CAPABILITIES" in services,
-            all(
-                f'require_execution_capability(capabilities, "{flag}")' in services
-                for flag in enforced_flags
-            ),
-            'require_execution_capability(capabilities, "submit_simulated_order")' in commands,
-            "ExecutionCapabilitiesDependency" in routes,
-            tests.exists(),
-        )
+    return _run_unittest_modules(
+        root,
+        "tests.test_execution_capabilities",
+        "tests.test_execution_capability_enforcement",
     )
 
 
-VERIFIERS: dict[str, Verifier] = {
-    "api_write_capability_gate": _api_write_capability_gate,
-    "dependency_grouping": _dependency_grouping,
-    "execution_abstraction_inventory": _execution_abstraction_inventory,
-    "execution_capability_enforcement": _execution_capability_enforcement,
-    "frontend_module_split": _frontend_module_split,
-    "paper_validation_legacy_boundary": _paper_validation_legacy_boundary,
-    "receipt_backed_write_registry": _receipt_backed_write_registry,
-    "statecore_model_split": _statecore_model_split,
-    "task_check_layering": _task_check_layering,
-    "toolchain_alignment": _toolchain_alignment,
+VERIFIERS: dict[str, VerifierSpec] = {
+    "api_write_capability_gate": VerifierSpec(
+        evaluate=_api_write_capability_gate,
+        claim="Every state-changing FastAPI route depends on the canonical write gate.",
+        owner="API / Identity",
+        evidence_level="semantic",
+        production_path=("src/finharness/api/app.py", "src/finharness/local_operator.py"),
+        sunset="Replace when write admission moves to a successor API-wide policy engine.",
+    ),
+    "dependency_grouping": VerifierSpec(
+        evaluate=_dependency_grouping,
+        claim="Declared dependencies have one evidenced owner and maintained profile probes.",
+        owner="Dependency Governance",
+        evidence_level="semantic",
+        production_path=("pyproject.toml", "docs/governance/dependency-consumers.json"),
+        sunset="Replace when dependency ownership is generated from a canonical build graph.",
+    ),
+    "execution_abstraction_inventory": VerifierSpec(
+        evaluate=_execution_abstraction_inventory,
+        claim="The execution inventory matches canonical runtime types and rejects stale targets.",
+        owner="Execution Architecture",
+        evidence_level="semantic",
+        production_path=("docs/engineering/abstraction-inventory.yml",),
+        sunset="Merge into generated System Catalog views after DOC-01.",
+    ),
+    "execution_capability_enforcement": VerifierSpec(
+        evaluate=_execution_capability_enforcement,
+        claim=(
+            "Disabled execution capabilities fail closed before state, receipt, "
+            "or adapter effects."
+        ),
+        owner="Execution Control",
+        evidence_level="runtime",
+        production_path=(
+            "src/finharness/execution/services.py",
+            "src/finharness/execution/commands.py",
+        ),
+        sunset="Replace only when a successor admission engine proves the same no-effect law.",
+    ),
+    "frontend_module_split": VerifierSpec(
+        evaluate=_frontend_module_split,
+        claim="Governed frontend writes use the shared action shell and fail closed on bad truth.",
+        owner="Frontend Architecture",
+        evidence_level="runtime",
+        production_path=("frontend/actions.js", "frontend/state.js", "frontend/app.js"),
+        sunset="Replace when the cockpit migrates to a successor typed UI runtime.",
+    ),
+    "paper_validation_legacy_boundary": VerifierSpec(
+        evaluate=_paper_validation_legacy_boundary,
+        claim="Legacy paper validation cannot reach live adapters or unregistered consumers.",
+        owner="Execution Security",
+        evidence_level="runtime",
+        production_path=(
+            "src/finharness/api/routes_paper_validation.py",
+            "src/finharness/paper_validation_boundary_audit.py",
+        ),
+        sunset="Delete with the paper-validation legacy surface after its removal gate passes.",
+    ),
+    "receipt_backed_write_registry": VerifierSpec(
+        evaluate=_receipt_backed_write_registry,
+        claim=(
+            "Every governed write is importable and matches route, receipt, and "
+            "cleanup semantics."
+        ),
+        owner="State Core Integrity",
+        evidence_level="semantic",
+        production_path=("docs/governance/receipt-backed-write-registry.json",),
+        sunset="Merge into Artifact Store command registration after STORE migration completes.",
+    ),
+    "statecore_model_split": VerifierSpec(
+        evaluate=_statecore_model_split,
+        claim="Extracted State Core models preserve identity, metadata, and compatibility imports.",
+        owner="State Core Architecture",
+        evidence_level="semantic",
+        production_path=(
+            "src/finharness/statecore/models.py",
+            "src/finharness/statecore/personal_finance_models.py",
+        ),
+        sunset="Replace when all compatibility re-exports have a versioned removal plan.",
+    ),
+    "task_check_layering": VerifierSpec(
+        evaluate=_task_check_layering,
+        claim="Named check layers compose the documented lower-cost gates without drift.",
+        owner="Developer Experience",
+        evidence_level="structural",
+        production_path=("Taskfile.yml",),
+        sunset="Replace when CI and local tasks are generated from one build graph.",
+    ),
+    "toolchain_alignment": VerifierSpec(
+        evaluate=_toolchain_alignment,
+        claim="Local and CI Node majors agree and CI installs no unexplained Rust toolchain.",
+        owner="Developer Experience",
+        evidence_level="structural",
+        production_path=("mise.toml", ".github/workflows/security.yml"),
+        sunset="Replace when one hermetic toolchain manifest owns local and CI versions.",
+    ),
 }
 
 
-def verify_register(root: Path = ROOT, register_path: Path = REGISTER) -> list[str]:
+def verify_register(
+    root: Path = ROOT,
+    register_path: Path = REGISTER,
+    verifiers: dict[str, VerifierSpec] = VERIFIERS,
+) -> list[str]:
     """Return status/verification disagreements; an empty list means truthful."""
 
     register = json.loads(register_path.read_text(encoding="utf-8"))
     failures: list[str] = []
     for debt in register["debts"]:
         verifier_name = debt["verification"]
-        verifier = VERIFIERS.get(verifier_name)
-        if verifier is None:
+        spec = verifiers.get(verifier_name)
+        if spec is None:
             failures.append(f"{debt['id']}: unknown verifier {verifier_name!r}")
             continue
-        desired_state_met = verifier(root)
+        if spec.evidence_level not in EVIDENCE_LEVELS:
+            failures.append(
+                f"{debt['id']}: invalid evidence level {spec.evidence_level!r}"
+            )
+            continue
+        if not all(
+            (
+                spec.claim.strip(),
+                spec.owner.strip(),
+                spec.production_path,
+                spec.sunset.strip(),
+            )
+        ):
+            failures.append(f"{debt['id']}: incomplete verifier proof metadata")
+            continue
+        missing_paths = [path for path in spec.production_path if not (root / path).exists()]
+        if missing_paths:
+            failures.append(f"{debt['id']}: missing production paths {missing_paths}")
+            continue
+        desired_state_met = spec.evaluate(root)
         claims_resolved = debt["status"] == "resolved"
         if desired_state_met != claims_resolved:
             failures.append(
@@ -476,7 +591,11 @@ def main() -> int:
         return 1
     register = json.loads(REGISTER.read_text(encoding="utf-8"))
     for debt in register["debts"]:
-        print(f"PASS {debt['id']} status={debt['status']} verifier={debt['verification']}")
+        spec = VERIFIERS[debt["verification"]]
+        print(
+            f"PASS {debt['id']} status={debt['status']} "
+            f"verifier={debt['verification']} evidence={spec.evidence_level}"
+        )
     return 0
 
 
