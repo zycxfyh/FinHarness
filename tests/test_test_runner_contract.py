@@ -13,6 +13,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 TASKFILE = ROOT / "Taskfile.yml"
 MANIFEST = ROOT / "tests" / "pytest-only.txt"
+PYTEST_RUNNER = ROOT / "scripts" / "run_pytest_manifest.py"
 MARKER = "# finharness-test-runner: pytest"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -77,6 +78,11 @@ class TestRunnerContractTest(unittest.TestCase):
 
     def test_check_fast_exists(self) -> None:
         self.assertIn("check:fast", _task_names())
+
+    def test_pytest_runner_reports_slowest_tests(self) -> None:
+        runner = PYTEST_RUNNER.read_text(encoding="utf-8")
+        self.assertIn('"--durations=20"', runner)
+        self.assertIn('"--durations-min=0.05"', runner)
 
     # ── Delegation / wiring ────────────────────────────────────────────────
 

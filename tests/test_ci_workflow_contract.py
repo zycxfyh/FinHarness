@@ -57,6 +57,17 @@ class CIWorkflowContractTest(unittest.TestCase):
         actual = {job["name"] for job in workflow["jobs"].values()}
         self.assertEqual(actual, REQUIRED_SECURITY_CHECKS)
 
+    def test_local_verification_records_timing_even_when_checks_fail(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
+        steps = workflow["jobs"]["local-checks"]["steps"]
+        timed = next(step for step in steps if step.get("name") == "Run standard project checks")
+        upload = next(step for step in steps if step.get("name") == "Upload check timing evidence")
+
+        self.assertEqual(timed["run"], "task check:timed")
+        self.assertEqual(upload["if"], "always()")
+        self.assertEqual(upload["with"]["path"], ".artifacts/check-timing.json")
+        self.assertEqual(upload["with"]["if-no-files-found"], "error")
+
     def test_runbook_uses_ruleset_guarded_squash_auto_merge(self) -> None:
         runbook = (
             REPO_ROOT / "docs" / "how-to" / "manage-issue-worktrees.md"
