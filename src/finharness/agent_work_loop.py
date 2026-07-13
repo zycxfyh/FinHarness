@@ -653,7 +653,7 @@ def _persist_preflight_stop(
     findings: list[str],
     runtime_world_fidelity: WorldFidelityLevel,
 ) -> AgentWorkResult:
-    from finharness.agent_receipt_search import write_receipt_search_index
+    from finharness.agent_receipt_search import update_receipt_search_index
     from finharness.agent_run_receipts import write_agent_run_receipt
 
     run_receipt = write_agent_run_receipt(
@@ -696,8 +696,11 @@ def _persist_preflight_stop(
         capital_mandate_id=request.capital_mandate_id,
         agent_authority_grant_id=request.agent_authority_grant_id,
     )
-    write_agent_work_result(result, receipt_root=root)
-    write_receipt_search_index(root)
+    persisted_work_result_ref = write_agent_work_result(result, receipt_root=root)
+    update_receipt_search_index(
+        root,
+        [run_ref, workspace_ref, persisted_work_result_ref],
+    )
     return result
 
 
@@ -717,9 +720,9 @@ def run_agent_work_loop(
     2. Run bounded tool dispatch loop
     3. Run cognition flow from tool results
     4. Persist AgentRunReceipt, WorkResult, and hydrated review workspace
-    5. Rebuild the receipt search index and return the terminal result
+    5. Increment the receipt search index and return the terminal result
     """
-    from finharness.agent_receipt_search import write_receipt_search_index
+    from finharness.agent_receipt_search import update_receipt_search_index
 
     authority_findings: list[str] = []
     if autonomy_mandate is None and request.agent_authority_grant_id:
@@ -810,7 +813,7 @@ def run_agent_work_loop(
     elif data_gaps or stop_reason in {"max_steps_reached", "max_tool_calls_reached"}:
         outcome = "partial" if envelopes else "failed"
 
-    # 5. Link and persist the terminal work package, then rebuild search.
+    # 5. Link and persist the terminal work package, then increment search.
     root = Path(request.receipt_root)
     tool_result_refs = [
         str(ref) for envelope in envelopes if (ref := envelope.get("artifact_ref")) is not None
@@ -884,8 +887,33 @@ def run_agent_work_loop(
         capital_mandate_id=request.capital_mandate_id,
         agent_authority_grant_id=request.agent_authority_grant_id,
     )
-    write_agent_work_result(result, receipt_root=root)
-    write_receipt_search_index(root)
+    persisted_work_result_ref = write_agent_work_result(result, receipt_root=root)
+    flow_refs = [
+        str(ref)
+        for key in (
+            "option_set_ref",
+            "plan_draft_ref",
+            "evaluation_report_ref",
+            "authority_transition_ref",
+            "agent_run_receipt_ref",
+        )
+        if (ref := flow.get(key)) is not None
+    ]
+    update_receipt_search_index(
+        root,
+        list(
+            dict.fromkeys(
+                [
+                    *tool_result_refs,
+                    *admission_refs,
+                    *flow_refs,
+                    dispatch_run_ref,
+                    workspace_ref,
+                    persisted_work_result_ref,
+                ]
+            )
+        ),
+    )
     return result
 
 
