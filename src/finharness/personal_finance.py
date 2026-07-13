@@ -15,14 +15,15 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Engine
+from sqlmodel import Session, col, select
 
 from finharness.artifact_store import ArtifactStore, LocalArtifactStore
 from finharness.capital_import_contract import (
@@ -47,11 +48,14 @@ from finharness.statecore.models import (
     DocumentRef,
     FinancialGoal,
     IdentityAlias,
+    ImportBatch,
+    ImportTombstone,
     InstrumentIdentity,
     InsurancePolicy,
     Liability,
     Position,
     ReceiptIndex,
+    ReceiptManifest,
     Snapshot,
     SourcedStateCoreBase,
     TaxEvent,
@@ -62,7 +66,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
-ADAPTER_VERSION = "finharness.personal_finance_export.v2"
+ADAPTER_VERSION = "finharness.personal_finance_export.v3"
 EXPORT_KIND = "personal_finance_export"
 POSITION_COLUMNS = {
     "account_id",
@@ -99,6 +103,15 @@ RECORD_TYPE_COLUMNS = {
         "as_of_utc",
     },
     "document": {"document_id", "document_type", "title", "path", "as_of_utc"},
+}
+DELETION_RECORD_DOMAINS = {
+    "Position": "position",
+    "Liability": "liability",
+    "FinancialGoal": "goal",
+    "CashflowEvent": "cashflow",
+    "TaxEvent": "tax_event",
+    "InsurancePolicy": "insurance",
+    "DocumentRef": "document",
 }
 NON_CLAIMS = (
     "Read-only personal finance export ingestion.",
@@ -138,6 +151,15 @@ class PersonalFinanceImportResult:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ImportDeletion:
+    """Explicit deletion requested by a delta import."""
+
+    record_type: str
+    record_id: str
+    reason: str
+
+
 def display_path(path: Path) -> str:
     resolved = path.resolve()
     try:
@@ -156,6 +178,27 @@ def _file_hash(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _import_contract_fragment(
+    *,
+    source_id: str,
+    source_hash: str,
+    coverage_mode: str,
+    supersedes_batch_id: str | None,
+    correction_reason: str | None,
+) -> str:
+    return hashlib.sha256(
+        "\x00".join(
+            (
+                source_id,
+                source_hash,
+                coverage_mode,
+                supersedes_batch_id or "",
+                correction_reason or "",
+            )
+        ).encode("utf-8")
+    ).hexdigest()[:12]
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -354,6 +397,7 @@ def _payload_for_snapshot(
     *,
     time_semantics: dict[str, str | None],
     findings: list[ImportFinding],
+    coverage_mode: str,
 ) -> dict[str, Any]:
     position_currencies = sorted(
         {
@@ -370,7 +414,7 @@ def _payload_for_snapshot(
         "record_counts": _record_counts(rows),
         "supported_record_types": sorted(RECORD_TYPE_COLUMNS),
         "position_currencies": position_currencies,
-        "coverage_mode": "full",
+        "coverage_mode": coverage_mode,
         "completeness_status": completeness_status(findings),
         "time_semantics": time_semantics,
         "findings": [finding.as_dict() for finding in findings],
@@ -607,6 +651,7 @@ def _records_from_rows(
     source_path: Path,
     time_semantics: dict[str, str | None],
     findings: list[ImportFinding],
+    coverage_mode: str,
 ) -> list[StateCoreRecord]:
     ctx = _IngestContext(
         snapshot_id=snapshot_id,
@@ -650,6 +695,7 @@ def _records_from_rows(
             source_path,
             time_semantics=time_semantics,
             findings=findings,
+            coverage_mode=coverage_mode,
         ),
         source_refs=source_refs,
     )
@@ -661,6 +707,117 @@ def _records_from_rows(
         *ctx.accounts.values(),
         *built,
     ]
+
+
+def _position_identity(position: Position) -> tuple[str, str]:
+    return (
+        position.account_id,
+        position.instrument_id or f"legacy-symbol:{position.symbol.upper()}",
+    )
+
+
+def _latest_source_positions(
+    *, engine: Engine, source_id: str, exclude_batch_id: str
+) -> tuple[str | None, list[Position]]:
+    with Session(engine) as session:
+        manifest = session.exec(
+            select(ReceiptManifest)
+            .join(ImportBatch, col(ImportBatch.batch_id) == ReceiptManifest.batch_id)
+            .where(
+                ImportBatch.source_kind == EXPORT_KIND,
+                ImportBatch.source_id == source_id,
+                ImportBatch.batch_id != exclude_batch_id,
+            )
+            .order_by(
+                col(ReceiptManifest.materialized_at_utc).desc(),
+                col(ReceiptManifest.manifest_id).desc(),
+            )
+        ).first()
+        if manifest is None:
+            return None, []
+        positions = session.exec(
+            select(Position).where(Position.snapshot_id == manifest.snapshot_id)
+        ).all()
+        return manifest.batch_id, list(positions)
+
+
+def _materialize_delta_positions(
+    records: list[StateCoreRecord],
+    *,
+    engine: Engine,
+    source_id: str,
+    snapshot_id: str,
+    tombstones: Sequence[ImportDeletion],
+    exclude_batch_id: str,
+) -> tuple[list[StateCoreRecord], str | None]:
+    base_batch_id, previous = _latest_source_positions(
+        engine=engine,
+        source_id=source_id,
+        exclude_batch_id=exclude_batch_id,
+    )
+    deleted_position_ids = {
+        tombstone.record_id for tombstone in tombstones if tombstone.record_type == "Position"
+    }
+    incoming = [record for record in records if isinstance(record, Position)]
+    incoming_keys = {_position_identity(position) for position in incoming}
+    carried: list[Position] = []
+    for position in previous:
+        if position.position_id in deleted_position_ids:
+            continue
+        if _position_identity(position) in incoming_keys:
+            continue
+        identity_fragment = position.instrument_id or position.symbol.upper()
+        carried.append(
+            position.model_copy(
+                update={
+                    "position_id": _safe_id(
+                        f"pos_{snapshot_id}_carried_{position.account_id}_{identity_fragment}"
+                    ),
+                    "snapshot_id": snapshot_id,
+                }
+            )
+        )
+    if not carried:
+        return records, base_batch_id
+    materialized = [*records, *carried]
+    for record in materialized:
+        if isinstance(record, Snapshot) and record.snapshot_id == snapshot_id:
+            record.payload = {
+                **record.payload,
+                "delta_base_batch_id": base_batch_id,
+                "materialized_position_count": len(incoming) + len(carried),
+            }
+    return materialized, base_batch_id
+
+
+def _import_tombstones(
+    *,
+    batch: ImportBatch,
+    deletions: Sequence[ImportDeletion],
+) -> list[ImportTombstone]:
+    records: list[ImportTombstone] = []
+    for deletion in deletions:
+        if not deletion.record_type or not deletion.record_id or not deletion.reason.strip():
+            raise PersonalFinanceExportError(
+                "import deletion requires record_type, record_id, and a non-empty reason"
+            )
+        digest = hashlib.sha256(
+            "\x00".join((batch.batch_id, deletion.record_type, deletion.record_id)).encode("utf-8")
+        ).hexdigest()[:24]
+        records.append(
+            ImportTombstone(
+                tombstone_id=f"import_tombstone_{digest}",
+                batch_id=batch.batch_id,
+                source_kind=batch.source_kind,
+                record_type=deletion.record_type,
+                record_id=deletion.record_id,
+                reason=deletion.reason.strip(),
+                source_refs=[batch.source_artifact_id],
+                as_of_utc=batch.as_of_utc,
+                authority_level="read_only",
+            )
+        )
+    return records
 
 
 def _identity_findings(rows: list[dict[str, str]]) -> list[ImportFinding]:
@@ -696,6 +853,11 @@ def ingest_personal_finance_export(
     receipt_root: str | Path = DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT,
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
+    coverage_mode: Literal["full", "delta"] = "full",
+    supersedes_batch_id: str | None = None,
+    correction_reason: str | None = None,
+    tombstones: Sequence[ImportDeletion] = (),
+    covered_domains: Sequence[str] | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -704,11 +866,30 @@ def ingest_personal_finance_export(
     limits.
     """
     source_path = Path(export_path)
+    if coverage_mode not in {"full", "delta"}:
+        raise PersonalFinanceExportError("coverage_mode must be full or delta")
     rows = _read_rows(source_path)
     if not rows:
         raise PersonalFinanceExportError("personal-finance export has no rows")
+    deletion_domains: set[str] = set()
+    for tombstone in tombstones:
+        domain = DELETION_RECORD_DOMAINS.get(tombstone.record_type)
+        if domain is None:
+            raise PersonalFinanceExportError(
+                f"unsupported import deletion record type: {tombstone.record_type}"
+            )
+        deletion_domains.add(domain)
+    resolved_covered_domains = sorted(
+        (set(covered_domains) if covered_domains is not None else {_row_type(row) for row in rows})
+        | deletion_domains
+    )
+    if not resolved_covered_domains or not set(resolved_covered_domains) <= set(
+        RECORD_TYPE_COLUMNS
+    ):
+        raise PersonalFinanceExportError("covered_domains must use supported record types")
     source_hash = _file_hash(source_path)
     source_content = source_path.read_bytes()
+    source_id = display_path(source_path)
     active_artifact_store = artifact_store or LocalArtifactStore(
         Path(receipt_root) / "artifact-store"
     )
@@ -724,7 +905,15 @@ def ingest_personal_finance_export(
     )
     findings.extend(_identity_findings(rows))
     as_of_utc = str(time_semantics["observed_at_utc"])
-    base_id = _safe_id(source_hash[:12])
+    base_id = _safe_id(
+        _import_contract_fragment(
+            source_id=source_id,
+            source_hash=source_hash,
+            coverage_mode=coverage_mode,
+            supersedes_batch_id=supersedes_batch_id,
+            correction_reason=correction_reason,
+        )
+    )
     active_snapshot_id = snapshot_id or f"snap_personal_finance_{base_id}"
     receipt_id = f"receipt_personal_finance_export_{base_id}"
     receipt_path = Path(receipt_root) / f"{receipt_id}.json"
@@ -741,11 +930,11 @@ def ingest_personal_finance_export(
     receipt_ref = display_path(receipt_path)
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
-        source_id=display_path(source_path),
+        source_id=source_id,
         source_content=source_content,
         source_sha256=source_hash,
         adapter_version=ADAPTER_VERSION,
-        coverage_mode="full",
+        coverage_mode=coverage_mode,
         record_counts=record_counts,
         snapshot_id=active_snapshot_id,
         receipt_id=receipt_id,
@@ -757,6 +946,12 @@ def ingest_personal_finance_export(
         completeness_status=completeness_status(findings),
         time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in findings],
+        covered_domains=resolved_covered_domains,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+        corporate_action_status=(
+            "unsupported_gap" if record_counts.get("position", 0) else "not_applicable"
+        ),
     )
     source_refs = [receipt_ref, display_path(source_path)]
     receipt_index = ReceiptIndex(
@@ -775,9 +970,23 @@ def ingest_personal_finance_export(
         source_path=source_path,
         time_semantics=time_semantics,
         findings=findings,
+        coverage_mode=coverage_mode,
     )
+    delta_base_batch_id: str | None = None
+    if coverage_mode == "delta":
+        records, delta_base_batch_id = _materialize_delta_positions(
+            records,
+            engine=engine,
+            source_id=source_id,
+            snapshot_id=active_snapshot_id,
+            tombstones=tombstones,
+            exclude_batch_id=prepared.batch.batch_id,
+        )
+        if delta_base_batch_id is None:
+            raise PersonalFinanceExportError("delta import requires a materialized base import")
+    deletion_records = _import_tombstones(batch=prepared.batch, deletions=tombstones)
     materialize_import_batch(
-        [receipt_index, *records],
+        [receipt_index, *records, *deletion_records],
         source=EXPORT_KIND,
         batch=prepared.batch,
         manifest=prepared.manifest,

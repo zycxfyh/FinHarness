@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Connection, Engine, event, inspect, text
+from sqlalchemy import Connection, Engine, delete, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, col, create_engine, select
 
 from finharness.project_paths import ROOT
 from finharness.statecore.execution_models import (
@@ -24,6 +25,7 @@ from finharness.statecore.execution_models import (
     PreTradeCheck,
     ReconciliationReport,
 )
+from finharness.statecore.model_base import SourcedStateCoreBase
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
@@ -42,6 +44,7 @@ from finharness.statecore.models import (
     FinancialGoal,
     IdentityAlias,
     ImportBatch,
+    ImportTombstone,
     InstrumentIdentity,
     InsurancePolicy,
     InvestmentPolicyStatement,
@@ -107,6 +110,7 @@ StateCoreRecord = (
     | PositionDelta
     | ReconciliationReport
     | ImportBatch
+    | ImportTombstone
     | ReceiptManifest
 )
 
@@ -201,7 +205,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 10
+CURRENT_STATE_CORE_USER_VERSION = 11
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -215,13 +219,13 @@ _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("document_refs", "ALTER TABLE document_refs ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
 )
 
-_SOURCE_DELETES: tuple[Any, ...] = (
-    text("DELETE FROM liabilities WHERE source = :source"),
-    text("DELETE FROM financial_goals WHERE source = :source"),
-    text("DELETE FROM cashflow_events WHERE source = :source"),
-    text("DELETE FROM tax_events WHERE source = :source"),
-    text("DELETE FROM insurance_policies WHERE source = :source"),
-    text("DELETE FROM document_refs WHERE source = :source"),
+_SOURCE_OWNED_MODELS: tuple[tuple[type[SourcedStateCoreBase], str, str, str], ...] = (
+    (Liability, "liability_id", "liabilities", "liability"),
+    (FinancialGoal, "goal_id", "financial_goals", "goal"),
+    (CashflowEvent, "cashflow_id", "cashflow_events", "cashflow"),
+    (TaxEvent, "tax_event_id", "tax_events", "tax_event"),
+    (InsurancePolicy, "policy_id", "insurance_policies", "insurance"),
+    (DocumentRef, "document_id", "document_refs", "document"),
 )
 
 _POSITION_MONEY_COLUMNS = ("quantity", "market_value", "cost_basis")
@@ -360,6 +364,33 @@ def _migrate_add_import_semantics(connection: Connection) -> None:
             )
 
 
+def _migrate_add_import_correction_semantics(connection: Connection) -> None:
+    """Add typed coverage/correction fields and the append-only tombstone table."""
+    SQLModel.metadata.tables["import_tombstones"].create(connection, checkfirst=True)
+    inspector = inspect(connection)
+    if "import_batches" not in set(inspector.get_table_names()):
+        return
+    columns = {column["name"] for column in inspector.get_columns("import_batches")}
+    additions = {
+        "covered_domains": "JSON NOT NULL DEFAULT '[]'",
+        "supersedes_batch_id": "VARCHAR",
+        "correction_reason": "VARCHAR",
+        "corporate_action_status": "VARCHAR NOT NULL DEFAULT 'unsupported_gap'",
+        "corporate_action_gaps": (
+            "JSON NOT NULL DEFAULT '[\"corporate_action_semantics_not_supported\"]'"
+        ),
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE import_batches ADD COLUMN {name} {declaration}"
+            )
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_import_batches_supersedes_batch_id "
+        "ON import_batches (supersedes_batch_id)"
+    )
+
+
 def _migrate_add_canonical_identities(connection: Connection) -> None:
     """Add nullable identity bindings without inventing identity for legacy rows."""
     for table in ("account_identities", "instrument_identities", "identity_aliases"):
@@ -461,6 +492,7 @@ def migrate_state_core(engine: Engine) -> None:
         (8, _migrate_add_import_semantics),
         (9, _migrate_add_canonical_identities),
         (10, _migrate_position_valuation_contract),
+        (11, _migrate_add_import_correction_semantics),
     )
     try:
         with engine.connect() as connection:
@@ -605,16 +637,7 @@ def _validate_import_envelope(
 ) -> None:
     from finharness.artifact_store import ArtifactStoreError
 
-    if batch.source_kind != source:
-        raise StateCoreStoreError("import batch source does not match materialization source")
-    if batch.completeness_status not in {"complete", "partial", "blocked"}:
-        raise StateCoreStoreError("current import completeness status is outside the closed set")
-    if manifest.batch_id != batch.batch_id:
-        raise StateCoreStoreError("receipt manifest does not bind the import batch")
-    if manifest.source_artifact_id != batch.source_artifact_id:
-        raise StateCoreStoreError("receipt manifest does not bind the source evidence")
-    if manifest.materialization_status != "materialized":
-        raise StateCoreStoreError("only a materialized receipt manifest can become current")
+    _validate_import_contract_fields(source=source, batch=batch, manifest=manifest)
     try:
         source_descriptor = artifact_store.descriptor(batch.source_artifact_id)
         receipt_descriptor = artifact_store.descriptor(manifest.receipt_artifact_id)
@@ -642,6 +665,29 @@ def _validate_import_envelope(
         or receipt_index.path != manifest.receipt_ref
     ):
         raise StateCoreStoreError("receipt index does not match the receipt manifest")
+
+
+def _validate_import_contract_fields(
+    *, source: str, batch: ImportBatch, manifest: ReceiptManifest
+) -> None:
+    if batch.source_kind != source:
+        raise StateCoreStoreError("import batch source does not match materialization source")
+    if batch.coverage_mode not in {"full", "delta"}:
+        raise StateCoreStoreError("import batch coverage mode is outside the closed set")
+    if (batch.supersedes_batch_id is None) != (batch.correction_reason is None):
+        raise StateCoreStoreError(
+            "import correction requires both supersedes_batch_id and correction_reason"
+        )
+    if batch.correction_reason is not None and not batch.correction_reason.strip():
+        raise StateCoreStoreError("import correction reason must be non-empty")
+    if batch.completeness_status not in {"complete", "partial", "blocked"}:
+        raise StateCoreStoreError("current import completeness status is outside the closed set")
+    if manifest.batch_id != batch.batch_id:
+        raise StateCoreStoreError("receipt manifest does not bind the import batch")
+    if manifest.source_artifact_id != batch.source_artifact_id:
+        raise StateCoreStoreError("receipt manifest does not bind the source evidence")
+    if manifest.materialization_status != "materialized":
+        raise StateCoreStoreError("only a materialized receipt manifest can become current")
 
 
 def _validate_receipt_binding(
@@ -672,11 +718,171 @@ def _validate_receipt_binding(
         "completeness_status": batch.completeness_status,
         "time_semantics": batch.time_semantics,
         "findings": batch.findings,
+        "covered_domains": batch.covered_domains,
+        "supersedes_batch_id": batch.supersedes_batch_id,
+        "correction_reason": batch.correction_reason,
+        "corporate_action_status": batch.corporate_action_status,
+        "corporate_action_gaps": batch.corporate_action_gaps,
     }
     if any(receipt_payload.get(key) != value for key, value in expected_receipt_fields.items()):
         raise StateCoreStoreError("receipt artifact does not bind the import envelope")
     if manifest.record_counts != batch.record_counts:
         raise StateCoreStoreError("manifest record counts do not match the import batch")
+
+
+def _tombstone_id(batch_id: str, record_type: str, record_id: str) -> str:
+    digest = hashlib.sha256(
+        "\x00".join((batch_id, record_type, record_id)).encode("utf-8")
+    ).hexdigest()[:24]
+    return f"import_tombstone_{digest}"
+
+
+def _tombstone(
+    *, batch: ImportBatch, record_type: str, record_id: str, reason: str
+) -> ImportTombstone:
+    return ImportTombstone(
+        tombstone_id=_tombstone_id(batch.batch_id, record_type, record_id),
+        batch_id=batch.batch_id,
+        source_kind=batch.source_kind,
+        record_type=record_type,
+        record_id=record_id,
+        reason=reason,
+        source_refs=[batch.source_artifact_id],
+        as_of_utc=batch.as_of_utc,
+        authority_level="read_only",
+    )
+
+
+def _position_identity(position: Position) -> tuple[str, str]:
+    return (
+        position.account_id,
+        position.instrument_id or f"legacy-symbol:{position.symbol.upper()}",
+    )
+
+
+def _previous_source_snapshot(session: Session, *, batch: ImportBatch) -> Snapshot | None:
+    statement = (
+        select(Snapshot)
+        .join(ReceiptManifest, col(ReceiptManifest.snapshot_id) == Snapshot.snapshot_id)
+        .join(ImportBatch, col(ImportBatch.batch_id) == ReceiptManifest.batch_id)
+        .where(
+            ImportBatch.source_kind == batch.source_kind,
+            ImportBatch.source_id == batch.source_id,
+            ImportBatch.batch_id != batch.batch_id,
+        )
+        .order_by(
+            col(ReceiptManifest.materialized_at_utc).desc(),
+            col(ReceiptManifest.manifest_id).desc(),
+        )
+    )
+    return session.exec(statement).first()
+
+
+def _automatic_full_tombstones(
+    session: Session,
+    *,
+    batch: ImportBatch,
+    records: Sequence[StateCoreRecord],
+) -> list[ImportTombstone]:
+    tombstones: list[ImportTombstone] = []
+    for model, id_field, _table, domain in _SOURCE_OWNED_MODELS:
+        if domain not in batch.covered_domains:
+            continue
+        incoming_ids = {
+            str(getattr(record, id_field)) for record in records if isinstance(record, model)
+        }
+        existing = session.exec(select(model).where(model.source == batch.source_kind)).all()
+        for record in existing:
+            record_id = str(getattr(record, id_field))
+            if record_id not in incoming_ids:
+                tombstones.append(
+                    _tombstone(
+                        batch=batch,
+                        record_type=model.__name__,
+                        record_id=record_id,
+                        reason="absent_from_full_import",
+                    )
+                )
+    previous_snapshot = _previous_source_snapshot(session, batch=batch)
+    incoming_positions = [record for record in records if isinstance(record, Position)]
+    if previous_snapshot is not None and "position" in batch.covered_domains:
+        incoming_keys = {_position_identity(position) for position in incoming_positions}
+        previous_positions = session.exec(
+            select(Position).where(Position.snapshot_id == previous_snapshot.snapshot_id)
+        ).all()
+        for position in previous_positions:
+            if _position_identity(position) not in incoming_keys:
+                tombstones.append(
+                    _tombstone(
+                        batch=batch,
+                        record_type="Position",
+                        record_id=position.position_id,
+                        reason="absent_from_full_import",
+                    )
+                )
+    return tombstones
+
+
+def _apply_explicit_tombstones(
+    session: Session, *, source: str, tombstones: Sequence[ImportTombstone]
+) -> None:
+    by_type = {
+        model.__name__: (model, id_field)
+        for model, id_field, _table, _domain in _SOURCE_OWNED_MODELS
+    }
+    for tombstone in tombstones:
+        target = by_type.get(tombstone.record_type)
+        if target is None:
+            # Position tombstones are applied by snapshot construction; immutable
+            # historical Position rows are deliberately retained.
+            if tombstone.record_type == "Position":
+                continue
+            raise StateCoreStoreError(
+                f"unsupported import tombstone record type: {tombstone.record_type}"
+            )
+        model, id_field = target
+        session.execute(
+            delete(model).where(
+                col(getattr(model, id_field)) == tombstone.record_id,
+                col(model.source) == source,
+            )
+        )
+
+
+def _validate_existing_import_lineage(
+    session: Session,
+    *,
+    source: str,
+    batch: ImportBatch,
+    manifest: ReceiptManifest,
+    tombstones: Sequence[ImportTombstone],
+) -> None:
+    if any(
+        tombstone.batch_id != batch.batch_id or tombstone.source_kind != source
+        for tombstone in tombstones
+    ):
+        raise StateCoreStoreError("import tombstone does not bind the import batch")
+    existing_batch = session.get(ImportBatch, batch.batch_id)
+    if existing_batch is not None and existing_batch.model_dump() != batch.model_dump():
+        raise StateCoreStoreError("import batch identity is immutable")
+    existing_manifest = session.get(ReceiptManifest, manifest.manifest_id)
+    if existing_manifest is not None and existing_manifest.model_dump() != manifest.model_dump():
+        raise StateCoreStoreError("receipt manifest identity is immutable")
+    if batch.supersedes_batch_id is None:
+        return
+    superseded = session.get(ImportBatch, batch.supersedes_batch_id)
+    if superseded is None:
+        raise StateCoreStoreError("superseded import batch does not exist")
+    if superseded.source_kind != batch.source_kind or superseded.source_id != batch.source_id:
+        raise StateCoreStoreError("superseded import batch belongs to a different source")
+
+
+def _delete_covered_source_records(
+    session: Session, *, source: str, covered_domains: Sequence[str]
+) -> None:
+    for model, _id_field, _table, domain in _SOURCE_OWNED_MODELS:
+        if domain in covered_domains:
+            session.execute(delete(model).where(col(model.source) == source))
 
 
 def materialize_import_batch(
@@ -690,11 +896,11 @@ def materialize_import_batch(
 ) -> list[StateCoreRecord]:
     """Atomically commit a provenance-bound production capital import.
 
-    Source-owned tables (liabilities, goals, cashflows, tax events, insurance,
-    documents) are deleted for ``source`` first so a re-import drops rows that no
-    longer exist upstream. The batch and manifest are committed in the same database
-    transaction as the queryable records; callers cannot make an import current by
-    supplying only direct state payloads.
+    Full imports replace only their declared source-owned domains and retain
+    tombstones for disappeared rows. Delta imports preserve omitted rows and apply
+    only explicit tombstones. The batch and manifest are committed in the same
+    database transaction as the queryable records; callers cannot make an import
+    current by supplying only direct state payloads.
     """
     materialized = list(records)
     _validate_import_envelope(
@@ -708,18 +914,41 @@ def materialize_import_batch(
     try:
         with Session(engine) as session:
             with session.begin():
-                existing_batch = session.get(ImportBatch, batch.batch_id)
-                if existing_batch is not None and existing_batch.model_dump() != batch.model_dump():
-                    raise StateCoreStoreError("import batch identity is immutable")
-                existing_manifest = session.get(ReceiptManifest, manifest.manifest_id)
-                if (
-                    existing_manifest is not None
-                    and existing_manifest.model_dump() != manifest.model_dump()
-                ):
-                    raise StateCoreStoreError("receipt manifest identity is immutable")
-                for statement in _SOURCE_DELETES:
-                    session.execute(statement, {"source": source})
-                for record in [batch, manifest, *materialized]:
+                explicit_tombstones = [
+                    record for record in materialized if isinstance(record, ImportTombstone)
+                ]
+                _validate_existing_import_lineage(
+                    session,
+                    source=source,
+                    batch=batch,
+                    manifest=manifest,
+                    tombstones=explicit_tombstones,
+                )
+                automatic_tombstones = (
+                    _automatic_full_tombstones(session, batch=batch, records=materialized)
+                    if batch.coverage_mode == "full"
+                    else []
+                )
+                tombstones_by_id = {
+                    tombstone.tombstone_id: tombstone
+                    for tombstone in [*automatic_tombstones, *explicit_tombstones]
+                }
+                if batch.coverage_mode == "full":
+                    _delete_covered_source_records(
+                        session, source=source, covered_domains=batch.covered_domains
+                    )
+                _apply_explicit_tombstones(
+                    session, source=source, tombstones=list(tombstones_by_id.values())
+                )
+                non_tombstone_records = [
+                    record for record in materialized if not isinstance(record, ImportTombstone)
+                ]
+                for record in [
+                    batch,
+                    manifest,
+                    *non_tombstone_records,
+                    *tombstones_by_id.values(),
+                ]:
                     _reject_alias_retarget(session, record)
                     saved.append(session.merge(record))
                 session.flush()

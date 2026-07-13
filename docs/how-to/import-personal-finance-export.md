@@ -148,11 +148,26 @@ explicit full/delta coverage, completeness, five clocks, and structured findings
 
 Every generated record keeps `execution_allowed=false`.
 
-Both adapters currently declare full-source coverage. Re-importing identical
-content reuses the same batch, manifest, and receipt bytes. If the process stops
-after evidence is stored but before State Core commits, running the same import
-again completes the same batch. Existing receipts from before this contract stay
-readable as `legacy_unmanifested`; they are not assigned invented provenance.
+Beancount declares full-source coverage. The CSV adapter defaults to full
+coverage and can explicitly request `coverage_mode="delta"` through the Python
+API. A full import removes source-owned rows absent from its declared covered
+domains and records tombstones. A delta import preserves omitted rows; explicit
+deletions use `ImportDeletion(record_type, record_id, reason)`. A correction
+must provide both `supersedes_batch_id` and a non-empty `correction_reason`.
+The CSV adapter infers covered domains from the row types present; callers must
+pass `covered_domains` when a full import intentionally declares a covered
+domain with zero rows.
+
+Re-importing identical content under the same coverage/correction contract
+reuses the same batch, manifest, and receipt bytes and yields the same
+materialized state. If the process stops after evidence is stored but before
+State Core commits, running the same import again completes the same batch.
+Existing receipts from before this contract stay readable as
+`legacy_unmanifested`; they are not assigned invented provenance.
+
+Import receipts disclose `corporate_action_semantics_not_supported` until a
+separate governed corporate-action model exists. A deletion or quantity change
+must not be silently inferred to be a split, merger, or other corporate action.
 
 ## Boundary
 

@@ -78,8 +78,12 @@ task setup
 task check
 ```
 
-`task setup` only syncs from the existing lockfiles. Use `task check` as the
-standard local verification command.
+`task setup` only syncs from the existing lockfiles. It installs FinHarness as
+an editable `src`-layout package, so `uv run python`, `uv run pytest`, and IDEs
+can import `finharness` without a manual `PYTHONPATH`. The standard `task check`
+gate re-runs the locked setup as a fast no-op when the environment is already
+current, preventing missing Python groups or `node_modules` from producing
+misleading test failures.
 
 Wheel checks are split into local imports and provider-backed network calls:
 

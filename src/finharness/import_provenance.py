@@ -23,7 +23,7 @@ from finharness.statecore.import_models import (
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
 
-IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v2"
+IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v3"
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
@@ -71,9 +71,7 @@ def canonical_json_bytes(payload: dict[str, Any]) -> bytes:
 
 
 def _safe_fragment(value: str) -> str:
-    return "".join(
-        char if char.isalnum() or char in {"_", "-", "."} else "_" for char in value
-    )
+    return "".join(char if char.isalnum() or char in {"_", "-", "."} else "_" for char in value)
 
 
 def _stable_id(prefix: str, *parts: str) -> str:
@@ -157,6 +155,11 @@ def prepare_import(
     completeness_status: str,
     time_semantics: dict[str, Any],
     findings: list[dict[str, Any]],
+    covered_domains: list[str] | None = None,
+    supersedes_batch_id: str | None = None,
+    correction_reason: str | None = None,
+    corporate_action_status: str = "unsupported_gap",
+    corporate_action_gaps: list[str] | None = None,
 ) -> PreparedImport:
     """Persist immutable evidence and construct the DB transaction envelope."""
     if coverage_mode not in {"full", "delta"}:
@@ -174,6 +177,18 @@ def prepare_import(
         raise ImportProvenanceError("time_semantics must contain the five canonical clocks")
     if any(finding.get("severity") not in {"partial", "blocking"} for finding in findings):
         raise ImportProvenanceError("import finding severity is outside the closed set")
+    if (supersedes_batch_id is None) != (correction_reason is None):
+        raise ImportProvenanceError(
+            "supersedes_batch_id and correction_reason must be supplied together"
+        )
+    if correction_reason is not None and not correction_reason.strip():
+        raise ImportProvenanceError("correction_reason must be non-empty")
+    if corporate_action_status not in {"not_applicable", "unsupported_gap"}:
+        raise ImportProvenanceError("corporate_action_status is outside the closed set")
+    resolved_domains = sorted(set(covered_domains or record_counts))
+    resolved_corporate_action_gaps = sorted(set(corporate_action_gaps or []))
+    if corporate_action_status == "unsupported_gap" and not resolved_corporate_action_gaps:
+        resolved_corporate_action_gaps = ["corporate_action_semantics_not_supported"]
     batch_id = _stable_id(
         "import_batch",
         source_kind,
@@ -181,6 +196,9 @@ def prepare_import(
         source_sha256,
         adapter_version,
         IMPORT_MANIFEST_SCHEMA_VERSION,
+        coverage_mode,
+        supersedes_batch_id or "",
+        correction_reason or "",
     )
     source_descriptor = persist_source_evidence(
         source_kind=source_kind,
@@ -202,6 +220,11 @@ def prepare_import(
         "completeness_status": completeness_status,
         "time_semantics": time_semantics,
         "findings": findings,
+        "covered_domains": resolved_domains,
+        "supersedes_batch_id": supersedes_batch_id,
+        "correction_reason": correction_reason,
+        "corporate_action_status": corporate_action_status,
+        "corporate_action_gaps": resolved_corporate_action_gaps,
         "created_at_utc": stable_created_at,
     }
     receipt_bytes = canonical_json_bytes(complete_receipt)
@@ -228,6 +251,11 @@ def prepare_import(
         adapter_version=adapter_version,
         import_schema_version=IMPORT_MANIFEST_SCHEMA_VERSION,
         record_counts=record_counts,
+        covered_domains=resolved_domains,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+        corporate_action_status=corporate_action_status,
+        corporate_action_gaps=resolved_corporate_action_gaps,
         completeness_status=completeness_status,
         time_semantics=time_semantics,
         findings=findings,

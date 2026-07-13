@@ -12,9 +12,11 @@ from unittest.mock import patch
 from finharness.artifact_store import LocalArtifactStore
 from finharness.import_provenance import receipt_provenance
 from finharness.personal_finance import (
+    ImportDeletion,
     PersonalFinanceExportError,
     ingest_personal_finance_export,
 )
+from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
@@ -22,6 +24,7 @@ from finharness.statecore.models import (
     DocumentRef,
     FinancialGoal,
     ImportBatch,
+    ImportTombstone,
     InsurancePolicy,
     Liability,
     Position,
@@ -194,6 +197,208 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         self.assertEqual(Path(second.receipt_ref).read_bytes(), receipt_bytes)
         self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
         self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
+
+    def test_delta_preserves_omitted_positions_and_replays_deterministically(self) -> None:
+        base = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": symbol,
+                    "quantity": quantity,
+                    "market_value": value,
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-19T00:00:00+00:00",
+                }
+                for symbol, quantity, value in (("SPY", "1", "100"), ("QQQ", "2", "200"))
+            ]
+        )
+        first = ingest_personal_finance_export(
+            base, engine=self.engine, receipt_root=self.receipt_root
+        )
+        delta = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": "SPY",
+                    "quantity": "1.5",
+                    "market_value": "150",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-20T00:00:00+00:00",
+                }
+            ]
+        )
+        result = ingest_personal_finance_export(
+            delta,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            coverage_mode="delta",
+        )
+        before_replay = sorted(
+            (
+                position.symbol,
+                position.quantity,
+                position.market_value,
+                position.position_id,
+            )
+            for position in read_all(Position, engine=self.engine)
+            if position.snapshot_id == result.snapshot_id
+        )
+        replay = ingest_personal_finance_export(
+            delta,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            coverage_mode="delta",
+        )
+        after_replay = sorted(
+            (
+                position.symbol,
+                position.quantity,
+                position.market_value,
+                position.position_id,
+            )
+            for position in read_all(Position, engine=self.engine)
+            if position.snapshot_id == replay.snapshot_id
+        )
+        self.assertEqual(first.snapshot_id != result.snapshot_id, True)
+        self.assertEqual({row[0] for row in before_replay}, {"SPY", "QQQ"})
+        self.assertEqual(before_replay, after_replay)
+        batch = next(
+            batch
+            for batch in read_all(ImportBatch, engine=self.engine)
+            if batch.batch_id == result.batch_id
+        )
+        self.assertEqual(batch.coverage_mode, "delta")
+
+    def test_full_import_records_disappeared_position_tombstone(self) -> None:
+        base = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": symbol,
+                    "quantity": "1",
+                    "market_value": "100",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-19T00:00:00+00:00",
+                }
+                for symbol in ("SPY", "QQQ")
+            ]
+        )
+        first = ingest_personal_finance_export(
+            base, engine=self.engine, receipt_root=self.receipt_root
+        )
+        removed_position = next(
+            position
+            for position in read_all(Position, engine=self.engine)
+            if position.snapshot_id == first.snapshot_id and position.symbol == "QQQ"
+        )
+        corrected = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": "SPY",
+                    "quantity": "1",
+                    "market_value": "110",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-20T00:00:00+00:00",
+                }
+            ]
+        )
+        second = ingest_personal_finance_export(
+            corrected,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            supersedes_batch_id=first.batch_id,
+            correction_reason="source export repaired a stale QQQ row",
+        )
+        latest_symbols = {
+            position.symbol
+            for position in read_all(Position, engine=self.engine)
+            if position.snapshot_id == second.snapshot_id
+        }
+        self.assertEqual(latest_symbols, {"SPY"})
+        tombstone = next(iter(read_all(ImportTombstone, engine=self.engine)))
+        self.assertEqual(tombstone.record_id, removed_position.position_id)
+        self.assertEqual(tombstone.reason, "absent_from_full_import")
+        diff = diff_snapshots(first.snapshot_id, second.snapshot_id, engine=self.engine)
+        self.assertEqual(diff.changed[0].change_reason, "correction")
+        self.assertEqual(diff.removed[0].change_reason, "correction")
+        self.assertEqual(
+            diff.corporate_action_gaps,
+            ("corporate_action_semantics_not_supported",),
+        )
+        receipt = json.loads(Path(second.receipt_ref).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["supersedes_batch_id"], first.batch_id)
+        self.assertEqual(receipt["correction_reason"], "source export repaired a stale QQQ row")
+
+    def test_delta_tombstone_deletes_source_owned_row(self) -> None:
+        columns = [
+            "record_type",
+            "liability_id",
+            "name",
+            "liability_type",
+            "balance",
+            "currency",
+            "as_of_utc",
+        ]
+        base = self.write_export(
+            [
+                {
+                    "record_type": "liability",
+                    "liability_id": liability_id,
+                    "name": liability_id,
+                    "liability_type": "loan",
+                    "balance": balance,
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-19T00:00:00+00:00",
+                }
+                for liability_id, balance in (("liab_a", "100"), ("liab_b", "200"))
+            ],
+            columns=columns,
+        )
+        ingest_personal_finance_export(base, engine=self.engine, receipt_root=self.receipt_root)
+        delta = self.write_export(
+            [
+                {
+                    "record_type": "liability",
+                    "liability_id": "liab_a",
+                    "name": "liab_a",
+                    "liability_type": "loan",
+                    "balance": "150",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-20T00:00:00+00:00",
+                }
+            ],
+            columns=columns,
+        )
+        ingest_personal_finance_export(
+            delta,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            coverage_mode="delta",
+            tombstones=(ImportDeletion("Liability", "liab_b", "source row deleted"),),
+        )
+        self.assertEqual(
+            {row.liability_id for row in read_all(Liability, engine=self.engine)},
+            {"liab_a"},
+        )
+        tombstone = next(iter(read_all(ImportTombstone, engine=self.engine)))
+        self.assertEqual(tombstone.reason, "source row deleted")
 
     def test_failed_materialization_leaves_replayable_evidence(self) -> None:
         export = self.write_export(

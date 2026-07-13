@@ -379,6 +379,7 @@
         "src/finharness/exposure.py",
         "src/finharness/ips.py",
         "src/finharness/import_provenance.py",
+        "src/finharness/personal_finance.py",
         "src/finharness/proposal_queue_checks.py",
         "src/finharness/review_read.py",
         "src/finharness/scaffold_candidate_preflight.py",

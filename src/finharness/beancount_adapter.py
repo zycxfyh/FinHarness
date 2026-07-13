@@ -648,6 +648,8 @@ def ingest_beancount_ledger(
         completeness_status=completeness_status(findings),
         time_semantics=time_contract.as_dict(),
         findings=[finding.as_dict() for finding in findings],
+        covered_domains=["account", "position", "liability", "cashflow"],
+        corporate_action_status="unsupported_gap" if positions else "not_applicable",
     )
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,

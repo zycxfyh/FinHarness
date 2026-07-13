@@ -7,13 +7,14 @@ from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import Engine
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from finharness.position_valuation import reconcile_position_totals
-from finharness.statecore.models import Position, Snapshot
+from finharness.statecore.models import ImportBatch, Position, ReceiptManifest, Snapshot
 from finharness.statecore.store import StateCoreStoreError
 
 ChangeType = Literal["added", "removed", "changed"]
+ChangeReason = Literal["transaction_like", "price_fx", "deletion", "correction"]
 PositionKey = tuple[str, str]
 
 
@@ -32,6 +33,7 @@ class PositionExposure:
 @dataclass(frozen=True)
 class PositionChange:
     change_type: ChangeType
+    change_reason: ChangeReason
     account_id: str
     symbol: str
     before_quantity: float
@@ -62,6 +64,7 @@ class SnapshotDiff:
     per_currency_totals_after: dict[str, float]
     valuation_blockers: tuple[str, ...]
     source_refs: tuple[str, ...]
+    corporate_action_gaps: tuple[str, ...]
     non_claims: tuple[str, ...] = (
         "Descriptive state diff only.",
         "Not investment advice.",
@@ -138,6 +141,7 @@ def _change(
     key: PositionKey,
     before: PositionExposure | None,
     after: PositionExposure | None,
+    correction_reason: str | None = None,
 ) -> PositionChange:
     exposure = after or before
     if exposure is None:  # Defensive: callers always supply one side.
@@ -149,9 +153,18 @@ def _change(
     source_refs = tuple(
         sorted(set(before.source_refs if before else ()).union(after.source_refs if after else ()))
     )
+    if correction_reason is not None:
+        change_reason: ChangeReason = "correction"
+    elif after is None:
+        change_reason = "deletion"
+    elif before is None or before.quantity != after.quantity:
+        change_reason = "transaction_like"
+    else:
+        change_reason = "price_fx"
     # Aggregate exactly in Decimal, present the diff as float (JSON/evidence layer).
     return PositionChange(
         change_type=change_type,
+        change_reason=change_reason,
         account_id=key[0],
         symbol=exposure.symbol,
         before_quantity=float(before_quantity),
@@ -194,6 +207,11 @@ def diff_snapshots(
         ).all()
         before_positions = _positions_by_key(session, before_snapshot_id)
         after_positions = _positions_by_key(session, after_snapshot_id)
+        after_batch = session.exec(
+            select(ImportBatch)
+            .join(ReceiptManifest, col(ReceiptManifest.batch_id) == ImportBatch.batch_id)
+            .where(ReceiptManifest.snapshot_id == after_snapshot_id)
+        ).first()
 
     before_keys = set(before_positions)
     after_keys = set(after_positions)
@@ -201,12 +219,23 @@ def diff_snapshots(
     removed_keys = before_keys - after_keys
     common_keys = before_keys & after_keys
 
-    added = tuple(_change("added", key, None, after_positions[key]) for key in sorted(added_keys))
+    correction_reason = after_batch.correction_reason if after_batch is not None else None
+    added = tuple(
+        _change("added", key, None, after_positions[key], correction_reason=correction_reason)
+        for key in sorted(added_keys)
+    )
     removed = tuple(
-        _change("removed", key, before_positions[key], None) for key in sorted(removed_keys)
+        _change("removed", key, before_positions[key], None, correction_reason=correction_reason)
+        for key in sorted(removed_keys)
     )
     changed = tuple(
-        _change("changed", key, before_positions[key], after_positions[key])
+        _change(
+            "changed",
+            key,
+            before_positions[key],
+            after_positions[key],
+            correction_reason=correction_reason,
+        )
         for key in sorted(common_keys)
         if (
             before_positions[key].quantity != after_positions[key].quantity
@@ -247,5 +276,8 @@ def diff_snapshots(
         valuation_blockers=tuple(before_totals.blockers + after_totals.blockers),
         source_refs=tuple(
             sorted(set(before_snapshot.source_refs).union(after_snapshot.source_refs))
+        ),
+        corporate_action_gaps=(
+            tuple(after_batch.corporate_action_gaps) if after_batch is not None else ()
         ),
     )
