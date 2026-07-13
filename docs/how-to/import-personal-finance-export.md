@@ -51,6 +51,9 @@ cost_basis
 effective_at_utc
 observed_at_utc
 valued_at_utc
+source_namespace
+instrument_type
+instrument_venue
 ```
 
 All rows in one file must share the same clocks. New exports should provide the
@@ -58,12 +61,19 @@ three explicit optional clocks; `as_of_utc` is retained as a compatibility
 projection and produces a `partial` finding when one of them is absent. All
 timestamps must include a UTC offset.
 
+For a readiness-complete position import, provide `instrument_type` and
+`instrument_venue` (exchange/MIC where available). `source_namespace` identifies
+the upstream provider; when omitted it is derived from the adapter and source
+path. Missing instrument identity fields do not discard the holding, but they
+produce a blocking `instrument_identity_unresolved` finding and leave
+`Position.instrument_id` null. A symbol alone is never treated as identity.
+
 Example:
 
 ```csv
-account_id,account_name,account_kind,venue,symbol,quantity,market_value,cost_basis,currency,effective_at_utc,observed_at_utc,valued_at_utc,as_of_utc
-Assets:Brokerage,Brokerage,broker,beancount,SPY,1.5,750.25,700.00,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
-Assets:Cash,Cash,cash,beancount,CASH:USD,1000,1000,,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
+account_id,account_name,account_kind,venue,symbol,instrument_type,instrument_venue,quantity,market_value,cost_basis,currency,effective_at_utc,observed_at_utc,valued_at_utc,as_of_utc
+Assets:Brokerage,Brokerage,broker,beancount,SPY,equity,ARCX,1.5,750.25,700.00,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
+Assets:Cash,Cash,cash,beancount,USD,cash,global,1000,1000,,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
 ```
 
 ### Typed CSV Contract
@@ -111,6 +121,7 @@ The task writes:
 ```text
 state-core Account rows
 state-core Position rows
+state-core AccountIdentity / InstrumentIdentity / IdentityAlias rows
 state-core Liability / FinancialGoal / CashflowEvent / TaxEvent /
   InsurancePolicy / DocumentRef rows when typed rows are present
 one Snapshot (kind=portfolio only when the file has positions; otherwise

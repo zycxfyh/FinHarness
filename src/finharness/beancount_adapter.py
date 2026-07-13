@@ -34,9 +34,17 @@ from finharness.capital_import_contract import (
 )
 from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.project_paths import ROOT
+from finharness.statecore.identities import (
+    account_identity,
+    instrument_identity,
+    unresolved_instrument_finding,
+)
 from finharness.statecore.models import (
     Account,
+    AccountIdentity,
     CashflowEvent,
+    IdentityAlias,
+    InstrumentIdentity,
     Liability,
     Position,
     ReceiptIndex,
@@ -143,9 +151,7 @@ def _ledger_metadata(
         if type(entry).__name__ == "Price" and getattr(entry, "date", None) is not None
     ]
     effective_at = f"{max(dated).isoformat()}T00:00:00+00:00"
-    valued_at = (
-        f"{max(price_dates).isoformat()}T00:00:00+00:00" if price_dates else None
-    )
+    valued_at = f"{max(price_dates).isoformat()}T00:00:00+00:00" if price_dates else None
     return loaded_files, operating, effective_at, valued_at
 
 
@@ -290,21 +296,44 @@ def _records_from_rows(
     assets_root: str,
     liabilities_root: str,
     operating_currencies: set[str],
-) -> tuple[list[Account], list[Position], list[Liability], list[str]]:
+) -> tuple[
+    list[Account],
+    list[AccountIdentity],
+    list[InstrumentIdentity],
+    list[IdentityAlias],
+    list[Position],
+    list[Liability],
+    list[str],
+    list[str],
+]:
     accounts: dict[str, Account] = {}
+    account_identities: dict[str, AccountIdentity] = {}
+    instrument_identities: dict[str, InstrumentIdentity] = {}
+    aliases: dict[str, IdentityAlias] = {}
     positions: list[Position] = []
     liabilities: list[Liability] = []
     data_gaps: list[str] = []
+    unresolved_identities: list[str] = []
+    source_namespace = f"beancount:{source_refs[-1]}"
     for index, (account, currency, units_inv, market_inv) in enumerate(rows, start=1):
         units = _amount(units_inv)
         if units is None or units[0] == 0:
             continue
         market = _amount(market_inv)
         if account.startswith(f"{assets_root}:"):
+            account_identity_record, account_alias = account_identity(
+                source_namespace=source_namespace,
+                source_native_id=account,
+                source_refs=source_refs,
+            )
+            canonical_account_id = account_identity_record.canonical_account_id
+            account_identities.setdefault(canonical_account_id, account_identity_record)
+            aliases.setdefault(account_alias.alias_id, account_alias)
             accounts.setdefault(
-                account,
+                canonical_account_id,
                 Account(
-                    account_id=_safe_id(account),
+                    account_id=canonical_account_id,
+                    canonical_account_id=canonical_account_id,
                     kind="beancount",
                     venue="beancount",
                     display_name=account,
@@ -330,11 +359,27 @@ def _records_from_rows(
                     currency_code(market[1], field="valuation_currency")
                 except CapitalImportContractError as exc:
                     raise BeancountLedgerError(str(exc)) from exc
+            instrument_id: str | None = None
+            if currency.upper() in operating_currencies:
+                instrument, alias = instrument_identity(
+                    symbol=currency,
+                    instrument_type="cash",
+                    venue="global",
+                    quote_currency=currency,
+                    provider_namespace=source_namespace,
+                    source_refs=source_refs,
+                )
+                instrument_id = instrument.instrument_id
+                instrument_identities.setdefault(instrument_id, instrument)
+                aliases.setdefault(alias.alias_id, alias)
+            else:
+                unresolved_identities.append(currency.upper())
             positions.append(
                 Position(
                     position_id=_safe_id(f"pos_{snapshot_id}_{index}_{account}_{currency}"),
                     snapshot_id=snapshot_id,
-                    account_id=_safe_id(account),
+                    account_id=canonical_account_id,
+                    instrument_id=instrument_id,
                     symbol=currency.upper(),
                     quantity=units[0],
                     market_value=market_value,
@@ -362,7 +407,16 @@ def _records_from_rows(
                     source_refs=source_refs,
                 )
             )
-    return list(accounts.values()), positions, liabilities, sorted(set(data_gaps))
+    return (
+        list(accounts.values()),
+        list(account_identities.values()),
+        list(instrument_identities.values()),
+        list(aliases.values()),
+        positions,
+        liabilities,
+        sorted(set(data_gaps)),
+        sorted(set(unresolved_identities)),
+    )
 
 
 def _receipt_payload(
@@ -446,7 +500,16 @@ def ingest_beancount_ledger(
     receipt_path = Path(receipt_root) / f"{receipt_id}.json"
     receipt_ref = display_path(receipt_path)
     source_refs = [receipt_ref, display_path(source_path)]
-    accounts, positions, liabilities, data_gaps = _records_from_rows(
+    (
+        accounts,
+        account_identities,
+        instrument_identities,
+        identity_aliases,
+        positions,
+        liabilities,
+        data_gaps,
+        unresolved_identities,
+    ) = _records_from_rows(
         rows,
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
@@ -469,6 +532,21 @@ def ingest_beancount_ledger(
             field="market_value",
         )
         for symbol in data_gaps
+    )
+    findings.extend(
+        ImportFinding(
+            finding.code,
+            finding.severity,
+            finding.message,
+            record_type="position",
+            field=finding.field,
+        )
+        for symbol in unresolved_identities
+        for finding in [
+            unresolved_instrument_finding(
+                record_id=f"symbol:{symbol}", missing_fields=("instrument_type", "venue")
+            )
+        ]
     )
     if positions and valued_at_utc is None:
         findings.append(
@@ -568,6 +646,9 @@ def ingest_beancount_ledger(
     )
     records: list[StateCoreRecord] = [
         snapshot,
+        *account_identities,
+        *instrument_identities,
+        *identity_aliases,
         *accounts,
         *positions,
         *liabilities,

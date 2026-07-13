@@ -46,6 +46,12 @@ semantics, and structured findings. Both current adapters declare
 Beancount loader errors abort the import. Operators cannot accidentally accept
 a partial ledger merely because `beanquery` can return some rows.
 
+Account and instrument equality is governed by the separate
+[`canonical-capital-identities`](canonical-capital-identities.md) contract.
+Source-native account IDs are namespaced; ticker symbols never become canonical
+instrument IDs on their own. Missing type or venue evidence produces a blocking
+`instrument_identity_unresolved` finding.
+
 `ReceiptManifest` binds that batch to the immutable receipt artifact, receipt
 hash, compatibility receipt path, snapshot, record counts, and the
 `materialized` database state. A manifest row is never written for a failed
@@ -66,6 +72,9 @@ transaction.
   not fabricate historical source hashes or manifests. Migration v8 adds time
   and finding columns and labels existing batches `legacy_unknown` instead of
   inventing clocks or completeness.
+- Migration v9 adds canonical identity tables and nullable account/position
+  bindings. Existing rows remain unresolved; the migration does not hash legacy
+  labels or symbols into invented identities.
 
 The compatibility JSON receipt remains for existing operators. Its immutable
 Artifact Store descriptor and bytes are the integrity authority for new imports.

@@ -35,11 +35,19 @@ from finharness.capital_import_contract import (
 )
 from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.project_paths import ROOT
+from finharness.statecore.identities import (
+    account_identity,
+    instrument_identity,
+    unresolved_instrument_finding,
+)
 from finharness.statecore.models import (
     Account,
+    AccountIdentity,
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
+    IdentityAlias,
+    InstrumentIdentity,
     InsurancePolicy,
     Liability,
     Position,
@@ -162,9 +170,7 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
             _validate_columns(fieldnames, rows)
             return rows
     except OSError as exc:
-        raise PersonalFinanceExportError(
-            f"personal-finance export unreadable: {exc}"
-        ) from exc
+        raise PersonalFinanceExportError(f"personal-finance export unreadable: {exc}") from exc
 
 
 def _validate_columns(fieldnames: set[str], rows: list[dict[str, str]]) -> None:
@@ -364,16 +370,45 @@ class _IngestContext:
     as_of_utc: str
     source_refs: list[str]
     accounts: dict[str, Account]
+    account_identities: dict[str, AccountIdentity]
+    instrument_identities: dict[str, InstrumentIdentity]
+    aliases: dict[str, IdentityAlias]
+    source_namespace: str
 
 
 def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Position:
-    account_id = _required_text(row, "account_id", row_number=index)
+    source_native_id = _required_text(row, "account_id", row_number=index)
+    namespace = _optional_text(row, "source_namespace") or ctx.source_namespace
+    account_identity_record, account_alias = account_identity(
+        source_namespace=namespace,
+        source_native_id=source_native_id,
+        source_refs=ctx.source_refs,
+    )
+    account_id = account_identity_record.canonical_account_id
     symbol = _required_text(row, "symbol", row_number=index).upper()
-    _currency(row, row_number=index)
+    quote_currency = _currency(row, row_number=index)
+    instrument_type = _optional_text(row, "instrument_type")
+    instrument_venue = _optional_text(row, "instrument_venue")
+    resolved_instrument_id: str | None = None
+    if instrument_type and instrument_venue:
+        instrument, instrument_alias = instrument_identity(
+            symbol=symbol,
+            instrument_type=instrument_type,
+            venue=instrument_venue,
+            quote_currency=quote_currency,
+            provider_namespace=namespace,
+            source_refs=ctx.source_refs,
+        )
+        resolved_instrument_id = instrument.instrument_id
+        ctx.instrument_identities.setdefault(instrument.instrument_id, instrument)
+        ctx.aliases.setdefault(instrument_alias.alias_id, instrument_alias)
+    ctx.account_identities.setdefault(account_id, account_identity_record)
+    ctx.aliases.setdefault(account_alias.alias_id, account_alias)
     ctx.accounts.setdefault(
         account_id,
         Account(
             account_id=account_id,
+            canonical_account_id=account_id,
             kind=_required_text(row, "account_kind", row_number=index),
             venue=_required_text(row, "venue", row_number=index),
             display_name=_required_text(row, "account_name", row_number=index),
@@ -386,6 +421,7 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
         position_id=_safe_id(f"pos_{ctx.snapshot_id}_{index}_{account_id}_{symbol}"),
         snapshot_id=ctx.snapshot_id,
         account_id=account_id,
+        instrument_id=resolved_instrument_id,
         symbol=symbol,
         quantity=_decimal_value(row, "quantity", row_number=index),
         market_value=_decimal_value(row, "market_value", row_number=index),
@@ -517,10 +553,13 @@ def _records_from_rows(
         as_of_utc=as_of_utc,
         source_refs=source_refs,
         accounts={},
+        account_identities={},
+        instrument_identities={},
+        aliases={},
+        source_namespace=f"{EXPORT_KIND}:{display_path(source_path)}",
     )
     built: list[StateCoreRecord] = [
-        _ROW_BUILDERS[_row_type(row)](row, index, ctx)
-        for index, row in enumerate(rows, start=1)
+        _ROW_BUILDERS[_row_type(row)](row, index, ctx) for index, row in enumerate(rows, start=1)
     ]
     # Tag source-owned rows so a re-import replaces exactly this adapter's rows.
     for record in built:
@@ -543,7 +582,40 @@ def _records_from_rows(
         ),
         source_refs=source_refs,
     )
-    return [snapshot, *ctx.accounts.values(), *built]
+    return [
+        snapshot,
+        *ctx.account_identities.values(),
+        *ctx.instrument_identities.values(),
+        *ctx.aliases.values(),
+        *ctx.accounts.values(),
+        *built,
+    ]
+
+
+def _identity_findings(rows: list[dict[str, str]]) -> list[ImportFinding]:
+    findings: list[ImportFinding] = []
+    for index, row in enumerate(rows, start=1):
+        if _row_type(row) != "position":
+            continue
+        missing = [
+            field
+            for field in ("instrument_type", "instrument_venue")
+            if not (row.get(field) or "").strip()
+        ]
+        if not missing:
+            continue
+        finding = unresolved_instrument_finding(record_id=f"row:{index}", missing_fields=missing)
+        findings.append(
+            ImportFinding(
+                finding.code,
+                finding.severity,
+                finding.message,
+                record_type="position",
+                record_number=index,
+                field=finding.field,
+            )
+        )
+    return findings
 
 
 def ingest_personal_finance_export(
@@ -579,6 +651,7 @@ def ingest_personal_finance_export(
     time_semantics, findings = _time_contract(
         rows, ingested_at_utc=source_descriptor.created_at_utc
     )
+    findings.extend(_identity_findings(rows))
     as_of_utc = str(time_semantics["observed_at_utc"])
     base_id = _safe_id(source_hash[:12])
     active_snapshot_id = snapshot_id or f"snap_personal_finance_{base_id}"
@@ -652,9 +725,7 @@ def ingest_personal_finance_export(
         goal_count=sum(1 for record in records if isinstance(record, FinancialGoal)),
         cashflow_count=sum(1 for record in records if isinstance(record, CashflowEvent)),
         tax_event_count=sum(1 for record in records if isinstance(record, TaxEvent)),
-        insurance_policy_count=sum(
-            1 for record in records if isinstance(record, InsurancePolicy)
-        ),
+        insurance_policy_count=sum(1 for record in records if isinstance(record, InsurancePolicy)),
         document_count=sum(1 for record in records if isinstance(record, DocumentRef)),
         as_of_utc=as_of_utc,
         completeness_status=completeness_status(findings),
