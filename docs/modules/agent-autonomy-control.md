@@ -56,7 +56,7 @@ admitted and denied attempts into its terminal artifacts.
 ## Important files
 
 - `src/finharness/autonomy_control.py`
-- `src/finharness/statecore/autonomy_adapter.py`
+- `src/finharness/agent_autonomy_adapter.py`
 - `src/finharness/agent_work_loop.py`
 - `tests/test_autonomy_control.py`
 - `tests/test_autonomy_statecore_adapter.py`

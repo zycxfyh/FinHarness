@@ -182,6 +182,7 @@ def _task_check_layering(root: Path) -> bool:
                 "test:integration",
                 "test:frontend",
                 "governance:check",
+                "architecture:check",
                 "rules:audit",
             ],
             dependencies("check:research") == ["check:ci", "experiments", "eval:smoke"],
