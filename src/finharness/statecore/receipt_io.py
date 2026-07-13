@@ -27,9 +27,7 @@ def resolve_under(root: str | Path, *parts: str | Path) -> Path:
     root_real = os.path.realpath(root)
     candidate = os.path.realpath(Path(root_real).joinpath(*[str(part) for part in parts]))
     if candidate != root_real and not candidate.startswith(root_real + os.sep):
-        raise ReceiptPathError(
-            f"receipt path {candidate} escapes its allowed root {root_real}"
-        )
+        raise ReceiptPathError(f"receipt path {candidate} escapes its allowed root {root_real}")
     return Path(candidate)
 
 
@@ -42,6 +40,30 @@ def atomic_write_text(path: str | Path, content: str) -> Path:
         with NamedTemporaryFile(
             "w",
             encoding="utf-8",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+            temp_file.flush()
+        temp_path.replace(target)
+    except Exception:
+        if temp_path is not None:
+            remove_file_best_effort(temp_path)
+        raise
+    return target
+
+
+def atomic_write_bytes(path: str | Path, content: bytes) -> Path:
+    """Write bytes by replacing the target with a complete, flushed temp file."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "wb",
             dir=target.parent,
             prefix=f".{target.name}.",
             suffix=".tmp",
