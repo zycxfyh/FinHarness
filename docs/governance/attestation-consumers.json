@@ -37,10 +37,10 @@
     },
     "by_disposition": {
       "deprecate_after_replacement": 3,
-      "dual_read_transition": 7,
-      "investigate": 4,
+      "dual_read_transition": 6,
+      "investigate": 3,
       "migrate_to_decision_validity": 10,
-      "preserve": 15,
+      "preserve": 17,
       "remove_canonical_claim": 4
     },
     "high_or_critical_count": 12
@@ -436,27 +436,29 @@
     {
       "consumer_id": "ATT-CONS-015",
       "path": "src/finharness/api/routes_cockpit.py",
-      "symbol": "count_open_for_review",
-      "line_start": 121,
-      "line_end": 130,
+      "symbol": "_open_proposal_count",
+      "line_start": 118,
+      "line_end": 143,
       "match_terms": [
         "Attestation",
-        "attestations",
-        "attested_ids"
+        "attestation_id"
       ],
       "role": "read_projection",
-      "current_behavior": "Counts open proposals by filtering out attested ones.",
+      "current_behavior": "Counts open current proposal revisions with a correlated SQL existence query over terminal attestations.",
       "decision_semantics": "review_completion_proxy",
-      "version_binding": "proposal_id_only",
+      "version_binding": "proposal_version_bound",
       "authority_effect": "",
-      "risk": "low",
-      "disposition": "dual_read_transition",
-      "target_owner": "DecisionValidity",
+      "risk": "medium",
+      "disposition": "preserve",
+      "target_owner": "Cockpit read projection",
       "prerequisites": [],
-      "recommended_change": "Count from DecisionValidity. Fall back to Attestation.",
-      "test_implications": [],
+      "recommended_change": "Keep the aggregate query aligned with attestation_closes_current_review semantics.",
+      "test_implications": [
+        "Current, stale, legacy, and absent attestations must produce the same open count as the canonical review semantics."
+      ],
       "evidence": [
-        "routes_cockpit.py:120-123"
+        "routes_cockpit.py:118-143",
+        "tests/test_statecore_api.py:351-408"
       ]
     },
     {
@@ -929,27 +931,29 @@
     {
       "consumer_id": "ATT-CONS-034",
       "path": "tests/test_statecore_api.py",
-      "symbol": "attestation endpoint test",
-      "line_start": 320,
-      "line_end": 350,
+      "symbol": "dashboard attestation aggregation tests",
+      "line_start": 314,
+      "line_end": 408,
       "match_terms": [
-        "/proposals/{proposal_id}/attest"
+        "Attestation",
+        "attestation_id",
+        "attestations"
       ],
       "role": "test_contract",
-      "current_behavior": "Tests /attest endpoint, attestation read, open_for_review, status filtering.",
-      "decision_semantics": "legacy_unbound_decision",
-      "version_binding": "proposal_id_only",
+      "current_behavior": "Proves the dashboard uses aggregate SQL and preserves current-revision attestation semantics.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_version_bound",
       "authority_effect": "",
-      "risk": "low",
-      "disposition": "investigate",
+      "risk": "medium",
+      "disposition": "preserve",
       "target_owner": "Test maintainer",
       "prerequisites": [],
-      "recommended_change": "Add dual-read transition tests when DecisionRecord exists.",
+      "recommended_change": "Retain parity coverage whenever proposal revision or attestation binding changes.",
       "test_implications": [
-        "Full attestation API contract."
+        "Dashboard open counts distinguish stale from current revision attestations."
       ],
       "evidence": [
-        "test_statecore_api.py:320-350"
+        "test_statecore_api.py:314-408"
       ]
     },
     {
@@ -1644,57 +1648,39 @@
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 150,
-      "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 143."
-    },
-    {
-      "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 150,
+      "match_line": 260,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 143."
+      "reason": "Timeline collection name outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 184,
-      "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 184."
-    },
-    {
-      "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 252,
-      "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 252."
-    },
-    {
-      "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 254,
+      "match_line": 262,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 254."
+      "reason": "Timeline bounded read outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 255,
+      "match_line": 263,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 255."
+      "reason": "Timeline ordering outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 255,
+      "match_line": 263,
       "term": "attestation_id",
-      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 255."
+      "reason": "Timeline deterministic ordering key outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 287,
+      "match_line": 295,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 287."
+      "reason": "Timeline rendering loop outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 291,
+      "match_line": 299,
       "term": "attestation_id",
-      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 291."
+      "reason": "Timeline object identifier outside the dashboard open-count consumer."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
@@ -1998,99 +1984,105 @@
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 15,
+      "match_line": 18,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 15."
+      "reason": "Model import outside the dashboard aggregation test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 562,
+      "match_line": 495,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "OpenAPI route allowlist entry, not attestation decision logic."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 737,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 547."
+      "reason": "OpenAPI schema allowlist entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 809,
+      "match_line": 984,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 794."
+      "reason": "Attestation endpoint contract covered by its dedicated API test."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 817,
+      "match_line": 992,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 802."
+      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 821,
+      "match_line": 996,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 806."
+      "reason": "Attestation endpoint contract covered by its dedicated API test."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 838,
+      "match_line": 1013,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 823."
+      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 838,
+      "match_line": 1013,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 823."
+      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 840,
+      "match_line": 1015,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 825."
+      "reason": "Attestation endpoint row-count assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 842,
+      "match_line": 1017,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 827."
+      "reason": "Attestation endpoint revision-binding assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 876,
+      "match_line": 1051,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 861."
+      "reason": "Proposal detail endpoint contract outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 893,
+      "match_line": 1068,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 878."
+      "reason": "Proposal detail response assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 971,
+      "match_line": 1146,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 956."
+      "reason": "Attestation failure-path endpoint contract outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 981,
+      "match_line": 1156,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 966."
+      "reason": "Attestation failure-path persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 982,
+      "match_line": 1157,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 967."
+      "reason": "Attestation failure-path receipt assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1087,
+      "match_line": 1260,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1072."
+      "reason": "HTTP mutation policy table entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1190,
+      "match_line": 1363,
       "term": "/proposals/{proposal_id}/attest",
-      "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1170."
+      "reason": "HTTP write-guard table entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_store.py",

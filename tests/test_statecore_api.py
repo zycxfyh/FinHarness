@@ -4,8 +4,11 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
+
+from sqlalchemy import event
 
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
@@ -231,6 +234,178 @@ class StateCoreApiTest(unittest.TestCase):
 
         self.assertEqual(receipt.status_code, 200)
         self.assertEqual(receipt.json()["path"], "data/receipts/after.json")
+
+    def test_state_collections_apply_documented_query_budget(self) -> None:
+        schema = self.client.get("/openapi.json").json()
+        paths = (
+            "/state/accounts",
+            "/state/positions",
+            "/state/liabilities",
+            "/state/goals",
+            "/state/cashflows",
+            "/state/tax-events",
+            "/state/insurance",
+            "/state/documents",
+            "/snapshots",
+        )
+        for path in paths:
+            parameters = {
+                parameter["name"]: parameter
+                for parameter in schema["paths"][path]["get"]["parameters"]
+            }
+            self.assertEqual(parameters["limit"]["schema"]["default"], 100)
+            self.assertEqual(parameters["limit"]["schema"]["maximum"], 200)
+            self.assertEqual(parameters["offset"]["schema"]["default"], 0)
+            self.assertEqual(parameters["offset"]["schema"]["minimum"], 0)
+        position_parameters = {
+            parameter["name"]: parameter
+            for parameter in schema["paths"]["/state/positions"]["get"]["parameters"]
+        }
+        self.assertTrue(position_parameters["snapshot_id"]["required"])
+
+    def test_large_history_is_bounded_and_pages_are_stable(self) -> None:
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        snapshots = [
+            Snapshot(
+                snapshot_id=f"history_{index:03d}",
+                kind="history-test",
+                as_of_utc=(base + timedelta(minutes=index)).isoformat(),
+                payload={},
+                source_refs=["test://large-history"],
+            )
+            for index in range(205)
+        ]
+        positions = [
+            Position(
+                position_id=f"large_position_{index:03d}",
+                snapshot_id="snap_after",
+                account_id="acct_api",
+                symbol=f"TEST{index:03d}",
+                quantity=1,
+                market_value=1,
+                source_refs=["test://large-history"],
+            )
+            for index in range(205)
+        ]
+        write_records([*snapshots, *positions], engine=self.engine)
+
+        first = self.client.get("/snapshots", params={"kind": "history-test"})
+        second = self.client.get("/snapshots", params={"kind": "history-test", "offset": 100})
+        self.assertEqual(len(first.json()), 100)
+        self.assertEqual(len(second.json()), 100)
+        self.assertEqual(first.json()[0]["snapshot_id"], "history_000")
+        self.assertEqual(second.json()[0]["snapshot_id"], "history_100")
+        self.assertFalse(
+            {row["snapshot_id"] for row in first.json()}
+            & {row["snapshot_id"] for row in second.json()}
+        )
+
+        self.assertEqual(self.client.get("/state/positions").status_code, 422)
+        scoped = self.client.get("/state/positions", params={"snapshot_id": "snap_after"})
+        self.assertEqual(len(scoped.json()), 100)
+        self.assertEqual(
+            self.client.get(
+                "/state/positions",
+                params={"snapshot_id": "snap_after", "limit": 201},
+            ).status_code,
+            422,
+        )
+
+    def test_dashboard_uses_aggregate_queries_instead_of_full_table_reads(self) -> None:
+        statements: list[str] = []
+
+        def capture_statement(
+            _connection: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            statements.append(" ".join(statement.lower().split()))
+
+        event.listen(self.engine, "before_cursor_execute", capture_statement)
+        try:
+            response = self.client.get("/dashboard/summary")
+        finally:
+            event.remove(self.engine, "before_cursor_execute", capture_statement)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any("sum(positions.market_value)" in sql for sql in statements))
+        self.assertTrue(any("sum(liabilities.balance)" in sql for sql in statements))
+        forbidden_full_reads = (
+            "select accounts.account_id",
+            "select proposals.proposal_id",
+            "select attestations.attestation_id",
+            "select liabilities.liability_id",
+            "select financial_goals.goal_id",
+            "select cashflow_events.cashflow_id",
+            "select tax_events.tax_event_id",
+            "select insurance_policies.policy_id",
+            "select document_refs.document_id",
+            "select positions.position_id",
+        )
+        for prefix in forbidden_full_reads:
+            self.assertFalse(any(sql.startswith(prefix) for sql in statements), prefix)
+
+    def test_dashboard_open_count_respects_current_revision_attestations(self) -> None:
+        proposals = [
+            Proposal(
+                proposal_id="proposal_legacy_closed",
+                kind="test",
+                claim="legacy",
+                receipt_ref=None,
+            ),
+            Proposal(
+                proposal_id="proposal_stale_attestation",
+                kind="test",
+                claim="stale",
+                receipt_ref="receipt://current",
+            ),
+            Proposal(
+                proposal_id="proposal_current_closed",
+                kind="test",
+                claim="current",
+                receipt_ref="receipt://matched",
+            ),
+            Proposal(
+                proposal_id="proposal_open",
+                kind="test",
+                claim="open",
+                receipt_ref="receipt://open",
+            ),
+        ]
+        attestations = [
+            Attestation(
+                attestation_id="attestation_legacy",
+                proposal_id="proposal_legacy_closed",
+                attester="tester",
+                reason="closed",
+                decision="approved",
+            ),
+            Attestation(
+                attestation_id="attestation_stale",
+                proposal_id="proposal_stale_attestation",
+                attester="tester",
+                reason="old revision",
+                decision="approved",
+                source_refs=["receipt://old"],
+            ),
+            Attestation(
+                attestation_id="attestation_current",
+                proposal_id="proposal_current_closed",
+                attester="tester",
+                reason="current revision",
+                decision="rejected",
+                source_refs=["receipt://matched"],
+            ),
+        ]
+        write_records([*proposals, *attestations], engine=self.engine)
+
+        response = self.client.get("/dashboard/summary")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["open_proposal_count"], 2)
 
     def test_diff_endpoint_returns_descriptive_diff_only(self) -> None:
         response = self.client.get(
@@ -1050,9 +1225,7 @@ class WriteCapabilityGateTest(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(
-            response.json()["detail"]["code"], "write_capability_required"
-        )
+        self.assertEqual(response.json()["detail"]["code"], "write_capability_required")
         self.assertFalse(response.json()["detail"]["execution_allowed"])
         self.assertFalse(response.json()["detail"]["authority_transition"])
 
@@ -1092,24 +1265,20 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/action-intents/{action_intent_id}/simulation-reports"),
             (
                 "POST",
-                "/action-intent-simulation-reports/{simulation_report_id}"
-                "/trade-plan-candidates",
+                "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
             ),
             (
                 "POST",
-                "/trade-plan-candidates/{trade_plan_candidate_id}"
-                "/capital-objective-fits",
+                "/trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits",
             ),
             ("POST", "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates"),
             (
                 "POST",
-                "/trade-plan-candidates/{trade_plan_candidate_id}"
-                "/paper-order-ticket-candidates",
+                "/trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates",
             ),
             (
                 "POST",
-                "/paper-order-ticket-candidates/{paper_order_ticket_id}"
-                "/simulated-executions",
+                "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions",
             ),
             ("POST", "/paper-accounts"),
             ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
@@ -1142,9 +1311,13 @@ class WriteCapabilityGateTest(unittest.TestCase):
                     openapi_state_changing.add((method.upper(), path))
 
         missing = state_changing_routes - openapi_state_changing
-        extra = openapi_state_changing - state_changing_routes - {
-            ("POST", "/agent-authority-grants/{grant_id}/validate"),
-        }
+        extra = (
+            openapi_state_changing
+            - state_changing_routes
+            - {
+                ("POST", "/agent-authority-grants/{grant_id}/validate"),
+            }
+        )
         self.assertEqual(missing, set(), f"routes not in OpenAPI: {missing}")
         self.assertEqual(extra, set(), f"unexpected state_changing routes: {extra}")
 
@@ -1195,24 +1368,20 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/action-intents/{action_intent_id}/simulation-reports"),
             (
                 "POST",
-                "/action-intent-simulation-reports/{simulation_report_id}"
-                "/trade-plan-candidates",
+                "/action-intent-simulation-reports/{simulation_report_id}/trade-plan-candidates",
             ),
             (
                 "POST",
-                "/trade-plan-candidates/{trade_plan_candidate_id}"
-                "/capital-objective-fits",
+                "/trade-plan-candidates/{trade_plan_candidate_id}/capital-objective-fits",
             ),
             ("POST", "/trade-plan-candidates/{trade_plan_candidate_id}/review-gates"),
             (
                 "POST",
-                "/trade-plan-candidates/{trade_plan_candidate_id}"
-                "/paper-order-ticket-candidates",
+                "/trade-plan-candidates/{trade_plan_candidate_id}/paper-order-ticket-candidates",
             ),
             (
                 "POST",
-                "/paper-order-ticket-candidates/{paper_order_ticket_id}"
-                "/simulated-executions",
+                "/paper-order-ticket-candidates/{paper_order_ticket_id}/simulated-executions",
             ),
             ("POST", "/paper-accounts"),
             ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
