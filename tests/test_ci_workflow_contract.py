@@ -68,6 +68,43 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertEqual(upload["with"]["path"], ".artifacts/check-timing.json")
         self.assertEqual(upload["with"]["if-no-files-found"], "error")
 
+    def test_local_verification_has_one_dependency_setup_owner(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
+        steps = workflow["jobs"]["local-checks"]["steps"]
+        commands = "\n".join(str(step.get("run", "")) for step in steps)
+
+        self.assertNotIn("uv sync", commands)
+        self.assertNotIn("pnpm install", commands)
+        self.assertIn("task check:timed", commands)
+
+    def test_base_profile_has_one_pr_owner(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "dependency-profiles.yml")
+        profiles = workflow["jobs"]["isolated-profile"]["strategy"]["matrix"]["profile"]
+
+        self.assertEqual(profiles, ["data", "research", "agent", "eval"])
+        self.assertNotIn("base", profiles)
+
+    def test_governance_stage_does_not_repeat_canonical_test_gates(self) -> None:
+        taskfile = (REPO_ROOT / "Taskfile.yml").read_text(encoding="utf-8")
+        body = taskfile.split("  governance:check:\n", maxsplit=1)[1].split(
+            "\n  architecture:check:", maxsplit=1
+        )[0]
+
+        self.assertIn("task: governance:inventory", body)
+        self.assertNotIn("unittest", body)
+        self.assertNotIn("frontend/tests/", body)
+
+    def test_optional_workflows_install_only_their_runtime_profiles(self) -> None:
+        browser = (WORKFLOW_ROOT / "browser.yml").read_text(encoding="utf-8")
+        fuzz = (WORKFLOW_ROOT / "fuzz.yml").read_text(encoding="utf-8")
+
+        self.assertIn("uv sync --locked --no-default-groups", browser)
+        self.assertIn("FINHARNESS_PYTHON: .venv/bin/python", browser)
+        self.assertNotIn("--all-groups", browser)
+        self.assertNotIn("--all-groups", fuzz)
+        taskfile = (REPO_ROOT / "Taskfile.yml").read_text(encoding="utf-8")
+        self.assertIn("UV_PROJECT_ENVIRONMENT=.venv-probes/fuzz", taskfile)
+
     def test_runbook_uses_ruleset_guarded_squash_auto_merge(self) -> None:
         runbook = (
             REPO_ROOT / "docs" / "how-to" / "manage-issue-worktrees.md"

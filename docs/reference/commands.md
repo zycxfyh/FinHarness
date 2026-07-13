@@ -69,7 +69,7 @@ execution authorization.
 
 | Command | Purpose |
 | --- | --- |
-| `task governance:check` | Run EOS machine guardrails. |
+| `task governance:check` | Run governance inventory drift checks not already owned by the Python and frontend gates. |
 | `task governance:policies` | List the governance policy registry. |
 | `task governance:graphs` | List graph assets by status/consumer/owner. |
 | `task governance:dashboard` | Build governance dashboard receipt/report. |

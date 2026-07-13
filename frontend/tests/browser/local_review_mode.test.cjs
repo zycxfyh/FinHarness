@@ -20,7 +20,10 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "finharness-local-review-"));
 
 function startServer(mode) {
-  return spawn("uv", ["run", "python", "scripts/run_local_review_smoke_server.py"], {
+  const python = process.env.FINHARNESS_PYTHON;
+  return spawn(python || "uv", python
+    ? ["scripts/run_local_review_smoke_server.py"]
+    : ["run", "python", "scripts/run_local_review_smoke_server.py"], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,

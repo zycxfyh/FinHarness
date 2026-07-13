@@ -35,9 +35,12 @@ const ARTIFACTS = path.join(REPO_ROOT, "frontend", "tests", "browser", "artifact
 
 function startServer() {
   if (FAULT) return null;
+  const python = process.env.FINHARNESS_PYTHON;
   const proc = spawn(
-    "uv",
-    ["run", "python", "scripts/run_cockpit_smoke_server.py"],
+    python || "uv",
+    python
+      ? ["scripts/run_cockpit_smoke_server.py"]
+      : ["run", "python", "scripts/run_cockpit_smoke_server.py"],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, COCKPIT_SMOKE_PORT: PORT },

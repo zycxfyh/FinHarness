@@ -15,10 +15,9 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from finharness.project_paths import ROOT
-
 TIMING_SCHEMA = "finharness.check_timing.v1"
 DEFAULT_OUTPUT = Path(".artifacts/check-timing.json")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)
@@ -39,7 +38,7 @@ CHECK_STAGES: tuple[CheckStage, ...] = (
     CheckStage("base_dependency_profile", "deps:probe-base"),
     CheckStage("integration", "test:integration"),
     CheckStage("frontend", "test:frontend"),
-    CheckStage("governance", "governance:check"),
+    CheckStage("governance", "governance:inventory"),
     CheckStage("architecture", "architecture:check"),
     CheckStage("rules", "rules:audit"),
 )

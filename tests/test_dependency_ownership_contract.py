@@ -189,7 +189,7 @@ security = []
     workflow = tmp_root / ".github" / "workflows"
     workflow.mkdir(parents=True)
     (workflow / "dependency-profiles.yml").write_text(
-        "profile: [base, data, research, agent, eval]\n"
+        "profile: [data, research, agent, eval]\n"
     )
 
     # Manifest

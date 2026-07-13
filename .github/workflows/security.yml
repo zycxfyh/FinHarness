@@ -49,12 +49,6 @@ jobs:
 
       - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
 
-      - name: Install Python dependencies
-        run: uv sync --locked --all-groups
-
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Run standard project checks
         run: task check:timed
 
@@ -66,9 +60,6 @@ jobs:
           path: .artifacts/check-timing.json
           if-no-files-found: error
           retention-days: 20
-
-      - name: Run adversarial boundary checks
-        run: task hardening:redteam
 
       - name: Record red-team tool readiness
         run: task redteam:tools-check

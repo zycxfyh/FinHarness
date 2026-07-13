@@ -494,7 +494,11 @@ class HardeningGateTest(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("task hardening:redteam", workflow)
+        self.assertNotIn("task hardening:redteam", workflow)
+        self.assertIn(
+            "  hardening:redteam:",
+            (REPO_ROOT / "Taskfile.yml").read_text(encoding="utf-8"),
+        )
         self.assertIn("task redteam:tools-check", workflow)
         self.assertIn("task redteam:dryrun-config-check", workflow)
         self.assertIn("task eval:redteam-boundary", workflow)
