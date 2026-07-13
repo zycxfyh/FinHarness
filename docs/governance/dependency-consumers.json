@@ -106,7 +106,9 @@
         "src/finharness/api/routes_review.py",
         "src/finharness/api/routes_risk.py",
         "src/finharness/api/routes_state.py",
+        "src/finharness/identity.py",
         "src/finharness/local_operator.py",
+        "tests/test_authenticated_identity.py",
         "tests/test_local_review_mode.py"
       ],
       "task_consumers": [

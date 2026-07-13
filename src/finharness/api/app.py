@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from time import perf_counter
 
 from fastapi import FastAPI, Request
@@ -27,6 +28,7 @@ from finharness.execution.capabilities import (
     ExecutionCapabilities,
     ExecutionCapabilityDeniedError,
 )
+from finharness.identity import IdentityProvider, write_identity_receipt
 from finharness.local_operator import LocalOperatorContext
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
 from finharness.project_paths import ROOT
@@ -63,6 +65,7 @@ def create_app(
     receipt_root: str | None = None,
     market_data_receipt_root: str | None = None,
     local_operator_context: LocalOperatorContext | None = None,
+    identity_provider: IdentityProvider | None = None,
     execution_capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
 ) -> FastAPI:
     data_routers, missing_data_dependency = _load_optional_data_routers()
@@ -79,6 +82,11 @@ def create_app(
     if market_data_receipt_root is not None:
         api.state.market_data_receipt_root = market_data_receipt_root
     api.state.local_operator_context = local_operator_context
+    api.state.identity_provider = identity_provider or (
+        local_operator_context.identity_provider()
+        if isinstance(local_operator_context, LocalOperatorContext)
+        else None
+    )
     api.state.execution_capabilities = execution_capabilities
     api.state.data_surface_available = missing_data_dependency is None
     api.state.data_surface_missing_dependency = missing_data_dependency
@@ -100,6 +108,28 @@ def create_app(
         ) as span:
             response = await call_next(request)
             span.set_attribute("http.response.status_code", response.status_code)
+        operator_context = getattr(request.state, "operator_context", None)
+        if (
+            operator_context is not None
+            and request.method not in {"GET", "HEAD", "OPTIONS"}
+            and response.status_code < 400
+        ):
+            identity_receipt_root = Path(
+                getattr(
+                    api.state,
+                    "state_core_receipt_root",
+                    ROOT / "data" / "receipts" / "state-core",
+                )
+            ) / "identity"
+            receipt_path = write_identity_receipt(
+                identity_receipt_root,
+                context=operator_context,
+                method=request.method,
+                path=request.url.path,
+                trace_id=trace_id,
+                status_code=response.status_code,
+            )
+            response.headers["X-FinHarness-Identity-Receipt"] = receipt_path.stem
         response.headers[TRACE_HEADER] = trace_id
         logger.info(
             "state_api_request",
