@@ -31,6 +31,8 @@ from finharness.statecore.models import (
     AgentAuthorityGrant,
     Attestation,
     CapitalMandate,
+    CapitalMandateLifecycleEvent,
+    CapitalMandateVersion,
     CapitalObjectiveFit,
     CashflowEvent,
     DocumentRef,
@@ -62,6 +64,8 @@ StateCoreRecord = (
     | ActionIntentSimulationReport
     | AgentAuthorityGrant
     | CapitalMandate
+    | CapitalMandateLifecycleEvent
+    | CapitalMandateVersion
     | CapitalObjectiveFit
     | TradePlanCandidate
     | TradePlanReviewGate
@@ -135,9 +139,7 @@ def _configure_sqlite(engine: Engine) -> None:
             connection.execute(text("PRAGMA foreign_keys=ON"))
             journal_mode = connection.execute(text("PRAGMA journal_mode=WAL")).scalar_one()
             if str(journal_mode).lower() != "wal":
-                raise StateCoreStoreError(
-                    f"state-core sqlite WAL mode unavailable: {journal_mode}"
-                )
+                raise StateCoreStoreError(f"state-core sqlite WAL mode unavailable: {journal_mode}")
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core sqlite configuration failed: {exc}") from exc
 
@@ -290,16 +292,10 @@ def _migrate_add_decision_scaffold_column(connection: Connection) -> None:
 
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
-        text(
-            "SELECT sql FROM sqlite_master "
-            "WHERE type = 'table' AND name = 'review_events'"
-        )
+        text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
     ).first()
     sql = str(row[0] if row else "")
-    return (
-        "'agent_review_note'" in sql
-        and "'agent_scaffold_revision_apply_candidate'" in sql
-    )
+    return "'agent_review_note'" in sql and "'agent_scaffold_revision_apply_candidate'" in sql
 
 
 def _migrate_review_events_kind_constraint(connection: Connection) -> None:
@@ -309,10 +305,7 @@ def _migrate_review_events_kind_constraint(connection: Connection) -> None:
         return
     if _review_events_kind_constraint_current(connection):
         return
-    rows = [
-        dict(row)
-        for row in connection.execute(text("SELECT * FROM review_events")).mappings()
-    ]
+    rows = [dict(row) for row in connection.execute(text("SELECT * FROM review_events")).mappings()]
     connection.execute(text("ALTER TABLE review_events RENAME TO review_events_legacy_v3"))
     SQLModel.metadata.tables["review_events"].create(connection)
     if rows:

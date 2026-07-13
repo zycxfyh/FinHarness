@@ -77,7 +77,7 @@
       "path": "src/finharness/statecore/models.py",
       "symbol": "ReviewEvent.attestation_ref",
       "line_start": 210,
-      "line_end": 241,
+      "line_end": 245,
       "match_terms": [
         "Attestation",
         "attestation_ref"
@@ -1230,7 +1230,7 @@
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 82,
+      "match_line": 86,
       "term": "Attestation",
       "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
     },
@@ -2004,91 +2004,91 @@
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 547,
+      "match_line": 556,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 547."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 794,
+      "match_line": 803,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 794."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 802,
+      "match_line": 811,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 802."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 806,
+      "match_line": 815,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 806."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 823,
+      "match_line": 832,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 823."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 823,
+      "match_line": 832,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 823."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 825,
+      "match_line": 834,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 825."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 827,
+      "match_line": 836,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 827."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 861,
+      "match_line": 870,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 861."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 878,
+      "match_line": 887,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 878."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 956,
+      "match_line": 965,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 956."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 966,
+      "match_line": 975,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 966."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 967,
+      "match_line": 976,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 967."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1072,
+      "match_line": 1081,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1072."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1170,
+      "match_line": 1182,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 1170."
     },

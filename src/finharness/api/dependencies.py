@@ -13,7 +13,7 @@ from finharness.execution.capabilities import (
     DENY_ALL_EXECUTION_CAPABILITIES,
     ExecutionCapabilities,
 )
-from finharness.identity import OperatorContext
+from finharness.identity import IdentityProvider, OperatorContext
 from finharness.local_operator import require_write_capability
 from finharness.project_paths import MARKET_DATA_RECEIPT_ROOT as DEFAULT_MARKET_DATA_RECEIPT_ROOT
 from finharness.project_paths import ROOT
@@ -48,6 +48,19 @@ ReceiptRootDependency = Annotated[Path, Depends(get_state_core_receipt_root)]
 WriteCapabilityDependency = Annotated[
     OperatorContext,
     Depends(require_write_capability),
+]
+
+
+async def get_optional_operator_context(request: Request) -> OperatorContext | None:
+    provider = getattr(request.app.state, "identity_provider", None)
+    if not isinstance(provider, IdentityProvider):
+        return None
+    return await provider.authenticate(request)
+
+
+OptionalOperatorDependency = Annotated[
+    OperatorContext | None,
+    Depends(get_optional_operator_context),
 ]
 
 
