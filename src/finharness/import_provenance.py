@@ -16,10 +16,14 @@ from finharness.artifact_store import (
     ArtifactNotFoundError,
     ArtifactStore,
 )
-from finharness.statecore.import_models import ImportBatch, ReceiptManifest
+from finharness.statecore.import_models import (
+    IMPORT_COMPLETENESS_STATUSES,
+    ImportBatch,
+    ReceiptManifest,
+)
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
 
-IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v1"
+IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v2"
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
@@ -150,10 +154,26 @@ def prepare_import(
     artifact_store: ArtifactStore,
     receipt_payload: dict[str, Any],
     created_at_utc: str,
+    completeness_status: str,
+    time_semantics: dict[str, Any],
+    findings: list[dict[str, Any]],
 ) -> PreparedImport:
     """Persist immutable evidence and construct the DB transaction envelope."""
     if coverage_mode not in {"full", "delta"}:
         raise ImportProvenanceError("coverage_mode must be full or delta")
+    if completeness_status not in IMPORT_COMPLETENESS_STATUSES:
+        raise ImportProvenanceError("completeness_status is outside the closed set")
+    required_clocks = {
+        "effective_at_utc",
+        "observed_at_utc",
+        "valued_at_utc",
+        "ingested_at_utc",
+        "recorded_at_utc",
+    }
+    if set(time_semantics) != required_clocks:
+        raise ImportProvenanceError("time_semantics must contain the five canonical clocks")
+    if any(finding.get("severity") not in {"partial", "blocking"} for finding in findings):
+        raise ImportProvenanceError("import finding severity is outside the closed set")
     batch_id = _stable_id(
         "import_batch",
         source_kind,
@@ -179,6 +199,9 @@ def prepare_import(
         "source_artifact_id": source_artifact_id,
         "coverage_mode": coverage_mode,
         "import_schema_version": IMPORT_MANIFEST_SCHEMA_VERSION,
+        "completeness_status": completeness_status,
+        "time_semantics": time_semantics,
+        "findings": findings,
         "created_at_utc": stable_created_at,
     }
     receipt_bytes = canonical_json_bytes(complete_receipt)
@@ -205,6 +228,9 @@ def prepare_import(
         adapter_version=adapter_version,
         import_schema_version=IMPORT_MANIFEST_SCHEMA_VERSION,
         record_counts=record_counts,
+        completeness_status=completeness_status,
+        time_semantics=time_semantics,
+        findings=findings,
         as_of_utc=stable_created_at,
         authority_level="read_only",
     )

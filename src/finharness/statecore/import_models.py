@@ -7,10 +7,20 @@ from typing import Any
 from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field
 
-from finharness.statecore.model_base import StateCoreBase, json_dict_column
+from finharness.statecore.model_base import (
+    StateCoreBase,
+    json_dict_column,
+    json_list_column,
+)
 
 IMPORT_COVERAGE_MODES: tuple[str, ...] = ("full", "delta")
 IMPORT_MATERIALIZATION_STATUSES: tuple[str, ...] = ("materialized",)
+IMPORT_COMPLETENESS_STATUSES: tuple[str, ...] = (
+    "complete",
+    "partial",
+    "blocked",
+    "legacy_unknown",
+)
 
 
 class ImportBatch(StateCoreBase, table=True):
@@ -21,6 +31,10 @@ class ImportBatch(StateCoreBase, table=True):
         CheckConstraint(
             "coverage_mode IN ('full', 'delta')",
             name="ck_import_batches_coverage_mode_closed",
+        ),
+        CheckConstraint(
+            "completeness_status IN ('complete', 'partial', 'blocked', 'legacy_unknown')",
+            name="ck_import_batches_completeness_status_closed",
         ),
         UniqueConstraint(
             "source_kind",
@@ -41,6 +55,9 @@ class ImportBatch(StateCoreBase, table=True):
     adapter_version: str
     import_schema_version: str
     record_counts: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    completeness_status: str = "complete"
+    time_semantics: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    findings: list[dict[str, Any]] = Field(default_factory=list, sa_column=json_list_column())
 
 
 class ReceiptManifest(StateCoreBase, table=True):

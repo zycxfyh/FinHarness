@@ -58,6 +58,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             "quantity",
             "market_value",
             "cost_basis",
+            "currency",
             "as_of_utc",
         ]
         with path.open("w", encoding="utf-8", newline="") as target:
@@ -79,6 +80,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "quantity": "1.5",
                     "market_value": "750.25",
                     "cost_basis": "700.00",
+                    "currency": "USD",
                     "as_of_utc": "2026-06-19T00:00:00+00:00",
                 },
                 {
@@ -90,6 +92,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "quantity": "1000",
                     "market_value": "1000",
                     "cost_basis": "",
+                    "currency": "USD",
                     "as_of_utc": "2026-06-19T00:00:00+00:00",
                 },
             ]
@@ -161,6 +164,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                 "quantity": "10",
                 "market_value": "10",
                 "cost_basis": "",
+                "currency": "USD",
                 "as_of_utc": "2026-06-19T00:00:00+00:00",
             }]
         )
@@ -188,6 +192,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                 "quantity": "10",
                 "market_value": "10",
                 "cost_basis": "",
+                "currency": "USD",
                 "as_of_utc": "2026-06-19T00:00:00+00:00",
             }]
         )
@@ -290,6 +295,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "symbol": "SPY",
                     "quantity": "1.5",
                     "market_value": "750.25",
+                    "currency": "USD",
                     "as_of_utc": as_of_utc,
                 },
                 {
@@ -437,6 +443,75 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         self.assertEqual(read_all(ReceiptIndex, engine=self.engine), [])
         self.assertFalse(self.receipt_root.exists())
 
+    def test_explicit_clocks_and_currency_are_bound_to_manifest(self) -> None:
+        columns = [
+            "account_id",
+            "account_name",
+            "account_kind",
+            "venue",
+            "symbol",
+            "quantity",
+            "market_value",
+            "currency",
+            "effective_at_utc",
+            "observed_at_utc",
+            "valued_at_utc",
+            "as_of_utc",
+        ]
+        export = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": "SPY",
+                    "quantity": "0.10000000000000000001",
+                    "market_value": "60.000000000000000006",
+                    "currency": "USD",
+                    "effective_at_utc": "2026-07-13T06:00:00+00:00",
+                    "observed_at_utc": "2026-07-13T07:00:00+00:00",
+                    "valued_at_utc": "2026-07-13T06:30:00+00:00",
+                    "as_of_utc": "2026-07-13T07:00:00+00:00",
+                }
+            ],
+            columns=columns,
+        )
+        result = ingest_personal_finance_export(
+            export, engine=self.engine, receipt_root=self.receipt_root
+        )
+        position = read_all(Position, engine=self.engine)[0]
+        batch = read_all(ImportBatch, engine=self.engine)[0]
+        self.assertEqual(position.quantity, Decimal("0.10000000000000000001"))
+        self.assertEqual(position.market_value, Decimal("60.000000000000000006"))
+        self.assertEqual(result.completeness_status, "complete")
+        self.assertEqual(batch.completeness_status, "complete")
+        self.assertEqual(batch.time_semantics["valued_at_utc"], "2026-07-13T06:30:00+00:00")
+        self.assertEqual(batch.findings, [])
+
+    def test_missing_position_currency_fails_closed_with_structured_finding(self) -> None:
+        export = self.write_export(
+            [
+                {
+                    "account_id": "Assets:Brokerage",
+                    "account_name": "Brokerage",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": "SPY",
+                    "quantity": "1",
+                    "market_value": "10",
+                    "currency": "",
+                    "as_of_utc": "2026-07-13T07:00:00+00:00",
+                }
+            ]
+        )
+        with self.assertRaises(PersonalFinanceExportError) as raised:
+            ingest_personal_finance_export(
+                export, engine=self.engine, receipt_root=self.receipt_root
+            )
+        self.assertEqual(raised.exception.findings[0].code, "invalid_or_missing_currency")
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+
     def test_reimport_replaces_source_rows_instead_of_accumulating(self) -> None:
         columns = [
             "record_type",
@@ -465,6 +540,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                 "symbol": "SPY",
                 "quantity": "1",
                 "market_value": "600",
+                "currency": "USD",
                 "as_of_utc": as_of,
             }
 

@@ -40,6 +40,7 @@ venue
 symbol
 quantity
 market_value
+currency
 as_of_utc
 ```
 
@@ -47,16 +48,22 @@ Optional column:
 
 ```text
 cost_basis
+effective_at_utc
+observed_at_utc
+valued_at_utc
 ```
 
-All rows in one file must share the same `as_of_utc`.
+All rows in one file must share the same clocks. New exports should provide the
+three explicit optional clocks; `as_of_utc` is retained as a compatibility
+projection and produces a `partial` finding when one of them is absent. All
+timestamps must include a UTC offset.
 
 Example:
 
 ```csv
-account_id,account_name,account_kind,venue,symbol,quantity,market_value,cost_basis,as_of_utc
-Assets:Brokerage,Brokerage,broker,beancount,SPY,1.5,750.25,700.00,2026-06-19T00:00:00+00:00
-Assets:Cash,Cash,cash,beancount,CASH:USD,1000,1000,,2026-06-19T00:00:00+00:00
+account_id,account_name,account_kind,venue,symbol,quantity,market_value,cost_basis,currency,effective_at_utc,observed_at_utc,valued_at_utc,as_of_utc
+Assets:Brokerage,Brokerage,broker,beancount,SPY,1.5,750.25,700.00,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
+Assets:Cash,Cash,cash,beancount,CASH:USD,1000,1000,,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
 ```
 
 ### Typed CSV Contract
@@ -78,7 +85,7 @@ All rows still share one `as_of_utc`. Each row type requires its own columns:
 
 | record_type | Required columns beyond `record_type` and `as_of_utc` |
 | --- | --- |
-| `position` | `account_id`, `account_name`, `account_kind`, `venue`, `symbol`, `quantity`, `market_value` |
+| `position` | `account_id`, `account_name`, `account_kind`, `venue`, `symbol`, `quantity`, `market_value`, `currency` |
 | `liability` | `liability_id`, `name`, `liability_type`, `balance`, `currency` |
 | `goal` | `goal_id`, `name`, `target_amount`, `current_amount`, `currency` |
 | `cashflow` | `cashflow_id`, `description`, `amount`, `currency`, `event_date`, `category` |
@@ -89,8 +96,9 @@ All rows still share one `as_of_utc`. Each row type requires its own columns:
 Optional fields include `cost_basis`, `account_id`, `interest_rate`,
 `due_date`, `target_date`, `status`, `frequency`, `estimated_amount`,
 `premium_amount`, `renewal_date`, and `related_object_id` where they fit the row
-type. Monetary fields (`balance`, amounts, `coverage_amount`, …) are stored as
-exact `Decimal`.
+type. Monetary fields (`balance`, amounts, `coverage_amount`, …) must be decimal
+text and are stored as exact `Decimal`; float input and missing/invalid currency
+fail closed.
 
 ### Import
 
@@ -111,6 +119,7 @@ one personal-finance receipt
 one ReceiptIndex row
 one stable ImportBatch and one ReceiptManifest row
 immutable source-evidence and receipt artifacts in the shared Artifact Store
+explicit full/delta coverage, completeness, five clocks, and structured findings
 ```
 
 Every generated record keeps `execution_allowed=false`.

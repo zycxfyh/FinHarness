@@ -17,14 +17,23 @@ import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from decimal import Decimal, InvalidOperation
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine
 
 from finharness.artifact_store import ArtifactStore, LocalArtifactStore
-from finharness.import_provenance import prepare_import
+from finharness.capital_import_contract import (
+    CapitalImportContractError,
+    ImportFinding,
+    build_time_semantics,
+    completeness_status,
+    currency_code,
+    exact_decimal,
+)
+from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
     Account,
@@ -45,7 +54,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
-ADAPTER_VERSION = "finharness.personal_finance_export.v1"
+ADAPTER_VERSION = "finharness.personal_finance_export.v2"
 EXPORT_KIND = "personal_finance_export"
 POSITION_COLUMNS = {
     "account_id",
@@ -55,6 +64,7 @@ POSITION_COLUMNS = {
     "symbol",
     "quantity",
     "market_value",
+    "currency",
     "as_of_utc",
 }
 ROW_TYPE_COLUMN = "record_type"
@@ -93,6 +103,10 @@ NON_CLAIMS = (
 class PersonalFinanceExportError(RuntimeError):
     """Raised when a personal-finance export cannot be safely ingested."""
 
+    def __init__(self, message: str, *, findings: tuple[ImportFinding, ...] = ()) -> None:
+        self.findings = findings
+        super().__init__(message)
+
 
 @dataclass(frozen=True)
 class PersonalFinanceImportResult:
@@ -110,6 +124,7 @@ class PersonalFinanceImportResult:
     insurance_policy_count: int
     document_count: int
     as_of_utc: str
+    completeness_status: str
     execution_allowed: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -195,10 +210,11 @@ def _required_text(row: dict[str, str], column: str, *, row_number: int) -> str:
 def _decimal_value(row: dict[str, str], column: str, *, row_number: int) -> Decimal:
     raw = _required_text(row, column, row_number=row_number)
     try:
-        return Decimal(raw)
-    except InvalidOperation as exc:
+        return exact_decimal(raw, field=column, record_number=row_number)
+    except CapitalImportContractError as exc:
         raise PersonalFinanceExportError(
-            f"personal-finance export row {row_number} has invalid {column}: {raw}"
+            f"personal-finance export row {row_number} has invalid {column}: {raw}",
+            findings=exc.findings,
         ) from exc
 
 
@@ -207,16 +223,26 @@ def _optional_decimal(row: dict[str, str], column: str, *, row_number: int) -> D
     if not raw:
         return None
     try:
-        return Decimal(raw)
-    except InvalidOperation as exc:
+        return exact_decimal(raw, field=column, record_number=row_number)
+    except CapitalImportContractError as exc:
         raise PersonalFinanceExportError(
-            f"personal-finance export row {row_number} has invalid {column}: {raw}"
+            f"personal-finance export row {row_number} has invalid {column}: {raw}",
+            findings=exc.findings,
         ) from exc
 
 
 def _optional_text(row: dict[str, str], column: str) -> str | None:
     value = (row.get(column) or "").strip()
     return value or None
+
+
+def _currency(row: dict[str, str], *, row_number: int) -> str:
+    try:
+        return currency_code(
+            row.get("currency"), record_type=_row_type(row), record_number=row_number
+        )
+    except CapitalImportContractError as exc:
+        raise PersonalFinanceExportError(str(exc), findings=exc.findings) from exc
 
 
 def _single_as_of(rows: list[dict[str, str]]) -> str:
@@ -229,6 +255,45 @@ def _single_as_of(rows: list[dict[str, str]]) -> str:
             "personal-finance export must contain exactly one as_of_utc value"
         )
     return next(iter(as_of_values))
+
+
+def _single_clock(rows: list[dict[str, str]], column: str, fallback: str) -> str:
+    values = {(row.get(column) or "").strip() for row in rows}
+    values.discard("")
+    if not values:
+        return fallback
+    if len(values) != 1:
+        raise PersonalFinanceExportError(
+            f"personal-finance export must contain exactly one {column} value"
+        )
+    return next(iter(values))
+
+
+def _time_contract(
+    rows: list[dict[str, str]], *, ingested_at_utc: str
+) -> tuple[dict[str, str | None], list[ImportFinding]]:
+    as_of = _single_as_of(rows)
+    explicit_fields = ("effective_at_utc", "observed_at_utc", "valued_at_utc")
+    findings: list[ImportFinding] = []
+    if any(not any((row.get(field) or "").strip() for row in rows) for field in explicit_fields):
+        findings.append(
+            ImportFinding(
+                "legacy_as_of_projection",
+                "partial",
+                "one or more explicit capital clocks were projected from legacy as_of_utc",
+            )
+        )
+    try:
+        semantics, time_findings = build_time_semantics(
+            effective_at=_single_clock(rows, "effective_at_utc", as_of),
+            observed_at=_single_clock(rows, "observed_at_utc", as_of),
+            valued_at=_single_clock(rows, "valued_at_utc", as_of),
+            ingested_at=ingested_at_utc,
+        )
+    except CapitalImportContractError as exc:
+        raise PersonalFinanceExportError(str(exc), findings=exc.findings) from exc
+    findings.extend(time_findings)
+    return semantics.as_dict(), findings
 
 
 def _receipt_payload(
@@ -263,7 +328,20 @@ def _record_counts(rows: list[dict[str, str]]) -> dict[str, int]:
     return {key: value for key, value in counts.items() if value}
 
 
-def _payload_for_snapshot(rows: list[dict[str, str]], source_path: Path) -> dict[str, Any]:
+def _payload_for_snapshot(
+    rows: list[dict[str, str]],
+    source_path: Path,
+    *,
+    time_semantics: dict[str, str | None],
+    findings: list[ImportFinding],
+) -> dict[str, Any]:
+    position_currencies = sorted(
+        {
+            _currency(row, row_number=index)
+            for index, row in enumerate(rows, start=1)
+            if _row_type(row) == "position"
+        }
+    )
     return {
         "source": EXPORT_KIND,
         "source_ref": display_path(source_path),
@@ -271,6 +349,11 @@ def _payload_for_snapshot(rows: list[dict[str, str]], source_path: Path) -> dict
         "row_count": len(rows),
         "record_counts": _record_counts(rows),
         "supported_record_types": sorted(RECORD_TYPE_COLUMNS),
+        "position_currencies": position_currencies,
+        "coverage_mode": "full",
+        "completeness_status": completeness_status(findings),
+        "time_semantics": time_semantics,
+        "findings": [finding.as_dict() for finding in findings],
         "non_claims": list(NON_CLAIMS),
     }
 
@@ -286,6 +369,7 @@ class _IngestContext:
 def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Position:
     account_id = _required_text(row, "account_id", row_number=index)
     symbol = _required_text(row, "symbol", row_number=index).upper()
+    _currency(row, row_number=index)
     ctx.accounts.setdefault(
         account_id,
         Account(
@@ -318,7 +402,7 @@ def _build_liability(row: dict[str, str], index: int, ctx: _IngestContext) -> Li
         name=_required_text(row, "name", row_number=index),
         liability_type=_required_text(row, "liability_type", row_number=index),
         balance=_decimal_value(row, "balance", row_number=index),
-        currency=_required_text(row, "currency", row_number=index),
+        currency=_currency(row, row_number=index),
         account_id=_optional_text(row, "account_id"),
         interest_rate=_optional_decimal(row, "interest_rate", row_number=index),
         due_date=_optional_text(row, "due_date"),
@@ -334,7 +418,7 @@ def _build_goal(row: dict[str, str], index: int, ctx: _IngestContext) -> Financi
         name=_required_text(row, "name", row_number=index),
         target_amount=_decimal_value(row, "target_amount", row_number=index),
         current_amount=_decimal_value(row, "current_amount", row_number=index),
-        currency=_required_text(row, "currency", row_number=index),
+        currency=_currency(row, row_number=index),
         target_date=_optional_text(row, "target_date"),
         status=_optional_text(row, "status") or "active",
         as_of_utc=ctx.as_of_utc,
@@ -348,7 +432,7 @@ def _build_cashflow(row: dict[str, str], index: int, ctx: _IngestContext) -> Cas
         cashflow_id=_required_text(row, "cashflow_id", row_number=index),
         description=_required_text(row, "description", row_number=index),
         amount=_decimal_value(row, "amount", row_number=index),
-        currency=_required_text(row, "currency", row_number=index),
+        currency=_currency(row, row_number=index),
         event_date=_required_text(row, "event_date", row_number=index),
         category=_required_text(row, "category", row_number=index),
         account_id=_optional_text(row, "account_id"),
@@ -366,7 +450,11 @@ def _build_tax_event(row: dict[str, str], index: int, ctx: _IngestContext) -> Ta
         jurisdiction=_required_text(row, "jurisdiction", row_number=index),
         due_date=_required_text(row, "due_date", row_number=index),
         estimated_amount=_optional_decimal(row, "estimated_amount", row_number=index),
-        currency=_optional_text(row, "currency"),
+        currency=(
+            _currency(row, row_number=index)
+            if _optional_text(row, "estimated_amount") is not None
+            else (_currency(row, row_number=index) if _optional_text(row, "currency") else None)
+        ),
         status=_optional_text(row, "status") or "planned",
         as_of_utc=ctx.as_of_utc,
         authority_level="read_only",
@@ -381,7 +469,7 @@ def _build_insurance(row: dict[str, str], index: int, ctx: _IngestContext) -> In
         provider=_required_text(row, "provider", row_number=index),
         coverage_amount=_decimal_value(row, "coverage_amount", row_number=index),
         premium_amount=_optional_decimal(row, "premium_amount", row_number=index),
-        currency=_required_text(row, "currency", row_number=index),
+        currency=_currency(row, row_number=index),
         renewal_date=_optional_text(row, "renewal_date"),
         status=_optional_text(row, "status") or "active",
         as_of_utc=ctx.as_of_utc,
@@ -421,6 +509,8 @@ def _records_from_rows(
     snapshot_id: str,
     as_of_utc: str,
     source_path: Path,
+    time_semantics: dict[str, str | None],
+    findings: list[ImportFinding],
 ) -> list[StateCoreRecord]:
     ctx = _IngestContext(
         snapshot_id=snapshot_id,
@@ -445,7 +535,12 @@ def _records_from_rows(
         kind="portfolio" if has_positions else "personal_finance",
         as_of_utc=as_of_utc,
         authority_level="read_only",
-        payload=_payload_for_snapshot(rows, source_path),
+        payload=_payload_for_snapshot(
+            rows,
+            source_path,
+            time_semantics=time_semantics,
+            findings=findings,
+        ),
         source_refs=source_refs,
     )
     return [snapshot, *ctx.accounts.values(), *built]
@@ -469,9 +564,22 @@ def ingest_personal_finance_export(
     rows = _read_rows(source_path)
     if not rows:
         raise PersonalFinanceExportError("personal-finance export has no rows")
-    as_of_utc = _single_as_of(rows)
     source_hash = _file_hash(source_path)
     source_content = source_path.read_bytes()
+    active_artifact_store = artifact_store or LocalArtifactStore(
+        Path(receipt_root) / "artifact-store"
+    )
+    source_descriptor = persist_source_evidence(
+        source_kind=EXPORT_KIND,
+        source_content=source_content,
+        source_sha256=source_hash,
+        artifact_store=active_artifact_store,
+        created_at_utc=datetime.now(UTC).isoformat(),
+    )
+    time_semantics, findings = _time_contract(
+        rows, ingested_at_utc=source_descriptor.created_at_utc
+    )
+    as_of_utc = str(time_semantics["observed_at_utc"])
     base_id = _safe_id(source_hash[:12])
     active_snapshot_id = snapshot_id or f"snap_personal_finance_{base_id}"
     receipt_id = f"receipt_personal_finance_export_{base_id}"
@@ -487,9 +595,6 @@ def ingest_personal_finance_export(
         record_counts=record_counts,
     )
     receipt_ref = display_path(receipt_path)
-    active_artifact_store = artifact_store or LocalArtifactStore(
-        Path(receipt_root) / "artifact-store"
-    )
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=display_path(source_path),
@@ -504,14 +609,17 @@ def ingest_personal_finance_export(
         receipt_ref=receipt_ref,
         artifact_store=active_artifact_store,
         receipt_payload=receipt_payload,
-        created_at_utc=as_of_utc,
+        created_at_utc=source_descriptor.created_at_utc,
+        completeness_status=completeness_status(findings),
+        time_semantics=time_semantics,
+        findings=[finding.as_dict() for finding in findings],
     )
     source_refs = [receipt_ref, display_path(source_path)]
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
         kind=EXPORT_KIND,
         path=receipt_ref,
-        created_at_utc=as_of_utc,
+        created_at_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )
@@ -521,6 +629,8 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
         source_path=source_path,
+        time_semantics=time_semantics,
+        findings=findings,
     )
     materialize_import_batch(
         [receipt_index, *records],
@@ -547,6 +657,7 @@ def ingest_personal_finance_export(
         ),
         document_count=sum(1 for record in records if isinstance(record, DocumentRef)),
         as_of_utc=as_of_utc,
+        completeness_status=completeness_status(findings),
         execution_allowed=False,
     )
 

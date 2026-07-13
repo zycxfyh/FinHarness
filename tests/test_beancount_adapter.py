@@ -225,6 +225,21 @@ class BeancountAdapterTest(unittest.TestCase):
         self.assertEqual(read_all(Position, engine=self.engine), [])
         self.assertEqual(read_all(ReceiptIndex, engine=self.engine), [])
 
+    def test_loader_errors_deny_partial_import(self) -> None:
+        invalid = self.root / "invalid.beancount"
+        invalid.write_text(
+            "2026-01-01 open Assets:Cash USD\n"
+            '2026-01-02 * "Unbalanced"\n'
+            "  Assets:Cash  10.00 USD\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(BeancountLedgerError, "partial import denied"):
+            ingest_beancount_ledger(
+                invalid, engine=self.engine, receipt_root=self.receipt_root
+            )
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+        self.assertFalse(self.receipt_root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

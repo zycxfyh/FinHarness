@@ -25,6 +25,13 @@ from beancount import loader
 from sqlalchemy import Engine
 
 from finharness.artifact_store import ArtifactStore, LocalArtifactStore
+from finharness.capital_import_contract import (
+    CapitalImportContractError,
+    ImportFinding,
+    build_time_semantics,
+    completeness_status,
+    currency_code,
+)
 from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
@@ -42,7 +49,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_BEANCOUNT_RECEIPT_ROOT = ROOT / "data" / "receipts" / "beancount"
-ADAPTER_VERSION = "finharness.beancount_ledger.v1"
+ADAPTER_VERSION = "finharness.beancount_ledger.v2"
 LEDGER_KIND = "beancount_ledger"
 DEFAULT_ASSETS_ROOT = "Assets"
 DEFAULT_LIABILITIES_ROOT = "Liabilities"
@@ -86,6 +93,7 @@ class BeancountImportResult:
     position_count: int
     liability_count: int
     as_of_utc: str
+    completeness_status: str
     cashflow_count: int = 0
     execution_allowed: bool = False
 
@@ -105,7 +113,9 @@ def _safe_id(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in value)
 
 
-def _ledger_metadata(source_path: Path) -> tuple[list[str], set[str]]:
+def _ledger_metadata(
+    source_path: Path,
+) -> tuple[list[str], set[str], str, str | None]:
     """Return the ledger's loaded files and its declared operating currencies.
 
     Beancount already reports every loaded file as an absolute path in
@@ -113,11 +123,30 @@ def _ledger_metadata(source_path: Path) -> tuple[list[str], set[str]]:
     path), so each entry only needs ``resolve`` to dedupe. The fallback resolves a
     lone relative ``source_path`` against the current directory.
     """
-    _entries, _errors, options_map = loader.load_file(str(source_path))
+    entries, errors, options_map = loader.load_file(str(source_path))
+    if errors:
+        raise BeancountLedgerError(
+            f"beancount loader reported {len(errors)} error(s); partial import denied"
+        )
     included = options_map.get("include") or [str(source_path)]
     loaded_files = sorted({str(Path(raw_path).resolve()) for raw_path in included})
-    operating = set(options_map.get("operating_currency", []))
-    return loaded_files, operating
+    try:
+        operating = {currency_code(value) for value in options_map.get("operating_currency", [])}
+    except CapitalImportContractError as exc:
+        raise BeancountLedgerError(str(exc)) from exc
+    dated = [entry.date for entry in entries if getattr(entry, "date", None) is not None]
+    if not dated:
+        raise BeancountLedgerError("beancount ledger has no effective dated entries")
+    price_dates = [
+        entry.date
+        for entry in entries
+        if type(entry).__name__ == "Price" and getattr(entry, "date", None) is not None
+    ]
+    effective_at = f"{max(dated).isoformat()}T00:00:00+00:00"
+    valued_at = (
+        f"{max(price_dates).isoformat()}T00:00:00+00:00" if price_dates else None
+    )
+    return loaded_files, operating, effective_at, valued_at
 
 
 def _ledger_evidence_bytes(files: list[str]) -> bytes:
@@ -297,6 +326,10 @@ def _records_from_rows(
                 data_gaps.append(currency.upper())
             else:
                 market_value = market[0]
+                try:
+                    currency_code(market[1], field="valuation_currency")
+                except CapitalImportContractError as exc:
+                    raise BeancountLedgerError(str(exc)) from exc
             positions.append(
                 Position(
                     position_id=_safe_id(f"pos_{snapshot_id}_{index}_{account}_{currency}"),
@@ -312,6 +345,10 @@ def _records_from_rows(
             )
         elif account.startswith(f"{liabilities_root}:"):
             balance, balance_ccy = market if market is not None else units
+            try:
+                balance_ccy = currency_code(balance_ccy)
+            except CapitalImportContractError as exc:
+                raise BeancountLedgerError(str(exc)) from exc
             liabilities.append(
                 Liability(
                     liability_id=_safe_id(f"liab_{account}_{currency}"),
@@ -377,8 +414,10 @@ def ingest_beancount_ledger(
     source_path = Path(ledger_path)
     if not source_path.exists():
         raise BeancountLedgerError(f"beancount ledger missing: {source_path}")
+    source_files, operating_currencies, effective_at_utc, valued_at_utc = _ledger_metadata(
+        source_path
+    )
     rows = _query_rows(source_path)
-    source_files, operating_currencies = _ledger_metadata(source_path)
     source_content = _ledger_evidence_bytes(source_files)
     source_hash = _combined_ledger_hash(source_files)
     active_artifact_store = artifact_store or LocalArtifactStore(
@@ -391,7 +430,16 @@ def ingest_beancount_ledger(
         artifact_store=active_artifact_store,
         created_at_utc=utc_now_iso(),
     )
-    as_of_utc = source_descriptor.created_at_utc
+    try:
+        time_contract, time_findings = build_time_semantics(
+            effective_at=effective_at_utc,
+            observed_at=source_descriptor.created_at_utc,
+            valued_at=valued_at_utc,
+            ingested_at=source_descriptor.created_at_utc,
+        )
+    except CapitalImportContractError as exc:
+        raise BeancountLedgerError(str(exc)) from exc
+    as_of_utc = time_contract.observed_at_utc
     base_id = _safe_id(source_hash[:12])
     active_snapshot_id = snapshot_id or f"snap_beancount_{base_id}"
     receipt_id = f"receipt_beancount_ledger_{base_id}"
@@ -411,8 +459,40 @@ def ingest_beancount_ledger(
         raise BeancountLedgerError(
             "beancount ledger has no Assets or Liabilities balances to mirror"
         )
+    findings = list(time_findings)
+    findings.extend(
+        ImportFinding(
+            "unpriced_position",
+            "partial",
+            f"{symbol} has no admitted monetary valuation",
+            record_type="position",
+            field="market_value",
+        )
+        for symbol in data_gaps
+    )
+    if positions and valued_at_utc is None:
+        findings.append(
+            ImportFinding(
+                "valuation_time_missing",
+                "blocking",
+                "holdings exist but the ledger has no dated price evidence",
+                record_type="position",
+                field="valued_at_utc",
+            )
+        )
+    cashflow_rows = _cashflow_rows(source_path)
+    if cashflow_rows and len(operating_currencies) != 1:
+        findings.append(
+            ImportFinding(
+                "cashflow_currency_ambiguous",
+                "partial",
+                "cashflow rows were omitted because one operating currency was not declared",
+                record_type="cashflow",
+                field="currency",
+            )
+        )
     cashflows = _derive_cashflows(
-        _cashflow_rows(source_path),
+        cashflow_rows,
         as_of_utc=as_of_utc,
         source_refs=source_refs,
         operating_currencies=operating_currencies,
@@ -433,6 +513,10 @@ def ingest_beancount_ledger(
                 "cashflow": len(cashflows),
             },
             "data_gaps_unpriced": data_gaps,
+            "coverage_mode": "full",
+            "completeness_status": completeness_status(findings),
+            "time_semantics": time_contract.as_dict(),
+            "findings": [finding.as_dict() for finding in findings],
             "non_claims": list(NON_CLAIMS),
         },
         source_refs=source_refs,
@@ -470,12 +554,15 @@ def ingest_beancount_ledger(
         artifact_store=active_artifact_store,
         receipt_payload=receipt_payload,
         created_at_utc=as_of_utc,
+        completeness_status=completeness_status(findings),
+        time_semantics=time_contract.as_dict(),
+        findings=[finding.as_dict() for finding in findings],
     )
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
         kind=LEDGER_KIND,
         path=receipt_ref,
-        created_at_utc=as_of_utc,
+        created_at_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )
@@ -505,6 +592,7 @@ def ingest_beancount_ledger(
         liability_count=len(liabilities),
         cashflow_count=len(cashflows),
         as_of_utc=as_of_utc,
+        completeness_status=completeness_status(findings),
     )
 
 

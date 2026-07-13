@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine
 
+from finharness.capital_import_contract import (
+    CapitalImportContractError,
+    ImportFinding,
+    build_time_semantics,
+    completeness_status,
+    currency_code,
+    exact_decimal,
+)
 from finharness.statecore.models import Account, Position, Snapshot
 from finharness.statecore.receipt_index import _display_path, receipt_index_record_from_path
 from finharness.statecore.store import StateCoreStoreError, upsert_records
@@ -23,18 +33,15 @@ def _string(value: Any, default: str = "") -> str:
     return str(value)
 
 
-def _float_or_none(value: Any) -> float | None:
+def _decimal_or_none(value: Any, *, field: str) -> Decimal | None:
     if value is None or value == "":
         return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return exact_decimal(value, field=field, record_type="position")
 
 
-def _first_float(*values: Any) -> float | None:
+def _first_decimal(field: str, *values: Any) -> Decimal | None:
     for value in values:
-        number = _float_or_none(value)
+        number = _decimal_or_none(value, field=field)
         if number is not None:
             return number
     return None
@@ -104,16 +111,18 @@ def _venue(payload: dict[str, Any]) -> str:
     return f"{broker}-{environment}"
 
 
-def _market_value(position: dict[str, Any]) -> float | None:
-    value = _first_float(
+def _market_value(position: dict[str, Any]) -> Decimal | None:
+    value = _first_decimal(
+        "market_value",
         position.get("market_value"),
         position.get("market_value_usd"),
         position.get("asset_value"),
     )
     if value is not None:
         return value
-    quantity = _first_float(position.get("qty"), position.get("quantity"))
-    price = _first_float(
+    quantity = _first_decimal("quantity", position.get("qty"), position.get("quantity"))
+    price = _first_decimal(
+        "market_price",
         position.get("current_price"),
         position.get("market_price"),
         position.get("last_price"),
@@ -130,24 +139,36 @@ def _position_records(
     account_id: str,
     source_ref: str,
     as_of_utc: str,
-) -> tuple[list[Position], list[dict[str, Any]], int]:
+) -> tuple[list[Position], list[dict[str, Any]], list[ImportFinding]]:
     records: list[Position] = []
     normalized: list[dict[str, Any]] = []
-    omitted = 0
+    findings: list[ImportFinding] = []
     for index, raw in enumerate(positions):
         symbol = _string(raw.get("symbol") or raw.get("asset_symbol")).upper()
-        quantity = _first_float(raw.get("qty"), raw.get("quantity"))
+        currency = currency_code(
+            raw.get("currency"), record_type="position", record_number=index + 1
+        )
+        quantity = _first_decimal("quantity", raw.get("qty"), raw.get("quantity"))
         market_value = _market_value(raw)
         if not symbol or quantity is None or market_value is None:
-            omitted += 1
+            findings.append(
+                ImportFinding(
+                    "omitted_incomplete_position",
+                    "partial",
+                    "position omitted because symbol, quantity, or market value is missing",
+                    record_type="position",
+                    record_number=index + 1,
+                )
+            )
             continue
-        cost_basis = _first_float(raw.get("cost_basis"))
+        cost_basis = _first_decimal("cost_basis", raw.get("cost_basis"))
         normalized.append(
             {
                 "symbol": symbol,
-                "quantity": quantity,
-                "market_value": market_value,
-                "cost_basis": cost_basis,
+                "quantity": str(quantity),
+                "market_value": str(market_value),
+                "cost_basis": str(cost_basis) if cost_basis is not None else None,
+                "currency": currency,
                 "cost_basis_disclosed": cost_basis is not None,
             }
         )
@@ -164,7 +185,53 @@ def _position_records(
                 source_refs=[source_ref],
             )
         )
-    return records, normalized, omitted
+    return records, normalized, findings
+
+
+def _time_contract(
+    payload: dict[str, Any], positions: list[dict[str, Any]]
+) -> tuple[dict[str, str | None], list[ImportFinding]]:
+    needs_legacy = not payload.get("effective_at_utc") or not payload.get("observed_at_utc")
+    legacy = _created_at(payload) if needs_legacy else None
+    effective = str(payload.get("effective_at_utc") or legacy)
+    observed = str(payload.get("observed_at_utc") or legacy)
+    valued_values = {
+        str(position.get("valued_at_utc")).strip()
+        for position in positions
+        if position.get("valued_at_utc")
+    }
+    if payload.get("valued_at_utc"):
+        valued_values.add(str(payload["valued_at_utc"]).strip())
+    if len(valued_values) > 1:
+        raise StateCoreStoreError(
+            "broker snapshot contains mixed valued_at_utc values; current-state import denied"
+        )
+    if not valued_values and legacy is None:
+        legacy = _created_at(payload)
+    valued = next(iter(valued_values), legacy)
+    findings: list[ImportFinding] = []
+    explicit_base_clocks = all(
+        payload.get(field) for field in ("effective_at_utc", "observed_at_utc")
+    )
+    if not explicit_base_clocks or not valued_values:
+        findings.append(
+            ImportFinding(
+                "legacy_time_projection",
+                "partial",
+                "explicit broker clocks were projected from a legacy receipt timestamp",
+            )
+        )
+    try:
+        semantics, time_findings = build_time_semantics(
+            effective_at=effective,
+            observed_at=observed,
+            valued_at=valued,
+            ingested_at=datetime.now(UTC),
+        )
+    except CapitalImportContractError as exc:
+        raise StateCoreStoreError(str(exc)) from exc
+    findings.extend(time_findings)
+    return semantics.as_dict(), findings
 
 
 def portfolio_records_from_broker_payload(
@@ -181,21 +248,29 @@ def portfolio_records_from_broker_payload(
     """
     if not isinstance(payload, dict):
         raise StateCoreStoreError("portfolio snapshot input must be a JSON object")
-    as_of_utc = _created_at(payload)
     account_payload = _account_payload(payload)
     positions_payload = _positions_payload(payload)
+    try:
+        time_semantics, findings = _time_contract(payload, positions_payload)
+    except CapitalImportContractError as exc:
+        raise StateCoreStoreError(str(exc)) from exc
+    as_of_utc = str(time_semantics["observed_at_utc"])
     account_id = _account_id(payload, account_payload)
     resolved_snapshot_id = _safe_id(
         snapshot_id
         or f"snap_portfolio_{payload.get('receipt_id') or Path(source_ref).stem}"
     )
-    position_records, normalized_positions, omitted_positions = _position_records(
-        positions=positions_payload,
-        snapshot_id=resolved_snapshot_id,
-        account_id=account_id,
-        source_ref=source_ref,
-        as_of_utc=as_of_utc,
-    )
+    try:
+        position_records, normalized_positions, position_findings = _position_records(
+            positions=positions_payload,
+            snapshot_id=resolved_snapshot_id,
+            account_id=account_id,
+            source_ref=source_ref,
+            as_of_utc=as_of_utc,
+        )
+    except CapitalImportContractError as exc:
+        raise StateCoreStoreError(str(exc)) from exc
+    findings.extend(position_findings)
     account = Account(
         account_id=account_id,
         kind="broker" if payload.get("broker") else "manual",
@@ -218,8 +293,12 @@ def portfolio_records_from_broker_payload(
             "account": account_payload,
             "position_count": len(normalized_positions),
             "positions": normalized_positions,
-            "omitted_position_count": omitted_positions,
+            "omitted_position_count": len(position_findings),
             "positions_source_disclosed": bool(positions_payload),
+            "coverage_mode": "full",
+            "completeness_status": completeness_status(findings),
+            "time_semantics": time_semantics,
+            "findings": [finding.as_dict() for finding in findings],
             "not_claimed": [
                 "Not execution authorization.",
                 "Not investment advice.",

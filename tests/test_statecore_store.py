@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from finharness.statecore.models import (
     Account,
+    ImportBatch,
     Position,
     Proposal,
     ReceiptIndex,
@@ -319,6 +320,33 @@ class StateCoreStoreTest(unittest.TestCase):
                 int(connection.execute(text("PRAGMA user_version")).scalar_one()),
                 CURRENT_STATE_CORE_USER_VERSION,
             )
+        migrate_state_core(engine)
+
+    def test_migration_marks_legacy_import_semantics_unknown(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE import_batches ("
+                "schema_version VARCHAR NOT NULL, as_of_utc VARCHAR NOT NULL, "
+                "authority_level VARCHAR NOT NULL, batch_id VARCHAR PRIMARY KEY, "
+                "source_kind VARCHAR NOT NULL, source_id VARCHAR NOT NULL, "
+                "coverage_mode VARCHAR NOT NULL, source_sha256 VARCHAR NOT NULL, "
+                "source_artifact_id VARCHAR NOT NULL, adapter_version VARCHAR NOT NULL, "
+                "import_schema_version VARCHAR NOT NULL, record_counts JSON NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO import_batches VALUES ("
+                "'finharness.state_core.v1','2026-07-12T00:00:00+00:00','read_only',"
+                "'legacy-batch','legacy','source','full','hash','artifact','v1','v1','{}')"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 7")
+
+        migrate_state_core(engine)
+
+        batch = read_all(ImportBatch, engine=engine)[0]
+        self.assertEqual(batch.completeness_status, "legacy_unknown")
+        self.assertEqual(batch.time_semantics, {})
+        self.assertEqual(batch.findings, [])
         migrate_state_core(engine)
 
     def test_migration_updates_review_event_kind_constraint_for_agent_artifacts(self) -> None:
