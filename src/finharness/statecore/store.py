@@ -201,7 +201,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 9
+CURRENT_STATE_CORE_USER_VERSION = 10
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -231,9 +231,11 @@ _POSITIONS_SELECT = text(
 )
 _POSITIONS_INSERT = text(
     "INSERT INTO positions (position_id, snapshot_id, account_id, symbol, quantity, "
-    "market_value, cost_basis, schema_version, as_of_utc, authority_level, source_refs) "
+    "market_value, cost_basis, schema_version, as_of_utc, authority_level, source_refs, "
+    "valuation_status) "
     "VALUES (:position_id, :snapshot_id, :account_id, :symbol, :quantity, :market_value, "
-    ":cost_basis, :schema_version, :as_of_utc, :authority_level, :source_refs)"
+    ":cost_basis, :schema_version, :as_of_utc, :authority_level, :source_refs, "
+    ":valuation_status)"
 )
 
 
@@ -263,6 +265,7 @@ def _migrate_positions_money_to_text(connection: Connection) -> None:
         for column in _POSITION_MONEY_COLUMNS:
             if row[column] is not None:
                 row[column] = str(row[column])
+        row["valuation_status"] = "unknown_legacy"
     connection.execute(text("DROP TABLE positions"))
     SQLModel.metadata.tables["positions"].create(connection)
     if rows:
@@ -378,6 +381,50 @@ def _migrate_add_canonical_identities(connection: Connection) -> None:
         )
 
 
+def _migrate_position_valuation_contract(connection: Connection) -> None:
+    """Rebuild positions without fabricating valuation evidence for legacy rows."""
+    inspector = inspect(connection)
+    if "positions" not in set(inspector.get_table_names()):
+        return
+    columns = {item["name"]: item for item in inspector.get_columns("positions")}
+    required = {
+        "valuation_currency",
+        "unit_price",
+        "price_currency",
+        "valued_at_utc",
+        "price_source_ref",
+        "fx_rate",
+        "fx_as_of_utc",
+        "fx_source_ref",
+        "valuation_status",
+    }
+    if required <= set(columns) and columns["market_value"].get("nullable", False):
+        return
+    rows = [dict(row) for row in connection.execute(text("SELECT * FROM positions")).mappings()]
+    connection.execute(text("DROP TABLE positions"))
+    SQLModel.metadata.tables["positions"].create(connection)
+    current_columns = set(SQLModel.metadata.tables["positions"].columns.keys())
+    migrated: list[dict[str, Any]] = []
+    for row in rows:
+        projected = {key: value for key, value in row.items() if key in current_columns}
+        projected.update(
+            {
+                "valuation_currency": None,
+                "unit_price": None,
+                "price_currency": None,
+                "valued_at_utc": None,
+                "price_source_ref": None,
+                "fx_rate": None,
+                "fx_as_of_utc": None,
+                "fx_source_ref": None,
+                "valuation_status": "unknown_legacy",
+            }
+        )
+        migrated.append(projected)
+    if migrated:
+        connection.execute(SQLModel.metadata.tables["positions"].insert(), migrated)
+
+
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
@@ -413,6 +460,7 @@ def migrate_state_core(engine: Engine) -> None:
         (7, _migrate_add_import_provenance_tables),
         (8, _migrate_add_import_semantics),
         (9, _migrate_add_canonical_identities),
+        (10, _migrate_position_valuation_contract),
     )
     try:
         with engine.connect() as connection:
@@ -423,9 +471,15 @@ def migrate_state_core(engine: Engine) -> None:
             for version, step in migrations:
                 if version <= current:
                     continue
+                if version == 10:
+                    connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+                    connection.commit()
                 with connection.begin():
                     step(connection)
                     connection.exec_driver_sql(f"PRAGMA user_version = {version}")
+                if version == 10:
+                    connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+                    connection.commit()
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core migration failed: {exc}") from exc
 

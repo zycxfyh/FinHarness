@@ -172,7 +172,14 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         latest_snapshot_as_of_utc=latest_snapshot.as_of_utc if latest_snapshot else None,
         position_count=len(positions),
         total_market_value=float(
-            sum((position.market_value for position in positions), Decimal("0"))
+            sum(
+                (
+                    position.market_value
+                    for position in positions
+                    if position.market_value is not None
+                ),
+                Decimal("0"),
+            )
         ),
         open_proposal_count=_open_proposal_count(proposals, attestations),
         receipt_count=receipt_count,

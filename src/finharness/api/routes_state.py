@@ -44,9 +44,11 @@ class PositionChangeResponse(BaseModel):
     before_quantity: float
     after_quantity: float
     quantity_delta: float
-    before_market_value: float
-    after_market_value: float
-    market_value_delta: float
+    before_market_value: float | None
+    after_market_value: float | None
+    market_value_delta: float | None
+    valuation_currency: str | None
+    valuation_status: str
     source_refs: tuple[str, ...]
 
 
@@ -60,9 +62,13 @@ class SnapshotDiffResponse(BaseModel):
     added: tuple[PositionChangeResponse, ...]
     removed: tuple[PositionChangeResponse, ...]
     changed: tuple[PositionChangeResponse, ...]
-    total_market_value_before: float
-    total_market_value_after: float
-    total_market_value_delta: float
+    total_market_value_before: float | None
+    total_market_value_after: float | None
+    total_market_value_delta: float | None
+    base_currency: str | None
+    per_currency_totals_before: dict[str, float]
+    per_currency_totals_after: dict[str, float]
+    valuation_blockers: tuple[str, ...]
     source_refs: tuple[str, ...]
     non_claims: tuple[str, ...]
     execution_allowed: bool

@@ -88,6 +88,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                 "receipt_id": "receipt_portfolio_1",
                 "kind": "broker_read",
                 "created_at_utc": "2026-06-17T01:02:03+00:00",
+                "valued_at_utc": "2026-06-17T01:00:00+00:00",
                 "broker": "alpaca",
                 "environment": "paper",
                 "account": {
@@ -100,6 +101,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                         "symbol": "SPY",
                         "qty": "2",
                         "market_value": "100.5",
+                        "unit_price": "50.25",
                         "currency": "USD",
                         "asset_class": "equity",
                         "exchange": "ARCX",
@@ -137,6 +139,8 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(positions[1].market_value, 100.5)
         self.assertIsNone(positions[1].cost_basis)
         self.assertTrue(all(position.instrument_id for position in positions))
+        self.assertTrue(all(position.valuation_status == "valued" for position in positions))
+        self.assertTrue(all(position.valuation_currency == "USD" for position in positions))
         self.assertEqual(len(read_all(AccountIdentity, engine=self.engine)), 1)
         self.assertEqual(len(read_all(InstrumentIdentity, engine=self.engine)), 2)
 
@@ -221,10 +225,11 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
             {finding["code"] for finding in snapshot.payload["findings"]},
             {
                 "stale_valuation",
-                "omitted_incomplete_position",
+                "valuation_unpriced",
                 "instrument_identity_unresolved",
             },
         )
+        self.assertEqual(len(read_all(Position, engine=self.engine)), 2)
 
 
 if __name__ == "__main__":

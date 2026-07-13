@@ -982,7 +982,7 @@
       "path": "tests/test_statecore_vertical_reconstruction.py",
       "symbol": "attestation serialization test",
       "line_start": 130,
-      "line_end": 190,
+      "line_end": 214,
       "match_terms": [
         "/proposals/{proposal_id}/attest",
         "Attestation",
@@ -1000,7 +1000,7 @@
       "recommended_change": "Keep. Add DecisionRecord serialization tests separately.",
       "test_implications": [],
       "evidence": [
-        "test_statecore_vertical_reconstruction.py:130-190"
+        "test_statecore_vertical_reconstruction.py:130-214"
       ]
     },
     {
@@ -1656,45 +1656,45 @@
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 177,
+      "match_line": 184,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 172."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 184."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 245,
+      "match_line": 252,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 240."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 252."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 247,
+      "match_line": 254,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 242."
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 254."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 248,
+      "match_line": 255,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 243."
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 255."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 248,
+      "match_line": 255,
       "term": "attestation_id",
-      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 243."
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 255."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 280,
+      "match_line": 287,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 275."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 287."
     },
     {
       "path": "src/finharness/api/routes_cockpit.py",
-      "match_line": 284,
+      "match_line": 291,
       "term": "attestation_id",
-      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 279."
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 291."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
@@ -2100,9 +2100,9 @@
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 412,
+      "match_line": 418,
       "term": "attestation_ref",
-      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 369. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 418. Not a direct Attestation consumer."
     },
     {
       "path": "src/finharness/decision_ontology.py",

@@ -48,6 +48,12 @@ class DailyBriefTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=Decimal("10"),
                 market_value=Decimal("1000"),
+                valuation_currency="USD",
+                unit_price=Decimal("100"),
+                price_currency="USD",
+                valued_at_utc="2026-06-18T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
             Position(
                 position_id="p2_spy",
@@ -56,6 +62,12 @@ class DailyBriefTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=Decimal("15"),
                 market_value=Decimal("1500"),
+                valuation_currency="USD",
+                unit_price=Decimal("100"),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
             Position(
                 position_id="p2_aapl",
@@ -64,6 +76,12 @@ class DailyBriefTest(unittest.TestCase):
                 symbol="AAPL",
                 quantity=Decimal("5"),
                 market_value=Decimal("500"),
+                valuation_currency="USD",
+                unit_price=Decimal("100"),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
         ]
         proposal = Proposal(

@@ -15,7 +15,7 @@ task beancount:import -- path/to/ledger.beancount
 This mirrors `Assets:` holdings into accounts/positions and `Liabilities:`
 balances into liability rows, with a receipt. Holdings need `price` directives
 in the ledger for market value; otherwise the quantity is kept, market value is
-recorded as `0`, and the symbol is disclosed in `data_gaps_unpriced` in the
+recorded as null with `valuation_status=unpriced`, and the symbol is disclosed in `data_gaps_unpriced` in the
 snapshot and receipt. Account root names other than `Assets`/`Liabilities` can
 be passed to `ingest_beancount_ledger(..., assets_root=..., liabilities_root=...)`.
 
@@ -39,7 +39,6 @@ account_kind
 venue
 symbol
 quantity
-market_value
 currency
 as_of_utc
 ```
@@ -48,6 +47,14 @@ Optional column:
 
 ```text
 cost_basis
+market_value
+valuation_currency
+unit_price
+price_currency
+price_source_ref
+fx_rate
+fx_as_of_utc
+fx_source_ref
 effective_at_utc
 observed_at_utc
 valued_at_utc
@@ -68,12 +75,18 @@ path. Missing instrument identity fields do not discard the holding, but they
 produce a blocking `instrument_identity_unresolved` finding and leave
 `Position.instrument_id` null. A symbol alone is never treated as identity.
 
+Also provide `market_value`, `valuation_currency`, `unit_price`,
+`price_currency`, `valued_at_utc`, and `price_source_ref` for an admitted direct
+valuation. If the two currencies differ, `fx_rate`, `fx_as_of_utc`, and
+`fx_source_ref` are mandatory. Missing evidence retains the holding but produces
+a blocking valuation finding; it is never interpreted as zero.
+
 Example:
 
 ```csv
-account_id,account_name,account_kind,venue,symbol,instrument_type,instrument_venue,quantity,market_value,cost_basis,currency,effective_at_utc,observed_at_utc,valued_at_utc,as_of_utc
-Assets:Brokerage,Brokerage,broker,beancount,SPY,equity,ARCX,1.5,750.25,700.00,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
-Assets:Cash,Cash,cash,beancount,USD,cash,global,1000,1000,,USD,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
+account_id,account_name,account_kind,venue,symbol,instrument_type,instrument_venue,quantity,market_value,cost_basis,currency,valuation_currency,unit_price,price_currency,price_source_ref,effective_at_utc,observed_at_utc,valued_at_utc,as_of_utc
+Assets:Brokerage,Brokerage,broker,beancount,SPY,equity,ARCX,1.5,750.00,700.00,USD,USD,500.00,USD,provider:close,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
+Assets:Cash,Cash,cash,beancount,USD,cash,global,1000,1000,,USD,USD,1,USD,ledger:cash,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00,2026-06-19T00:00:00+00:00,2026-06-19T00:05:00+00:00
 ```
 
 ### Typed CSV Contract
@@ -95,7 +108,7 @@ All rows still share one `as_of_utc`. Each row type requires its own columns:
 
 | record_type | Required columns beyond `record_type` and `as_of_utc` |
 | --- | --- |
-| `position` | `account_id`, `account_name`, `account_kind`, `venue`, `symbol`, `quantity`, `market_value`, `currency` |
+| `position` | `account_id`, `account_name`, `account_kind`, `venue`, `symbol`, `quantity`, `currency` |
 | `liability` | `liability_id`, `name`, `liability_type`, `balance`, `currency` |
 | `goal` | `goal_id`, `name`, `target_amount`, `current_amount`, `currency` |
 | `cashflow` | `cashflow_id`, `description`, `amount`, `currency`, `event_date`, `category` |

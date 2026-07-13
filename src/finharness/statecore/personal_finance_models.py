@@ -13,7 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -52,6 +52,13 @@ class Snapshot(StateCoreBase, table=True):
 
 class Position(StateCoreBase, table=True):
     __tablename__ = "positions"
+    __table_args__ = (
+        CheckConstraint(
+            "valuation_status IN ('valued', 'valued_converted', 'unpriced', "
+            "'fx_missing', 'stale', 'unknown_legacy')",
+            name="ck_positions_valuation_status",
+        ),
+    )
 
     position_id: str = Field(primary_key=True)
     snapshot_id: str = Field(foreign_key="snapshots.snapshot_id", index=True)
@@ -61,8 +68,17 @@ class Position(StateCoreBase, table=True):
     )
     symbol: str
     quantity: Decimal = Field(sa_column=money_column())
-    market_value: Decimal = Field(sa_column=money_column())
+    market_value: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
     cost_basis: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    valuation_currency: str | None = Field(default=None, index=True)
+    unit_price: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    price_currency: str | None = None
+    valued_at_utc: str | None = None
+    price_source_ref: str | None = None
+    fx_rate: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    fx_as_of_utc: str | None = None
+    fx_source_ref: str | None = None
+    valuation_status: str = Field(default="unknown_legacy", index=True)
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
 
 

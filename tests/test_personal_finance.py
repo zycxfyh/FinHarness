@@ -474,6 +474,10 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             "quantity",
             "market_value",
             "currency",
+            "valuation_currency",
+            "unit_price",
+            "price_currency",
+            "price_source_ref",
             "effective_at_utc",
             "observed_at_utc",
             "valued_at_utc",
@@ -492,6 +496,10 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "quantity": "0.10000000000000000001",
                     "market_value": "60.000000000000000006",
                     "currency": "USD",
+                    "valuation_currency": "USD",
+                    "unit_price": "600",
+                    "price_currency": "USD",
+                    "price_source_ref": "source:prices",
                     "effective_at_utc": "2026-07-13T06:00:00+00:00",
                     "observed_at_utc": "2026-07-13T07:00:00+00:00",
                     "valued_at_utc": "2026-07-13T06:30:00+00:00",
@@ -508,6 +516,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         self.assertEqual(position.quantity, Decimal("0.10000000000000000001"))
         self.assertEqual(position.market_value, Decimal("60.000000000000000006"))
         self.assertIsNotNone(position.instrument_id)
+        self.assertEqual(position.valuation_status, "valued")
         self.assertEqual(result.completeness_status, "complete")
         self.assertEqual(batch.completeness_status, "complete")
         self.assertEqual(batch.time_semantics["valued_at_utc"], "2026-07-13T06:30:00+00:00")

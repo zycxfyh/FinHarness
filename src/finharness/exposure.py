@@ -156,6 +156,9 @@ def _holdings(
 ) -> tuple[list[HoldingExposure], Decimal, Decimal, Decimal]:
     by_symbol: dict[str, Decimal] = {}
     for position in positions:
+        if position.market_value is None:
+            data_gaps.append(f"unvalued holding: {position.symbol} ({position.valuation_status})")
+            continue
         if position.quantity != 0 and position.market_value == 0:
             data_gaps.append(f"unpriced holding: {position.symbol}")
         # Cash/fiat is liquidity, not a single-name concentration risk; it is
@@ -413,10 +416,22 @@ def compute_exposure(
     cash_total_verified = snapshot is not None
     if not cash_total_verified:
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
-    total_assets = sum((position.market_value for position in positions), Decimal("0"))
+    valued_positions = [position for position in positions if position.market_value is not None]
+    total_assets = sum(
+        (
+            position.market_value
+            for position in valued_positions
+            if position.market_value is not None
+        ),
+        Decimal("0"),
+    )
     total_liabilities = sum((liability.balance for liability in liabilities), Decimal("0"))
     cash_total = sum(
-        (position.market_value for position in positions if _is_cash_symbol(position.symbol)),
+        (
+            position.market_value
+            for position in valued_positions
+            if _is_cash_symbol(position.symbol) and position.market_value is not None
+        ),
         Decimal("0"),
     )
 
@@ -478,12 +493,7 @@ def compute_exposure(
     )
     source_refs = tuple(
         sorted(
-            portfolio_refs
-            | cash_refs
-            | cashflow_refs
-            | liability_refs
-            | tax_refs
-            | insurance_refs
+            portfolio_refs | cash_refs | cashflow_refs | liability_refs | tax_refs | insurance_refs
         )
     )
 
