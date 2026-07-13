@@ -40,7 +40,7 @@ function startServer() {
     ["run", "python", "scripts/run_cockpit_smoke_server.py"],
     {
       cwd: REPO_ROOT,
-      env: { ...process.env, PYTHONPATH: "src", COCKPIT_SMOKE_PORT: PORT },
+      env: { ...process.env, COCKPIT_SMOKE_PORT: PORT },
       stdio: ["ignore", "inherit", "inherit"],
     },
   );

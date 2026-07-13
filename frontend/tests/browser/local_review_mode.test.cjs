@@ -24,7 +24,6 @@ function startServer(mode) {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      PYTHONPATH: "src:.",
       LOCAL_REVIEW_SMOKE_ROOT: ROOT,
       LOCAL_REVIEW_SMOKE_PORT: PORT,
       LOCAL_REVIEW_SMOKE_MODE: mode,

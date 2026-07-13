@@ -5,7 +5,7 @@ Demonstrates a complete deterministic cognition flow using Wave 0 primitives:
   goal → option set → plan draft → evaluation → authority → agent run receipt
 
 Run:
-  PYTHONPATH=src uv run python scripts/run_agent_cognition_flow_smoke.py
+  uv run python scripts/run_agent_cognition_flow_smoke.py
 
 No LLM, no broker, no StateCore, no Execution Kernel.
 All artifacts are written to a temporary receipt root and cleaned up.
@@ -13,12 +13,8 @@ All artifacts are written to a temporary receipt root and cleaned up.
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
-
-# Ensure src is on path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from finharness.agent_cognition_flow import run_agent_cognition_flow
 
