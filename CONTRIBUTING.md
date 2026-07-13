@@ -3,6 +3,10 @@
 Use the existing project tasks and keep changes small, reviewable, and
 evidence-bound.
 
+For the numbered issue → worktree → PR → CI → merge lifecycle, follow
+[Manage Issue Worktrees](docs/how-to/manage-issue-worktrees.md). Do not begin the
+next implementation until the current issue PR has merged.
+
 ## Before You Change Code
 
 1. Read the relevant module doc under `docs/modules/`.

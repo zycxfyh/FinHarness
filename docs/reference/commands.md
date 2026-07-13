@@ -17,6 +17,9 @@ execution authorization.
 | `task status` | Show local lab/tool status. | Read-only. |
 | `task setup` | Sync locked Python groups, install the editable `src` package, and sync locked JS dependencies. | May install/update local packages. |
 | `task doctor` | Verify the locked uv environment and canonical editable package import. | Runs with `PYTHONPATH` removed and reports the resolved module path. |
+| `task issue:start -- <issue> --slug <slug>` | Create a numbered issue branch/worktree from current `origin/main`. | Requires an open issue and refuses naming/path collisions. |
+| `task issue:status -- [issue]` | Audit worktree numbering, cleanliness, and stale metadata. | Read-only. |
+| `task issue:finish -- <issue> [--apply]` | Preview or apply cleanup after verified PR merge. | Dry-run by default; refuses dirty, open, mismatched, or unmerged work. |
 | `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
 | `task capital:reconcile -- --receipt-root <path> --apply` | Apply deterministic import repairs and write a recovery receipt. | Never invents missing evidence or grants authority. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
