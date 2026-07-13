@@ -155,15 +155,18 @@ class StateCoreDiffTest(unittest.TestCase):
         self.assertEqual(diff.added[0].before_quantity, 0.0)
         self.assertEqual(diff.added[0].after_quantity, 4.0)
         self.assertEqual(diff.added[0].market_value_delta, 80.0)
+        self.assertEqual(diff.added[0].change_reason, "transaction_like")
 
         self.assertEqual([change.symbol for change in diff.removed], ["QQQ"])
         self.assertEqual(diff.removed[0].before_quantity, 2.0)
         self.assertEqual(diff.removed[0].after_quantity, 0.0)
         self.assertEqual(diff.removed[0].market_value_delta, -200.0)
+        self.assertEqual(diff.removed[0].change_reason, "deletion")
 
         self.assertEqual([change.symbol for change in diff.changed], ["SPY"])
         self.assertEqual(diff.changed[0].quantity_delta, 0.5)
         self.assertEqual(diff.changed[0].market_value_delta, 55.0)
+        self.assertEqual(diff.changed[0].change_reason, "transaction_like")
         self.assertEqual(diff.as_dict()["changed"][0]["change_type"], "changed")
 
     def test_diff_is_read_only_and_does_not_create_decision_artifacts(self) -> None:
@@ -176,6 +179,51 @@ class StateCoreDiffTest(unittest.TestCase):
         self.assertIn("Descriptive state diff only.", diff.non_claims)
         self.assertIn("Not investment advice.", diff.non_claims)
         self.assertIn("Not trading authorization.", diff.non_claims)
+
+    def test_market_value_only_change_is_classified_as_price_fx(self) -> None:
+        account = Account(
+            account_id="acct_price",
+            kind="broker",
+            venue="manual",
+            display_name="Price Account",
+        )
+        before = Snapshot(snapshot_id="snap_price_before", kind="portfolio")
+        after = Snapshot(snapshot_id="snap_price_after", kind="portfolio")
+        positions = [
+            Position(
+                position_id="pos_price_before",
+                snapshot_id=before.snapshot_id,
+                account_id=account.account_id,
+                symbol="SPY",
+                quantity=Decimal("2"),
+                market_value=Decimal("200"),
+                valuation_currency="USD",
+                unit_price=Decimal("100"),
+                price_currency="USD",
+                valued_at_utc="2026-06-17T09:00:00+00:00",
+                price_source_ref="before",
+                valuation_status="valued",
+            ),
+            Position(
+                position_id="pos_price_after",
+                snapshot_id=after.snapshot_id,
+                account_id=account.account_id,
+                symbol="SPY",
+                quantity=Decimal("2"),
+                market_value=Decimal("210"),
+                valuation_currency="USD",
+                unit_price=Decimal("105"),
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="after",
+                valuation_status="valued",
+            ),
+        ]
+        write_records([account, before, after, *positions], engine=self.engine)
+
+        diff = diff_snapshots(before.snapshot_id, after.snapshot_id, engine=self.engine)
+
+        self.assertEqual(diff.changed[0].change_reason, "price_fx")
 
     def test_missing_snapshot_fails_closed(self) -> None:
         self._seed_portfolio_snapshots()

@@ -76,8 +76,8 @@
       "consumer_id": "ATT-CONS-002",
       "path": "src/finharness/statecore/models.py",
       "symbol": "ReviewEvent.attestation_ref",
-      "line_start": 210,
-      "line_end": 248,
+      "line_start": 224,
+      "line_end": 258,
       "match_terms": [
         "Attestation",
         "attestation_ref"
@@ -101,8 +101,8 @@
       "consumer_id": "ATT-CONS-003",
       "path": "src/finharness/statecore/models.py",
       "symbol": "ReviewEvent docstring",
-      "line_start": 211,
-      "line_end": 215,
+      "line_start": 224,
+      "line_end": 233,
       "match_terms": [
         "Attestation"
       ],
@@ -1084,8 +1084,8 @@
       "consumer_id": "ATT-CONS-040",
       "path": "src/finharness/statecore/models.py",
       "symbol": "attestation_closes_current_review",
-      "line_start": 187,
-      "line_end": 201,
+      "line_start": 201,
+      "line_end": 211,
       "match_terms": [
         "Attestation"
       ],
@@ -1224,13 +1224,13 @@
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 35,
+      "match_line": 37,
       "term": "Attestation",
       "reason": "StateCoreRecord union import. Persistence infrastructure."
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 97,
+      "match_line": 100,
       "term": "Attestation",
       "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
     },
@@ -2100,7 +2100,7 @@
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 418,
+      "match_line": 427,
       "term": "attestation_ref",
       "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 418. Not a direct Attestation consumer."
     },

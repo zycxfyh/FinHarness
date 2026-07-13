@@ -27,6 +27,7 @@ from finharness.statecore.store import StateCoreStoreError
 
 router = APIRouter(tags=["state"])
 
+
 def _list_all[ModelT: SQLModel](
     engine: Engine, model: type[ModelT], *order_by: Any
 ) -> list[ModelT]:
@@ -39,6 +40,7 @@ class PositionChangeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     change_type: str
+    change_reason: str
     account_id: str
     symbol: str
     before_quantity: float
@@ -70,6 +72,7 @@ class SnapshotDiffResponse(BaseModel):
     per_currency_totals_after: dict[str, float]
     valuation_blockers: tuple[str, ...]
     source_refs: tuple[str, ...]
+    corporate_action_gaps: tuple[str, ...]
     non_claims: tuple[str, ...]
     execution_allowed: bool
 

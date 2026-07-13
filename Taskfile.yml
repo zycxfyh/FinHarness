@@ -37,6 +37,8 @@ tasks:
 
   check:fast:
     desc: Fast local feedback — lint, typecheck, full Python test gate (compile + unittest + pytest)
+    deps:
+      - setup
     cmds:
       - task: lint
       - task: typecheck

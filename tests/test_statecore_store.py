@@ -341,6 +341,15 @@ class StateCoreStoreTest(unittest.TestCase):
         self.assertEqual(batch.completeness_status, "legacy_unknown")
         self.assertEqual(batch.time_semantics, {})
         self.assertEqual(batch.findings, [])
+        self.assertEqual(batch.covered_domains, [])
+        self.assertIsNone(batch.supersedes_batch_id)
+        self.assertEqual(batch.corporate_action_status, "unsupported_gap")
+        self.assertEqual(
+            batch.corporate_action_gaps,
+            ["corporate_action_semantics_not_supported"],
+        )
+        with engine.connect() as connection:
+            self.assertIn("import_tombstones", inspect(connection).get_table_names())
         migrate_state_core(engine)
 
     def test_migration_adds_identity_bindings_without_forging_legacy_identity(self) -> None:

@@ -21,6 +21,7 @@ IMPORT_COMPLETENESS_STATUSES: tuple[str, ...] = (
     "blocked",
     "legacy_unknown",
 )
+CORPORATE_ACTION_STATUSES: tuple[str, ...] = ("not_applicable", "unsupported_gap")
 
 
 class ImportBatch(StateCoreBase, table=True):
@@ -36,12 +37,18 @@ class ImportBatch(StateCoreBase, table=True):
             "completeness_status IN ('complete', 'partial', 'blocked', 'legacy_unknown')",
             name="ck_import_batches_completeness_status_closed",
         ),
+        CheckConstraint(
+            "corporate_action_status IN ('not_applicable', 'unsupported_gap')",
+            name="ck_import_batches_corporate_action_status_closed",
+        ),
         UniqueConstraint(
             "source_kind",
             "source_id",
             "source_sha256",
             "adapter_version",
             "import_schema_version",
+            "coverage_mode",
+            "supersedes_batch_id",
             name="uq_import_batches_content_contract",
         ),
     )
@@ -55,9 +62,36 @@ class ImportBatch(StateCoreBase, table=True):
     adapter_version: str
     import_schema_version: str
     record_counts: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    covered_domains: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    supersedes_batch_id: str | None = Field(default=None, index=True)
+    correction_reason: str | None = None
+    corporate_action_status: str = "unsupported_gap"
+    corporate_action_gaps: list[str] = Field(default_factory=list, sa_column=json_list_column())
     completeness_status: str = "complete"
     time_semantics: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     findings: list[dict[str, Any]] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class ImportTombstone(StateCoreBase, table=True):
+    """Append-only evidence that one source-owned row disappeared or was deleted."""
+
+    __tablename__ = "import_tombstones"
+    __table_args__ = (
+        UniqueConstraint(
+            "batch_id",
+            "record_type",
+            "record_id",
+            name="uq_import_tombstones_batch_record",
+        ),
+    )
+
+    tombstone_id: str = Field(primary_key=True)
+    batch_id: str = Field(foreign_key="import_batches.batch_id", index=True)
+    source_kind: str = Field(index=True)
+    record_type: str
+    record_id: str
+    reason: str
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
 
 
 class ReceiptManifest(StateCoreBase, table=True):
