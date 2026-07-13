@@ -14,7 +14,11 @@ from finharness.agent_cognition_flow import run_agent_cognition_flow
 from finharness.agent_operating_flow import (
     evaluate_playbook_requirements,
 )
-from finharness.agent_receipt_search import build_receipt_search_index, search_receipt_index
+from finharness.agent_receipt_search import (
+    build_receipt_search_index,
+    search_receipt_index,
+    write_receipt_search_index,
+)
 from finharness.agent_runtime_receipts import AgentRuntimeTraceSink
 from finharness.agent_tool_availability import capture_tool_universe_snapshot
 from finharness.agent_tool_registry import build_registry
@@ -166,10 +170,7 @@ def main() -> int:
         print("\n11. Receipt Search Index")
         entries = build_receipt_search_index(root)
         failures += _check("Index covers receipts", len(entries) > 0)
-        index_path = root / "receipt-index.jsonl"
-        with index_path.open("w") as f:
-            for e in entries:
-                f.write(e.model_dump_json() + "\n")
+        index_path = write_receipt_search_index(root)
         results = search_receipt_index(index_path, "SPY")
         failures += _check("Search finds flow by content", len(results) > 0)
         results_by_status = search_receipt_index(index_path, "succeeded")

@@ -11,7 +11,9 @@ per-query file scanning.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,6 +69,55 @@ class AgentReceiptSearchResult(BaseModel):
     snippet: str | None = None
 
 
+class ReceiptSearchIndexManifest(BaseModel):
+    """Atomic commit point for checkpoint and incremental index generations."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: Literal["finharness.receipt_search_index.v2"] = (
+        "finharness.receipt_search_index.v2"
+    )
+    generation: int = Field(ge=1)
+    checkpoint_generation: int = Field(ge=1)
+    checkpoint_ref: str
+    indexed_entry_count: int = Field(ge=0)
+    complete: bool
+    source_high_water: str | None = None
+    unreadable_source_count: int = Field(ge=0)
+    unreadable_sources: list[str] = Field(default_factory=list)
+    updated_at_utc: str
+
+
+class ReceiptSearchIndexStatus(BaseModel):
+    """Freshness/completeness diagnostics returned with every bounded search."""
+
+    model_config = ConfigDict(frozen=True)
+
+    freshness: Literal["current", "missing", "incomplete", "corrupt"]
+    generation: int | None = None
+    checkpoint_generation: int | None = None
+    indexed_entry_count: int = 0
+    source_high_water: str | None = None
+    unreadable_source_count: int = 0
+    unreadable_sources: list[str] = Field(default_factory=list)
+    findings: list[str] = Field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return self.freshness == "current"
+
+
+class ReceiptSearchResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    results: list[AgentReceiptSearchResult] = Field(default_factory=list)
+    index_status: ReceiptSearchIndexStatus
+
+
+class ReceiptSearchIndexUnavailableError(RuntimeError):
+    """Raised by the legacy list API rather than returning a false-complete empty list."""
+
+
 _KIND_DIR_MAP: dict[str, str] = {
     "agent_run": "agent-runs",
     "evaluation_report": "evaluation-reports",
@@ -81,76 +132,183 @@ _KIND_DIR_MAP: dict[str, str] = {
 }
 
 
-# ── index building ───────────────────────────────────────────────────
+# ── index building and atomic generation commits ────────────────────
 
 
-def build_receipt_search_index(receipt_root: Path) -> list[ReceiptSearchIndexEntry]:
-    """Build a search index from all receipt files under receipt_root.
+_INDEX_DIR = ".receipt-index"
+_MAX_REPORTED_SOURCE_FAILURES = 20
 
-    Scans known receipt directories and extracts metadata into
-    ReceiptSearchIndexEntry objects. Stale or unreadable files are
-    skipped (not reported as errors).
-    """
+
+def _kind_for_payload(directory: str, payload: dict[str, object]) -> str:
+    if directory != "deliberation":
+        reverse = {value: key for key, value in _KIND_DIR_MAP.items()}
+        return reverse.get(directory, directory)
+    schema = str(payload.get("schema_version", ""))
+    return "plan_draft" if "plan_draft" in schema or payload.get("plan_id") else "option_set"
+
+
+def _entry_from_path(file_path: Path) -> ReceiptSearchIndexEntry:
+    payload = json.loads(file_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("receipt payload must be a JSON object")
+    kind = _kind_for_payload(file_path.parent.name, payload)
+    receipt_id = str(payload.get("receipt_id", file_path.stem))
+    subject_id = str(
+        payload.get("work_id") or payload.get("plan_id") or payload.get("subject_id") or ""
+    )
+    status = str(payload.get("status") or payload.get("outcome") or "")
+    refs: list[str] = []
+    for ref_key in (
+        "source_refs",
+        "evidence_refs",
+        "context_refs",
+        "receipt_refs",
+        "artifact_refs",
+    ):
+        value = payload.get(ref_key, [])
+        if isinstance(value, list):
+            refs.extend(str(ref) for ref in value)
+    text_parts = [
+        value
+        for key in ("work_id", "goal", "objective", "stop_reason", "content")
+        if isinstance((value := payload.get(key)), str) and value.strip()
+    ]
+    return ReceiptSearchIndexEntry(
+        receipt_id=receipt_id,
+        receipt_kind=kind,
+        file_path=str(file_path),
+        subject_id=subject_id or None,
+        status=status or None,
+        refs=refs,
+        text=" ".join(text_parts),
+        created_at_utc=str(payload.get("created_at_utc", "")) or None,
+    )
+
+
+def _scan_receipts(
+    receipt_root: Path,
+) -> tuple[list[ReceiptSearchIndexEntry], list[str], str | None]:
     entries: list[ReceiptSearchIndexEntry] = []
-    for kind, dir_name in sorted(_KIND_DIR_MAP.items()):
-        search_dir = receipt_root / dir_name
+    failures: list[str] = []
+    high_water: str | None = None
+    for directory in sorted(set(_KIND_DIR_MAP.values())):
+        search_dir = receipt_root / directory
         if not search_dir.is_dir():
             continue
         for file_path in sorted(search_dir.glob("*.json")):
+            relative = file_path.relative_to(receipt_root).as_posix()
             try:
-                payload = json.loads(file_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                continue
+                entries.append(_entry_from_path(file_path))
+                marker = f"{file_path.stat().st_mtime_ns}:{relative}"
+                high_water = max(high_water or marker, marker)
+            except (json.JSONDecodeError, OSError, ValueError):
+                failures.append(relative)
+    return entries, failures, high_water
 
-            receipt_id = str(payload.get("receipt_id", file_path.stem))
-            subject_id = str(
-                payload.get("work_id")
-                or payload.get("plan_id")
-                or payload.get("subject_id")
-                or ""
-            )
-            status = str(payload.get("status") or payload.get("outcome") or "")
 
-            # Collect refs
-            refs: list[str] = []
-            _ref_keys = ("source_refs", "evidence_refs", "context_refs",
-                         "receipt_refs", "artifact_refs")
-            for ref_key in _ref_keys:
-                val = payload.get(ref_key, [])
-                if isinstance(val, list):
-                    refs.extend(str(r) for r in val)
-
-            # Collect text for search
-            text_parts: list[str] = []
-            for key in ("work_id", "goal", "objective", "stop_reason", "content"):
-                val = payload.get(key)
-                if isinstance(val, str) and val.strip():
-                    text_parts.append(val)
-
-            entries.append(ReceiptSearchIndexEntry(
-                receipt_id=receipt_id,
-                receipt_kind=kind,
-                file_path=str(file_path),
-                subject_id=subject_id or None,
-                status=status or None,
-                refs=refs,
-                text=" ".join(text_parts),
-                created_at_utc=str(payload.get("created_at_utc", "")) or None,
-            ))
-
+def build_receipt_search_index(receipt_root: Path) -> list[ReceiptSearchIndexEntry]:
+    """Recovery/audit scan. Fail explicitly when any source cannot be represented."""
+    entries, failures, _ = _scan_receipts(receipt_root)
+    if failures:
+        raise ReceiptSearchIndexUnavailableError(
+            f"unreadable receipt sources: {', '.join(failures[:_MAX_REPORTED_SOURCE_FAILURES])}"
+        )
     return entries
 
 
-def write_receipt_search_index(receipt_root: Path) -> Path:
-    """Build the index and write it as JSONL next to the receipt root.
+def _atomic_write_jsonl(path: Path, entries: list[ReceiptSearchIndexEntry]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as handle:
+            temp_path = Path(handle.name)
+            for entry in entries:
+                handle.write(entry.model_dump_json() + "\n")
+            handle.flush()
+        temp_path.replace(path)
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
-    Returns the path to the written index file.
-    """
-    entries = build_receipt_search_index(receipt_root)
+
+def _read_manifest(index_path: Path) -> ReceiptSearchIndexManifest:
+    return ReceiptSearchIndexManifest.model_validate_json(index_path.read_text(encoding="utf-8"))
+
+
+def write_receipt_search_index(receipt_root: Path) -> Path:
+    """Atomically rebuild a deterministic checkpoint; intended for recovery/audit."""
+    from finharness.statecore.receipt_io import atomic_write_json
+
+    entries, failures, high_water = _scan_receipts(receipt_root)
     index_path = receipt_root / "receipt-index.jsonl"
-    with index_path.open("w", encoding="utf-8") as f:
-        for entry in entries:
-            f.write(entry.model_dump_json() + "\n")
+    try:
+        generation = _read_manifest(index_path).generation + 1
+    except (OSError, ValueError):
+        generation = 1
+    checkpoint_ref = f"{_INDEX_DIR}/checkpoint-{generation:020d}.jsonl"
+    _atomic_write_jsonl(receipt_root / checkpoint_ref, entries)
+    manifest = ReceiptSearchIndexManifest(
+        generation=generation,
+        checkpoint_generation=generation,
+        checkpoint_ref=checkpoint_ref,
+        indexed_entry_count=len(entries),
+        complete=not failures,
+        source_high_water=high_water,
+        unreadable_source_count=len(failures),
+        unreadable_sources=failures[:_MAX_REPORTED_SOURCE_FAILURES],
+        updated_at_utc=datetime.now(UTC).isoformat(),
+    )
+    atomic_write_json(index_path, manifest.model_dump(mode="json"))
+    return index_path
+
+
+def update_receipt_search_index(receipt_root: Path, receipt_refs: list[str]) -> Path:
+    """Commit one bounded incremental segment without scanning historical receipts."""
+    from finharness.statecore.receipt_io import atomic_write_json, resolve_under
+
+    index_path = receipt_root / "receipt-index.jsonl"
+    if not index_path.exists():
+        return write_receipt_search_index(receipt_root)
+    try:
+        manifest = _read_manifest(index_path)
+    except (OSError, ValueError):
+        return write_receipt_search_index(receipt_root)
+    generation = manifest.generation + 1
+    entries: list[ReceiptSearchIndexEntry] = []
+    failures: list[str] = []
+    high_water = manifest.source_high_water
+    for raw_ref in dict.fromkeys(receipt_refs):
+        clean_ref = raw_ref.split("#", maxsplit=1)[0]
+        try:
+            file_path = resolve_under(receipt_root, clean_ref)
+            entries.append(_entry_from_path(file_path))
+            marker = f"{file_path.stat().st_mtime_ns}:{clean_ref}"
+            high_water = max(high_water or marker, marker)
+        except (json.JSONDecodeError, OSError, ValueError):
+            failures.append(clean_ref)
+    segment_ref = f"{_INDEX_DIR}/update-{generation:020d}.json"
+    segment_payload = {
+        "schema": "finharness.receipt_search_index_update.v1",
+        "generation": generation,
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+    }
+    atomic_write_json(receipt_root / segment_ref, segment_payload)
+    all_failures = [*manifest.unreadable_sources, *failures]
+    updated = manifest.model_copy(
+        update={
+            "generation": generation,
+            "indexed_entry_count": manifest.indexed_entry_count + len(entries),
+            "complete": manifest.complete and not failures,
+            "source_high_water": high_water,
+            "unreadable_source_count": manifest.unreadable_source_count + len(failures),
+            "unreadable_sources": all_failures[:_MAX_REPORTED_SOURCE_FAILURES],
+            "updated_at_utc": datetime.now(UTC).isoformat(),
+        }
+    )
+    atomic_write_json(index_path, updated.model_dump(mode="json"))
     return index_path
 
 
@@ -182,39 +340,88 @@ def search_receipt_index(
     kinds: list[str] | None = None,
     limit: int = 20,
 ) -> list[AgentReceiptSearchResult]:
-    """Search the receipt index by keyword.
+    """Backward-compatible list API that fails closed on incomplete index truth."""
+    response = search_receipt_index_with_status(index_path, query, kinds=kinds, limit=limit)
+    if not response.index_status.complete:
+        raise ReceiptSearchIndexUnavailableError(
+            "; ".join(response.index_status.findings)
+            or f"receipt search index is {response.index_status.freshness}"
+        )
+    return response.results
 
-    Matches query against receipt_id, receipt_kind, status, refs, and
-    text fields. When no index file exists, falls back to an empty result.
-    """
+
+def _load_committed_entries(
+    index_path: Path,
+) -> tuple[dict[str, ReceiptSearchIndexEntry], ReceiptSearchIndexStatus]:
     if not index_path.exists():
-        return []
-    if not query.strip():
-        return []
+        return {}, ReceiptSearchIndexStatus(
+            freshness="missing", findings=["receipt search index manifest is missing"]
+        )
+    try:
+        manifest = _read_manifest(index_path)
+        root = index_path.parent
+        entries: dict[str, ReceiptSearchIndexEntry] = {}
+        with (root / manifest.checkpoint_ref).open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                entry = ReceiptSearchIndexEntry.model_validate_json(line)
+                entries[entry.file_path] = entry
+        for generation in range(manifest.checkpoint_generation + 1, manifest.generation + 1):
+            segment_path = root / _INDEX_DIR / f"update-{generation:020d}.json"
+            payload = json.loads(segment_path.read_text(encoding="utf-8"))
+            if payload.get("generation") != generation:
+                raise ValueError(f"segment generation mismatch: {segment_path}")
+            for raw_entry in payload.get("entries", []):
+                entry = ReceiptSearchIndexEntry.model_validate(raw_entry)
+                entries[entry.file_path] = entry
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        return {}, ReceiptSearchIndexStatus(
+            freshness="corrupt", findings=[f"receipt search index is corrupt: {exc}"]
+        )
+    freshness: Literal["current", "incomplete"] = (
+        "current" if manifest.complete else "incomplete"
+    )
+    findings = []
+    if not manifest.complete:
+        findings.append(
+            f"{manifest.unreadable_source_count} receipt source(s) were unreadable"
+        )
+    return entries, ReceiptSearchIndexStatus(
+        freshness=freshness,
+        generation=manifest.generation,
+        checkpoint_generation=manifest.checkpoint_generation,
+        indexed_entry_count=manifest.indexed_entry_count,
+        source_high_water=manifest.source_high_water,
+        unreadable_source_count=manifest.unreadable_source_count,
+        unreadable_sources=manifest.unreadable_sources,
+        findings=findings,
+    )
 
+
+def search_receipt_index_with_status(
+    index_path: Path,
+    query: str,
+    *,
+    kinds: list[str] | None = None,
+    limit: int = 20,
+) -> ReceiptSearchResponse:
+    """Search committed generations and always return freshness/completeness diagnostics."""
+    entries, status = _load_committed_entries(index_path)
+    if not query.strip():
+        return ReceiptSearchResponse(results=[], index_status=status)
     query_lower = query.lower()
     results: list[AgentReceiptSearchResult] = []
-
-    with index_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            if len(results) >= limit:
-                break
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = ReceiptSearchIndexEntry.model_validate_json(line)
-            except ValueError:
-                continue
-
-            if kinds is not None and entry.receipt_kind not in kinds:
-                continue
-
-            matched_on, snippet = _match_entry(entry, query_lower)
-            if not matched_on:
-                continue
-
-            results.append(AgentReceiptSearchResult(
+    for entry in sorted(entries.values(), key=lambda item: item.file_path):
+        if len(results) >= limit:
+            break
+        if kinds is not None and entry.receipt_kind not in kinds:
+            continue
+        matched_on, snippet = _match_entry(entry, query_lower)
+        if not matched_on:
+            continue
+        results.append(
+            AgentReceiptSearchResult(
                 receipt_id=entry.receipt_id,
                 receipt_kind=entry.receipt_kind,
                 file_path=entry.file_path,
@@ -223,9 +430,9 @@ def search_receipt_index(
                 created_at=entry.created_at_utc,
                 matched_on=matched_on,
                 snippet=snippet,
-            ))
-
-    return results[:limit]
+            )
+        )
+    return ReceiptSearchResponse(results=results, index_status=status)
 
 
 # ── existing scan-based search (backward compat) ──────────────────────
@@ -242,7 +449,8 @@ def search_agent_receipts(
 
     Scans JSON files in receipt subdirectories, matching the query
     against receipt_id, goal, outcome, error codes, and refs.
-    Returns up to `limit` results.
+    Returns up to `limit` results and fails closed if the source set is missing
+    or unreadable; callers must not interpret an incomplete scan as no evidence.
 
     Prefer build_receipt_search_index() + search_receipt_index() for
     repeated queries — this scan-based approach re-reads every file.
@@ -252,7 +460,7 @@ def search_agent_receipts(
 
     root = Path(receipt_root)
     if not root.is_dir():
-        return []
+        raise ReceiptSearchIndexUnavailableError(f"receipt root is missing: {root}")
 
     search_kinds = _resolve_kinds(kinds)
     results: list[AgentReceiptSearchResult] = []
@@ -290,8 +498,10 @@ def _scan_file(  # noqa: C901 — deterministic scan, well-bounded branches
     """Scan one receipt JSON file for a query match."""
     try:
         payload = json.loads(file_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ReceiptSearchIndexUnavailableError(
+            f"receipt source is unreadable: {file_path}: {exc}"
+        ) from exc
 
     matched_on: list[str] = []
     snippet: str | None = None
