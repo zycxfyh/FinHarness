@@ -169,6 +169,24 @@ Import receipts disclose `corporate_action_semantics_not_supported` until a
 separate governed corporate-action model exists. A deletion or quantity change
 must not be silently inferred to be a split, merger, or other corporate action.
 
+### Audit and recover the mirror
+
+Audit is read-only and exits non-zero when any receipt/artifact/database binding
+is inconsistent:
+
+```bash
+task capital:reconcile -- --receipt-root data/receipts/personal-finance
+```
+
+Apply only allowlisted deterministic repairs and emit a recovery receipt:
+
+```bash
+task capital:reconcile -- --receipt-root data/receipts/personal-finance --apply
+```
+
+Missing or corrupt immutable evidence remains unresolved and blocks verified
+use. Recovery never fabricates source or receipt bytes.
+
 ## Boundary
 
 This is a read-only adapter around a mature accounting/budgeting export. It is

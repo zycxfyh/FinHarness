@@ -927,6 +927,7 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         record_counts=record_counts,
     )
+    receipt_payload["deletions"] = [asdict(tombstone) for tombstone in tombstones]
     receipt_ref = display_path(receipt_path)
     prepared = prepare_import(
         source_kind=EXPORT_KIND,

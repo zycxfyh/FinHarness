@@ -21,8 +21,8 @@ An import has two distinct layers:
 `ImportBatch` has a stable ID over source kind, logical source ID, content hash,
 adapter version, and import schema version. It records `full` or `delta` coverage,
 the source artifact, typed record counts, completeness status, five-clock time
-semantics, and structured findings. Both current adapters declare
-`full`; W0 defines but does not yet implement delta reconciliation.
+semantics, and structured findings. Full imports replace declared source-owned
+domains; delta imports preserve omitted rows and apply explicit tombstones.
 
 ## Exact money, currency, and time
 
@@ -56,6 +56,19 @@ instrument IDs on their own. Missing type or venue evidence produces a blocking
 hash, compatibility receipt path, snapshot, record counts, and the
 `materialized` database state. A manifest row is never written for a failed
 transaction.
+
+`capital_import_recovery.audit_capital_imports()` verifies this binding across
+the Artifact Store, receipt file, `ImportBatch`, `ReceiptManifest`,
+`ReceiptIndex`, and materialized `Snapshot`. A batch is eligible for future
+authoritative resolution only when `batch_is_verified()` resolves it from the
+report's verified batch set. Missing or corrupt evidence therefore fails closed
+even when queryable DB rows remain.
+
+Deterministic recovery can rebuild the Artifact Store index, restore a receipt
+file from its hash-valid immutable artifact, rebuild or remove lookup-only
+`ReceiptIndex` rows, and replay an unmaterialized receipt while its original
+source reference is readable. Every applied run emits both a human-readable
+recovery file and an immutable recovery artifact.
 
 ## Replay and failure behavior
 

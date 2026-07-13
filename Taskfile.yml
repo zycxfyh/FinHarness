@@ -77,6 +77,11 @@ tasks:
     cmds:
       - uv run python scripts/run_receipt_usage_audit.py --write
 
+  capital:reconcile:
+    desc: Audit capital-import receipt/DB consistency; pass --apply for safe repairs
+    cmds:
+      - uv run python scripts/reconcile_capital_imports.py {{.CLI_ARGS}}
+
   quality:governance:
     desc: Run quality governance graph with authoritative local checks
     cmds:
