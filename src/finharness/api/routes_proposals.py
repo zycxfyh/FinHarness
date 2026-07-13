@@ -31,6 +31,12 @@ from finharness.scaffold_candidate_preflight import (
 from finharness.statecore.decision_scaffold import DecisionScaffoldError
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
+from finharness.statecore.proposal_version import (
+    CurrentProposalVersion,
+    ProposalVersionResolutionError,
+    require_current_proposal_version,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     ReviewEventKind,
     archived_proposal_ids,
@@ -44,7 +50,7 @@ from finharness.statecore.store import StateCoreStoreError
 
 router = APIRouter(tags=["proposals"])
 
-DecisionInput = Literal["approved", "rejected"]
+DecisionInput = Literal["approved", "rejected", "deferred"]
 
 
 class ProposalCreateRequest(BaseModel):
@@ -79,9 +85,16 @@ class AttestationCreateRequest(BaseModel):
     decision: DecisionInput
     attester: str
     reason: str
+    # Optional only for compatibility with pre-version clients. The Cockpit always
+    # supplies both; when either is supplied the pair is mandatory and stale-safe.
+    expected_proposal_version_id: str | None = None
+    expected_proposal_receipt_ref: str | None = None
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("attester", "reason")
+    @field_validator(
+        "attester",
+        "reason",
+    )
     @classmethod
     def require_human_context(cls, value: str) -> str:
         if not value.strip():
@@ -95,6 +108,20 @@ class AttestationCreateResponse(BaseModel):
     receipt_ref: str
     approved_is_not_execution_authorization: bool = True
     execution_allowed: bool = False
+
+
+class AttestationReviewView(BaseModel):
+    attestation_id: str
+    proposal_id: str
+    attester: str
+    reason: str
+    decision: DecisionInput
+    source_refs: list[str]
+    authority_level: str
+    created_at_utc: str
+    bound_proposal_version_id: str | None
+    bound_proposal_receipt_ref: str | None
+    stale: bool
 
 
 class AgentReviewSurface(BaseModel):
@@ -126,7 +153,7 @@ class AgentReviewSurface(BaseModel):
 
 class ProposalReviewResponse(BaseModel):
     proposal: Proposal
-    attestations: list[Attestation]
+    attestations: list[AttestationReviewView]
     open_for_review: bool
     agent_review: AgentReviewSurface | None = None
     queue_checks: ProposalQueueChecks
@@ -345,7 +372,7 @@ def _proposal_attestations(
 _REVISION_ANOMALY_STATUS: dict[str, int] = {
     "missing": 404,
     "outside_allowed_roots": 404,
-    }
+}
 
 
 def _scaffold_patch_from_candidate(
@@ -407,8 +434,7 @@ def _enforce_scaffold_candidate_preflight_gate(
             detail={
                 "code": "preflight_blocked",
                 "findings": [
-                    _preflight_finding_view(finding).model_dump()
-                    for finding in preflight.findings
+                    _preflight_finding_view(finding).model_dump() for finding in preflight.findings
                 ],
                 "execution_allowed": False,
                 "authority_transition": False,
@@ -494,9 +520,7 @@ def _agent_review_surface(
             source_refs=_string_list(record.proposal.get("source_refs")),
             receipt_ref=record.receipt_ref,
             review_state=(
-                "pending_human_review"
-                if open_for_review
-                else "human_attestation_recorded"
+                "pending_human_review" if open_for_review else "human_attestation_recorded"
             ),
             requires_human_review=True,
             execution_allowed=False,
@@ -512,7 +536,16 @@ def _proposal_review_response(
     engine: EngineDependency,
     receipt_root: Path,
 ) -> ProposalReviewResponse:
-    open_for_review = not attestations
+    current = _resolve_proposal_version_for_api(
+        proposal.proposal_id,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
+    views = _attestation_review_views(attestations, current=current)
+    open_for_review = not any(
+        not attestation.stale and attestation.decision in {"approved", "rejected"}
+        for attestation in views
+    )
     agent_review = _agent_review_surface(
         proposal,
         receipt_root=receipt_root,
@@ -520,7 +553,7 @@ def _proposal_review_response(
     )
     return ProposalReviewResponse(
         proposal=proposal,
-        attestations=attestations,
+        attestations=views,
         open_for_review=open_for_review,
         agent_review=agent_review,
         queue_checks=build_proposal_queue_checks(
@@ -535,6 +568,55 @@ def _proposal_review_response(
         ),
         execution_allowed=False,
     )
+
+
+def _resolve_proposal_version_for_api(
+    proposal_id: str,
+    *,
+    engine: EngineDependency,
+    receipt_root: Path,
+) -> CurrentProposalVersion:
+    try:
+        return resolve_current_proposal_version(
+            proposal_id,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except ProposalVersionResolutionError as exc:
+        status = 404 if exc.code == "proposal_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
+def _attestation_review_views(
+    attestations: list[Attestation],
+    *,
+    current: CurrentProposalVersion,
+) -> list[AttestationReviewView]:
+    lineage_by_receipt = {item.receipt_ref: item for item in current.lineage}
+    views: list[AttestationReviewView] = []
+    for attestation in attestations:
+        bound = next(
+            (
+                lineage_by_receipt[ref]
+                for ref in attestation.source_refs
+                if ref in lineage_by_receipt
+            ),
+            None,
+        )
+        views.append(
+            AttestationReviewView(
+                **attestation.model_dump(mode="json"),
+                bound_proposal_version_id=(
+                    bound.proposal_version_id if bound is not None else None
+                ),
+                bound_proposal_receipt_ref=(bound.receipt_ref if bound is not None else None),
+                stale=(bound is None or bound.proposal_version_id != current.proposal_version_id),
+            )
+        )
+    return views
 
 
 _EVIDENCE_REQUEST_CODES = {
@@ -571,8 +653,7 @@ def _review_task_lifecycle(
     non_evidence_blocks = [
         finding.code
         for finding in queue_checks.blocks
-        if finding.code not in _EVIDENCE_REQUEST_CODES
-        and finding.code != "human_review_required"
+        if finding.code not in _EVIDENCE_REQUEST_CODES and finding.code != "human_review_required"
     ]
     if timeline.is_archived:
         state: ReviewTaskState = "archived"
@@ -921,17 +1002,13 @@ async def apply_scaffold_revision_candidate(
                 "system_preflight_report_hash": preflight.report_hash,
                 "system_preflight_status": preflight.status,
                 "system_preflight_recomputed": True,
-                "system_preflight_finding_codes": [
-                    finding.code for finding in preflight.findings
-                ],
+                "system_preflight_finding_codes": [finding.code for finding in preflight.findings],
                 "acknowledged_preflight_warning_codes": (
                     request.acknowledged_preflight_warning_codes
                 ),
                 "human_confirmed": True,
                 "explicit_confirmation": True,
-                "explicit_preflight_acknowledgement": (
-                    request.explicit_preflight_acknowledgement
-                ),
+                "explicit_preflight_acknowledgement": (request.explicit_preflight_acknowledgement),
                 "authority_transition": False,
             },
             engine=engine,
@@ -994,6 +1071,21 @@ async def attest_proposal(
     _write_capability: WriteCapabilityDependency,
 ) -> AttestationCreateResponse:
     try:
+        expected_version = request.expected_proposal_version_id
+        expected_receipt = request.expected_proposal_receipt_ref
+        if (expected_version is None) != (expected_receipt is None):
+            raise HTTPException(
+                status_code=422,
+                detail="expected proposal version and receipt must be supplied together",
+            )
+        if expected_version is not None and expected_receipt is not None:
+            require_current_proposal_version(
+                proposal_id,
+                expected_version_id=expected_version.strip(),
+                expected_receipt_ref=expected_receipt.strip(),
+                engine=engine,
+                receipt_root=receipt_root,
+            )
         result = create_governed_attestation(
             proposal_id=proposal_id,
             decision=request.decision,
@@ -1003,6 +1095,12 @@ async def attest_proposal(
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        status = 404 if exc.code == "proposal_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -1098,9 +1196,7 @@ async def get_proposal_timeline(
     )
 
 
-@router.post(
-    "/proposals/{proposal_id}/review-events", response_model=ReviewEventCreateResponse
-)
+@router.post("/proposals/{proposal_id}/review-events", response_model=ReviewEventCreateResponse)
 async def add_review_event(
     proposal_id: str,
     request: ReviewEventCreateRequest,
@@ -1122,9 +1218,7 @@ async def add_review_event(
             receipt_root=receipt_root,
         )
     except KeyError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"proposal not found: {proposal_id}"
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StateCoreStoreError as exc:

@@ -24,7 +24,13 @@ from finharness.annual_review import load_latest_annual_review
 from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import build_proposal_queue_checks
 from finharness.rule_change_ledger import is_traceable, load_rule_changes
-from finharness.statecore.models import Attestation, Proposal, ReceiptIndex, ReviewEvent
+from finharness.statecore.models import (
+    Attestation,
+    Proposal,
+    ReceiptIndex,
+    ReviewEvent,
+    attestation_closes_current_review,
+)
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposals import is_archived
 
@@ -189,9 +195,7 @@ def _review_event_detail(event: ReviewEvent) -> dict[str, Any]:
     detail = event.model_dump(mode="json")
     artifact_keys = {
         "agent_review_note": "agent_review_note",
-        "agent_scaffold_revision_apply_candidate": (
-            "agent_scaffold_revision_apply_candidate"
-        ),
+        "agent_scaffold_revision_apply_candidate": ("agent_scaffold_revision_apply_candidate"),
     }
     artifact_key = artifact_keys.get(event.kind)
     if artifact_key is None or not event.text:
@@ -334,8 +338,7 @@ def _evidence_status(
     if (
         receipt_ref_missing
         or data_gaps
-        or block_codes
-        & {"missing_source_refs", "data_gap", "policy_mismatch"}
+        or block_codes & {"missing_source_refs", "data_gap", "policy_mismatch"}
     ):
         return "incomplete"
     return "complete"
@@ -399,13 +402,9 @@ def _build_review_queue_item(
     )
     note_pairs = _review_note_payload_pairs(events)
     notes = [payload for _, payload in note_pairs]
-    open_questions = [
-        item for note in notes for item in _text_items(note.get("open_questions"))
-    ]
+    open_questions = [item for note in notes for item in _text_items(note.get("open_questions"))]
     risks = [item for note in notes for item in _text_items(note.get("risks"))]
-    note_data_gaps = [
-        item for note in notes for item in _text_items(note.get("data_gaps"))
-    ]
+    note_data_gaps = [item for note in notes for item in _text_items(note.get("data_gaps"))]
     unreadable_note_gaps = _unreadable_review_note_gaps(events)
     duplicate_candidates = sorted(
         {
@@ -416,9 +415,7 @@ def _build_review_queue_item(
         }
     )
     stale_context_flags = [
-        finding.message
-        for finding in queue_checks.blocks
-        if finding.code == "stale_context"
+        finding.message for finding in queue_checks.blocks if finding.code == "stale_context"
     ]
     for event, note in note_pairs:
         if note.get("proposal_id") != event.proposal_id:
@@ -445,9 +442,7 @@ def _build_review_queue_item(
         attested_ids=attested_ids,
         evidence_status=evidence_status,
     )
-    note_severities = [
-        str(note.get("suggested_severity") or "").strip().lower() for note in notes
-    ]
+    note_severities = [str(note.get("suggested_severity") or "").strip().lower() for note in notes]
     priority = _queue_priority(
         status=status,
         block_codes=block_codes - {"human_review_required"},
@@ -525,7 +520,13 @@ def read_review_queue(
         for proposal in proposals
         if is_archived(proposal.proposal_id, engine=engine)
     }
-    attested_ids = {attestation.proposal_id for attestation in attestations}
+    proposals_by_id = {proposal.proposal_id: proposal for proposal in proposals}
+    attested_ids = {
+        attestation.proposal_id
+        for attestation in attestations
+        if (proposal := proposals_by_id.get(attestation.proposal_id)) is not None
+        and attestation_closes_current_review(attestation, proposal)
+    }
     events_by_proposal: dict[str, list[ReviewEvent]] = {}
     for event in events:
         events_by_proposal.setdefault(event.proposal_id, []).append(event)
@@ -548,11 +549,7 @@ def read_review_queue(
         for proposal in proposals
     ]
     if not include_closed:
-        items = [
-            item
-            for item in items
-            if item.status not in {"archived", "reviewed"}
-        ]
+        items = [item for item in items if item.status not in {"archived", "reviewed"}]
     priority_order = {"high": 0, "medium": 1, "low": 2}
     items.sort(
         key=lambda item: (
@@ -604,9 +601,7 @@ def read_compare_marks(engine: Any) -> list[ComparePair]:
     """
     with Session(engine) as session:
         events = list(
-            session.exec(
-                select(ReviewEvent).where(ReviewEvent.kind == "compare_mark")
-            ).all()
+            session.exec(select(ReviewEvent).where(ReviewEvent.kind == "compare_mark")).all()
         )
         latest: dict[frozenset[str], ReviewEvent] = {}
         for event in events:
@@ -641,9 +636,7 @@ def read_compare_marks(engine: Any) -> list[ComparePair]:
         else:
             missing_side = None
         gaps = (
-            [f"compared proposal no longer exists (missing {missing_side})"]
-            if missing_side
-            else []
+            [f"compared proposal no longer exists (missing {missing_side})"] if missing_side else []
         )
         pairs.append(
             ComparePair(

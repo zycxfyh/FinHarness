@@ -141,6 +141,25 @@ task api:serve
 # open http://127.0.0.1:8765/cockpit/
 ```
 
+`task api:serve` is explicitly read-only and fails closed for every write. To
+record a human confirm, reject, defer, scaffold revision, or review event in the
+persistent local state, start the loopback-only review mode instead:
+
+```bash
+task cockpit:review
+```
+
+Both commands use `data/state/state-core/state-core.sqlite` and
+`data/receipts/state-core` by default. Pass the following arguments to either
+task to select another persistent local workspace:
+
+```bash
+task cockpit:review -- --state-db PATH --receipt-root PATH --port PORT
+```
+Review mode creates a missing database, identifies the process as
+`local-human`, and still exposes no execution capability. Stop and restart the
+same command to replay the same receipt-backed review state.
+
 The browser surface shows Overview, Exposure, Proposals, and Timeline views.
 Proposal details include candidate evidence, options, attestations, and revision
 history.

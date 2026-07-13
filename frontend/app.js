@@ -531,27 +531,38 @@ function renderAttestations(parent, attestations) {
   for (const attestation of attestations) {
     const item = document.createElement("div");
     item.className = "item";
+    if (attestation.stale) {
+      item.classList.add("stale-attestation");
+    }
     item.append(
       textElement(
         "span",
         "item-title",
-        `${decisionLabel(attestation)} by ${attestation.attester}`,
+        `${decisionLabel(attestation)} by ${attestation.attester}${attestation.stale ? " (stale)" : ""}`,
       ),
     );
     item.append(textElement("span", "item-meta", attestation.reason));
+    item.append(
+      textElement(
+        "span",
+        "item-meta",
+        `Bound version: ${attestation.bound_proposal_version_id || "unresolved"}`,
+      ),
+    );
     parent.append(item);
   }
 }
 
-function renderAttestationForm(parent, proposalId) {
+function renderAttestationForm(parent, proposalId, proposalVersion) {
   const form = document.createElement("form");
   form.className = "attestation-form";
   form.innerHTML = `
     <div class="form-row">
       <label for="attestation-decision">Decision</label>
       <select id="attestation-decision" name="decision">
-        <option value="approved">attested</option>
+        <option value="approved">confirmed</option>
         <option value="rejected">rejected</option>
+        <option value="deferred">deferred</option>
       </select>
     </div>
     <div class="form-row">
@@ -572,6 +583,8 @@ function renderAttestationForm(parent, proposalId) {
         decision: data.get("decision"),
         attester: data.get("attester"),
         reason: data.get("reason"),
+        expected_proposal_version_id: proposalVersion.proposal_version_id,
+        expected_proposal_receipt_ref: proposalVersion.receipt_ref,
       });
       setStatus("Synced", "ok");
       await renderProposals();
@@ -654,7 +667,7 @@ function renderScaffoldRevisionForm(parent, proposalId) {
 }
 
 function decisionLabel(attestation) {
-  return attestation.decision === "approved" ? "attested" : attestation.decision;
+  return attestation.decision === "approved" ? "confirmed" : attestation.decision;
 }
 
 // Read-only Retrospective panel: latest annual_review summary (closure taken from the
@@ -1149,7 +1162,16 @@ async function renderProposalDetail() {
   renderNonClaims(selectors.proposalDetail, detail.non_claims);
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));
   renderAttestations(selectors.proposalDetail, detail.attestations);
-  renderAttestationForm(selectors.proposalDetail, detail.proposal.proposal_id);
+  if (revisionHistory.revisions.length) {
+    renderAttestationForm(
+      selectors.proposalDetail,
+      detail.proposal.proposal_id,
+      {
+        proposal_version_id: revisionHistory.revisions[0].receipt_id,
+        receipt_ref: revisionHistory.revisions[0].receipt_ref,
+      },
+    );
+  }
   renderReviewTimeline(selectors.proposalDetail, timeline);
   renderReviewEventForm(selectors.proposalDetail, detail.proposal.proposal_id);
 }

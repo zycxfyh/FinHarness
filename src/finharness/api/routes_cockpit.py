@@ -26,6 +26,7 @@ from finharness.statecore.models import (
     ReceiptIndex,
     Snapshot,
     TaxEvent,
+    attestation_closes_current_review,
 )
 
 router = APIRouter(tags=["cockpit"])
@@ -119,7 +120,13 @@ def _open_proposal_count(
     proposals: list[Proposal],
     attestations: list[Attestation],
 ) -> int:
-    attested_ids = {attestation.proposal_id for attestation in attestations}
+    proposals_by_id = {proposal.proposal_id: proposal for proposal in proposals}
+    attested_ids = {
+        attestation.proposal_id
+        for attestation in attestations
+        if (proposal := proposals_by_id.get(attestation.proposal_id)) is not None
+        and attestation_closes_current_review(attestation, proposal)
+    }
     return sum(1 for proposal in proposals if proposal.proposal_id not in attested_ids)
 
 
@@ -154,9 +161,7 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         if latest_snapshot is not None:
             positions = list(
                 session.exec(
-                    select(Position).where(
-                        Position.snapshot_id == latest_snapshot.snapshot_id
-                    )
+                    select(Position).where(Position.snapshot_id == latest_snapshot.snapshot_id)
                 ).all()
             )
 

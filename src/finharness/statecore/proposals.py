@@ -30,7 +30,7 @@ from finharness.statecore.receipt_io import (
 from finharness.statecore.risk_classification import ensure_confirmable
 from finharness.statecore.store import StateCoreStoreError, upsert_records, write_records
 
-DecisionInput = Literal["approved", "rejected"]
+DecisionInput = Literal["approved", "rejected", "deferred"]
 
 
 @dataclass(frozen=True)
@@ -466,9 +466,7 @@ def create_governed_attestation(
         reason=reason.strip(),
         decision=decision,
         source_refs=[
-            ref
-            for ref in [proposal.receipt_ref, receipt_ref, *(source_refs or [])]
-            if ref
+            ref for ref in [proposal.receipt_ref, receipt_ref, *(source_refs or [])] if ref
         ],
         created_at_utc=created_at,
         as_of_utc=created_at,
@@ -629,9 +627,7 @@ def create_governed_review_event(
         attestation_ref=attestation_ref,
         compare_with=compare_with,
         source_refs=[
-            ref
-            for ref in [proposal.receipt_ref, receipt_ref, *(source_refs or [])]
-            if ref
+            ref for ref in [proposal.receipt_ref, receipt_ref, *(source_refs or [])] if ref
         ],
         content_hash=content_hash,
         created_at_utc=created_at,
@@ -644,9 +640,7 @@ def create_governed_review_event(
         path=receipt_path,
         created_at_utc=created_at,
         refs=[
-            ref
-            for ref in [proposal.receipt_ref, proposal.proposal_id, *event.source_refs]
-            if ref
+            ref for ref in [proposal.receipt_ref, proposal.proposal_id, *event.source_refs] if ref
         ],
     )
     try:
@@ -671,9 +665,7 @@ def is_archived(proposal_id: str, *, engine: Engine) -> bool:
     """Derive archived state from the latest archive/reopen event (append-only history)."""
     with Session(engine) as session:
         events = list(
-            session.exec(
-                select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)
-            )
+            session.exec(select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id))
         )
     latest = _latest_archive_event(events)
     return latest is not None and latest.kind == "archive"

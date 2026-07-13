@@ -141,6 +141,19 @@ def create_app(
             },
         )
 
+    @api.exception_handler(OSError)
+    async def local_persistence_error(_request: Request, exc: OSError):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": {
+                    "code": "local_persistence_failure",
+                    "message": str(exc),
+                },
+                "execution_allowed": False,
+            },
+        )
+
     @api.exception_handler(ExecutionCapabilityDeniedError)
     async def execution_capability_denied(
         _request: Request,
