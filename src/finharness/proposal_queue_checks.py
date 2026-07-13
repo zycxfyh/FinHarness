@@ -8,7 +8,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.models import (
+    Attestation,
+    Proposal,
+    attestation_closes_current_review,
+)
 from finharness.statecore.proposals import archived_proposal_ids
 from finharness.statecore.risk_classification import is_high_risk
 
@@ -120,7 +124,13 @@ def _duplicate_open_proposal_ids(proposal: Proposal, *, engine: Engine) -> list[
         proposals = list(session.exec(select(Proposal)).all())
         attestations = list(session.exec(select(Attestation)).all())
 
-    attested_ids = {attestation.proposal_id for attestation in attestations}
+    proposals_by_id = {candidate.proposal_id: candidate for candidate in proposals}
+    attested_ids = {
+        attestation.proposal_id
+        for attestation in attestations
+        if (bound := proposals_by_id.get(attestation.proposal_id)) is not None
+        and attestation_closes_current_review(attestation, bound)
+    }
     kind = _norm(proposal.kind)
     claim = _norm(proposal.claim)
     duplicates: list[str] = []
@@ -143,11 +153,7 @@ def _blocked_transition_summary(
         "authority_transition",
         "execution",
     )
-    present = {
-        transition
-        for finding in blocks
-        for transition in finding.blocked_transitions
-    }
+    present = {transition for finding in blocks for transition in finding.blocked_transitions}
     return tuple(transition for transition in order if transition in present)
 
 
@@ -220,9 +226,7 @@ def build_proposal_queue_checks(
         )
 
     scaffold = proposal.decision_scaffold or {}
-    if is_high_risk(proposal.kind, proposal.evidence) and _blank(
-        scaffold.get("counter_evidence")
-    ):
+    if is_high_risk(proposal.kind, proposal.evidence) and _blank(scaffold.get("counter_evidence")):
         block(
             "counter_evidence_needed",
             "readiness",

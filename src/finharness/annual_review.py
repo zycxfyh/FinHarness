@@ -35,7 +35,13 @@ from finharness.lesson_loop import (
 )
 from finharness.project_paths import ROOT, display_path
 from finharness.rule_change_ledger import audit_untraceable, is_traceable, load_rule_changes
-from finharness.statecore.models import Attestation, Proposal, ReceiptIndex, utc_now_iso
+from finharness.statecore.models import (
+    Attestation,
+    Proposal,
+    ReceiptIndex,
+    attestation_closes_current_review,
+    utc_now_iso,
+)
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.receipt_io import atomic_write_json
 from finharness.statecore.store import upsert_records
@@ -168,9 +174,7 @@ def _lesson_closure(
             continue
         created = _date_of(change.created_at_utc)
         if created is None:
-            data_gaps.append(
-                f"rule change {change.rule_change_id} has no parseable created_at_utc"
-            )
+            data_gaps.append(f"rule change {change.rule_change_id} has no parseable created_at_utc")
             continue
         if created > period_end:
             continue
@@ -214,9 +218,7 @@ def _untraceable_rule_changes(
             continue
         created = _date_of(change.created_at_utc)
         if created is None:
-            data_gaps.append(
-                f"rule change {change.rule_change_id} has no parseable created_at_utc"
-            )
+            data_gaps.append(f"rule change {change.rule_change_id} has no parseable created_at_utc")
             continue
         if created <= period_end:
             result.append(change.rule_change_id)
@@ -258,7 +260,11 @@ def compute_annual_review(
     open_count = attested_count = approved_count = rejected_count = 0
     candidates_with_revisions = 0
     for proposal in in_period:
-        proposal_attestations = attestations_by_proposal.get(proposal.proposal_id, [])
+        proposal_attestations = [
+            attestation
+            for attestation in attestations_by_proposal.get(proposal.proposal_id, [])
+            if attestation_closes_current_review(attestation, proposal)
+        ]
         if proposal_attestations:
             attested_count += 1
             latest = max(proposal_attestations, key=lambda item: item.created_at_utc)

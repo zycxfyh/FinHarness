@@ -106,7 +106,8 @@
         "src/finharness/api/routes_review.py",
         "src/finharness/api/routes_risk.py",
         "src/finharness/api/routes_state.py",
-        "src/finharness/local_operator.py"
+        "src/finharness/local_operator.py",
+        "tests/test_local_review_mode.py"
       ],
       "task_consumers": [
         "api:serve"
@@ -375,6 +376,7 @@
         "src/finharness/proposal_queue_checks.py",
         "src/finharness/review_read.py",
         "src/finharness/scaffold_candidate_preflight.py",
+        "scripts/run_local_review_smoke_server.py",
         "src/finharness/statecore/action_intent_authority_bindings.py",
         "src/finharness/statecore/action_intent_simulations.py",
         "src/finharness/statecore/action_intents.py",
@@ -445,10 +447,13 @@
         "uvicorn"
       ],
       "import_consumers": [
-        "scripts/run_cockpit_smoke_server.py"
+        "scripts/run_cockpit_smoke_server.py",
+        "scripts/run_local_review_smoke_server.py",
+        "scripts/serve_local_cockpit.py"
       ],
       "task_consumers": [
-        "api:serve"
+        "api:serve",
+        "cockpit:review"
       ],
       "rationale": "Uvicorn is the declared local API entry point and is also used by the browser smoke server.",
       "confidence": "high"

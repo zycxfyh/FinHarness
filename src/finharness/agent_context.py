@@ -18,7 +18,11 @@ from sqlmodel import Session, select
 from finharness.exposure import compute_exposure
 from finharness.ips import IPS_NON_CLAIMS, check_ips_compliance, current_ips
 from finharness.review_read import read_proposal_timeline
-from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.models import (
+    Attestation,
+    Proposal,
+    attestation_closes_current_review,
+)
 from finharness.statecore.proposals import archived_proposal_ids
 
 AGENT_CONTEXT_NON_CLAIMS = (
@@ -130,9 +134,7 @@ def unavailable_context_pack(name: str, data_gap: str) -> AgentContextPack:
 def build_capital_summary_context(engine: Engine) -> AgentContextPack:
     spec = CONTEXT_PACK_SPECS["capital_summary"]
     report = compute_exposure(engine)
-    holdings = [
-        holding.model_dump(mode="json") for holding in report.holdings[: spec.max_items]
-    ]
+    holdings = [holding.model_dump(mode="json") for holding in report.holdings[: spec.max_items]]
     obligations = [
         obligation.model_dump(mode="json")
         for obligation in report.upcoming_obligations[: spec.max_items]
@@ -204,9 +206,7 @@ def build_current_ips_context(engine: Engine) -> AgentContextPack:
                 str(ips.cash_overweight_pct) if ips.cash_overweight_pct is not None else None
             ),
             "high_interest_rate_pct": (
-                str(ips.high_interest_rate_pct)
-                if ips.high_interest_rate_pct is not None
-                else None
+                str(ips.high_interest_rate_pct) if ips.high_interest_rate_pct is not None else None
             ),
         },
         "allowed_asset_classes": list(ips.allowed_asset_classes),
@@ -274,7 +274,13 @@ def build_open_proposals_context(engine: Engine, *, limit: int = 10) -> AgentCon
             ).all()
         )
         attestations = list(session.exec(select(Attestation)).all())
-    attested = {attestation.proposal_id for attestation in attestations}
+    proposals_by_id = {proposal.proposal_id: proposal for proposal in proposals}
+    attested = {
+        attestation.proposal_id
+        for attestation in attestations
+        if (proposal := proposals_by_id.get(attestation.proposal_id)) is not None
+        and attestation_closes_current_review(attestation, proposal)
+    }
     open_proposals = [
         proposal
         for proposal in proposals
@@ -326,9 +332,7 @@ def build_proposal_timeline_context(
             execution_allowed=False,
         )
     entries = [_timeline_entry_summary(entry) for entry in timeline.entries[:item_limit]]
-    source_refs = _refs(
-        ref for entry in entries for ref in entry.get("source_refs", ())
-    )
+    source_refs = _refs(ref for entry in entries for ref in entry.get("source_refs", ()))
     data_gaps: list[str] = []
     if len(timeline.entries) > len(entries):
         data_gaps.append(f"proposal timeline truncated to {len(entries)} entries")
@@ -363,7 +367,7 @@ def build_planning_policy_context() -> AgentContextPack:
 
     spec = CONTEXT_PACK_SPECS["planning_policy"]
     view = build_planning_policy_view()
-    items = [rule.model_dump() for rule in view.active_rules[:spec.max_items]]
+    items = [rule.model_dump() for rule in view.active_rules[: spec.max_items]]
     data_gaps: list[str] = []
     if len(view.active_rules) > len(items):
         data_gaps.append(f"active rules truncated to {len(items)} items")
@@ -421,9 +425,7 @@ def _pack(
     return _fit_pack_to_budget(pack, spec)
 
 
-def _fit_pack_to_budget(
-    pack: AgentContextPack, spec: AgentContextPackSpec
-) -> AgentContextPack:
+def _fit_pack_to_budget(pack: AgentContextPack, spec: AgentContextPackSpec) -> AgentContextPack:
     if len(pack.model_dump_json()) <= spec.max_chars:
         return pack
     compacted = pack.model_copy(

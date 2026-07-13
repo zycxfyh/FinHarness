@@ -150,9 +150,7 @@ class Proposal(StateCoreBase, table=True):
     # Minimal decision forcing gate (P4). Empty for ungoverned/legacy rows; governed
     # proposals created via create_governed_proposal must carry the four required fields
     # (see finharness.statecore.decision_scaffold).
-    decision_scaffold: dict[str, Any] = Field(
-        default_factory=dict, sa_column=json_dict_column()
-    )
+    decision_scaffold: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     authority_level: AuthorityLevel = "needs_human_confirm"
     execution_allowed: bool = False
     receipt_ref: str | None = None
@@ -186,6 +184,19 @@ class Attestation(StateCoreBase, table=True):
         return value
 
 
+def attestation_closes_current_review(
+    attestation: Attestation,
+    proposal: Proposal,
+) -> bool:
+    """Whether a terminal attestation is bound to the proposal's current revision."""
+
+    if attestation.decision not in {"approved", "rejected"}:
+        return False
+    if proposal.receipt_ref is None:
+        return True
+    return proposal.receipt_ref in attestation.source_refs
+
+
 REVIEW_EVENT_KINDS: tuple[str, ...] = (
     "annotation",
     "archive",
@@ -209,9 +220,7 @@ class ReviewEvent(StateCoreBase, table=True):
 
     __tablename__ = "review_events"
     __table_args__ = (
-        CheckConstraint(
-            "execution_allowed = 0", name="ck_review_events_execution_allowed_false"
-        ),
+        CheckConstraint("execution_allowed = 0", name="ck_review_events_execution_allowed_false"),
         # Closed set at the DB level: SQLModel table models skip field validators on
         # construction, so the kind enum must also be enforced where it is persisted.
         CheckConstraint(
@@ -387,8 +396,7 @@ class CapitalMandate(StateCoreBase, table=True):
     def require_known_autonomy_level(cls, value: str) -> str:
         if value not in CAPITAL_MANDATE_AUTONOMY_LEVELS:
             raise ValueError(
-                "capital mandate autonomy_level must be one of "
-                f"{CAPITAL_MANDATE_AUTONOMY_LEVELS}"
+                f"capital mandate autonomy_level must be one of {CAPITAL_MANDATE_AUTONOMY_LEVELS}"
             )
         return value
 
@@ -477,8 +485,7 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
     def require_known_status(cls, value: str) -> str:
         if value not in AGENT_AUTHORITY_GRANT_STATUSES:
             raise ValueError(
-                "agent authority grant status must be one of "
-                f"{AGENT_AUTHORITY_GRANT_STATUSES}"
+                f"agent authority grant status must be one of {AGENT_AUTHORITY_GRANT_STATUSES}"
             )
         return value
 
@@ -532,9 +539,7 @@ class ActionIntent(StateCoreBase, table=True):
             name="ck_action_intents_next_step_closed",
         ),
         CheckConstraint(
-            "created_by IN ("
-            + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS)
-            + ")",
+            "created_by IN (" + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS) + ")",
             name="ck_action_intents_created_by_closed",
         ),
     )
@@ -589,9 +594,7 @@ class ActionIntentAuthorityBinding(StateCoreBase, table=True):
     __tablename__ = "action_intent_authority_bindings"
     __table_args__ = (
         CheckConstraint(
-            "author_type IN ("
-            + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS)
-            + ")",
+            "author_type IN (" + ", ".join(f"'{author}'" for author in ACTION_INTENT_AUTHORS) + ")",
             name="ck_action_intent_authority_bindings_author_type_closed",
         ),
         CheckConstraint(
@@ -1149,9 +1152,7 @@ class PaperOrderTicketCandidate(StateCoreBase, table=True):
             name="ck_paper_order_ticket_candidates_order_type_closed",
         ),
         CheckConstraint(
-            "time_in_force IN ("
-            + ", ".join(f"'{tif}'" for tif in PAPER_ORDER_TICKET_TIFS)
-            + ")",
+            "time_in_force IN (" + ", ".join(f"'{tif}'" for tif in PAPER_ORDER_TICKET_TIFS) + ")",
             name="ck_paper_order_ticket_candidates_tif_closed",
         ),
         CheckConstraint(

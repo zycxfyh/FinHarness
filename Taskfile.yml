@@ -132,6 +132,7 @@ tasks:
     desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.
     cmds:
       - node frontend/tests/browser/cockpit_smoke.test.cjs
+      - node frontend/tests/browser/local_review_mode.test.cjs
 
   governance:check:
     desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
@@ -232,9 +233,14 @@ tasks:
       - task: test:all
 
   api:serve:
-    desc: Serve the local state API (read + governed non-execution write)
+    desc: Serve the persistent local cockpit read-only (writes fail closed)
     cmds:
-      - uv run uvicorn finharness.api.app:app --host 127.0.0.1 --port 8765
+      - uv run python scripts/serve_local_cockpit.py --mode read-only {{.CLI_ARGS}}
+
+  cockpit:review:
+    desc: Serve the loopback-only persistent cockpit with governed human review writes
+    cmds:
+      - uv run python scripts/serve_local_cockpit.py --mode review {{.CLI_ARGS}}
 
   personal-finance:import:
     desc: Import a read-only FinHarness-contract personal-finance CSV into state core

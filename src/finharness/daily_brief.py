@@ -30,6 +30,7 @@ from finharness.statecore.models import (
     Proposal,
     ReceiptIndex,
     Snapshot,
+    attestation_closes_current_review,
     utc_now_iso,
 )
 from finharness.statecore.observations import ObservationThresholds, build_observations
@@ -156,16 +157,13 @@ def _change_section(
     diff = diff_snapshots(before.snapshot_id, after.snapshot_id, engine=engine)
     with Session(engine) as session:
         current_positions = list(
-            session.exec(
-                select(Position).where(Position.snapshot_id == after.snapshot_id)
-            ).all()
+            session.exec(select(Position).where(Position.snapshot_id == after.snapshot_id)).all()
         )
     observations = build_observations(diff, current_positions, thresholds=thresholds)
     lines = [observation.detail for observation in observations]
     if not lines:
         lines = [
-            f"Holdings value moved by {diff.total_market_value_delta:,.2f}; "
-            "no threshold crossings."
+            f"Holdings value moved by {diff.total_market_value_delta:,.2f}; no threshold crossings."
         ]
     return BriefSection(title=title, lines=tuple(lines)), diff.total_market_value_delta
 
@@ -174,7 +172,13 @@ def _open_reviews(engine: Engine) -> list[Proposal]:
     with Session(engine) as session:
         proposals = list(session.exec(select(Proposal)).all())
         attestations = list(session.exec(select(Attestation)).all())
-    attested = {attestation.proposal_id for attestation in attestations}
+    proposals_by_id = {proposal.proposal_id: proposal for proposal in proposals}
+    attested = {
+        attestation.proposal_id
+        for attestation in attestations
+        if (proposal := proposals_by_id.get(attestation.proposal_id)) is not None
+        and attestation_closes_current_review(attestation, proposal)
+    }
     return [proposal for proposal in proposals if proposal.proposal_id not in attested]
 
 
@@ -220,9 +224,7 @@ def compute_daily_brief(
     # Only render an amount when the cash total is verified; an unverified 0.00 would
     # read as "you have no cash" rather than "no snapshot to read cash from".
     if exposure.cash_total_verified:
-        cash_lines.append(
-            f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}"
-        )
+        cash_lines.append(f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}")
     else:
         cash_lines.append("Cash total not verified; no portfolio snapshot on record.")
     cash_lines += [
@@ -244,8 +246,7 @@ def compute_daily_brief(
         concentration_lines = ["Concentration not assessed: no holdings on record."]
     elif exposure.concentration_flagged:
         concentration_lines = [
-            f"Concentration flag: top holding over "
-            f"{exposure.concentration_threshold * 100:.0f}%"
+            f"Concentration flag: top holding over {exposure.concentration_threshold * 100:.0f}%"
         ]
     else:
         concentration_lines = [
