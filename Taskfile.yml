@@ -50,6 +50,7 @@ tasks:
       - task: test:integration
       - task: test:frontend
       - task: governance:check
+      - task: architecture:check
       - task: rules:audit
 
   check:research:
@@ -144,6 +145,11 @@ tasks:
       - node frontend/tests/review_workspace.test.cjs
       - node frontend/tests/review_retrospective.test.cjs
       - node frontend/tests/review_compare.test.cjs
+
+  architecture:check:
+    desc: Fail on Python import SCCs and direct/transitive architecture boundary violations
+    cmds:
+      - uv run python scripts/check_architecture_boundaries.py
 
   governance:policies:
     desc: List the governance policy registry (id / owner / scope / source)

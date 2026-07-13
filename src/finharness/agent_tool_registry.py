@@ -23,11 +23,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.agent_capabilities import AgentCapability
-from finharness.agent_tools import (
+from finharness.agent_tool_entries import (
     AGENT_TOOL_ENTRIES,
     AgentToolSideEffect,
 )
-from finharness.agent_tools import (
+from finharness.agent_tool_entries import (
     AgentToolEntry as _AgentToolEntry,
 )
 
@@ -157,9 +157,7 @@ class AgentToolRegistry(BaseModel):
             "toolsets": toolsets,
             "output_kinds": output_kinds,
             "by_toolset": {ts: len(self.tools_by_toolset(ts)) for ts in toolsets},
-            "by_output_kind": {
-                ok: len(self.tools_by_output_kind(ok)) for ok in output_kinds
-            },
+            "by_output_kind": {ok: len(self.tools_by_output_kind(ok)) for ok in output_kinds},
             "evidence_eligible_count": sum(
                 1 for r in self.registrations.values() if r.visibility_chain()["evidence_eligible"]
             ),

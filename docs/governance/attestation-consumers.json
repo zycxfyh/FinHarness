@@ -679,7 +679,7 @@
       "path": "src/finharness/agent_tools.py",
       "symbol": "AGENT_PROPOSAL_DRAFT_NON_CLAIMS / AGENT_REVIEW_NOTE_DRAFT_NON_CLAIMS",
       "line_start": 70,
-      "line_end": 79,
+      "line_end": 80,
       "match_terms": [
         "decision of record"
       ],
@@ -1620,9 +1620,9 @@
     },
     {
       "path": "src/finharness/agent_tools.py",
-      "match_line": 138,
+      "match_line": 139,
       "term": "attestation_ref",
-      "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 138."
+      "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 139."
     },
     {
       "path": "src/finharness/annual_review.py",

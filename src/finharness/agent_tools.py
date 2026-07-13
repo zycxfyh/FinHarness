@@ -9,10 +9,9 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from uuid import uuid4
 
 from agents import Agent, FunctionTool, Tool, function_tool
@@ -35,10 +34,12 @@ from finharness.agent_context import (
     unavailable_context_pack,
 )
 from finharness.agent_context_projection import build_capital_context_projection_payload
-from finharness.agent_evidence import (
-    local_eval_source_ref,
-    market_data_source_ref,
-    resolve_evidence_providers,
+from finharness.agent_evidence import local_eval_source_ref, market_data_source_ref
+from finharness.agent_tool_entries import (
+    AGENT_TOOL_ENTRIES,
+    AgentToolAvailability,
+    AgentToolEntry,
+    AgentToolHandler,
 )
 from finharness.config import load_settings
 from finharness.data_entry import fetch_quote_snapshot, fetch_yfinance_history
@@ -139,12 +140,6 @@ AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS = frozenset(
     }
 )
 AGENT_NAME = "Finance Research Harness Agent"
-AGENT_TOOL_ENTRY_NON_CLAIMS = (
-    "Agent tool entries describe runtime visibility; they do not grant authority.",
-    "Tool availability is diagnostic metadata, not approval.",
-    "Not execution authorization.",
-    "Not investment advice.",
-)
 AGENT_BASE_INSTRUCTIONS = (
     "Use profile-selected tools to inspect bounded FinHarness context packs, fetch data, "
     "run backtests, evaluate risk notes, and create only the review objects exposed by "
@@ -155,79 +150,6 @@ AGENT_BASE_INSTRUCTIONS = (
     "Always disclose that the current default data source is yfinance/Yahoo Finance, "
     "not TradingView/TV, and that optional providers are evidence sources only."
 )
-
-AgentToolSideEffect = Literal["read", "local_eval", "append_only_review_write"]
-AgentToolset = Literal[
-    "market_data",
-    "eval",
-    "capital_context",
-    "proposal_draft",
-    "proposal_review",
-]
-AgentToolUnavailablePolicy = Literal["hide", "diagnostic_stub", "fail_closed"]
-AgentToolHandler = Callable[[dict[str, Any]], dict[str, object]]
-
-
-@dataclass(frozen=True)
-class AgentToolAvailability:
-    """Cheap runtime availability result for a declared Agent tool."""
-
-    available: bool
-    reason: str | None = None
-
-    def model(self) -> dict[str, object]:
-        return {
-            "available": self.available,
-            "reason": self.reason,
-        }
-
-
-@dataclass(frozen=True)
-class AgentToolEntry:
-    """Hermes-style metadata wrapper around an Agents SDK tool."""
-
-    name: str
-    tool: FunctionTool
-    capability: AgentCapability
-    toolset: AgentToolset
-    description: str
-    side_effect: AgentToolSideEffect
-    check_fn: Callable[[], AgentToolAvailability]
-    dispatch_handler: AgentToolHandler
-    evidence_provider_ids: tuple[str, ...] = ()
-    unavailable_policy: AgentToolUnavailablePolicy = "hide"
-    max_result_chars: int = 12_000
-    requires_human_review: bool = False
-    execution_allowed: bool = False
-    authority_transition: bool = False
-    non_claims: tuple[str, ...] = AGENT_TOOL_ENTRY_NON_CLAIMS
-
-    def __post_init__(self) -> None:
-        if self.name != self.tool.name:
-            raise ValueError(f"agent tool entry name mismatch: {self.name} != {self.tool.name}")
-        if self.execution_allowed:
-            raise ValueError("agent tool entries never grant execution authority")
-        if self.authority_transition:
-            raise ValueError("agent tool entries never grant authority transitions")
-        resolve_evidence_providers(self.evidence_provider_ids)
-
-    def metadata(self) -> dict[str, object]:
-        availability = self.check_fn()
-        return {
-            "name": self.name,
-            "capability": self.capability.value,
-            "toolset": self.toolset,
-            "description": self.description,
-            "side_effect": self.side_effect,
-            "availability": availability.model(),
-            "evidence_provider_ids": list(self.evidence_provider_ids),
-            "unavailable_policy": self.unavailable_policy,
-            "max_result_chars": self.max_result_chars,
-            "requires_human_review": self.requires_human_review,
-            "execution_allowed": False,
-            "authority_transition": False,
-            "non_claims": list(self.non_claims),
-        }
 
 
 def _available() -> AgentToolAvailability:
@@ -730,16 +652,12 @@ def draft_agent_scaffold_revision_apply_candidate_from_context_payload(
             "system_preflight_recomputed": False,
             "rollback_info": copy.deepcopy(rollback_info),
             "rollback_info_source": "agent_supplied_candidate_payload",
-            "human_confirmation_requirements": _clean_strings(
-                human_confirmation_requirements
-            ),
+            "human_confirmation_requirements": _clean_strings(human_confirmation_requirements),
             "source_refs": _dedupe_refs(source_refs),
             "receipt_refs": receipt_refs_clean,
             "context_pack_refs": _dedupe_refs(context_pack_refs or []),
             "data_gaps": _dedupe_refs(data_gaps or []),
-            "non_claims": list(
-                AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS
-            ),
+            "non_claims": list(AGENT_SCAFFOLD_REVISION_APPLY_CANDIDATE_NON_CLAIMS),
             "transition_rule": {
                 "may_enter_proposal_timeline": True,
                 "may_be_applied_by_human_confirmed_flow": True,
@@ -865,9 +783,7 @@ def _validate_agent_review_note_draft(
     ):
         marker = _contains_forbidden_authority_marker(value)
         if marker is not None:
-            raise ValueError(
-                f"{name} cannot carry authority/decision marker {marker!r}"
-            )
+            raise ValueError(f"{name} cannot carry authority/decision marker {marker!r}")
 
 
 def _validate_agent_scaffold_revision_apply_candidate_inputs(
@@ -888,16 +804,10 @@ def _validate_agent_scaffold_revision_apply_candidate_inputs(
     data_gaps: list[str],
     extra: dict[str, Any],
 ) -> None:
-    if not profile_allows_capability(
-        profile_name, AgentCapability.CAPITAL_SCAFFOLD_REVISION
-    ):
-        raise ValueError(
-            f"agent profile {profile_name!r} does not allow capital-scaffold-revision"
-        )
+    if not profile_allows_capability(profile_name, AgentCapability.CAPITAL_SCAFFOLD_REVISION):
+        raise ValueError(f"agent profile {profile_name!r} does not allow capital-scaffold-revision")
     if not proposal_id.strip():
-        raise ValueError(
-            "agent scaffold revision apply candidate requires a non-blank proposal_id"
-        )
+        raise ValueError("agent scaffold revision apply candidate requires a non-blank proposal_id")
     if not isinstance(scaffold_patch, dict):
         raise ValueError("agent scaffold revision apply candidate scaffold_patch must be an object")
     unknown_scaffold_fields = sorted(set(scaffold_patch) - set(ALL_FIELDS))
@@ -977,15 +887,11 @@ def _validate_scaffold_candidate_shapes(
             raise ValueError(f"agent scaffold revision apply candidate {name} must be an object")
 
 
-def _reject_forbidden_authority_markers(
-    *, artifact_values: dict[str, Any]
-) -> None:
+def _reject_forbidden_authority_markers(*, artifact_values: dict[str, Any]) -> None:
     for name, value in artifact_values.items():
         marker = _contains_forbidden_authority_marker(value)
         if marker is not None:
-            raise ValueError(
-                f"{name} cannot carry authority/decision marker {marker!r}"
-            )
+            raise ValueError(f"{name} cannot carry authority/decision marker {marker!r}")
 
 
 def _validate_basis_risks(
@@ -1027,8 +933,7 @@ def _validate_agent_review_note_choice(
 ) -> None:
     if review_kind.strip() not in AGENT_REVIEW_NOTE_KINDS:
         raise ValueError(
-            "agent review note kind must be one of "
-            + ", ".join(sorted(AGENT_REVIEW_NOTE_KINDS))
+            "agent review note kind must be one of " + ", ".join(sorted(AGENT_REVIEW_NOTE_KINDS))
         )
     if suggested_severity.strip() not in AGENT_REVIEW_NOTE_SEVERITIES:
         raise ValueError(
@@ -1045,12 +950,9 @@ def _reject_agent_review_note_extra(
         forbidden = sorted(set(unknown) & AGENT_REVIEW_NOTE_FORBIDDEN_EXTRA_FIELDS)
         if forbidden:
             raise ValueError(
-                f"{artifact_name} cannot set authority/decision field(s): "
-                + ", ".join(forbidden)
+                f"{artifact_name} cannot set authority/decision field(s): " + ", ".join(forbidden)
             )
-        raise ValueError(
-            f"{artifact_name} received unsupported field(s): " + ", ".join(unknown)
-        )
+        raise ValueError(f"{artifact_name} received unsupported field(s): " + ", ".join(unknown))
 
 
 def _validate_agent_review_note_lists(
@@ -1271,175 +1173,179 @@ def draft_agent_scaffold_revision_apply_candidate_from_context(
     )
 
 
-AGENT_TOOL_ENTRIES: dict[str, AgentToolEntry] = {
-    entry.name: entry
-    for entry in (
-        AgentToolEntry(
-            name=get_quote_snapshot.name,
-            tool=get_quote_snapshot,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="market_data",
-            description="Read one quote snapshot through the configured market-data adapter.",
-            side_effect="read",
-            check_fn=_available,
-            dispatch_handler=_call_payload(get_quote_snapshot_payload),
-            evidence_provider_ids=("market_data.yfinance",),
-        ),
-        AgentToolEntry(
-            name=get_historical_risk_metrics.name,
-            tool=get_historical_risk_metrics,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="market_data",
-            description="Fetch historical prices and compute descriptive risk metrics.",
-            side_effect="read",
-            check_fn=_available,
-            dispatch_handler=_call_payload(historical_risk_metrics_payload),
-            evidence_provider_ids=("market_data.yfinance",),
-        ),
-        AgentToolEntry(
-            name=evaluate_latest_risk_note.name,
-            tool=evaluate_latest_risk_note,
-            capability=AgentCapability.CAPITAL_EXPLAIN,
-            toolset="eval",
-            description="Run local promptfoo assertions against the latest generated risk note.",
-            side_effect="local_eval",
-            check_fn=_promptfoo_available,
-            dispatch_handler=_call_payload(evaluate_latest_risk_note_payload),
-            evidence_provider_ids=("local_eval.promptfoo",),
-            unavailable_policy="hide",
-        ),
-        AgentToolEntry(
-            name=get_capital_context_projection.name,
-            tool=get_capital_context_projection,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read the profile-budgeted Capital OS office context projection.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(capital_context_projection_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-            max_result_chars=20_000,
-        ),
-        AgentToolEntry(
-            name=get_capital_summary_context.name,
-            tool=get_capital_summary_context,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read the bounded Capital OS exposure context pack.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(capital_summary_context_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-        ),
-        AgentToolEntry(
-            name=get_current_ips_context.name,
-            tool=get_current_ips_context,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read the active IPS context pack when one exists.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(current_ips_context_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-        ),
-        AgentToolEntry(
-            name=get_ips_check_context.name,
-            tool=get_ips_check_context,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read the IPS compliance context pack for current exposure.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(ips_check_context_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-        ),
-        AgentToolEntry(
-            name=get_open_proposals_context.name,
-            tool=get_open_proposals_context,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read open governed proposals awaiting human review.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(open_proposals_context_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-        ),
-        AgentToolEntry(
-            name=get_proposal_timeline_context.name,
-            tool=get_proposal_timeline_context,
-            capability=AgentCapability.CAPITAL_READ,
-            toolset="capital_context",
-            description="Read a governed proposal's bounded review timeline.",
-            side_effect="read",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(proposal_timeline_context_payload),
-            evidence_provider_ids=("capital_context.state_core",),
-            unavailable_policy="diagnostic_stub",
-        ),
-        AgentToolEntry(
-            name=draft_governed_proposal_from_context.name,
-            tool=draft_governed_proposal_from_context,
-            capability=AgentCapability.CAPITAL_PROPOSE,
-            toolset="proposal_draft",
-            description="Create an append-only governed proposal draft for human review.",
-            side_effect="append_only_review_write",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(draft_governed_proposal_from_context_payload),
-            evidence_provider_ids=(
-                "capital_context.state_core",
-                "proposal_receipt.state_core",
+AGENT_TOOL_ENTRIES.update(
+    {
+        entry.name: entry
+        for entry in (
+            AgentToolEntry(
+                name=get_quote_snapshot.name,
+                tool=get_quote_snapshot,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="market_data",
+                description="Read one quote snapshot through the configured market-data adapter.",
+                side_effect="read",
+                check_fn=_available,
+                dispatch_handler=_call_payload(get_quote_snapshot_payload),
+                evidence_provider_ids=("market_data.yfinance",),
             ),
-            unavailable_policy="fail_closed",
-            requires_human_review=True,
-        ),
-        AgentToolEntry(
-            name=draft_agent_review_note_from_context.name,
-            tool=draft_agent_review_note_from_context,
-            capability=AgentCapability.CAPITAL_REVIEW_NOTE,
-            toolset="proposal_review",
-            description=(
-                "Create an append-only AgentReviewNoteDraft on an existing proposal "
-                "for human review."
+            AgentToolEntry(
+                name=get_historical_risk_metrics.name,
+                tool=get_historical_risk_metrics,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="market_data",
+                description="Fetch historical prices and compute descriptive risk metrics.",
+                side_effect="read",
+                check_fn=_available,
+                dispatch_handler=_call_payload(historical_risk_metrics_payload),
+                evidence_provider_ids=("market_data.yfinance",),
             ),
-            side_effect="append_only_review_write",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(draft_agent_review_note_from_context_payload),
-            evidence_provider_ids=(
-                "capital_context.state_core",
-                "proposal_receipt.state_core",
+            AgentToolEntry(
+                name=evaluate_latest_risk_note.name,
+                tool=evaluate_latest_risk_note,
+                capability=AgentCapability.CAPITAL_EXPLAIN,
+                toolset="eval",
+                description=(
+                    "Run local promptfoo assertions against the latest generated risk note."
+                ),
+                side_effect="local_eval",
+                check_fn=_promptfoo_available,
+                dispatch_handler=_call_payload(evaluate_latest_risk_note_payload),
+                evidence_provider_ids=("local_eval.promptfoo",),
+                unavailable_policy="hide",
             ),
-            unavailable_policy="fail_closed",
-            requires_human_review=True,
-        ),
-        AgentToolEntry(
-            name=draft_agent_scaffold_revision_apply_candidate_from_context.name,
-            tool=draft_agent_scaffold_revision_apply_candidate_from_context,
-            capability=AgentCapability.CAPITAL_SCAFFOLD_REVISION,
-            toolset="proposal_review",
-            description=(
-                "Create an append-only AgentScaffoldRevisionApplyCandidate for "
-                "human-confirmed scaffold revision apply."
+            AgentToolEntry(
+                name=get_capital_context_projection.name,
+                tool=get_capital_context_projection,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read the profile-budgeted Capital OS office context projection.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(capital_context_projection_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
+                max_result_chars=20_000,
             ),
-            side_effect="append_only_review_write",
-            check_fn=_state_core_path_available,
-            dispatch_handler=_call_payload(
-                draft_agent_scaffold_revision_apply_candidate_from_context_payload
+            AgentToolEntry(
+                name=get_capital_summary_context.name,
+                tool=get_capital_summary_context,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read the bounded Capital OS exposure context pack.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(capital_summary_context_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
             ),
-            evidence_provider_ids=(
-                "capital_context.state_core",
-                "proposal_receipt.state_core",
+            AgentToolEntry(
+                name=get_current_ips_context.name,
+                tool=get_current_ips_context,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read the active IPS context pack when one exists.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(current_ips_context_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
             ),
-            unavailable_policy="fail_closed",
-            requires_human_review=True,
-            max_result_chars=20_000,
-        ),
-    )
-}
+            AgentToolEntry(
+                name=get_ips_check_context.name,
+                tool=get_ips_check_context,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read the IPS compliance context pack for current exposure.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(ips_check_context_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
+            ),
+            AgentToolEntry(
+                name=get_open_proposals_context.name,
+                tool=get_open_proposals_context,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read open governed proposals awaiting human review.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(open_proposals_context_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
+            ),
+            AgentToolEntry(
+                name=get_proposal_timeline_context.name,
+                tool=get_proposal_timeline_context,
+                capability=AgentCapability.CAPITAL_READ,
+                toolset="capital_context",
+                description="Read a governed proposal's bounded review timeline.",
+                side_effect="read",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(proposal_timeline_context_payload),
+                evidence_provider_ids=("capital_context.state_core",),
+                unavailable_policy="diagnostic_stub",
+            ),
+            AgentToolEntry(
+                name=draft_governed_proposal_from_context.name,
+                tool=draft_governed_proposal_from_context,
+                capability=AgentCapability.CAPITAL_PROPOSE,
+                toolset="proposal_draft",
+                description="Create an append-only governed proposal draft for human review.",
+                side_effect="append_only_review_write",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(draft_governed_proposal_from_context_payload),
+                evidence_provider_ids=(
+                    "capital_context.state_core",
+                    "proposal_receipt.state_core",
+                ),
+                unavailable_policy="fail_closed",
+                requires_human_review=True,
+            ),
+            AgentToolEntry(
+                name=draft_agent_review_note_from_context.name,
+                tool=draft_agent_review_note_from_context,
+                capability=AgentCapability.CAPITAL_REVIEW_NOTE,
+                toolset="proposal_review",
+                description=(
+                    "Create an append-only AgentReviewNoteDraft on an existing proposal "
+                    "for human review."
+                ),
+                side_effect="append_only_review_write",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(draft_agent_review_note_from_context_payload),
+                evidence_provider_ids=(
+                    "capital_context.state_core",
+                    "proposal_receipt.state_core",
+                ),
+                unavailable_policy="fail_closed",
+                requires_human_review=True,
+            ),
+            AgentToolEntry(
+                name=draft_agent_scaffold_revision_apply_candidate_from_context.name,
+                tool=draft_agent_scaffold_revision_apply_candidate_from_context,
+                capability=AgentCapability.CAPITAL_SCAFFOLD_REVISION,
+                toolset="proposal_review",
+                description=(
+                    "Create an append-only AgentScaffoldRevisionApplyCandidate for "
+                    "human-confirmed scaffold revision apply."
+                ),
+                side_effect="append_only_review_write",
+                check_fn=_state_core_path_available,
+                dispatch_handler=_call_payload(
+                    draft_agent_scaffold_revision_apply_candidate_from_context_payload
+                ),
+                evidence_provider_ids=(
+                    "capital_context.state_core",
+                    "proposal_receipt.state_core",
+                ),
+                unavailable_policy="fail_closed",
+                requires_human_review=True,
+                max_result_chars=20_000,
+            ),
+        )
+    }
+)
 AGENT_TOOL_REGISTRY: dict[str, FunctionTool] = {
     name: entry.tool for name, entry in AGENT_TOOL_ENTRIES.items()
 }
@@ -1450,8 +1356,7 @@ def agent_tool_entries_for_profile(profile_name: str = "default") -> list[AgentT
     missing = [name for name in names if name not in AGENT_TOOL_ENTRIES]
     if missing:
         raise ValueError(
-            f"agent profile {profile_name!r} references unregistered tools: "
-            f"{', '.join(missing)}"
+            f"agent profile {profile_name!r} references unregistered tools: {', '.join(missing)}"
         )
     return [AGENT_TOOL_ENTRIES[name] for name in names]
 

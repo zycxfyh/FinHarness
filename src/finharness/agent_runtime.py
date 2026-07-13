@@ -16,7 +16,7 @@ from finharness.agent_evidence import (
     build_agent_evidence_envelope,
     evidence_provider_metadata_for_ids,
 )
-from finharness.agent_tools import (
+from finharness.agent_tool_entries import (
     AGENT_TOOL_ENTRIES,
     AgentToolAvailability,
     AgentToolEntry,
@@ -308,9 +308,7 @@ def _missing_required_arguments(
     if not isinstance(required, list):
         return []
     return [
-        str(name)
-        for name in required
-        if str(name) not in arguments or arguments[str(name)] is None
+        str(name) for name in required if str(name) not in arguments or arguments[str(name)] is None
     ]
 
 

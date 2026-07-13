@@ -346,7 +346,7 @@ This ledger records the framework now proven by the 15-contract AUT2 gate:
 | Slice | Status | Evidence | Remaining boundary |
 | --- | --- | --- | --- |
 | AUT-CONTROL-01 W/A lattice and admission | implemented scaffold | `autonomy_control.py`; behavioral positive/negative tests | Produces evidence only; no dispatch or effect integration. |
-| AUT-CONTROL-02 StateCore authority adapter | implemented scaffold | `statecore/autonomy_adapter.py`; dynamic grant/mandate tests | Legacy vocabulary maps only through AUT3; no AUT4+ inference. |
+| AUT-CONTROL-02 StateCore authority adapter | implemented scaffold | `agent_autonomy_adapter.py`; dynamic grant/mandate tests | Legacy vocabulary maps only through AUT3; no AUT4+ inference. |
 | AUT-CONTROL-03 Work context propagation | implemented scaffold | `AgentWorkRequest` / `AgentWorkResult` carry Agent, W/A, mandate and grant identifiers | Harness runtime ceiling remains separate from the Agent request. |
 | AUT-CONTROL-04 Dispatch admission binding | implemented | Every attempted dispatch crosses typed admission first; reports are persisted and denied attempts fail before runtime dispatch | Effect-command integration remains a later AUT4/AUT5 concern. |
 | AUT-CONTROL-05 Terminal control evidence | implemented | Admission, tool artifacts, AgentRunReceipt, WorkResult, search index and hydrated workspace form a terminal chain across declared stop paths | Restart/resume/session semantics remain a later durability wave, not part of AUT2. |

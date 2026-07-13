@@ -235,6 +235,7 @@ systems:
       - src/finharness/agent_context_projection.py
       - src/finharness/agent_evidence.py
       - src/finharness/agent_runtime.py
+      - src/finharness/agent_tool_entries.py
       - src/finharness/agent_tools.py
       - src/finharness/scaffold_candidate_preflight.py
       - src/finharness/review_read.py
@@ -296,7 +297,7 @@ systems:
       - docs/adr/2026-07-11-agent-native-control-ownership.md
     runtime_roots:
       - src/finharness/autonomy_control.py
-      - src/finharness/statecore/autonomy_adapter.py
+      - src/finharness/agent_autonomy_adapter.py
       - src/finharness/agent_work_loop.py
     mature_posture: Keep admission local, typed, deterministic, and provider-neutral. Consider an external policy engine only after rule volume or multi-runtime consistency creates measured pressure.
     checks:

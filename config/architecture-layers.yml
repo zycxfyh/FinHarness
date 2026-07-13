@@ -1,0 +1,69 @@
+schema: finharness.architecture_layers.v1
+source_roots:
+  - src
+  - scripts
+  - experiments
+
+# First match wins. Keep narrow ownership rules before the core fallback.
+layers:
+  - name: statecore
+    module_globs: ["finharness.statecore", "finharness.statecore.*"]
+  - name: api_frontend
+    module_globs: ["finharness.api", "finharness.api.*"]
+  - name: execution
+    module_globs: ["finharness.execution", "finharness.execution.*"]
+  - name: agent
+    module_globs:
+      - "finharness.agent_*"
+      - "finharness.hermes_bridge"
+      - "finharness.autonomy_*"
+  - name: research
+    module_globs:
+      - "finharness.research_*"
+      - "finharness.market_data"
+      - "finharness.data_catalog"
+      - "finharness.data_quality"
+  - name: decisioning
+    module_globs:
+      - "finharness.decision_*"
+      - "finharness.review_*"
+      - "finharness.proposal_*"
+      - "finharness.authorization"
+  - name: legacy
+    module_globs:
+      - "finharness.paper_validation"
+      - "finharness.paper_validation_*"
+      - "finharness.api.routes_paper_validation"
+  - name: archive
+    module_globs: ["experiments.archive", "experiments.archive.*"]
+  - name: core
+    module_globs: ["finharness", "finharness.*", "scripts.*", "experiments.*"]
+
+rules:
+  - id: statecore-is-foundational
+    source_layers: [statecore]
+    forbidden_target_layers: [api_frontend, agent, research, legacy, archive]
+  - id: execution-does-not-call-agent
+    source_layers: [execution]
+    forbidden_target_layers: [agent, archive]
+  - id: agent-does-not-bypass-execution-commands
+    source_layers: [agent]
+    forbidden_target_modules:
+      - "finharness.execution.commands"
+      - "finharness.execution.services"
+      - "finharness.execution.adapters.*"
+  - id: research-does-not-write-state-or-execute
+    source_layers: [research]
+    forbidden_target_modules:
+      - "finharness.statecore.store"
+      - "finharness.statecore.proposals"
+      - "finharness.execution.commands"
+      - "finharness.execution.services"
+      - "finharness.execution.adapters.*"
+  - id: canonical-does-not-call-legacy-write-services
+    source_layers: [statecore, decisioning, execution, agent, research, core]
+    forbidden_target_modules:
+      - "finharness.paper_validation"
+  - id: api-does-not-call-archive
+    source_layers: [api_frontend]
+    forbidden_target_layers: [archive]
