@@ -188,6 +188,7 @@
       "import_consumers": [
         "scripts/check_python_wheels.py",
         "scripts/run_agent_once.py",
+        "src/finharness/agent_tool_entries.py",
         "src/finharness/agent_tools.py",
         "tests/test_agent_tools.py"
       ],
@@ -383,7 +384,7 @@
         "src/finharness/statecore/action_intent_simulations.py",
         "src/finharness/statecore/action_intents.py",
         "src/finharness/statecore/agent_authority_grants.py",
-        "src/finharness/statecore/autonomy_adapter.py",
+        "src/finharness/agent_autonomy_adapter.py",
         "src/finharness/statecore/capital_mandates.py",
         "src/finharness/statecore/capital_objective_fits.py",
         "src/finharness/statecore/diff.py",

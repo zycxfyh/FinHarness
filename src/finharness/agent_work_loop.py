@@ -476,9 +476,7 @@ def run_bounded_tool_dispatch_loop(  # noqa: C901
         env = env.model_copy(
             update={
                 "request_argument_keys": sorted(tool_request.arguments),
-                "request_arguments_sha256": sha256(
-                    canonical_arguments.encode("utf-8")
-                ).hexdigest(),
+                "request_arguments_sha256": sha256(canonical_arguments.encode("utf-8")).hexdigest(),
                 "autonomy_admission_ref": admission_ref,
                 "autonomy_disposition": admission.disposition,
             }
@@ -729,13 +727,11 @@ def run_agent_work_loop(
             return _persist_preflight_stop(
                 request=request,
                 stop_reason="missing_required_context",
-                data_gaps=[
-                    "authority_engine is required to resolve agent_authority_grant_id"
-                ],
+                data_gaps=["authority_engine is required to resolve agent_authority_grant_id"],
                 findings=authority_findings,
                 runtime_world_fidelity=runtime_world_fidelity,
             )
-        from finharness.statecore.autonomy_adapter import (
+        from finharness.agent_autonomy_adapter import (
             resolve_runtime_autonomy_mandate,
         )
 
@@ -749,8 +745,7 @@ def run_agent_work_loop(
                 request=request,
                 stop_reason="evaluation_blocked",
                 data_gaps=[
-                    f"authority_resolution_denied: {reason}"
-                    for reason in resolution.deny_reasons
+                    f"authority_resolution_denied: {reason}" for reason in resolution.deny_reasons
                 ],
                 findings=authority_findings,
                 runtime_world_fidelity=runtime_world_fidelity,
@@ -818,9 +813,7 @@ def run_agent_work_loop(
     # 5. Link and persist the terminal work package, then rebuild search.
     root = Path(request.receipt_root)
     tool_result_refs = [
-        str(ref)
-        for envelope in envelopes
-        if (ref := envelope.get("artifact_ref")) is not None
+        str(ref) for envelope in envelopes if (ref := envelope.get("artifact_ref")) is not None
     ]
     admission_refs = list(
         dict.fromkeys(
@@ -845,9 +838,7 @@ def run_agent_work_loop(
             profile_name=request.profile_name,
             tool_calls=[],
             outcome=(
-                "failed"
-                if stop_reason in {"internal_error", "tool_unavailable"}
-                else "blocked"
+                "failed" if stop_reason in {"internal_error", "tool_unavailable"} else "blocked"
             ),
             stop_reason=stop_reason,
             receipt_root=root,

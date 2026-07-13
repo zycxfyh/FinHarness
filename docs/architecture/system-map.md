@@ -230,7 +230,7 @@ domain model / read model / write(command) model / adapters / invariants
   membrane；表达 W0-W4 世界保真度、AUT0-AUT6 自治阶梯、action requirements、
   human-control mode 和 mandate/runtime admission。
 - **runtime**:`autonomy_control.py` 定义 typed action request、runtime state、
-  effective/candidate/escalate/blocked report；`statecore/autonomy_adapter.py` 动态
+  effective/candidate/escalate/blocked report；`agent_autonomy_adapter.py` 动态
   验证现有 `CapitalMandate` / `AgentAuthorityGrant` 并映射到 AUT0-AUT3；
   `agent_work_loop.py` 当前只携带 Agent、W/A、mandate/grant 上下文。
 - **status**:current AUT2 foundation。Work-loop typed dispatch 在实际调用前消费

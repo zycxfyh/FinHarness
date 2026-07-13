@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlmodel import Session
 
+from finharness.agent_autonomy_adapter import resolve_runtime_autonomy_mandate
 from finharness.autonomy_control import (
     AdmissionDisposition,
     AgentActionClass,
@@ -19,7 +20,6 @@ from finharness.autonomy_control import (
     evaluate_autonomy_admission,
 )
 from finharness.statecore.agent_authority_grants import record_agent_authority_grant
-from finharness.statecore.autonomy_adapter import resolve_runtime_autonomy_mandate
 from finharness.statecore.capital_mandates import record_capital_mandate
 from finharness.statecore.models import AgentAuthorityGrant
 from finharness.statecore.store import init_state_core

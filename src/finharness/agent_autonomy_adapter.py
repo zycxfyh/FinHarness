@@ -128,9 +128,7 @@ def resolve_runtime_autonomy_mandate(
 
 def _action_classes_for(level: AgentAutonomyLevel) -> tuple[AgentActionClass, ...]:
     by_level = {
-        AgentAutonomyLevel.AUT0_CONTEXT_ASSISTANT: (
-            AgentActionClass.OBSERVE_STATE,
-        ),
+        AgentAutonomyLevel.AUT0_CONTEXT_ASSISTANT: (AgentActionClass.OBSERVE_STATE,),
         AgentAutonomyLevel.AUT1_TOOL_REVIEWER: (
             AgentActionClass.OBSERVE_STATE,
             AgentActionClass.GATHER_EVIDENCE,
