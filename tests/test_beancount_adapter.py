@@ -158,7 +158,8 @@ class BeancountAdapterTest(unittest.TestCase):
         positions = {p.symbol: p for p in read_all(Position, engine=self.engine)}
         # GOLD has no price: quantity kept, but no fake money value.
         self.assertEqual(positions["GOLD"].quantity, Decimal("5"))
-        self.assertEqual(positions["GOLD"].market_value, Decimal("0"))
+        self.assertIsNone(positions["GOLD"].market_value)
+        self.assertEqual(positions["GOLD"].valuation_status, "unpriced")
         # SPY is priced; USD cash is money: both keep real values.
         self.assertEqual(positions["SPY"].market_value, Decimal("6000.00"))
         snapshots = read_all(Snapshot, engine=self.engine)

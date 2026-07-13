@@ -60,6 +60,8 @@ def _abs_ratio(delta: float, base: float) -> float | None:
 
 
 def _new_position(change: PositionChange, thresholds: ObservationThresholds) -> Observation | None:
+    if change.after_market_value is None:
+        return None
     if abs(change.after_market_value) < thresholds.min_position_market_value:
         return None
     return Observation(
@@ -83,6 +85,8 @@ def _closed_position(
     change: PositionChange,
     thresholds: ObservationThresholds,
 ) -> Observation | None:
+    if change.before_market_value is None:
+        return None
     if abs(change.before_market_value) < thresholds.min_position_market_value:
         return None
     return Observation(
@@ -104,9 +108,10 @@ def _closed_position(
 
 def _material_move(change: PositionChange, thresholds: ObservationThresholds) -> Observation | None:
     quantity_change_pct = _abs_ratio(change.quantity_delta, change.before_quantity)
-    market_value_change_pct = _abs_ratio(
-        change.market_value_delta,
-        change.before_market_value,
+    market_value_change_pct = (
+        _abs_ratio(change.market_value_delta, change.before_market_value)
+        if change.market_value_delta is not None and change.before_market_value is not None
+        else None
     )
     quantity_crossed = (
         quantity_change_pct is not None and quantity_change_pct >= thresholds.quantity_change_pct
@@ -119,10 +124,7 @@ def _material_move(change: PositionChange, thresholds: ObservationThresholds) ->
         return None
     return Observation(
         kind="material_move",
-        detail=(
-            f"{change.symbol} changed by quantity_delta {change.quantity_delta:.4f} "
-            f"and market_value_delta {change.market_value_delta:.2f}."
-        ),
+        detail=(f"{change.symbol} changed by quantity_delta {change.quantity_delta:.4f}."),
         numbers={
             "account_id": change.account_id,
             "symbol": change.symbol,
@@ -147,6 +149,8 @@ def _total_exposure_delta(
     diff: SnapshotDiff,
     thresholds: ObservationThresholds,
 ) -> Observation | None:
+    if diff.total_market_value_delta is None or diff.total_market_value_before is None:
+        return None
     change_pct = _abs_ratio(
         diff.total_market_value_delta,
         diff.total_market_value_before,
@@ -172,6 +176,8 @@ def _position_totals_by_identity(
 ) -> dict[str, tuple[str, Decimal]]:
     totals: dict[str, tuple[str, Decimal]] = {}
     for position in positions:
+        if position.market_value is None:
+            continue
         identity_key = position.instrument_id or f"unresolved:{position.position_id}"
         symbol = position.symbol.upper()
         prior = totals.get(identity_key, (symbol, Decimal("0")))[1]
@@ -222,6 +228,22 @@ def _data_gap_observations(
         key=lambda item: (item.account_id, item.symbol, item.position_id),
     )
     for position in ordered_positions:
+        if position.market_value is None:
+            observations.append(
+                Observation(
+                    kind="data_gap",
+                    detail=f"{position.symbol} has no admitted market value.",
+                    numbers={
+                        "account_id": position.account_id,
+                        "symbol": position.symbol.upper(),
+                        "market_value": None,
+                        "valuation_status": position.valuation_status,
+                    },
+                    threshold={"data_gap_min_market_value": thresholds.data_gap_min_market_value},
+                    crossed=True,
+                )
+            )
+            continue
         if position.cost_basis is not None:
             continue
         if abs(position.market_value) < thresholds.data_gap_min_market_value:

@@ -152,6 +152,7 @@ def _position_records(
     source_ref: str,
     as_of_utc: str,
     provider_namespace: str,
+    payload_valued_at_utc: str | None,
 ) -> tuple[
     list[Position],
     list[InstrumentIdentity],
@@ -171,18 +172,50 @@ def _position_records(
         )
         quantity = _first_decimal("quantity", raw.get("qty"), raw.get("quantity"))
         market_value = _market_value(raw)
-        if not symbol or quantity is None or market_value is None:
+        if not symbol or quantity is None:
             findings.append(
                 ImportFinding(
                     "omitted_incomplete_position",
                     "partial",
-                    "position omitted because symbol, quantity, or market value is missing",
+                    "position omitted because symbol or quantity is missing",
                     record_type="position",
                     record_number=index + 1,
                 )
             )
             continue
         cost_basis = _first_decimal("cost_basis", raw.get("cost_basis"))
+        unit_price = _first_decimal(
+            "unit_price",
+            raw.get("unit_price"),
+            raw.get("current_price"),
+            raw.get("market_price"),
+            raw.get("last_price"),
+        )
+        valued_at_utc = _string(raw.get("valued_at_utc") or payload_valued_at_utc) or None
+        price_currency = _string(raw.get("price_currency") or raw.get("currency")).upper() or None
+        valuation_currency = (
+            _string(raw.get("valuation_currency") or raw.get("currency")).upper() or None
+        )
+        price_source_ref = _string(raw.get("price_source_ref")) or (
+            source_ref if unit_price is not None else None
+        )
+        fx_rate = _first_decimal("fx_rate", raw.get("fx_rate"))
+        fx_as_of_utc = _string(raw.get("fx_as_of_utc")) or None
+        fx_source_ref = _string(raw.get("fx_source_ref")) or None
+        if market_value is None or unit_price is None or valued_at_utc is None:
+            valuation_status = "unpriced"
+        elif valuation_currency != price_currency:
+            valuation_status = (
+                "valued_converted"
+                if valuation_currency
+                and price_currency
+                and fx_rate is not None
+                and fx_as_of_utc
+                and fx_source_ref
+                else "fx_missing"
+            )
+        else:
+            valuation_status = "valued"
         instrument_type = _string(raw.get("instrument_type") or raw.get("asset_class"))
         instrument_venue = _string(raw.get("instrument_venue") or raw.get("exchange"))
         instrument_id: str | None = None
@@ -221,9 +254,18 @@ def _position_records(
                 "symbol": symbol,
                 "instrument_id": instrument_id,
                 "quantity": str(quantity),
-                "market_value": str(market_value),
+                "market_value": str(market_value) if market_value is not None else None,
                 "cost_basis": str(cost_basis) if cost_basis is not None else None,
                 "currency": currency,
+                "valuation_currency": valuation_currency,
+                "unit_price": str(unit_price) if unit_price is not None else None,
+                "price_currency": price_currency,
+                "valued_at_utc": valued_at_utc,
+                "price_source_ref": price_source_ref,
+                "fx_rate": str(fx_rate) if fx_rate is not None else None,
+                "fx_as_of_utc": fx_as_of_utc,
+                "fx_source_ref": fx_source_ref,
+                "valuation_status": valuation_status,
                 "cost_basis_disclosed": cost_basis is not None,
             }
         )
@@ -237,10 +279,30 @@ def _position_records(
                 quantity=quantity,
                 market_value=market_value,
                 cost_basis=cost_basis,
+                valuation_currency=valuation_currency,
+                unit_price=unit_price,
+                price_currency=price_currency,
+                valued_at_utc=valued_at_utc,
+                price_source_ref=price_source_ref,
+                fx_rate=fx_rate,
+                fx_as_of_utc=fx_as_of_utc,
+                fx_source_ref=fx_source_ref,
+                valuation_status=valuation_status,
                 as_of_utc=as_of_utc,
                 source_refs=[source_ref],
             )
         )
+        if valuation_status not in {"valued", "valued_converted"}:
+            findings.append(
+                ImportFinding(
+                    f"valuation_{valuation_status}",
+                    "blocking",
+                    f"{symbol} lacks an admitted typed valuation",
+                    record_type="position",
+                    record_number=index + 1,
+                    field="valuation_status",
+                )
+            )
     return records, list(identities.values()), list(aliases.values()), normalized, findings
 
 
@@ -343,6 +405,9 @@ def _portfolio_records_with_identities(
             source_ref=source_ref,
             as_of_utc=as_of_utc,
             provider_namespace=provider_namespace,
+            payload_valued_at_utc=(
+                str(payload["valued_at_utc"]).strip() if payload.get("valued_at_utc") else None
+            ),
         )
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc

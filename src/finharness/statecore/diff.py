@@ -9,6 +9,7 @@ from typing import Literal
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from finharness.position_valuation import reconcile_position_totals
 from finharness.statecore.models import Position, Snapshot
 from finharness.statecore.store import StateCoreStoreError
 
@@ -22,7 +23,9 @@ class PositionExposure:
     instrument_id: str | None
     symbol: str
     quantity: Decimal
-    market_value: Decimal
+    market_value: Decimal | None
+    valuation_currency: str | None
+    valuation_status: str
     source_refs: tuple[str, ...]
 
 
@@ -34,9 +37,11 @@ class PositionChange:
     before_quantity: float
     after_quantity: float
     quantity_delta: float
-    before_market_value: float
-    after_market_value: float
-    market_value_delta: float
+    before_market_value: float | None
+    after_market_value: float | None
+    market_value_delta: float | None
+    valuation_currency: str | None
+    valuation_status: str
     source_refs: tuple[str, ...]
 
 
@@ -49,9 +54,13 @@ class SnapshotDiff:
     added: tuple[PositionChange, ...]
     removed: tuple[PositionChange, ...]
     changed: tuple[PositionChange, ...]
-    total_market_value_before: float
-    total_market_value_after: float
-    total_market_value_delta: float
+    total_market_value_before: float | None
+    total_market_value_after: float | None
+    total_market_value_delta: float | None
+    base_currency: str | None
+    per_currency_totals_before: dict[str, float]
+    per_currency_totals_after: dict[str, float]
+    valuation_blockers: tuple[str, ...]
     source_refs: tuple[str, ...]
     non_claims: tuple[str, ...] = (
         "Descriptive state diff only.",
@@ -94,6 +103,8 @@ def _positions_by_key(session: Session, snapshot_id: str) -> dict[PositionKey, P
                 symbol=row.symbol.upper(),
                 quantity=row.quantity,
                 market_value=row.market_value,
+                valuation_currency=row.valuation_currency,
+                valuation_status=row.valuation_status,
                 source_refs=source_refs,
             )
             continue
@@ -102,7 +113,21 @@ def _positions_by_key(session: Session, snapshot_id: str) -> dict[PositionKey, P
             instrument_id=existing.instrument_id,
             symbol=existing.symbol,
             quantity=existing.quantity + row.quantity,
-            market_value=existing.market_value + row.market_value,
+            market_value=(
+                existing.market_value + row.market_value
+                if existing.market_value is not None and row.market_value is not None
+                else None
+            ),
+            valuation_currency=(
+                existing.valuation_currency
+                if existing.valuation_currency == row.valuation_currency
+                else None
+            ),
+            valuation_status=(
+                existing.valuation_status
+                if existing.valuation_status == row.valuation_status
+                else "unknown_legacy"
+            ),
             source_refs=tuple(sorted(set(existing.source_refs).union(row.source_refs))),
         )
     return exposures
@@ -132,9 +157,17 @@ def _change(
         before_quantity=float(before_quantity),
         after_quantity=float(after_quantity),
         quantity_delta=float(after_quantity - before_quantity),
-        before_market_value=float(before_market_value),
-        after_market_value=float(after_market_value),
-        market_value_delta=float(after_market_value - before_market_value),
+        before_market_value=(
+            float(before_market_value) if before_market_value is not None else None
+        ),
+        after_market_value=(float(after_market_value) if after_market_value is not None else None),
+        market_value_delta=(
+            float(after_market_value - before_market_value)
+            if before_market_value is not None and after_market_value is not None
+            else None
+        ),
+        valuation_currency=exposure.valuation_currency,
+        valuation_status=exposure.valuation_status,
         source_refs=source_refs,
     )
 
@@ -153,6 +186,12 @@ def diff_snapshots(
     with Session(engine) as session:
         before_snapshot = _snapshot_or_raise(session, before_snapshot_id)
         after_snapshot = _snapshot_or_raise(session, after_snapshot_id)
+        before_rows = session.exec(
+            select(Position).where(Position.snapshot_id == before_snapshot_id)
+        ).all()
+        after_rows = session.exec(
+            select(Position).where(Position.snapshot_id == after_snapshot_id)
+        ).all()
         before_positions = _positions_by_key(session, before_snapshot_id)
         after_positions = _positions_by_key(session, after_snapshot_id)
 
@@ -174,12 +213,15 @@ def diff_snapshots(
             or before_positions[key].market_value != after_positions[key].market_value
         )
     )
-    total_before = sum(
-        (position.market_value for position in before_positions.values()), Decimal("0")
+    before_totals = reconcile_position_totals(before_rows)
+    after_totals = reconcile_position_totals(after_rows)
+    base_currency = (
+        before_totals.base_currency
+        if before_totals.base_currency == after_totals.base_currency
+        else None
     )
-    total_after = sum(
-        (position.market_value for position in after_positions.values()), Decimal("0")
-    )
+    total_before = before_totals.unified_total
+    total_after = after_totals.unified_total
     return SnapshotDiff(
         before_snapshot_id=before_snapshot.snapshot_id,
         after_snapshot_id=after_snapshot.snapshot_id,
@@ -188,9 +230,21 @@ def diff_snapshots(
         added=added,
         removed=removed,
         changed=changed,
-        total_market_value_before=float(total_before),
-        total_market_value_after=float(total_after),
-        total_market_value_delta=float(total_after - total_before),
+        total_market_value_before=float(total_before) if total_before is not None else None,
+        total_market_value_after=float(total_after) if total_after is not None else None,
+        total_market_value_delta=(
+            float(total_after - total_before)
+            if total_before is not None and total_after is not None and base_currency
+            else None
+        ),
+        base_currency=base_currency,
+        per_currency_totals_before={
+            key: float(value) for key, value in before_totals.per_currency_totals.items()
+        },
+        per_currency_totals_after={
+            key: float(value) for key, value in after_totals.per_currency_totals.items()
+        },
+        valuation_blockers=tuple(before_totals.blockers + after_totals.blockers),
         source_refs=tuple(
             sorted(set(before_snapshot.source_refs).union(after_snapshot.source_refs))
         ),

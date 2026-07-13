@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 from finharness.daily_change_brief import run_daily_change_brief
@@ -47,11 +48,24 @@ class DailyChangeBriefTest(unittest.TestCase):
                 for key, value in position.items()
             }
             exact["currency"] = "USD"
+            quantity = Decimal(str(position.get("qty", position.get("quantity"))))
+            market_value = Decimal(str(position["market_value"]))
+            exact.update(
+                {
+                    "unit_price": str(market_value / quantity),
+                    "valuation_currency": "USD",
+                    "price_currency": "USD",
+                    "price_source_ref": f"fixture:{name}",
+                }
+            )
             exact_positions.append(exact)
         payload = {
             "receipt_id": f"receipt_{name}",
             "kind": "broker_read",
             "created_at_utc": as_of_utc,
+            "effective_at_utc": as_of_utc,
+            "observed_at_utc": as_of_utc,
+            "valued_at_utc": as_of_utc,
             "broker": "manual",
             "environment": "paper",
             "account": {

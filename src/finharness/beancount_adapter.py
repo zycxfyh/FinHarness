@@ -296,6 +296,7 @@ def _records_from_rows(
     assets_root: str,
     liabilities_root: str,
     operating_currencies: set[str],
+    valued_at_utc: str | None,
 ) -> tuple[
     list[Account],
     list[AccountIdentity],
@@ -342,23 +343,28 @@ def _records_from_rows(
                     source_refs=source_refs,
                 ),
             )
-            # With no price, value() returns the holding in its own commodity
-            # (market currency == units currency, not an operating currency), so
-            # the "value" is really a unit count. Do not present that as money:
-            # record a data gap and keep the holding (quantity is correct) at 0.
+            # With no price, value() returns the holding in its own commodity.
+            # Preserve the holding but never turn missing monetary evidence into zero.
             if market is None or (
                 bool(operating_currencies)
                 and market[1] == currency
                 and currency not in operating_currencies
             ):
-                market_value = Decimal("0")
+                market_value = None
+                valuation_currency = None
+                unit_price = None
+                price_currency = None
+                valuation_status = "unpriced"
                 data_gaps.append(currency.upper())
             else:
                 market_value = market[0]
                 try:
-                    currency_code(market[1], field="valuation_currency")
+                    valuation_currency = currency_code(market[1], field="valuation_currency")
                 except CapitalImportContractError as exc:
                     raise BeancountLedgerError(str(exc)) from exc
+                unit_price = market_value / units[0]
+                price_currency = valuation_currency
+                valuation_status = "valued" if valued_at_utc else "unpriced"
             instrument_id: str | None = None
             if currency.upper() in operating_currencies:
                 instrument, alias = instrument_identity(
@@ -383,6 +389,12 @@ def _records_from_rows(
                     symbol=currency.upper(),
                     quantity=units[0],
                     market_value=market_value,
+                    valuation_currency=valuation_currency,
+                    unit_price=unit_price,
+                    price_currency=price_currency,
+                    valued_at_utc=valued_at_utc,
+                    price_source_ref=source_refs[-1] if market_value is not None else None,
+                    valuation_status=valuation_status,
                     as_of_utc=as_of_utc,
                     authority_level="read_only",
                     source_refs=source_refs,
@@ -517,6 +529,7 @@ def ingest_beancount_ledger(
         assets_root=assets_root,
         liabilities_root=liabilities_root,
         operating_currencies=operating_currencies,
+        valued_at_utc=valued_at_utc,
     )
     if not positions and not liabilities:
         raise BeancountLedgerError(

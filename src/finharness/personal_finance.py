@@ -71,7 +71,6 @@ POSITION_COLUMNS = {
     "venue",
     "symbol",
     "quantity",
-    "market_value",
     "currency",
     "as_of_utc",
 }
@@ -251,6 +250,21 @@ def _currency(row: dict[str, str], *, row_number: int) -> str:
         raise PersonalFinanceExportError(str(exc), findings=exc.findings) from exc
 
 
+def _optional_currency(row: dict[str, str], column: str, *, row_number: int) -> str | None:
+    value = _optional_text(row, column)
+    if value is None:
+        return None
+    try:
+        return currency_code(
+            value,
+            field=column,
+            record_type=_row_type(row),
+            record_number=row_number,
+        )
+    except CapitalImportContractError as exc:
+        raise PersonalFinanceExportError(str(exc), findings=exc.findings) from exc
+
+
 def _single_as_of(rows: list[dict[str, str]]) -> str:
     as_of_values = {
         _required_text(row, "as_of_utc", row_number=index)
@@ -417,6 +431,43 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
             source_refs=ctx.source_refs,
         ),
     )
+    market_value = _optional_decimal(row, "market_value", row_number=index)
+    unit_price = _optional_decimal(row, "unit_price", row_number=index)
+    valuation_currency = _optional_currency(row, "valuation_currency", row_number=index)
+    price_currency = _optional_currency(row, "price_currency", row_number=index)
+    valued_at_utc = _optional_text(row, "valued_at_utc")
+    price_source_ref = _optional_text(row, "price_source_ref")
+    fx_rate = _optional_decimal(row, "fx_rate", row_number=index)
+    fx_as_of_utc = _optional_text(row, "fx_as_of_utc")
+    fx_source_ref = _optional_text(row, "fx_source_ref")
+    typed_evidence = any(
+        value is not None
+        for value in (
+            unit_price,
+            valuation_currency,
+            price_currency,
+            valued_at_utc,
+            price_source_ref,
+            fx_rate,
+            fx_as_of_utc,
+            fx_source_ref,
+        )
+    )
+    if not typed_evidence:
+        valuation_status = "unknown_legacy"
+    elif market_value is None or unit_price is None or price_currency is None:
+        valuation_status = "unpriced"
+    elif valuation_currency is None or price_currency != valuation_currency:
+        valuation_status = (
+            "valued_converted"
+            if valuation_currency is not None
+            and fx_rate is not None
+            and fx_as_of_utc is not None
+            and fx_source_ref is not None
+            else "fx_missing"
+        )
+    else:
+        valuation_status = "valued"
     return Position(
         position_id=_safe_id(f"pos_{ctx.snapshot_id}_{index}_{account_id}_{symbol}"),
         snapshot_id=ctx.snapshot_id,
@@ -424,8 +475,17 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
         instrument_id=resolved_instrument_id,
         symbol=symbol,
         quantity=_decimal_value(row, "quantity", row_number=index),
-        market_value=_decimal_value(row, "market_value", row_number=index),
+        market_value=market_value,
         cost_basis=_optional_decimal(row, "cost_basis", row_number=index),
+        valuation_currency=valuation_currency,
+        unit_price=unit_price,
+        price_currency=price_currency,
+        valued_at_utc=valued_at_utc,
+        price_source_ref=price_source_ref,
+        fx_rate=fx_rate,
+        fx_as_of_utc=fx_as_of_utc,
+        fx_source_ref=fx_source_ref,
+        valuation_status=valuation_status,
         as_of_utc=ctx.as_of_utc,
         authority_level="read_only",
         source_refs=ctx.source_refs,
@@ -561,6 +621,17 @@ def _records_from_rows(
     built: list[StateCoreRecord] = [
         _ROW_BUILDERS[_row_type(row)](row, index, ctx) for index, row in enumerate(rows, start=1)
     ]
+    for position in (record for record in built if isinstance(record, Position)):
+        if position.valuation_status not in {"valued", "valued_converted"}:
+            findings.append(
+                ImportFinding(
+                    f"valuation_{position.valuation_status}",
+                    "blocking",
+                    f"{position.symbol} lacks an admitted typed valuation",
+                    record_type="position",
+                    field="valuation_status",
+                )
+            )
     # Tag source-owned rows so a re-import replaces exactly this adapter's rows.
     for record in built:
         if isinstance(record, SourcedStateCoreBase):

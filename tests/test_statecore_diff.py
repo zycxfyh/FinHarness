@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
 
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import Account, Position, Proposal, ReceiptIndex, Snapshot
@@ -48,6 +49,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=1.0,
                 market_value=100.0,
+                valuation_currency="USD",
+                unit_price=100.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T09:00:00+00:00",
+                price_source_ref="data/receipts/before.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/before.json"],
             ),
             Position(
@@ -57,6 +64,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="QQQ",
                 quantity=2.0,
                 market_value=200.0,
+                valuation_currency="USD",
+                unit_price=100.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T09:00:00+00:00",
+                price_source_ref="data/receipts/before.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/before.json"],
             ),
             Position(
@@ -66,6 +79,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="MSFT",
                 quantity=3.0,
                 market_value=300.0,
+                valuation_currency="USD",
+                unit_price=100.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T09:00:00+00:00",
+                price_source_ref="data/receipts/before.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/before.json"],
             ),
             Position(
@@ -75,6 +94,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=1.5,
                 market_value=155.0,
+                valuation_currency="USD",
+                unit_price=Decimal("103.3333333333333333333333333"),
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="data/receipts/after.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/after.json"],
             ),
             Position(
@@ -84,6 +109,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="MSFT",
                 quantity=3.0,
                 market_value=300.0,
+                valuation_currency="USD",
+                unit_price=100.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="data/receipts/after.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/after.json"],
             ),
             Position(
@@ -93,6 +124,12 @@ class StateCoreDiffTest(unittest.TestCase):
                 symbol="AAPL",
                 quantity=4.0,
                 market_value=80.0,
+                valuation_currency="USD",
+                unit_price=20.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="data/receipts/after.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/after.json"],
             ),
         ]

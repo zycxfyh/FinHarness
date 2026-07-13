@@ -381,12 +381,18 @@ class StateCoreStoreTest(unittest.TestCase):
                 text("SELECT canonical_account_id FROM accounts WHERE account_id='legacy'")
             ).one()
             position = connection.execute(
-                text("SELECT instrument_id FROM positions WHERE position_id='legacy-pos'")
+                text(
+                    "SELECT instrument_id, valuation_currency, unit_price, price_currency, "
+                    "valued_at_utc, fx_rate, valuation_status FROM positions "
+                    "WHERE position_id='legacy-pos'"
+                )
             ).one()
             tables = set(inspect(connection).get_table_names())
             version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
         self.assertIsNone(account[0])
         self.assertIsNone(position[0])
+        self.assertEqual(position[1:6], (None, None, None, None, None))
+        self.assertEqual(position[6], "unknown_legacy")
         self.assertTrue(
             {"account_identities", "instrument_identities", "identity_aliases"} <= tables
         )
