@@ -21,6 +21,8 @@ from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
+from scripts.sync_current_docs import check as check_current_views
+from scripts.sync_current_docs import current_markdown_paths
 
 from finharness.observability import TRACE_HEADER, is_safe_trace_id, trace_context_from_value
 from finharness.research_enrichment import ResearchEvidenceAttachment
@@ -89,22 +91,7 @@ _REVIEW_WRITE_ENTRYPOINTS = (
     "create_governed_review_event",
 )
 
-_CURRENT_DOC_PATHS = (
-    _ROOT / "README.md",
-    _ROOT / "docs" / "README.md",
-    _ROOT / "docs" / "tutorials" / "golden-path.md",
-    _ROOT / "docs" / "reference" / "README.md",
-    _ROOT / "docs" / "reference" / "commands.md",
-    _ROOT / "docs" / "reference" / "config-env.md",
-    _ROOT / "docs" / "reference" / "interfaces.md",
-    _ROOT / "docs" / "how-to" / "README.md",
-    _ROOT / "docs" / "architecture" / "capital-os-layering.md",
-    _ROOT / "docs" / "architecture" / "engineering-leverage-map.md",
-    _ROOT / "docs" / "architecture" / "framework-index.md",
-    _ROOT / "docs" / "architecture" / "system-map.md",
-    _ROOT / "docs" / "architecture" / "module-map.md",
-    _ROOT / "docs" / "architecture" / "documentation-fact-governance.md",
-)
+_CURRENT_DOC_PATHS = current_markdown_paths(_ROOT)
 
 _TASK_REF_RE = re.compile(r"`task ([A-Za-z0-9][A-Za-z0-9:_-]*)(?:\s|`)")
 
@@ -228,6 +215,10 @@ def _check_current_docs_do_not_expose_archived_task_prefixes() -> list[str]:
             if f"`task {prefix}" in text:
                 out.append(f"{_relative(path)} exposes archived task prefix {prefix}")
     return out
+
+
+def _check_current_views_and_navigation() -> list[str]:
+    return check_current_views(_ROOT)
 
 
 def _check_capital_os_ips_current() -> list[str]:
@@ -539,6 +530,17 @@ POLICIES: tuple[PolicyRule, ...] = (
         source="documentation fact governance (retired module drift)",
         description="Module map does not list retired ten-layer/live-trading modules as current.",
         check=_check_module_map_omits_retired_modules,
+    ),
+    PolicyRule(
+        id="GOV-DOCS-005",
+        owner="architecture-docs",
+        scope="navigation-reachable current docs and catalog-derived views",
+        source="DOC-01 canonical catalog and generated views",
+        description=(
+            "Current navigation is closed and generated architecture/inventory views "
+            "match their canonical sources."
+        ),
+        check=_check_current_views_and_navigation,
     ),
     PolicyRule(
         id="GOV-RESEARCH-002",

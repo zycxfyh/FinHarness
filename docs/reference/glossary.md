@@ -41,7 +41,7 @@
 
 ## D. `supported` 的语境消歧(安全相关)
 
-`supported` 在 [validation.py](../../src/finharness/validation.py) 是判定枚举值,但被不同性质的检查共用,
+`supported` 在已归档的旧 validation layer 中曾是判定枚举值,但被不同性质的检查共用,
 易被误读为"有经验 edge"。规矩:
 
 ```text

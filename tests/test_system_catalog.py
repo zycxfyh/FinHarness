@@ -49,9 +49,21 @@ def _unittest_target_path(target: str) -> Path | None:
 class SystemCatalogTest(unittest.TestCase):
     def test_catalog_shape_is_complete(self) -> None:
         catalog = _catalog()
-        self.assertEqual(catalog["schema"], "finharness.system_catalog.v2")
+        self.assertEqual(catalog["schema"], "finharness.system_catalog.v3")
         self.assertEqual(catalog["status"], "current")
         self.assertEqual(set(catalog["allowed_statuses"]), ALLOWED_STATUS)
+        self.assertEqual(
+            catalog["fact_ownership"],
+            {
+                "system_ownership_and_lifecycle": "docs/architecture/system-catalog.yml",
+                "verified_engineering_debt": "docs/governance/debt-register.json",
+                "implementation_sequence": "docs/architecture/finharness-evolution-roadmap.md",
+            },
+        )
+        self.assertEqual(
+            catalog["documentation"]["update_command"],
+            "task docs:generate-current-views",
+        )
         self.assertGreaterEqual(len(catalog["systems"]), 10)
         ids = [system["id"] for system in catalog["systems"]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -94,10 +106,10 @@ class SystemCatalogTest(unittest.TestCase):
             "Agent Cognition Runtime / Agent Operating Cycle v0.1 (current AUT2)",
         )
         required_module_rows = (
-            "| Capital Action Intent | legacy |",
-            "| Paper Validation Runtime | legacy |",
-            "| Execution Kernel | canonical |",
-            "| Agent Cognition Runtime / Agent Operating Cycle v0.1 | current AUT2 foundation |",
+            "| Capital Action Intent | `legacy` |",
+            "| Paper Validation Runtime | `legacy` |",
+            "| Execution Kernel | `canonical` |",
+            "| Agent Cognition Runtime / Work Orchestrator | `current` |",
         )
         for claim in required_system_map_claims:
             with self.subTest(system_map_claim=claim):

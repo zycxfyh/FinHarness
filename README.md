@@ -122,7 +122,7 @@ runtime, API routes, Agent tools, or Taskfile tasks.
 | Review System | Human attestation, compare, archive/reopen, annual review, lesson-to-rule | [System Map](docs/architecture/system-map.md) |
 | Research Evidence + Mature Wheels | Cite-only evidence and mature adapters; external tools are inputs, not authority | [Research Assets](docs/research/README.md), [Mature Wheel Control Plane](docs/architecture/mature-wheel-control-plane.md) |
 | Cockpit/API + Agent Explanation | Local read/review product surface and tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md) |
-| Execution Kernel | Canonical execution lifecycle on simulated substrate (OrderDraft → ExecutionReport) | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Execution Routes](docs/reference/api.md) |
+| Execution Kernel | Canonical execution lifecycle on simulated substrate (OrderDraft → ExecutionReport) | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Interface Reference](docs/reference/interfaces.md) |
 | EOS Governance + Security | Policy registry, docs-current guard, repo intelligence, hardening, release checks | [Documentation Fact Governance](docs/architecture/documentation-fact-governance.md), [Threat Model](docs/security/finharness-threat-model.md) |
 
 If a change makes this table feel wrong, update the Framework Index, System Map,

@@ -313,9 +313,16 @@ tasks:
     cmds:
       - find docs -type f | sort
 
+  docs:generate-current-views:
+    desc: Regenerate catalog-owned architecture and inventory views
+    cmds:
+      - uv run python scripts/sync_current_docs.py
+
   docs:current-check:
     desc: Check maintained docs against live task/module facts
     cmds:
+      - uv run python scripts/sync_current_docs.py --check
+      - uv run python -m unittest tests.test_current_doc_generation
       - uv run python -m unittest tests.test_docs_current_facts
       - uv run python -m unittest tests.test_system_catalog
       - uv run python -m unittest tests.test_evolution_roadmap

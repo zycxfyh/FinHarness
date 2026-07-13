@@ -1,12 +1,31 @@
-schema: finharness.system_catalog.v2
+schema: finharness.system_catalog.v3
 status: current
-updated: "2026-07-10"
+updated: "2026-07-13"
 allowed_statuses: [canonical, current, thin, scaffolded, legacy, planned, archived]
-source_docs:
-  framework_index: docs/architecture/framework-index.md
-  system_map: docs/architecture/system-map.md
-  module_map: docs/architecture/module-map.md
-  engineering_leverage_map: docs/architecture/engineering-leverage-map.md
+fact_ownership:
+  system_ownership_and_lifecycle: docs/architecture/system-catalog.yml
+  verified_engineering_debt: docs/governance/debt-register.json
+  implementation_sequence: docs/architecture/finharness-evolution-roadmap.md
+documentation:
+  generated_views:
+    - docs/architecture/framework-index.md
+    - docs/architecture/module-map.md
+    - docs/audits/attestation-consumer-inventory.md
+  update_command: task docs:generate-current-views
+  check_command: task docs:current-check
+  navigation:
+    entrypoints:
+      - README.md
+      - docs/README.md
+    historical_roots:
+      - docs/archive
+      - docs/notes
+      - docs/proposals
+      - docs/reviews
+      - docs/lessons
+      - docs/think
+    historical_paths:
+      - docs/architecture/discipline-layer-baseline.md
 systems:
   - id: shared_artifact_store
     name: Shared Artifact and Receipt Store
@@ -38,6 +57,22 @@ systems:
     checks:
       - task docs:current-check
     upgrade_trigger: Public product surface or multi-user usage needs a formal product handbook.
+
+  - id: evolution_roadmap
+    name: Evolution Roadmap
+    status: current
+    summary: Canonical implementation sequence, phase gates, dependency order, and current active-debt projection for the verified capital decision loop.
+    docs:
+      - docs/architecture/finharness-evolution-roadmap.md
+      - docs/governance/debt-register.json
+    runtime_roots:
+      - docs/architecture/finharness-evolution-roadmap.md
+      - docs/governance/debt-register.json
+    mature_posture: Sequence by closed contracts, native issue dependencies, and user-outcome proof; PR counts and version labels are not completion evidence.
+    checks:
+      - uv run python -m unittest tests.test_evolution_roadmap
+      - uv run python scripts/verify_debt_register.py
+    upgrade_trigger: Change sequencing only when dependency evidence, contract state, or validated product outcomes change.
 
   - id: state_core
     name: State Core

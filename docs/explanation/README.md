@@ -19,7 +19,7 @@ Current explanation sources:
 | Why is live execution blocked by default? | [Discipline Layer Baseline](../architecture/discipline-layer-baseline.md) |
 | How do policy rules map to code? | [Policy Contract](../architecture/policy-contract.md) |
 | What evidence do receipts capture? | [Evidence Inventory](../architecture/evidence-inventory.md) |
-| How does the ten-layer system fit together? | [Ten Layer LangGraph Map](../architecture/ten-layer-langgraph-map.md) |
+| How does the current system fit together? | [System Map](../architecture/system-map.md) |
 | How should docs stay usable? | [Documentation & Onboarding Plan](../architecture/documentation-and-onboarding-plan.md) |
 
 ## Explanation Index
