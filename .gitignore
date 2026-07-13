@@ -47,6 +47,7 @@ src/finharness.egg-info/
 data/receipts/lessons/
 .hermes/
 research/
+.artifacts/
 
 # Generated repo-intelligence doc (regenerate via `task repo:intelligence`;
 # its receipt half data/receipts/repo-intelligence/ is already ignored above).

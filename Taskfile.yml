@@ -95,6 +95,11 @@ tasks:
       - task: architecture:check
       - task: rules:audit
 
+  check:timed:
+    desc: Run the CI merge gate through existing Taskfile stages and record timing evidence
+    cmds:
+      - uv run python scripts/run_timed_check.py
+
   check:research:
     desc: Full suite including expensive experiments and eval smoke (not in CI fast path)
     cmds:

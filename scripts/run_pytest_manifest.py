@@ -77,7 +77,12 @@ def main() -> None:
     for tp in test_paths:
         print(f"  {tp.relative_to(repo)}")
 
-    argv = ["pytest", *[str(p) for p in test_paths]]
+    argv = [
+        "pytest",
+        "--durations=20",
+        "--durations-min=0.05",
+        *[str(p) for p in test_paths],
+    ]
     print(f"running: {' '.join(argv)}")
 
     exit_code = pytest.main(argv[1:])  # pytest.main expects args without 'pytest' prefix

@@ -29,6 +29,7 @@ execution authorization.
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
 | `task check:fast` | Ensure locked setup, then lint, typecheck, and run the full Python test gate (compile + unittest + pytest). | Fast local feedback without stale-environment false failures. |
 | `task check:ci` | Fast checks, base-profile rebuild, integration, frontend, governance, and rules. | Main merge gate. |
+| `task check:timed` | Run the same authoritative CI stages with per-stage duration and outcome evidence. | Writes `.artifacts/check-timing.json`; GitHub Actions also renders a step summary and uploads the JSON artifact. |
 | `task check:research` | CI gate plus experiments and eval smoke. | Full research validation. |
 | `task lint` | Run Python lint checks. | Ruff. |
 | `task typecheck` | Run mypy. | Strict on safety-critical core. |
