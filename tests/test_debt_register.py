@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import unittest
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 import yaml
-from scripts.verify_debt_register import VERIFIERS, verify_register
+from fastapi import FastAPI
+from scripts.verify_debt_register import (
+    EVIDENCE_LEVELS,
+    VERIFIERS,
+    VerifierSpec,
+    state_changing_routes_have_write_gate,
+    verify_register,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTER = ROOT / "docs" / "governance" / "debt-register.json"
@@ -63,7 +72,6 @@ ALLOWED_SURFACES = {
     "toolchain",
 }
 
-EXPECTED_DEBT_COUNT = 10
 ID_PATTERN = re.compile(r"^ENG-DEBT-\d{4}$")
 
 
@@ -102,10 +110,9 @@ class DebtRegisterTest(unittest.TestCase):
         self.assertEqual(set(register["allowed_categories"]), ALLOWED_CATEGORIES)
         self.assertEqual(set(register["allowed_surfaces"]), ALLOWED_SURFACES)
 
-    def test_debt_count_and_ids_are_stable(self) -> None:
+    def test_debt_ids_are_unique_and_well_formed(self) -> None:
         debts = _register()["debts"]
         ids = [debt["id"] for debt in debts]
-        self.assertEqual(len(debts), EXPECTED_DEBT_COUNT)
         self.assertEqual(len(ids), len(set(ids)))
         for debt_id in ids:
             with self.subTest(debt_id=debt_id):
@@ -156,6 +163,110 @@ class DebtRegisterTest(unittest.TestCase):
         names = [debt["verification"] for debt in _register()["debts"]]
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(set(names), set(VERIFIERS))
+
+    def test_every_verifier_declares_bounded_proof_metadata(self) -> None:
+        for name, spec in VERIFIERS.items():
+            with self.subTest(verifier=name):
+                self.assertTrue(spec.claim.strip())
+                self.assertTrue(spec.owner.strip())
+                self.assertIn(spec.evidence_level, EVIDENCE_LEVELS)
+                self.assertNotEqual(spec.evidence_level, "test_count")
+                self.assertTrue(spec.production_path)
+                self.assertTrue(spec.sunset.strip())
+                for path in spec.production_path:
+                    self.assertTrue((ROOT / path).exists(), path)
+
+    def test_adding_valid_debt_has_no_fixed_count_failure(self) -> None:
+        register = _register()
+        added = dict(register["debts"][0])
+        added.update(
+            {
+                "id": "ENG-DEBT-0011",
+                "title": "Synthetic unresolved debt",
+                "status": "active",
+                "verification": "synthetic_unresolved",
+            }
+        )
+        added.pop("resolution_ref", None)
+        register["debts"].append(added)
+        fast_verifiers = {
+            name: replace(spec, evaluate=lambda _root: True)
+            for name, spec in VERIFIERS.items()
+        }
+        fast_verifiers["synthetic_unresolved"] = VerifierSpec(
+            evaluate=lambda _root: False,
+            claim="Synthetic desired state remains unmet.",
+            owner="Governance Test",
+            evidence_level="semantic",
+            production_path=("Taskfile.yml",),
+            sunset="Delete with the synthetic fixture.",
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as handle:
+            json.dump(register, handle)
+            handle.flush()
+            self.assertEqual(
+                verify_register(ROOT, Path(handle.name), verifiers=fast_verifiers),
+                [],
+            )
+
+    def test_destructive_fixture_reproduces_old_api_gate_false_green(self) -> None:
+        route_files = (
+            "src/finharness/api/routes_action_intents.py",
+            "src/finharness/api/routes_agent_authority_grants.py",
+            "src/finharness/api/routes_capital_mandates.py",
+            "src/finharness/api/routes_execution.py",
+            "src/finharness/api/routes_ips.py",
+            "src/finharness/api/routes_paper_validation.py",
+            "src/finharness/api/routes_proposals.py",
+        )
+
+        def old_string_verifier(root: Path) -> bool:
+            operator = (root / "src/finharness/local_operator.py").read_text()
+            dependencies = (root / "src/finharness/api/dependencies.py").read_text()
+            gate_tests = (root / "tests/test_statecore_api.py").read_text()
+            return all(
+                (
+                    "class LocalOperatorContext" in operator,
+                    "async def require_write_capability" in operator,
+                    "WriteCapabilityDependency" in dependencies,
+                    "test_all_state_changing_routes_have_write_capability_dependency"
+                    in gate_tests,
+                    all(
+                        "WriteCapabilityDependency" in (root / path).read_text()
+                        for path in route_files
+                    ),
+                )
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_root = Path(directory)
+            files = {
+                "src/finharness/local_operator.py": (
+                    "class LocalOperatorContext: pass\n"
+                    "async def require_write_capability(): pass\n"
+                ),
+                "src/finharness/api/dependencies.py": "WriteCapabilityDependency = object()\n",
+                "tests/test_statecore_api.py": (
+                    "def test_all_state_changing_routes_have_write_capability_dependency(): pass\n"
+                ),
+                **dict.fromkeys(route_files, "WriteCapabilityDependency\n"),
+            }
+            for relative_path, content in files.items():
+                target = fixture_root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+
+            app = FastAPI()
+
+            @app.post("/unguarded")
+            async def unguarded_write() -> dict[str, bool]:
+                return {"mutated": True}
+
+            async def canonical_gate() -> None:
+                return None
+
+            self.assertTrue(old_string_verifier(fixture_root))
+            self.assertFalse(state_changing_routes_have_write_gate(app, canonical_gate))
 
     def test_status_claims_match_repository_verifiers(self) -> None:
         self.assertEqual(verify_register(ROOT, REGISTER), [])

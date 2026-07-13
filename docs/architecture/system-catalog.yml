@@ -341,11 +341,12 @@ systems:
   - id: eos_governance_quality
     name: EOS Governance / Quality
     status: current
-    summary: Change control, policy registry, docs-current guard, repo intelligence, hardening, release checks.
+    summary: Change control, evidence-strength proof registry, docs-current guard, repo intelligence, hardening, and release checks.
     docs:
       - docs/architecture/framework-index.md
       - docs/architecture/system-catalog.yml
       - docs/architecture/documentation-fact-governance.md
+      - docs/architecture/governance-proof-contract.md
       - docs/architecture/scaffolding-inventory.md
       - docs/engineering/change-control.md
       - docs/architecture/engineering-leverage-map.md
@@ -356,10 +357,12 @@ systems:
       - src/finharness/repo_intelligence.py
       - src/finharness/quality_governance_graph.py
       - src/finharness/release_preflight_graph.py
+      - scripts/verify_debt_register.py
     mature_posture: Python registry now; defer OPA, Conftest, Backstage, Temporal until repeated pain.
     checks:
       - task docs:current-check
       - task governance:check
+      - uv run python scripts/verify_debt_register.py
       - task check
     upgrade_trigger: Repeated manual coordination or policy drift survives current probes.
 
