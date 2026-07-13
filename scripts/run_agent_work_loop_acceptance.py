@@ -17,11 +17,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from finharness.agent_receipt_search import search_receipt_index  # noqa: E402
-from finharness.agent_work_loop import (  # noqa: E402
+from finharness.agent_receipt_search import search_receipt_index
+from finharness.agent_work_loop import (
     AgentWorkDecision,
     AgentWorkDecisionState,
     AgentWorkRequest,
@@ -31,12 +28,12 @@ from finharness.agent_work_loop import (  # noqa: E402
     run_agent_work_loop,
     run_bounded_tool_dispatch_loop,
 )
-from finharness.autonomy_control import (  # noqa: E402
+from finharness.autonomy_control import (
     AgentAutonomyLevel,
     WorldFidelityLevel,
 )
-from finharness.config import load_settings  # noqa: E402
-from finharness.statecore.store import (  # noqa: E402
+from finharness.config import load_settings
+from finharness.statecore.store import (
     STATE_CORE_DB_ENV_VAR,
     init_state_core,
 )

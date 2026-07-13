@@ -8,11 +8,11 @@ import os
 from pathlib import Path
 
 import uvicorn
-from scripts.serve_local_cockpit import build_app
 from sqlmodel import Session, select
 
 from finharness.statecore.models import Proposal
 from finharness.statecore.proposals import create_governed_proposal
+from serve_local_cockpit import build_app
 
 SCAFFOLD = {
     "decision_intent": "Complete a local human review",

@@ -1,7 +1,7 @@
 version: '3'
 
 env:
-  PYTHONPATH: src
+  UV_LOCKED: '1'
   PROMPTFOO_DISABLE_TELEMETRY: '1'
   PROMPTFOO_DISABLE_UPDATE: '1'
 
@@ -29,6 +29,11 @@ tasks:
     cmds:
       - uv sync --locked --all-groups
       - pnpm install --frozen-lockfile
+
+  doctor:
+    desc: Verify the locked project environment and canonical editable import path
+    cmds:
+      - env -u PYTHONPATH uv run --locked python scripts/check_development_environment.py
 
   check:
     desc: Merge gate — run the CI-required verification suite (alias for check:ci)

@@ -57,7 +57,7 @@ Use the project toolchain consistently:
 - JavaScript/CLI packages: `pnpm`
 - Python commands and dependencies: `uv`
 - Project tasks: `task`
-- Local tool versions and environment: `mise` + `direnv`
+- Local tool versions: `mise`; the project environment and editable package are managed by `uv`
 
 Prefer existing `task ...` entries over ad hoc commands. Do not use `npm`,
 `npx`, `pip`, or a global Python interpreter for project workflows unless a
@@ -73,17 +73,18 @@ First-time local setup:
 ```bash
 mise trust
 mise install
-direnv allow
 task setup
+task doctor
 task check
 ```
 
 `task setup` only syncs from the existing lockfiles. It installs FinHarness as
 an editable `src`-layout package, so `uv run python`, `uv run pytest`, and IDEs
-can import `finharness` without a manual `PYTHONPATH`. The standard `task check`
-gate re-runs the locked setup as a fast no-op when the environment is already
-current, preventing missing Python groups or `node_modules` from producing
-misleading test failures.
+can import `finharness` without a manual `PYTHONPATH`. `task doctor` proves the
+active interpreter and import both resolve through the worktree's uv-managed
+`.venv`. The standard `task check` gate re-runs the locked setup as a fast no-op
+when the environment is already current, preventing missing Python groups or
+`node_modules` from producing misleading test failures.
 
 Wheel checks are split into local imports and provider-backed network calls:
 

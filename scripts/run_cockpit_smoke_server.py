@@ -7,7 +7,7 @@ this server and asserts the golden paths render non-blank.
 
 Run directly (the Playwright .cjs smoke spawns this):
 
-    PYTHONPATH=src COCKPIT_SMOKE_PORT=8766 uv run python scripts/run_cockpit_smoke_server.py
+    COCKPIT_SMOKE_PORT=8766 uv run python scripts/run_cockpit_smoke_server.py
 
 Not part of ``task check``. CI-only execution target (see D8 mini-RFC).
 """

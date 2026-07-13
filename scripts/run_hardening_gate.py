@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -32,18 +31,10 @@ def run_command(
     cwd: Path,
     timeout_seconds: float = COMMAND_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    env = os.environ.copy()
-    src_path = str(cwd / "src")
-    env["PYTHONPATH"] = (
-        src_path
-        if not env.get("PYTHONPATH")
-        else f"{src_path}{os.pathsep}{env['PYTHONPATH']}"
-    )
     try:
         completed = subprocess.run(
             command,
             cwd=cwd,
-            env=env,
             check=False,
             text=True,
             capture_output=True,

@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from finharness.hardening import (  # noqa: E402
+from finharness.hardening import (
     build_red_team_manifest,
     load_red_team_payloads,
     render_promptfoo_boundary_eval,
     render_red_team_jsonl,
     render_red_team_manifest,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args() -> argparse.Namespace:

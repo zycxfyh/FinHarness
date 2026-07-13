@@ -9,7 +9,6 @@ resolved entry must return true and every non-resolved entry must return false.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -85,16 +84,10 @@ def state_changing_routes_have_write_gate(app: Any, gate: Callable[..., Any]) ->
 
 
 def _run_proof_command(root: Path, command: list[str]) -> bool:
-    env = os.environ.copy()
-    python_path = str(root / "src")
-    env["PYTHONPATH"] = os.pathsep.join(
-        part for part in (python_path, env.get("PYTHONPATH", "")) if part
-    )
     try:
         completed = subprocess.run(
             command,
             cwd=root,
-            env=env,
             check=False,
             capture_output=True,
             text=True,
@@ -114,8 +107,6 @@ def _read(root: Path, relative_path: str) -> str:
 
 
 def _api_write_capability_gate(root: Path) -> bool:
-    source_root = str(root / "src")
-    sys.path.insert(0, source_root)
     try:
         from finharness.api.app import create_app
         from finharness.local_operator import require_write_capability
@@ -123,9 +114,6 @@ def _api_write_capability_gate(root: Path) -> bool:
         return state_changing_routes_have_write_gate(create_app(), require_write_capability)
     except (ImportError, RuntimeError):
         return False
-    finally:
-        if sys.path and sys.path[0] == source_root:
-            sys.path.pop(0)
 
 
 def _paper_validation_legacy_boundary(root: Path) -> bool:
@@ -133,7 +121,6 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
 
     Replaces the old string-based check with actual audit module imports.
     """
-    sys.path.insert(0, str(root / "src"))
     try:
         from finharness.paper_validation_boundary_audit import (
             build_internal_import_graph,
@@ -142,9 +129,6 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
         )
     except ImportError:
         return False
-    finally:
-        if str(root / "src") == sys.path[0]:
-            sys.path.pop(0)
 
     # Check 1: consumer manifest audit (SEC-02A)
     consumer_findings = scan_paper_consumers(root)
