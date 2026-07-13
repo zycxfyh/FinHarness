@@ -13,7 +13,8 @@ from finharness.execution.capabilities import (
     DENY_ALL_EXECUTION_CAPABILITIES,
     ExecutionCapabilities,
 )
-from finharness.local_operator import LocalOperatorContext, require_write_capability
+from finharness.identity import OperatorContext
+from finharness.local_operator import require_write_capability
 from finharness.project_paths import MARKET_DATA_RECEIPT_ROOT as DEFAULT_MARKET_DATA_RECEIPT_ROOT
 from finharness.project_paths import ROOT
 from finharness.statecore.store import ensure_state_core_schema, open_state_core
@@ -45,7 +46,7 @@ async def get_state_core_receipt_root(request: Request) -> Path:
 EngineDependency = Annotated[Engine, Depends(get_state_core_engine)]
 ReceiptRootDependency = Annotated[Path, Depends(get_state_core_receipt_root)]
 WriteCapabilityDependency = Annotated[
-    LocalOperatorContext,
+    OperatorContext,
     Depends(require_write_capability),
 ]
 
