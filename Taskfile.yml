@@ -35,6 +35,21 @@ tasks:
     cmds:
       - env -u PYTHONPATH uv run --locked python scripts/check_development_environment.py
 
+  issue:start:
+    desc: Create a numbered issue branch and sibling worktree from current origin/main
+    cmds:
+      - uv run python scripts/manage_issue_worktree.py start {{.CLI_ARGS}}
+
+  issue:status:
+    desc: Audit issue branch/worktree naming, cleanliness, and stale metadata
+    cmds:
+      - uv run python scripts/manage_issue_worktree.py status {{.CLI_ARGS}}
+
+  issue:finish:
+    desc: Preview or apply safe cleanup for a merged issue worktree
+    cmds:
+      - uv run python scripts/manage_issue_worktree.py finish {{.CLI_ARGS}}
+
   check:
     desc: Merge gate — run the CI-required verification suite (alias for check:ci)
     cmds:
