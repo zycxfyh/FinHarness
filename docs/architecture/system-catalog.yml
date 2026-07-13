@@ -79,7 +79,7 @@ systems:
   - id: state_core
     name: State Core
     status: current
-    summary: Receipt-backed query mirror for personal capital state; receipts remain the evidence root.
+    summary: Receipt-backed query mirror for personal capital state with exact Decimal ingestion, explicit UTC clocks, completeness findings, and immutable evidence roots.
     docs:
       - docs/architecture/system-map.md
       - docs/architecture/module-map.md
@@ -87,6 +87,7 @@ systems:
       - docs/reference/interfaces.md
     runtime_roots:
       - src/finharness/statecore/
+      - src/finharness/capital_import_contract.py
       - src/finharness/personal_finance.py
       - src/finharness/beancount_adapter.py
       - src/finharness/api/routes_state.py

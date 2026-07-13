@@ -1,8 +1,10 @@
 # Import Provenance Contract
 
 `ImportBatch` and `ReceiptManifest` are the W0 boundary between external capital
-data and current State Core materialization. The contract applies to both the
-FinHarness CSV adapter and the direct Beancount adapter.
+data and current State Core materialization. The manifest contract applies to
+the FinHarness CSV and direct Beancount adapters; the same scalar/time validator
+also protects the legacy broker-receipt projection until it migrates to this
+manifest path.
 
 ## Evidence and materialization
 
@@ -18,8 +20,31 @@ An import has two distinct layers:
 
 `ImportBatch` has a stable ID over source kind, logical source ID, content hash,
 adapter version, and import schema version. It records `full` or `delta` coverage,
-the source artifact, and typed record counts. Both current adapters declare
+the source artifact, typed record counts, completeness status, five-clock time
+semantics, and structured findings. Both current adapters declare
 `full`; W0 defines but does not yet implement delta reconciliation.
+
+## Exact money, currency, and time
+
+- Monetary source values must be decimal strings or `Decimal`; Python/JSON
+  binary floats, non-finite values, and malformed decimals fail closed.
+- Every monetary position or balance needs an explicit three-letter currency.
+  A symbol, commodity, account name, or default currency is never used to infer
+  one. Position currency remains in the snapshot projection until #260 adds the
+  authoritative valuation schema.
+- `effective_at_utc`, `observed_at_utc`, `valued_at_utc`, `ingested_at_utc`, and
+  `recorded_at_utc` are distinct canonical UTC clocks. Naive timestamps and
+  impossible ordering fail before materialization.
+- A valuation more than 24 hours older than its observation is a `blocking`
+  finding. Missing/unpriced or omitted source records are `partial` findings.
+  `complete`, `partial`, and `blocked` are evidence states, not permission or
+  execution states.
+- Legacy `as_of_utc` inputs remain readable through an explicit
+  `legacy_as_of_projection`/`legacy_time_projection` finding. They are never
+  silently presented as fully specified current-state time.
+
+Beancount loader errors abort the import. Operators cannot accidentally accept
+a partial ledger merely because `beanquery` can return some rows.
 
 `ReceiptManifest` binds that batch to the immutable receipt artifact, receipt
 hash, compatibility receipt path, snapshot, record counts, and the
@@ -38,7 +63,9 @@ transaction.
   rows are reconciled in the same transaction.
 - Receipts created before W0 remain readable and resolve explicitly as
   `legacy_unmanifested`. Migration v7 creates empty provenance tables and does
-  not fabricate historical source hashes or manifests.
+  not fabricate historical source hashes or manifests. Migration v8 adds time
+  and finding columns and labels existing batches `legacy_unknown` instead of
+  inventing clocks or completeness.
 
 The compatibility JSON receipt remains for existing operators. Its immutable
 Artifact Store descriptor and bytes are the integrity authority for new imports.
@@ -46,5 +73,5 @@ Artifact Store descriptor and bytes are the integrity authority for new imports.
 Verification:
 
 ```bash
-uv run python -m unittest tests.test_personal_finance tests.test_beancount_adapter tests.test_statecore_store
+uv run python -m unittest tests.test_capital_import_contract tests.test_personal_finance tests.test_beancount_adapter tests.test_statecore_snapshot_ingest tests.test_statecore_store
 ```

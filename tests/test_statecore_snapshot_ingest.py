@@ -96,12 +96,14 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                         "symbol": "SPY",
                         "qty": "2",
                         "market_value": "100.5",
+                        "currency": "USD",
                     },
                     {
                         "symbol": "QQQ",
                         "quantity": "1",
                         "current_price": "49.75",
                         "cost_basis": "45.00",
+                        "currency": "USD",
                     },
                 ],
             },
@@ -166,6 +168,50 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(loaded.payload["position_count"], 0)
         self.assertFalse(loaded.payload["positions_source_disclosed"])
         self.assertFalse(loaded.payload["execution_allowed"])
+
+    def test_float_money_and_missing_currency_fail_closed(self) -> None:
+        base = {
+            "receipt_id": "receipt_bad_money",
+            "created_at_utc": "2026-07-13T07:00:00+00:00",
+            "positions": [
+                {"symbol": "SPY", "qty": "1", "market_value": "10", "currency": "USD"}
+            ],
+        }
+        float_payload = {**base, "positions": [{**base["positions"][0], "market_value": 0.1}]}
+        with self.assertRaisesRegex(StateCoreStoreError, "not float"):
+            ingest_portfolio_snapshot_from_payload(
+                float_payload, source_ref="bad-float.json", engine=self.engine
+            )
+        missing_currency = {
+            **base,
+            "positions": [{"symbol": "SPY", "qty": "1", "market_value": "10"}],
+        }
+        with self.assertRaisesRegex(StateCoreStoreError, "three-letter currency"):
+            ingest_portfolio_snapshot_from_payload(
+                missing_currency, source_ref="bad-currency.json", engine=self.engine
+            )
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+
+    def test_omitted_record_and_stale_valuation_are_structured_findings(self) -> None:
+        payload = {
+            "receipt_id": "receipt_partial",
+            "effective_at_utc": "2026-07-11T07:00:00+00:00",
+            "observed_at_utc": "2026-07-13T07:00:00+00:00",
+            "valued_at_utc": "2026-07-11T07:00:00+00:00",
+            "positions": [
+                {"symbol": "SPY", "qty": "1", "market_value": "10", "currency": "USD"},
+                {"symbol": "QQQ", "qty": "2", "currency": "USD"},
+            ],
+        }
+        snapshot = ingest_portfolio_snapshot_from_payload(
+            payload, source_ref="partial.json", engine=self.engine
+        )
+        self.assertEqual(snapshot.payload["coverage_mode"], "full")
+        self.assertEqual(snapshot.payload["completeness_status"], "blocked")
+        self.assertEqual(
+            {finding["code"] for finding in snapshot.payload["findings"]},
+            {"stale_valuation", "omitted_incomplete_position"},
+        )
 
 
 if __name__ == "__main__":

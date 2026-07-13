@@ -2094,15 +2094,15 @@
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 50,
+      "match_line": 51,
       "term": "attestations",
-      "reason": "Non-semantic hit: attestations at line 50. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestations table-name assertion at line 51. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 341,
+      "match_line": 369,
       "term": "attestation_ref",
-      "reason": "Non-semantic hit: attestation_ref at line 313. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 369. Not a direct Attestation consumer."
     },
     {
       "path": "src/finharness/decision_ontology.py",

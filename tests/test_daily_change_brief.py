@@ -36,6 +36,18 @@ class DailyChangeBriefTest(unittest.TestCase):
     ) -> Path:
         path = self.root / "broker-read" / f"{name}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
+        exact_positions = []
+        for position in positions:
+            exact = {
+                key: (
+                    str(value)
+                    if key in {"qty", "quantity", "market_value", "cost_basis"}
+                    else value
+                )
+                for key, value in position.items()
+            }
+            exact["currency"] = "USD"
+            exact_positions.append(exact)
         payload = {
             "receipt_id": f"receipt_{name}",
             "kind": "broker_read",
@@ -46,7 +58,7 @@ class DailyChangeBriefTest(unittest.TestCase):
                 "id": "acct_daily",
                 "status": "ACTIVE",
             },
-            "positions": positions,
+            "positions": exact_positions,
             "execution_allowed": False,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

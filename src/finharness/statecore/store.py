@@ -195,7 +195,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 7
+CURRENT_STATE_CORE_USER_VERSION = 8
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -335,6 +335,24 @@ def _migrate_add_import_provenance_tables(connection: Connection) -> None:
     SQLModel.metadata.tables["receipt_manifests"].create(connection, checkfirst=True)
 
 
+def _migrate_add_import_semantics(connection: Connection) -> None:
+    """Add D0-02 clocks/findings while marking old batches explicitly legacy."""
+    inspector = inspect(connection)
+    if "import_batches" not in set(inspector.get_table_names()):
+        return
+    columns = {column["name"] for column in inspector.get_columns("import_batches")}
+    additions = {
+        "completeness_status": "VARCHAR NOT NULL DEFAULT 'legacy_unknown'",
+        "time_semantics": "JSON NOT NULL DEFAULT '{}'",
+        "findings": "JSON NOT NULL DEFAULT '[]'",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE import_batches ADD COLUMN {name} {declaration}"
+            )
+
+
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
@@ -368,6 +386,7 @@ def migrate_state_core(engine: Engine) -> None:
         (5, _migrate_review_events_kind_constraint),
         (6, _migrate_add_agent_authority_grant_bindings),
         (7, _migrate_add_import_provenance_tables),
+        (8, _migrate_add_import_semantics),
     )
     try:
         with engine.connect() as connection:
@@ -494,6 +513,8 @@ def _validate_import_envelope(
 
     if batch.source_kind != source:
         raise StateCoreStoreError("import batch source does not match materialization source")
+    if batch.completeness_status not in {"complete", "partial", "blocked"}:
+        raise StateCoreStoreError("current import completeness status is outside the closed set")
     if manifest.batch_id != batch.batch_id:
         raise StateCoreStoreError("receipt manifest does not bind the import batch")
     if manifest.source_artifact_id != batch.source_artifact_id:
@@ -554,6 +575,9 @@ def _validate_receipt_binding(
         "adapter_version": batch.adapter_version,
         "coverage_mode": batch.coverage_mode,
         "record_counts": batch.record_counts,
+        "completeness_status": batch.completeness_status,
+        "time_semantics": batch.time_semantics,
+        "findings": batch.findings,
     }
     if any(receipt_payload.get(key) != value for key, value in expected_receipt_fields.items()):
         raise StateCoreStoreError("receipt artifact does not bind the import envelope")
