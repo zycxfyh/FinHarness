@@ -50,6 +50,26 @@ tasks:
     cmds:
       - uv run python scripts/manage_issue_worktree.py finish {{.CLI_ARGS}}
 
+  pr:body:
+    desc: Render a concise PR body with issue and changed-file metadata
+    cmds:
+      - uv run python scripts/manage_pr_contract.py render {{.CLI_ARGS}}
+
+  pr:check:
+    desc: Validate a rendered PR body file against the repository contract
+    cmds:
+      - uv run python scripts/manage_pr_contract.py check {{.CLI_ARGS}}
+
+  governance:inventory:
+    desc: Check source-derived governance inventory fields without modifying files
+    cmds:
+      - uv run python scripts/manage_governance_inventories.py
+
+  governance:inventory:update:
+    desc: Update source-derived governance inventory fields deterministically
+    cmds:
+      - uv run python scripts/manage_governance_inventories.py --update
+
   check:
     desc: Merge gate — run the CI-required verification suite (alias for check:ci)
     cmds:
@@ -165,6 +185,7 @@ tasks:
   governance:check:
     desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
     cmds:
+      - task: governance:inventory
       - uv run python -m unittest tests.test_governance_invariants
       - node frontend/tests/ips_policy.test.cjs
       - node frontend/tests/research_evidence.test.cjs

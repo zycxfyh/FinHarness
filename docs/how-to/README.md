@@ -16,6 +16,8 @@ Start with the tutorial first: [Golden Path Tutorial](../tutorials/golden-path.m
 | --- | --- | --- |
 | [Add a mature-wheel adapter](add-mature-wheel-adapter.md) | You are replacing local heavy logic with a mature library. | [Mature Wheel Control Plane](../architecture/mature-wheel-control-plane.md) |
 | [Import a personal-finance export](import-personal-finance-export.md) | You have a Beancount ledger or a FinHarness-contract CSV to mirror into state core. | `task beancount:import` / `task personal-finance:import` |
+| [Manage governance inventories](manage-governance-inventories.md) | Derived dependency consumers or attestation summaries drift from source declarations. | `task governance:inventory` / `task governance:inventory:update` |
+| [Manage issue worktrees](manage-issue-worktrees.md) | You are starting, publishing, or cleaning one numbered issue/PR slice. | `task issue:start` / `task pr:body` / `task issue:finish` |
 | [Promote a lesson draft into a rule change](promote-lesson-to-rule.md) | A human has reviewed a lesson and wants traceable rule lineage. | `task lessons:promote`, `task rules:audit` |
 | Keep current docs in sync | Current docs mention commands or modules that moved. | `task docs:current-check` |
 
