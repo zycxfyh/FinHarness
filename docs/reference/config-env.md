@@ -21,7 +21,10 @@ repo and do not reintroduce broker env vars into current docs or Taskfile tasks.
 | --- | --- | --- | --- |
 | `FINHARNESS_STATE_CORE_DB_PATH` | `finharness.statecore.store`, runtime scripts | Override the State Core SQLite path. | Changes the queryable state mirror. |
 | `FINHARNESS_RECEIPT_ROOT` | `finharness.config`, runtime scripts | Override receipt root. | Receipt files are evidence roots; preserve/back up deliberately. |
-| `FINHARNESS_BACKUP_ROOT` | `finharness.config`, `scripts/backup.py` | Override backup destination. | Do not point at a transient or shared secret path. |
+| `FINHARNESS_BACKUP_ROOT` | `finharness.config`, backup commands | Override backup destination; it may be an off-device mounted path. | Use durable storage with independently monitored capacity. |
+| `FINHARNESS_BACKUP_MIN_FREE_BYTES` | `finharness.backup` | Minimum free-space reserve required after the conservative input-size estimate. Default: 512 MiB. | Backup creation fails before writing artifacts when the threshold is not met. |
+| `FINHARNESS_BACKUP_RETENTION_COUNT` | `finharness.backup` | Minimum number of newest verified backups protected from retention. Default: 7. | Must be at least 1; the newest valid backup is always protected. |
+| `FINHARNESS_BACKUP_RETENTION_DAYS` | `finharness.backup` | Age after which verified backups beyond the protected count become prune candidates. Default: 30. | Pruning is dry-run unless `--apply` is explicit; `.legal-hold` backups are excluded. |
 | `FINHARNESS_BROKER_KEYRING_SERVICE` | `finharness.config` | OS keyring service name for future broker-key reads. | Keyring only; no plaintext repo files. |
 | `FINHARNESS_BROKER_KEYRING_USERNAME` | `finharness.config` | OS keyring username for future broker-key reads. | Keyring only; no plaintext repo files. |
 | `FINHARNESS_LOG_JSON` | `finharness.config`, runtime logging | Toggle JSON logging. | Logs must not contain secrets. |

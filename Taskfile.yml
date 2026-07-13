@@ -337,9 +337,19 @@ tasks:
       - uv run python scripts/record_annual_review.py {{.CLI_ARGS}}
 
   backup:
-    desc: Back up state-core SQLite and receipts without relying on git
+    desc: Capacity-gated, atomic backup of state-core SQLite and receipts
     cmds:
       - uv run python scripts/backup.py {{.CLI_ARGS}}
+
+  backup:verify:
+    desc: Verify backup hashes plus SQLite and receipt-archive restore readability
+    cmds:
+      - uv run python scripts/verify_backup.py {{.CLI_ARGS}}
+
+  backup:prune:
+    desc: Preview retention candidates by default; pass --apply to delete verified candidates
+    cmds:
+      - uv run python scripts/prune_backups.py {{.CLI_ARGS}}
 
   cockpit:daily:
     desc: Build a governed deterministic daily portfolio-change brief

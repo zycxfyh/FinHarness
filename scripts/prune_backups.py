@@ -1,4 +1,4 @@
-"""Create a policy-gated local state-core backup without relying on git."""
+"""Plan or explicitly apply conservative backup retention."""
 
 from __future__ import annotations
 
@@ -6,37 +6,32 @@ import argparse
 import json
 import sys
 
-from finharness.backup import BackupPolicy, create_backup
+from finharness.backup import BackupPolicy, prune_backups
 from finharness.config import load_settings
-
-__all__ = ["create_backup"]
 
 
 def main(argv: list[str]) -> int:
     settings = load_settings()
-    parser = argparse.ArgumentParser(description="Back up state-core DB and receipts.")
-    parser.add_argument("--db-path")
-    parser.add_argument("--receipt-root")
-    parser.add_argument("--backup-root")
-    parser.add_argument("--min-free-bytes", type=int, default=settings.backup_min_free_bytes)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backup-root", default=str(settings.backup_root))
     parser.add_argument("--retention-count", type=int, default=settings.backup_retention_count)
     parser.add_argument("--retention-days", type=int, default=settings.backup_retention_days)
+    parser.add_argument("--apply", action="store_true", help="Delete listed candidates")
     ns = parser.parse_args(argv)
     try:
-        manifest = create_backup(
-            db_path=ns.db_path,
-            receipt_root=ns.receipt_root,
-            backup_root=ns.backup_root,
+        result = prune_backups(
+            ns.backup_root,
             policy=BackupPolicy(
-                min_free_bytes=ns.min_free_bytes,
+                min_free_bytes=settings.backup_min_free_bytes,
                 retention_count=ns.retention_count,
                 retention_days=ns.retention_days,
             ),
+            dry_run=not ns.apply,
         )
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc), "execution_allowed": False}))
         return 1
-    print(json.dumps({"ok": True, **manifest}, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
