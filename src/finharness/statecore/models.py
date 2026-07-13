@@ -14,6 +14,7 @@ from pydantic import field_validator
 from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field
 
+from finharness.statecore.import_models import ImportBatch, ReceiptManifest  # noqa: F401
 from finharness.statecore.model_base import (
     STATE_CORE_SCHEMA_VERSION,  # noqa: F401 - compatibility re-export
     AuthorityLevel,

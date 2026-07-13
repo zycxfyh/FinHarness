@@ -23,6 +23,8 @@ from typing import Any
 
 from sqlalchemy import Engine
 
+from finharness.artifact_store import ArtifactStore, LocalArtifactStore
+from finharness.import_provenance import prepare_import
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
     Account,
@@ -37,11 +39,9 @@ from finharness.statecore.models import (
     SourcedStateCoreBase,
     TaxEvent,
 )
-from finharness.statecore.receipt_io import atomic_write_json, remove_file_best_effort
 from finharness.statecore.store import (
     StateCoreRecord,
-    StateCoreStoreError,
-    replace_source_records,
+    materialize_import_batch,
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
@@ -96,6 +96,8 @@ class PersonalFinanceExportError(RuntimeError):
 
 @dataclass(frozen=True)
 class PersonalFinanceImportResult:
+    batch_id: str
+    manifest_id: str
     snapshot_id: str
     receipt_id: str
     receipt_ref: str
@@ -454,6 +456,7 @@ def ingest_personal_finance_export(
     *,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT,
+    artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
@@ -468,6 +471,7 @@ def ingest_personal_finance_export(
         raise PersonalFinanceExportError("personal-finance export has no rows")
     as_of_utc = _single_as_of(rows)
     source_hash = _file_hash(source_path)
+    source_content = source_path.read_bytes()
     base_id = _safe_id(source_hash[:12])
     active_snapshot_id = snapshot_id or f"snap_personal_finance_{base_id}"
     receipt_id = f"receipt_personal_finance_export_{base_id}"
@@ -482,8 +486,26 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         record_counts=record_counts,
     )
-    atomic_write_json(receipt_path, receipt_payload)
     receipt_ref = display_path(receipt_path)
+    active_artifact_store = artifact_store or LocalArtifactStore(
+        Path(receipt_root) / "artifact-store"
+    )
+    prepared = prepare_import(
+        source_kind=EXPORT_KIND,
+        source_id=display_path(source_path),
+        source_content=source_content,
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode="full",
+        record_counts=record_counts,
+        snapshot_id=active_snapshot_id,
+        receipt_id=receipt_id,
+        receipt_root=receipt_root,
+        receipt_ref=receipt_ref,
+        artifact_store=active_artifact_store,
+        receipt_payload=receipt_payload,
+        created_at_utc=as_of_utc,
+    )
     source_refs = [receipt_ref, display_path(source_path)]
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
@@ -500,12 +522,17 @@ def ingest_personal_finance_export(
         as_of_utc=as_of_utc,
         source_path=source_path,
     )
-    try:
-        replace_source_records([receipt_index, *records], source=EXPORT_KIND, engine=engine)
-    except StateCoreStoreError:
-        remove_file_best_effort(receipt_path)
-        raise
+    materialize_import_batch(
+        [receipt_index, *records],
+        source=EXPORT_KIND,
+        batch=prepared.batch,
+        manifest=prepared.manifest,
+        artifact_store=active_artifact_store,
+        engine=engine,
+    )
     return PersonalFinanceImportResult(
+        batch_id=prepared.batch.batch_id,
+        manifest_id=prepared.manifest.manifest_id,
         snapshot_id=active_snapshot_id,
         receipt_id=receipt_id,
         receipt_ref=receipt_ref,

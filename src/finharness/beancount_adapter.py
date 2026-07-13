@@ -24,6 +24,8 @@ import beanquery
 from beancount import loader
 from sqlalchemy import Engine
 
+from finharness.artifact_store import ArtifactStore, LocalArtifactStore
+from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
     Account,
@@ -34,11 +36,9 @@ from finharness.statecore.models import (
     Snapshot,
     utc_now_iso,
 )
-from finharness.statecore.receipt_io import atomic_write_json, remove_file_best_effort
 from finharness.statecore.store import (
     StateCoreRecord,
-    StateCoreStoreError,
-    replace_source_records,
+    materialize_import_batch,
 )
 
 DEFAULT_BEANCOUNT_RECEIPT_ROOT = ROOT / "data" / "receipts" / "beancount"
@@ -77,6 +77,8 @@ class BeancountLedgerError(RuntimeError):
 
 @dataclass(frozen=True)
 class BeancountImportResult:
+    batch_id: str
+    manifest_id: str
     snapshot_id: str
     receipt_id: str
     receipt_ref: str
@@ -118,15 +120,18 @@ def _ledger_metadata(source_path: Path) -> tuple[list[str], set[str]]:
     return loaded_files, operating
 
 
+def _ledger_evidence_bytes(files: list[str]) -> bytes:
+    """Canonical byte stream over the loaded ledger and every included file."""
+    evidence = bytearray()
+    for path in files:
+        evidence.extend(Path(path).read_bytes())
+        evidence.extend(b"\x00")
+    return bytes(evidence)
+
+
 def _combined_ledger_hash(files: list[str]) -> str:
     """Content hash over the whole ledger so any included file change is reflected."""
-    digest = hashlib.sha256()
-    for path in files:
-        with Path(path).open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-        digest.update(b"\x00")
-    return digest.hexdigest()
+    return hashlib.sha256(_ledger_evidence_bytes(files)).hexdigest()
 
 
 def _amount(inventory: Any) -> tuple[Decimal, str] | None:
@@ -363,6 +368,7 @@ def ingest_beancount_ledger(
     *,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_BEANCOUNT_RECEIPT_ROOT,
+    artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
     assets_root: str = DEFAULT_ASSETS_ROOT,
     liabilities_root: str = DEFAULT_LIABILITIES_ROOT,
@@ -372,9 +378,20 @@ def ingest_beancount_ledger(
     if not source_path.exists():
         raise BeancountLedgerError(f"beancount ledger missing: {source_path}")
     rows = _query_rows(source_path)
-    as_of_utc = utc_now_iso()
     source_files, operating_currencies = _ledger_metadata(source_path)
+    source_content = _ledger_evidence_bytes(source_files)
     source_hash = _combined_ledger_hash(source_files)
+    active_artifact_store = artifact_store or LocalArtifactStore(
+        Path(receipt_root) / "artifact-store"
+    )
+    source_descriptor = persist_source_evidence(
+        source_kind=LEDGER_KIND,
+        source_content=source_content,
+        source_sha256=source_hash,
+        artifact_store=active_artifact_store,
+        created_at_utc=utc_now_iso(),
+    )
+    as_of_utc = source_descriptor.created_at_utc
     base_id = _safe_id(source_hash[:12])
     active_snapshot_id = snapshot_id or f"snap_beancount_{base_id}"
     receipt_id = f"receipt_beancount_ledger_{base_id}"
@@ -433,7 +450,27 @@ def ingest_beancount_ledger(
         cashflow_count=len(cashflows),
         data_gaps=data_gaps,
     )
-    atomic_write_json(receipt_path, receipt_payload)
+    prepared = prepare_import(
+        source_kind=LEDGER_KIND,
+        source_id=display_path(source_path),
+        source_content=source_content,
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode="full",
+        record_counts={
+            "account": len(accounts),
+            "position": len(positions),
+            "liability": len(liabilities),
+            "cashflow": len(cashflows),
+        },
+        snapshot_id=active_snapshot_id,
+        receipt_id=receipt_id,
+        receipt_root=receipt_root,
+        receipt_ref=receipt_ref,
+        artifact_store=active_artifact_store,
+        receipt_payload=receipt_payload,
+        created_at_utc=as_of_utc,
+    )
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
         kind=LEDGER_KIND,
@@ -449,12 +486,17 @@ def ingest_beancount_ledger(
         *liabilities,
         *cashflows,
     ]
-    try:
-        replace_source_records([receipt_index, *records], source=LEDGER_KIND, engine=engine)
-    except StateCoreStoreError:
-        remove_file_best_effort(receipt_path)
-        raise
+    materialize_import_batch(
+        [receipt_index, *records],
+        source=LEDGER_KIND,
+        batch=prepared.batch,
+        manifest=prepared.manifest,
+        artifact_store=active_artifact_store,
+        engine=engine,
+    )
     return BeancountImportResult(
+        batch_id=prepared.batch.batch_id,
+        manifest_id=prepared.manifest.manifest_id,
         snapshot_id=active_snapshot_id,
         receipt_id=receipt_id,
         receipt_ref=receipt_ref,

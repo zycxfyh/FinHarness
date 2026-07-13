@@ -1224,13 +1224,13 @@
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 33,
+      "match_line": 34,
       "term": "Attestation",
       "reason": "StateCoreRecord union import. Persistence infrastructure."
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 88,
+      "match_line": 91,
       "term": "Attestation",
       "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
     },

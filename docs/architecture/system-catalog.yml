@@ -33,8 +33,10 @@ systems:
     summary: Domain-neutral immutable-byte, descriptor, integrity-audit, index, and recovery ports. STORE-00 is live for new artifact forms; existing domain receipts migrate separately with replay and rollback proof.
     docs:
       - docs/architecture/artifact-store-contract.md
+      - docs/architecture/import-provenance-contract.md
     runtime_roots:
       - src/finharness/artifact_store.py
+      - src/finharness/import_provenance.py
       - src/finharness/statecore/receipt_io.py
     mature_posture: Domain services own semantics and authority; the store owns durability and integrity. Descriptors and bytes are truth, while indexes are reconstructable.
     checks:
@@ -81,9 +83,12 @@ systems:
     docs:
       - docs/architecture/system-map.md
       - docs/architecture/module-map.md
+      - docs/architecture/import-provenance-contract.md
       - docs/reference/interfaces.md
     runtime_roots:
       - src/finharness/statecore/
+      - src/finharness/personal_finance.py
+      - src/finharness/beancount_adapter.py
       - src/finharness/api/routes_state.py
     mature_posture: Borrow event/receipt-sourcing ideas without adopting a heavy event platform.
     checks:
