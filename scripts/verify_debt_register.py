@@ -8,9 +8,9 @@ resolved entry must return true and every non-resolved entry must return false.
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
-import subprocess
 import sys
 import tomllib
 from collections.abc import Callable
@@ -83,25 +83,6 @@ def state_changing_routes_have_write_gate(app: Any, gate: Callable[..., Any]) ->
     return checked > 0
 
 
-def _run_proof_command(root: Path, command: list[str]) -> bool:
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
-
-
-def _run_unittest_modules(root: Path, *modules: str) -> bool:
-    return _run_proof_command(root, [sys.executable, "-m", "unittest", *modules])
-
-
 def _read(root: Path, relative_path: str) -> str:
     return (root / relative_path).read_text(encoding="utf-8")
 
@@ -169,15 +150,9 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
         and "SEC-BOUNDARY-02" in threat_model
     )
 
-    # Check 4: destructive semantic and runtime fixtures execute successfully.
-    behavior_ok = _run_unittest_modules(
-        root,
-        "tests.test_paper_validation_consumer_manifest",
-        "tests.test_paper_validation_import_boundary",
-        "tests.test_paper_validation_broker_registry_isolation",
-    )
-
-    # Check 5: removal ledger entry
+    # Destructive/runtime fixtures are owned by the canonical unittest gate. The
+    # debt verifier consumes the same audit primitives without recursively
+    # launching tests that unittest discovery has already collected.
     removal_ledger = _read(root, "docs/governance/removal-ledger.yml")
     removal_ok = "delete-paper-validation-legacy" in removal_ledger
 
@@ -186,14 +161,62 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
             manifest_ok,
             import_ok,
             threat_ok,
-            behavior_ok,
             removal_ok,
         )
     )
 
 
 def _receipt_backed_write_registry(root: Path) -> bool:
-    return _run_unittest_modules(root, "tests.test_receipt_backed_write_registry")
+    registry = json.loads(
+        _read(root, "docs/governance/receipt-backed-write-registry.json")
+    )
+    entries = registry.get("entries", [])
+    ids = [entry.get("id") for entry in entries]
+    if (
+        registry.get("schema") != "finharness.receipt_backed_write_registry.v1"
+        or registry.get("status") != "current"
+        or registry.get("debt_ref") != "ENG-DEBT-0003"
+        or not entries
+        or len(ids) != len(set(ids))
+    ):
+        return False
+    required = {
+        "id",
+        "module",
+        "file",
+        "function",
+        "route_refs",
+        "db_write_models",
+        "receipt_kind",
+        "receipt_indexed",
+        "stale_guard",
+        "failure_cleanup",
+        "execution_allowed",
+        "execution_substrate",
+        "real_external_execution_allowed",
+    }
+    for entry in entries:
+        if not required.issubset(entry) or not (root / entry["file"]).is_file():
+            return False
+        try:
+            function = getattr(importlib.import_module(entry["module"]), entry["function"])
+        except (AttributeError, ImportError):
+            return False
+        if not callable(function):
+            return False
+        if any(
+            (
+                entry["execution_allowed"],
+                entry["real_external_execution_allowed"],
+                not entry["receipt_indexed"],
+                "ReceiptIndex" not in entry["db_write_models"],
+                not str(entry["receipt_kind"]).strip(),
+                not str(entry["stale_guard"]).strip(),
+                not str(entry["failure_cleanup"]).strip(),
+            )
+        ):
+            return False
+    return True
 
 
 def _task_check_layering(root: Path) -> bool:
@@ -330,7 +353,18 @@ def _dependency_probe_contract(root: Path) -> bool:
     ) or not workflow_path.is_file():
         return False
     workflow = workflow_path.read_text(encoding="utf-8")
-    return all(profile in workflow for profile in ("base", "data", "research", "agent", "eval"))
+    matrix = re.search(r"profile:\s*\[([^]]+)\]", workflow)
+    if matrix is None:
+        return False
+    matrix_profiles = {
+        profile.strip() for profile in matrix.group(1).split(",") if profile.strip()
+    }
+    return all(
+        (
+            matrix_profiles == {"data", "research", "agent", "eval"},
+            "deps:probe-base" in _read(root, "Taskfile.yml"),
+        )
+    )
 
 
 def _distribution_name(requirement: str) -> str:
@@ -346,16 +380,46 @@ def _distribution_name(requirement: str) -> str:
 def _statecore_model_split(root: Path) -> bool:
     extracted = root / "src" / "finharness" / "statecore" / "personal_finance_models.py"
     base = root / "src" / "finharness" / "statecore" / "model_base.py"
-    models = _read(root, "src/finharness/statecore/models.py")
+    models_text = _read(root, "src/finharness/statecore/models.py")
     extracted_text = extracted.read_text(encoding="utf-8") if extracted.exists() else ""
+    try:
+        from sqlmodel import SQLModel
+
+        from finharness.statecore import models
+        from finharness.statecore import personal_finance_models as personal
+    except ImportError:
+        return False
+    names = (
+        "Account",
+        "Snapshot",
+        "Position",
+        "Liability",
+        "FinancialGoal",
+        "CashflowEvent",
+        "TaxEvent",
+        "InsurancePolicy",
+        "DocumentRef",
+    )
+    expected_tables = {
+        "accounts",
+        "snapshots",
+        "positions",
+        "liabilities",
+        "financial_goals",
+        "cashflow_events",
+        "tax_events",
+        "insurance_policies",
+        "document_refs",
+    }
     return all(
         (
             extracted.exists(),
             base.exists(),
-            "from finharness.statecore.personal_finance_models import" in models,
+            "from finharness.statecore.personal_finance_models import" in models_text,
             "from finharness.statecore.model_base import" in extracted_text,
             "from finharness.statecore.models import" not in extracted_text,
-            _run_unittest_modules(root, "tests.test_statecore_model_split"),
+            all(getattr(models, name) is getattr(personal, name) for name in names),
+            expected_tables.issubset(SQLModel.metadata.tables),
         )
     )
 
@@ -383,7 +447,6 @@ def _frontend_module_split(root: Path) -> bool:
             len(re.findall(r"ReviewActionShell\.(?:post|patch)\(", app)) == 3,
             all(position >= 0 for position in script_positions),
             script_positions == sorted(script_positions),
-            _run_proof_command(root, ["node", "frontend/tests/module_boundaries.test.cjs"]),
         )
     )
 
@@ -413,14 +476,60 @@ def _toolchain_alignment(root: Path) -> bool:
 
 
 def _execution_abstraction_inventory(root: Path) -> bool:
-    return _run_unittest_modules(root, "tests.test_abstraction_inventory_execution")
+    inventory = _read(root, "docs/engineering/abstraction-inventory.yml")
+    canonical_objects = {
+        "ApprovalRecord",
+        "BrokerConnection",
+        "ExecutionAccount",
+        "ExecutionOrder",
+        "ExecutionReport",
+        "OrderDraft",
+        "PositionDelta",
+        "PreTradeCheck",
+        "ReconciliationReport",
+    }
+    required_refs = (
+        "src/finharness/execution/services.py",
+        "src/finharness/statecore/execution_models.py",
+        "src/finharness/api/routes_execution.py",
+    )
+    return all(
+        (
+            "status: current" in inventory,
+            all(f"name: {name}" in inventory for name in canonical_objects),
+            all((root / ref).is_file() and ref in inventory for ref in required_refs),
+            "/execution/pretrade-packets/" not in inventory,
+            "execution/paper/" not in inventory,
+            "wrapper_first" not in inventory,
+            "bridge_read_model_first" not in inventory,
+        )
+    )
 
 
 def _execution_capability_enforcement(root: Path) -> bool:
-    return _run_unittest_modules(
-        root,
-        "tests.test_execution_capabilities",
-        "tests.test_execution_capability_enforcement",
+    try:
+        from finharness.execution.capabilities import DEFAULT_EXECUTION_CAPABILITIES
+    except ImportError:
+        return False
+    services = _read(root, "src/finharness/execution/services.py")
+    commands = _read(root, "src/finharness/execution/commands.py")
+    required_service_guards = (
+        'require_execution_capability(capabilities, "create_order_draft")',
+        'require_execution_capability(capabilities, "run_pretrade_check")',
+        'require_execution_capability(capabilities, "record_approval")',
+        'require_execution_capability(capabilities, "stage_execution_order")',
+    )
+    return all(
+        (
+            DEFAULT_EXECUTION_CAPABILITIES.submit_simulated_order,
+            not DEFAULT_EXECUTION_CAPABILITIES.submit_live_order,
+            not DEFAULT_EXECUTION_CAPABILITIES.manage_broker_credentials,
+            all(guard in services for guard in required_service_guards),
+            'require_execution_capability(capabilities, "submit_simulated_order")'
+            in services,
+            'require_execution_capability(capabilities, "submit_simulated_order")'
+            in commands,
+        )
     )
 
 

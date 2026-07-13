@@ -271,6 +271,12 @@ class DebtRegisterTest(unittest.TestCase):
     def test_status_claims_match_repository_verifiers(self) -> None:
         self.assertEqual(verify_register(ROOT, REGISTER), [])
 
+    def test_verifier_does_not_recursively_launch_collected_tests(self) -> None:
+        source = (ROOT / "scripts/verify_debt_register.py").read_text(encoding="utf-8")
+        self.assertNotIn("subprocess.run", source)
+        self.assertNotIn("_run_unittest_modules", source)
+        self.assertNotIn("frontend/tests/module_boundaries.test.cjs", source)
+
     def test_resolved_debts_have_resolution_refs(self) -> None:
         for debt in _register()["debts"]:
             if debt["status"] == "resolved":

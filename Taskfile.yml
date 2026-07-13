@@ -98,7 +98,7 @@ tasks:
   check:timed:
     desc: Run the CI merge gate through existing Taskfile stages and record timing evidence
     cmds:
-      - uv run python scripts/run_timed_check.py
+      - python scripts/run_timed_check.py
 
   check:research:
     desc: Full suite including expensive experiments and eval smoke (not in CI fast path)
@@ -188,16 +188,9 @@ tasks:
       - node frontend/tests/browser/local_review_mode.test.cjs
 
   governance:check:
-    desc: Run EOS machine guardrails (the policy registry + frontend no-action-affordance)
+    desc: Run governance inventory drift checks not already owned by the Python/frontend gates
     cmds:
       - task: governance:inventory
-      - uv run python -m unittest tests.test_governance_invariants
-      - node frontend/tests/ips_policy.test.cjs
-      - node frontend/tests/research_evidence.test.cjs
-      - node frontend/tests/scaffold_revision.test.cjs
-      - node frontend/tests/review_workspace.test.cjs
-      - node frontend/tests/review_retrospective.test.cjs
-      - node frontend/tests/review_compare.test.cjs
 
   architecture:check:
     desc: Fail on Python import SCCs and direct/transitive architecture boundary violations
@@ -247,7 +240,9 @@ tasks:
   security:fuzz:
     desc: Run deterministic governance-boundary fuzz baseline
     cmds:
-      - uv run python scripts/run_fuzz_baseline.py
+      - |
+        UV_PROJECT_ENVIRONMENT=.venv-probes/fuzz \
+          uv run --locked --no-default-groups python scripts/run_fuzz_baseline.py
 
   lint:
     desc: Run Python lint checks
