@@ -25,6 +25,9 @@ class FinHarnessSettings(BaseSettings):
     state_core_db_path: Path = DEFAULT_STATE_CORE_DB_PATH
     receipt_root: Path = DEFAULT_RECEIPT_ROOT
     backup_root: Path = ROOT / "data" / "backups" / "state-core"
+    backup_min_free_bytes: int = 512 * 1024 * 1024
+    backup_retention_count: int = 7
+    backup_retention_days: int = 30
     broker_keyring_service: str = "finharness.broker"
     broker_keyring_username: str = "default"
     log_json: bool = True

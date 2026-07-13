@@ -108,7 +108,9 @@ execution authorization.
 | --- | --- |
 | `task cockpit:daily` | Build deterministic daily portfolio-change brief from an existing receipt. |
 | `task observability:trace` | Read a local observability trace-index receipt. |
-| `task backup` | Back up State Core SQLite and receipts outside git. |
+| `task backup` | Create a capacity-gated, atomically published State Core and receipt backup with bound hashes. |
+| `task backup:verify -- BACKUP` | Verify manifest bindings, SQLite integrity, and safe receipt-archive readability. |
+| `task backup:prune` | Preview verified retention candidates; pass `-- --apply` to delete them. |
 | `task docs:list` | List project docs. |
 | `task vocab:lint` | Run advisory controlled-vocabulary lint. |
 | `task smoke` | Run minimal local smoke (`test` + `experiments`). |
