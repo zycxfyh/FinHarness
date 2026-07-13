@@ -32,8 +32,18 @@ from finharness.identity import IdentityProvider, write_identity_receipt
 from finharness.local_operator import LocalOperatorContext
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
 from finharness.project_paths import ROOT
+from finharness.readiness import (
+    CapitalTruthReadiness,
+    OperationalReadiness,
+    capital_truth_readiness,
+    operational_readiness,
+)
 from finharness.runtime_log import configure_logging, get_logger
-from finharness.statecore.store import StateCoreStoreError, ensure_state_core_schema
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    ensure_state_core_schema,
+    state_core_db_path,
+)
 
 configure_logging()
 logger = get_logger(__name__)
@@ -59,9 +69,48 @@ def _load_optional_data_routers():
     return (data_catalog_router, data_quality_router), None
 
 
+def _register_readiness_routes(api: FastAPI) -> None:
+    @api.get("/ready", tags=["health"], response_model=OperationalReadiness)
+    async def ready() -> JSONResponse:
+        result = operational_readiness(
+            engine=getattr(api.state, "state_core_engine", None),
+            db_path=api.state.state_core_path,
+            receipt_root=Path(
+                getattr(
+                    api.state,
+                    "state_core_receipt_root",
+                    ROOT / "data" / "receipts" / "state-core",
+                )
+            ),
+        )
+        return JSONResponse(
+            status_code={"ready": 200}.get(result.status, 503),
+            content=result.model_dump(mode="json"),
+        )
+
+    @api.get("/ready/truth", tags=["health"], response_model=CapitalTruthReadiness)
+    async def truth_ready() -> JSONResponse:
+        result = capital_truth_readiness(
+            engine=getattr(api.state, "state_core_engine", None),
+            db_path=api.state.state_core_path,
+            receipt_root=Path(
+                getattr(
+                    api.state,
+                    "state_core_receipt_root",
+                    ROOT / "data" / "receipts" / "state-core",
+                )
+            ),
+        )
+        return JSONResponse(
+            status_code={"usable": 200}.get(result.status, 503),
+            content=result.model_dump(mode="json"),
+        )
+
+
 def create_app(
     *,
     state_core_engine: Engine | None = None,
+    state_core_path: str | None = None,
     receipt_root: str | None = None,
     market_data_receipt_root: str | None = None,
     local_operator_context: LocalOperatorContext | None = None,
@@ -77,6 +126,7 @@ def create_app(
     if state_core_engine is not None:
         ensure_state_core_schema(state_core_engine)
         api.state.state_core_engine = state_core_engine
+    api.state.state_core_path = state_core_db_path(state_core_path)
     if receipt_root is not None:
         api.state.state_core_receipt_root = receipt_root
     if market_data_receipt_root is not None:
@@ -155,11 +205,15 @@ def create_app(
                 ),
             },
             "non_claims": [
-                "Health check only.",
+                "Liveness signal only.",
+                "Not dependency readiness.",
+                "Not capital truth readiness.",
                 "Not release approval.",
                 "Not execution authorization.",
             ],
         }
+
+    _register_readiness_routes(api)
 
     @api.exception_handler(StateCoreStoreError)
     async def state_core_error(_request: Request, exc: StateCoreStoreError):

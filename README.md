@@ -161,6 +161,17 @@ task to select another persistent local workspace:
 ```bash
 task cockpit:review -- --state-db PATH --receipt-root PATH --port PORT
 ```
+
+The API exposes three deliberately different probes:
+
+- `GET /health` is a cheap process-liveness signal only.
+- `GET /ready` returns 503 unless State Core is readable/current and receipt
+  storage is available for runtime use.
+- `GET /ready/truth` returns 200 only when the latest production-capital import
+  is current and its database, receipt, source artifact, and receipt artifact
+  bindings verify. Missing, corrupt, stale, partial, and unavailable evidence
+  are disclosed separately; the probe never migrates state or writes a test file.
+
 Review mode creates a missing database, identifies the process as
 `local-human`, and still exposes no execution capability. Stop and restart the
 same command to replay the same receipt-backed review state.

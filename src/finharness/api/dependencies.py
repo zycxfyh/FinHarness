@@ -25,7 +25,7 @@ DEFAULT_STATE_CORE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "state-core"
 async def get_state_core_engine(request: Request) -> Engine:
     engine = getattr(request.app.state, "state_core_engine", None)
     if engine is None:
-        engine = open_state_core()
+        engine = open_state_core(getattr(request.app.state, "state_core_path", None))
         # An existing database may predate tables added in later slices; create
         # any missing ones so cockpit reads do not 500 with "no such table".
         ensure_state_core_schema(engine)

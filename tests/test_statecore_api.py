@@ -457,6 +457,8 @@ class StateCoreApiTest(unittest.TestCase):
 
         allowed_routes = {
             "/health": {"methods": {"get": "read"}},
+            "/ready": {"methods": {"get": "read"}},
+            "/ready/truth": {"methods": {"get": "read"}},
             "/exposure": {"methods": {"get": "read"}},
             "/brief/daily": {"methods": {"get": "read"}},
             "/dashboard/summary": {"methods": {"get": "read"}},
@@ -675,7 +677,7 @@ class StateCoreApiTest(unittest.TestCase):
                         f"validation_only operation at {path} must be POST",
                     )
 
-        self.assertEqual(read_ops, 60, f"expected 60 read ops, got {read_ops}")
+        self.assertEqual(read_ops, 62, f"expected 62 read ops, got {read_ops}")
         self.assertEqual(
             state_changing_ops,
             28,
