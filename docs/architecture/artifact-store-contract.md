@@ -25,8 +25,16 @@ for new durable artifact forms rather than introduce another receipt registry.
 ## Local layout and recovery
 
 The local adapter stores content-addressed immutable bytes below `objects/`,
-descriptors below `descriptors/`, a replaceable `index.json`, and replay evidence
-below `recovery/`. Descriptors and bytes are truth; the index is reconstructable.
+descriptors below `descriptors/`, bounded per-artifact index updates below
+`index-entries/`, a replaceable recovery checkpoint at `index.json`, and replay
+evidence below `recovery/`. Descriptors and bytes are truth; both index forms are
+reconstructable. Recovery compacts incremental entries into a fresh checkpoint.
+
+Descriptor identity is claimed with an atomic exclusive filesystem link. Two
+processes cannot replace the same `artifact_id`: identical puts converge on the
+winning descriptor and conflicting puts fail. A crash after the descriptor claim
+but before bytes or index completion is reported by audit and can be completed by
+retrying the identical put; per-put work never scans historical descriptors.
 
 The audit distinguishes missing bytes, content/hash or length corruption,
 unsupported schema versions, invalid descriptors/indexes, stale index entries,
