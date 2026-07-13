@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_json, resolve_under
+from finharness.statecore.receipt_io import atomic_write_json, resolve_under
 
 ARTIFACT_DESCRIPTOR_SCHEMA = "finharness.artifact_descriptor.v1"
 ARTIFACT_INDEX_SCHEMA = "finharness.artifact_index.v1"
+ARTIFACT_INDEX_ENTRY_SCHEMA = "finharness.artifact_index_entry.v1"
 ARTIFACT_RECOVERY_SCHEMA = "finharness.artifact_recovery_receipt.v1"
 
 
@@ -180,19 +183,19 @@ class LocalArtifactStore:
         )
         descriptor_path = self._descriptor_path(artifact_id)
         object_path = self._object_path(content_hash)
-        if descriptor_path.exists():
-            existing = self.descriptor(artifact_id)
-            if existing != descriptor:
-                raise ArtifactConflictError(f"artifact id {artifact_id!r} is immutable")
-            if self.read(artifact_id) != content:
-                raise ArtifactConflictError(f"artifact bytes for {artifact_id!r} changed")
-            return existing
-        if object_path.exists() and object_path.read_bytes() != content:
-            raise ArtifactConflictError(f"SHA-256 object collision for {content_hash}")
+        won_claim = self._claim_descriptor(descriptor_path, descriptor)
+        persisted = descriptor if won_claim else self.descriptor(artifact_id)
+        if not self._descriptors_compatible(
+            persisted,
+            descriptor,
+            created_at_was_supplied=created_at_utc is not None,
+        ):
+            raise ArtifactConflictError(f"artifact id {artifact_id!r} is immutable")
         self._write_bytes_once(object_path, content)
-        atomic_write_json(descriptor_path, descriptor.model_dump(mode="json"))
-        self._write_index(self._descriptor_map())
-        return descriptor
+        if self.read(artifact_id) != content:
+            raise ArtifactConflictError(f"artifact bytes for {artifact_id!r} changed")
+        self._write_index_entry(persisted)
+        return persisted
 
     def descriptor(self, artifact_id: str) -> ArtifactDescriptor:
         path = self._descriptor_path(artifact_id)
@@ -288,6 +291,7 @@ class LocalArtifactStore:
         repaired = tuple(sorted(descriptors))
         if not dry_run:
             self._write_index(descriptors)
+            self._clear_index_entries()
         after = self.audit() if not dry_run else before
         recovery_id = f"artifact_recovery_{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
         receipt = ArtifactRecoveryReceipt(
@@ -316,8 +320,59 @@ class LocalArtifactStore:
 
     def _write_bytes_once(self, path: Path, content: bytes) -> None:
         if path.exists():
+            if path.read_bytes() != content:
+                raise ArtifactConflictError(f"SHA-256 object collision for {path.stem}")
             return
-        atomic_write_bytes(path, content)
+        self._exclusive_link_bytes(path, content)
+        if path.read_bytes() != content:
+            raise ArtifactConflictError(f"SHA-256 object collision for {path.stem}")
+
+    def _claim_descriptor(self, path: Path, descriptor: ArtifactDescriptor) -> bool:
+        payload = (
+            json.dumps(
+                descriptor.model_dump(mode="json"),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+            + "\n"
+        ).encode()
+        return self._exclusive_link_bytes(path, payload)
+
+    def _exclusive_link_bytes(self, path: Path, content: bytes) -> bool:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                "wb", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+            ) as handle:
+                temp_path = Path(handle.name)
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                os.link(temp_path, path)
+                return True
+            except FileExistsError:
+                return False
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
+    def _descriptors_compatible(
+        self,
+        existing: ArtifactDescriptor,
+        candidate: ArtifactDescriptor,
+        *,
+        created_at_was_supplied: bool,
+    ) -> bool:
+        existing_payload = existing.model_dump(mode="json")
+        candidate_payload = candidate.model_dump(mode="json")
+        if not created_at_was_supplied:
+            existing_payload.pop("created_at_utc")
+            candidate_payload.pop("created_at_utc")
+        return existing_payload == candidate_payload
 
     def _load_descriptors(self, findings: list[ArtifactFinding]) -> dict[str, ArtifactDescriptor]:
         result: dict[str, ArtifactDescriptor] = {}
@@ -342,16 +397,43 @@ class LocalArtifactStore:
 
     def _load_index(self, findings: list[ArtifactFinding]) -> dict[str, str]:
         path = resolve_under(self.root, "index.json")
-        if not path.exists():
-            return {}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("schema") != ARTIFACT_INDEX_SCHEMA:
-                raise ValueError("unsupported index schema")
-            return {str(key): str(value) for key, value in payload["artifacts"].items()}
-        except (OSError, ValueError, TypeError, KeyError):
-            findings.append(self._finding("invalid_index", None, path, True))
-            return {}
+        result: dict[str, str] = {}
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if payload.get("schema") != ARTIFACT_INDEX_SCHEMA:
+                    raise ValueError("unsupported index schema")
+                result.update(
+                    {str(key): str(value) for key, value in payload["artifacts"].items()}
+                )
+            except (OSError, ValueError, TypeError, KeyError):
+                findings.append(self._finding("invalid_index", None, path, True))
+        entry_root = resolve_under(self.root, "index-entries")
+        for entry_path in sorted(entry_root.glob("*.json")) if entry_root.is_dir() else ():
+            try:
+                entry = json.loads(entry_path.read_text(encoding="utf-8"))
+                if entry.get("schema") != ARTIFACT_INDEX_ENTRY_SCHEMA:
+                    raise ValueError("unsupported incremental index schema")
+                result[str(entry["artifact_id"])] = str(entry["content_sha256"])
+            except (OSError, ValueError, TypeError, KeyError):
+                findings.append(self._finding("invalid_index", None, entry_path, True))
+        return result
+
+    def _write_index_entry(self, descriptor: ArtifactDescriptor) -> None:
+        entry_name = hashlib.sha256(descriptor.artifact_id.encode()).hexdigest() + ".json"
+        atomic_write_json(
+            resolve_under(self.root, "index-entries", entry_name),
+            {
+                "schema": ARTIFACT_INDEX_ENTRY_SCHEMA,
+                "artifact_id": descriptor.artifact_id,
+                "content_sha256": descriptor.content_sha256,
+            },
+        )
+
+    def _clear_index_entries(self) -> None:
+        entry_root = resolve_under(self.root, "index-entries")
+        for entry_path in entry_root.glob("*.json") if entry_root.is_dir() else ():
+            entry_path.unlink()
 
     def _write_index(self, descriptors: Mapping[str, ArtifactDescriptor]) -> None:
         atomic_write_json(
