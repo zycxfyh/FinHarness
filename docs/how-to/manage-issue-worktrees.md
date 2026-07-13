@@ -33,6 +33,28 @@ task issue:status
 Status is read-only. It reports branch/path/issue-number mismatches, prunable
 metadata, and dirty worktrees.
 
+## Hand Off A Validated PR To CI
+
+Keep the PR in draft while implementation is incomplete. After the branch has
+passed `task check:ci`, push the exact validated head, mark the PR ready, and
+arm squash auto-merge:
+
+```bash
+gh pr ready <pr-number>
+gh pr merge <pr-number> --auto --squash --delete-branch=false
+```
+
+Do not use `--admin` to bypass the ruleset. Auto-merge waits for the active
+required checks and branch rules; a failed required check blocks the merge.
+The browser golden-path job remains an explicitly optional signal, so review
+its result separately when the change touches the cockpit.
+
+PR workflow runs share a per-PR concurrency group. Pushing a newer commit
+cancels the superseded run for that workflow. Pushes to `main`, schedules, and
+manual dispatches use unique groups instead: post-merge `main` runs remain
+intentional evidence for the canonical branch and are not cancelled as stale PR
+work.
+
 ## Finish After Merge
 
 First preview the exact cleanup plan:
