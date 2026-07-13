@@ -36,8 +36,21 @@ metadata, and dirty worktrees.
 ## Hand Off A Validated PR To CI
 
 Keep the PR in draft while implementation is incomplete. After the branch has
-passed `task check:ci`, push the exact validated head, mark the PR ready, and
-arm squash auto-merge:
+passed `task check:ci`, render a complete body. The command derives the issue
+number from the branch and the changed-file list from the committed diff:
+
+```bash
+task pr:body -- \
+  --scope "Concise description of the reviewed change" \
+  --risk low --classification C1 \
+  --validation "task check:ci — passed" \
+  --negative-evidence "Named failing fixture or N/A — reason" \
+  --persistence "Restart evidence or N/A — reason" \
+  --rollback "Concrete rollback action"
+```
+
+Use that output for both UI-created and programmatically created PRs. Then push
+the exact validated head, mark the PR ready, and arm squash auto-merge:
 
 ```bash
 gh pr ready <pr-number>

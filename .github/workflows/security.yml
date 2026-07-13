@@ -22,6 +22,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate pull request contract
+        run: python scripts/manage_pr_contract.py check --event "$GITHUB_EVENT_PATH"
+
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
   local-checks:

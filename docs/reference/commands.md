@@ -20,6 +20,10 @@ execution authorization.
 | `task issue:start -- <issue> --slug <slug>` | Create a numbered issue branch/worktree from current `origin/main`. | Requires an open issue and refuses naming/path collisions. |
 | `task issue:status -- [issue]` | Audit worktree numbering, cleanliness, and stale metadata. | Read-only. |
 | `task issue:finish -- <issue> [--apply]` | Preview or apply cleanup after verified PR merge. | Dry-run by default; refuses dirty, open, mismatched, or unmerged work. |
+| `task pr:body -- <fields>` | Render the concise PR contract with issue and changed-file metadata. | Derives the issue from the numbered branch unless `--issue` is supplied; manual risk and safety evidence remain required. |
+| `task pr:check -- --body-file <path>` | Validate issue linkage, scope, risk/classification, validation, and safety evidence. | Read-only; the required `Dependency review` check runs the same contract against the GitHub event. |
+| `task governance:inventory` | Check source-derived dependency consumers and attestation summary fields. | Read-only; prints the affected consumer and repair command on drift. |
+| `task governance:inventory:update` | Repair source-derived governance inventory fields. | Deterministic and idempotent; never invents manual policy or migration judgments. |
 | `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
 | `task capital:reconcile -- --receipt-root <path> --apply` | Apply deterministic import repairs and write a recovery receipt. | Never invents missing evidence or grants authority. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
