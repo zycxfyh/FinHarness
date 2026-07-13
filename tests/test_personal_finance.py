@@ -17,6 +17,7 @@ from finharness.personal_finance import (
 )
 from finharness.statecore.models import (
     Account,
+    AccountIdentity,
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
@@ -55,6 +56,8 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             "account_kind",
             "venue",
             "symbol",
+            "instrument_type",
+            "instrument_venue",
             "quantity",
             "market_value",
             "cost_basis",
@@ -77,6 +80,8 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "account_kind": "broker",
                     "venue": "beancount",
                     "symbol": "SPY",
+                    "instrument_type": "equity",
+                    "instrument_venue": "ARCX",
                     "quantity": "1.5",
                     "market_value": "750.25",
                     "cost_basis": "700.00",
@@ -125,8 +130,15 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         self.assertEqual(result.insurance_policy_count, 0)
         self.assertEqual(result.document_count, 0)
         self.assertEqual(
-            {account.account_id for account in accounts},
+            {
+                identity.source_native_id
+                for identity in read_all(AccountIdentity, engine=self.engine)
+            },
             {"Assets:Brokerage", "Assets:Cash"},
+        )
+        self.assertEqual(
+            {account.account_id for account in accounts},
+            {account.canonical_account_id for account in accounts},
         )
         self.assertEqual({position.symbol for position in positions}, {"SPY", "CASH:USD"})
         self.assertEqual(liabilities, [])
@@ -155,18 +167,20 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
 
     def test_duplicate_content_is_one_batch_and_one_manifest(self) -> None:
         export = self.write_export(
-            [{
-                "account_id": "Assets:Cash",
-                "account_name": "Cash",
-                "account_kind": "cash",
-                "venue": "manual",
-                "symbol": "USD",
-                "quantity": "10",
-                "market_value": "10",
-                "cost_basis": "",
-                "currency": "USD",
-                "as_of_utc": "2026-06-19T00:00:00+00:00",
-            }]
+            [
+                {
+                    "account_id": "Assets:Cash",
+                    "account_name": "Cash",
+                    "account_kind": "cash",
+                    "venue": "manual",
+                    "symbol": "USD",
+                    "quantity": "10",
+                    "market_value": "10",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-19T00:00:00+00:00",
+                }
+            ]
         )
         first = ingest_personal_finance_export(
             export, engine=self.engine, receipt_root=self.receipt_root
@@ -183,23 +197,28 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
 
     def test_failed_materialization_leaves_replayable_evidence(self) -> None:
         export = self.write_export(
-            [{
-                "account_id": "Assets:Cash",
-                "account_name": "Cash",
-                "account_kind": "cash",
-                "venue": "manual",
-                "symbol": "USD",
-                "quantity": "10",
-                "market_value": "10",
-                "cost_basis": "",
-                "currency": "USD",
-                "as_of_utc": "2026-06-19T00:00:00+00:00",
-            }]
+            [
+                {
+                    "account_id": "Assets:Cash",
+                    "account_name": "Cash",
+                    "account_kind": "cash",
+                    "venue": "manual",
+                    "symbol": "USD",
+                    "quantity": "10",
+                    "market_value": "10",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-06-19T00:00:00+00:00",
+                }
+            ]
         )
-        with patch(
-            "finharness.personal_finance.materialize_import_batch",
-            side_effect=StateCoreStoreError("simulated crash before commit"),
-        ), self.assertRaises(StateCoreStoreError):
+        with (
+            patch(
+                "finharness.personal_finance.materialize_import_batch",
+                side_effect=StateCoreStoreError("simulated crash before commit"),
+            ),
+            self.assertRaises(StateCoreStoreError),
+        ):
             ingest_personal_finance_export(
                 export, engine=self.engine, receipt_root=self.receipt_root
             )
@@ -450,6 +469,8 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             "account_kind",
             "venue",
             "symbol",
+            "instrument_type",
+            "instrument_venue",
             "quantity",
             "market_value",
             "currency",
@@ -466,6 +487,8 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
                     "account_kind": "broker",
                     "venue": "manual",
                     "symbol": "SPY",
+                    "instrument_type": "equity",
+                    "instrument_venue": "ARCX",
                     "quantity": "0.10000000000000000001",
                     "market_value": "60.000000000000000006",
                     "currency": "USD",
@@ -484,6 +507,7 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         batch = read_all(ImportBatch, engine=self.engine)[0]
         self.assertEqual(position.quantity, Decimal("0.10000000000000000001"))
         self.assertEqual(position.market_value, Decimal("60.000000000000000006"))
+        self.assertIsNotNone(position.instrument_id)
         self.assertEqual(result.completeness_status, "complete")
         self.assertEqual(batch.completeness_status, "complete")
         self.assertEqual(batch.time_semantics["valued_at_utc"], "2026-07-13T06:30:00+00:00")

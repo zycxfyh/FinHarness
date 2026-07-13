@@ -109,8 +109,7 @@ def _material_move(change: PositionChange, thresholds: ObservationThresholds) ->
         change.before_market_value,
     )
     quantity_crossed = (
-        quantity_change_pct is not None
-        and quantity_change_pct >= thresholds.quantity_change_pct
+        quantity_change_pct is not None and quantity_change_pct >= thresholds.quantity_change_pct
     )
     market_value_crossed = (
         market_value_change_pct is not None
@@ -156,10 +155,7 @@ def _total_exposure_delta(
         return None
     return Observation(
         kind="total_exposure_delta",
-        detail=(
-            "Total market value changed by "
-            f"{diff.total_market_value_delta:.2f}."
-        ),
+        detail=(f"Total market value changed by {diff.total_market_value_delta:.2f}."),
         numbers={
             "total_market_value_before": diff.total_market_value_before,
             "total_market_value_after": diff.total_market_value_after,
@@ -171,11 +167,15 @@ def _total_exposure_delta(
     )
 
 
-def _position_totals_by_symbol(positions: Sequence[Position]) -> dict[str, Decimal]:
-    totals: dict[str, Decimal] = {}
+def _position_totals_by_identity(
+    positions: Sequence[Position],
+) -> dict[str, tuple[str, Decimal]]:
+    totals: dict[str, tuple[str, Decimal]] = {}
     for position in positions:
+        identity_key = position.instrument_id or f"unresolved:{position.position_id}"
         symbol = position.symbol.upper()
-        totals[symbol] = totals.get(symbol, Decimal("0")) + position.market_value
+        prior = totals.get(identity_key, (symbol, Decimal("0")))[1]
+        totals[identity_key] = (symbol, prior + position.market_value)
     return totals
 
 
@@ -183,23 +183,24 @@ def _concentration_observations(
     positions: Sequence[Position],
     thresholds: ObservationThresholds,
 ) -> list[Observation]:
-    totals = _position_totals_by_symbol(positions)
-    total_market_value = sum(totals.values(), Decimal("0"))
+    totals = _position_totals_by_identity(positions)
+    total_market_value = sum((item[1] for item in totals.values()), Decimal("0"))
     if total_market_value <= 0:
         return []
     observations: list[Observation] = []
-    for symbol, market_value in sorted(totals.items()):
+    for instrument_id, (symbol, market_value) in sorted(totals.items()):
         concentration_pct = float(market_value / total_market_value)
         if concentration_pct < thresholds.concentration_pct:
             continue
         observations.append(
             Observation(
                 kind="concentration",
-                detail=(
-                    f"{symbol} is {concentration_pct:.2%} of total market value."
-                ),
+                detail=(f"{symbol} is {concentration_pct:.2%} of total market value."),
                 numbers={
                     "symbol": symbol,
+                    "instrument_id": (
+                        None if instrument_id.startswith("unresolved:") else instrument_id
+                    ),
                     "symbol_market_value": float(market_value),
                     "total_market_value": float(total_market_value),
                     "concentration_pct": concentration_pct,
@@ -228,9 +229,7 @@ def _data_gap_observations(
         observations.append(
             Observation(
                 kind="data_gap",
-                detail=(
-                    f"{position.symbol} cost_basis is not disclosed in the source snapshot."
-                ),
+                detail=(f"{position.symbol} cost_basis is not disclosed in the source snapshot."),
                 numbers={
                     "account_id": position.account_id,
                     "symbol": position.symbol.upper(),

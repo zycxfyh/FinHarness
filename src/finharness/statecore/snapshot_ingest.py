@@ -18,7 +18,19 @@ from finharness.capital_import_contract import (
     currency_code,
     exact_decimal,
 )
-from finharness.statecore.models import Account, Position, Snapshot
+from finharness.statecore.identities import (
+    account_identity,
+    instrument_identity,
+    unresolved_instrument_finding,
+)
+from finharness.statecore.models import (
+    Account,
+    AccountIdentity,
+    IdentityAlias,
+    InstrumentIdentity,
+    Position,
+    Snapshot,
+)
 from finharness.statecore.receipt_index import _display_path, receipt_index_record_from_path
 from finharness.statecore.store import StateCoreStoreError, upsert_records
 
@@ -139,8 +151,17 @@ def _position_records(
     account_id: str,
     source_ref: str,
     as_of_utc: str,
-) -> tuple[list[Position], list[dict[str, Any]], list[ImportFinding]]:
+    provider_namespace: str,
+) -> tuple[
+    list[Position],
+    list[InstrumentIdentity],
+    list[IdentityAlias],
+    list[dict[str, Any]],
+    list[ImportFinding],
+]:
     records: list[Position] = []
+    identities: dict[str, InstrumentIdentity] = {}
+    aliases: dict[str, IdentityAlias] = {}
     normalized: list[dict[str, Any]] = []
     findings: list[ImportFinding] = []
     for index, raw in enumerate(positions):
@@ -162,9 +183,43 @@ def _position_records(
             )
             continue
         cost_basis = _first_decimal("cost_basis", raw.get("cost_basis"))
+        instrument_type = _string(raw.get("instrument_type") or raw.get("asset_class"))
+        instrument_venue = _string(raw.get("instrument_venue") or raw.get("exchange"))
+        instrument_id: str | None = None
+        if instrument_type and instrument_venue:
+            identity, alias = instrument_identity(
+                symbol=symbol,
+                instrument_type=instrument_type,
+                venue=instrument_venue,
+                quote_currency=currency,
+                provider_namespace=provider_namespace,
+                source_refs=[source_ref],
+            )
+            identities.setdefault(identity.instrument_id, identity)
+            aliases.setdefault(alias.alias_id, alias)
+            instrument_id = identity.instrument_id
+        else:
+            finding = unresolved_instrument_finding(
+                record_id=f"position:{index + 1}",
+                missing_fields=(
+                    "instrument_type" if not instrument_type else "",
+                    "instrument_venue" if not instrument_venue else "",
+                ),
+            )
+            findings.append(
+                ImportFinding(
+                    finding.code,
+                    finding.severity,
+                    finding.message,
+                    record_type="position",
+                    record_number=index + 1,
+                    field=finding.field,
+                )
+            )
         normalized.append(
             {
                 "symbol": symbol,
+                "instrument_id": instrument_id,
                 "quantity": str(quantity),
                 "market_value": str(market_value),
                 "cost_basis": str(cost_basis) if cost_basis is not None else None,
@@ -177,6 +232,7 @@ def _position_records(
                 position_id=_safe_id(f"pos_{snapshot_id}_{index}_{symbol}"),
                 snapshot_id=snapshot_id,
                 account_id=account_id,
+                instrument_id=instrument_id,
                 symbol=symbol,
                 quantity=quantity,
                 market_value=market_value,
@@ -185,7 +241,7 @@ def _position_records(
                 source_refs=[source_ref],
             )
         )
-    return records, normalized, findings
+    return records, list(identities.values()), list(aliases.values()), normalized, findings
 
 
 def _time_contract(
@@ -234,12 +290,19 @@ def _time_contract(
     return semantics.as_dict(), findings
 
 
-def portfolio_records_from_broker_payload(
+def _portfolio_records_with_identities(
     payload: dict[str, Any],
     *,
     source_ref: str,
     snapshot_id: str | None = None,
-) -> tuple[Account, Snapshot, list[Position]]:
+) -> tuple[
+    Account,
+    AccountIdentity,
+    list[IdentityAlias],
+    Snapshot,
+    list[InstrumentIdentity],
+    list[Position],
+]:
     """Normalize a broker-read payload into state-core records.
 
     This is state ingestion only. It never infers positions from orders or
@@ -255,24 +318,38 @@ def portfolio_records_from_broker_payload(
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
     as_of_utc = str(time_semantics["observed_at_utc"])
-    account_id = _account_id(payload, account_payload)
+    source_native_account_id = _account_id(payload, account_payload)
+    provider_namespace = f"broker:{_venue(payload)}"
+    account_identity_record, account_alias = account_identity(
+        source_namespace=provider_namespace,
+        source_native_id=source_native_account_id,
+        source_refs=[source_ref],
+    )
+    account_id = account_identity_record.canonical_account_id
     resolved_snapshot_id = _safe_id(
-        snapshot_id
-        or f"snap_portfolio_{payload.get('receipt_id') or Path(source_ref).stem}"
+        snapshot_id or f"snap_portfolio_{payload.get('receipt_id') or Path(source_ref).stem}"
     )
     try:
-        position_records, normalized_positions, position_findings = _position_records(
+        (
+            position_records,
+            instrument_identities,
+            instrument_aliases,
+            normalized_positions,
+            position_findings,
+        ) = _position_records(
             positions=positions_payload,
             snapshot_id=resolved_snapshot_id,
             account_id=account_id,
             source_ref=source_ref,
             as_of_utc=as_of_utc,
+            provider_namespace=provider_namespace,
         )
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
     findings.extend(position_findings)
     account = Account(
         account_id=account_id,
+        canonical_account_id=account_id,
         kind="broker" if payload.get("broker") else "manual",
         venue=_venue(payload),
         display_name=_string(
@@ -308,7 +385,27 @@ def portfolio_records_from_broker_payload(
         },
         source_refs=[source_ref],
     )
-    return account, snapshot, position_records
+    return (
+        account,
+        account_identity_record,
+        [account_alias, *instrument_aliases],
+        snapshot,
+        instrument_identities,
+        position_records,
+    )
+
+
+def portfolio_records_from_broker_payload(
+    payload: dict[str, Any],
+    *,
+    source_ref: str,
+    snapshot_id: str | None = None,
+) -> tuple[Account, Snapshot, list[Position]]:
+    """Compatibility projection; identity records are persisted by ingest helpers."""
+    account, _account_identity, _aliases, snapshot, _instruments, positions = (
+        _portfolio_records_with_identities(payload, source_ref=source_ref, snapshot_id=snapshot_id)
+    )
+    return account, snapshot, positions
 
 
 def load_portfolio_payload_from_receipt(path: str | Path) -> dict[str, Any]:
@@ -328,11 +425,15 @@ def ingest_portfolio_snapshot_from_payload(
     source_ref: str,
     engine: Engine,
 ) -> Snapshot:
-    account, snapshot, positions = portfolio_records_from_broker_payload(
-        payload,
-        source_ref=source_ref,
+    account, account_id, aliases, snapshot, instruments, positions = (
+        _portfolio_records_with_identities(
+            payload,
+            source_ref=source_ref,
+        )
     )
-    upsert_records([account, snapshot, *positions], engine=engine)
+    upsert_records(
+        [account_id, *instruments, *aliases, account, snapshot, *positions], engine=engine
+    )
     return snapshot
 
 
@@ -345,9 +446,14 @@ def ingest_portfolio_snapshot_from_receipt(
     source_ref = _display_path(target)
     payload = load_portfolio_payload_from_receipt(target)
     receipt_index = receipt_index_record_from_path(target, receipt_root=target.parent)
-    account, snapshot, positions = portfolio_records_from_broker_payload(
-        payload,
-        source_ref=source_ref,
+    account, account_id, aliases, snapshot, instruments, positions = (
+        _portfolio_records_with_identities(
+            payload,
+            source_ref=source_ref,
+        )
     )
-    upsert_records([receipt_index, account, snapshot, *positions], engine=engine)
+    upsert_records(
+        [receipt_index, account_id, *instruments, *aliases, account, snapshot, *positions],
+        engine=engine,
+    )
     return snapshot

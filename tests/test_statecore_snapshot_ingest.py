@@ -3,7 +3,13 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from finharness.statecore.models import Position, ReceiptIndex, Snapshot
+from finharness.statecore.models import (
+    AccountIdentity,
+    InstrumentIdentity,
+    Position,
+    ReceiptIndex,
+    Snapshot,
+)
 from finharness.statecore.receipt_index import index_receipts, receipt_index_record_from_path
 from finharness.statecore.snapshot_ingest import (
     ingest_portfolio_snapshot_from_payload,
@@ -33,9 +39,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                 "kind": "broker_read",
                 "created_at_utc": "2026-06-17T01:02:03+00:00",
                 "receipt_refs": ["receipt_market_1"],
-                "snapshot": {
-                    "receipt_ref": "data/receipts/market-data/receipt_mds_1.json"
-                },
+                "snapshot": {"receipt_ref": "data/receipts/market-data/receipt_mds_1.json"},
             },
         )
         self._write_receipt(
@@ -97,6 +101,8 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                         "qty": "2",
                         "market_value": "100.5",
                         "currency": "USD",
+                        "asset_class": "equity",
+                        "exchange": "ARCX",
                     },
                     {
                         "symbol": "QQQ",
@@ -104,6 +110,8 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                         "current_price": "49.75",
                         "cost_basis": "45.00",
                         "currency": "USD",
+                        "asset_class": "equity",
+                        "exchange": "XNAS",
                     },
                 ],
             },
@@ -128,6 +136,9 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(positions[0].cost_basis, 45.0)
         self.assertEqual(positions[1].market_value, 100.5)
         self.assertIsNone(positions[1].cost_basis)
+        self.assertTrue(all(position.instrument_id for position in positions))
+        self.assertEqual(len(read_all(AccountIdentity, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(InstrumentIdentity, engine=self.engine)), 2)
 
         self.assertEqual(len(receipts), 1)
         self.assertEqual(receipts[0].receipt_id, "receipt_portfolio_1")
@@ -173,9 +184,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         base = {
             "receipt_id": "receipt_bad_money",
             "created_at_utc": "2026-07-13T07:00:00+00:00",
-            "positions": [
-                {"symbol": "SPY", "qty": "1", "market_value": "10", "currency": "USD"}
-            ],
+            "positions": [{"symbol": "SPY", "qty": "1", "market_value": "10", "currency": "USD"}],
         }
         float_payload = {**base, "positions": [{**base["positions"][0], "market_value": 0.1}]}
         with self.assertRaisesRegex(StateCoreStoreError, "not float"):
@@ -210,7 +219,11 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(snapshot.payload["completeness_status"], "blocked")
         self.assertEqual(
             {finding["code"] for finding in snapshot.payload["findings"]},
-            {"stale_valuation", "omitted_incomplete_position"},
+            {
+                "stale_valuation",
+                "omitted_incomplete_position",
+                "instrument_identity_unresolved",
+            },
         )
 
 

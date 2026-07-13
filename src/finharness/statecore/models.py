@@ -112,9 +112,12 @@ PAPER_ACCOUNT_STATUSES: tuple[str, ...] = ("active", "closed")
 # ── Personal-finance models (extracted to personal_finance_models.py) ──
 from finharness.statecore.personal_finance_models import (  # noqa: F401, E402
     Account,
+    AccountIdentity,
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
+    IdentityAlias,
+    InstrumentIdentity,
     InsurancePolicy,
     Liability,
     Position,

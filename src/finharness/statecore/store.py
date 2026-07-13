@@ -26,6 +26,7 @@ from finharness.statecore.execution_models import (
 )
 from finharness.statecore.models import (
     Account,
+    AccountIdentity,
     ActionIntent,
     ActionIntentAuthorityBinding,
     ActionIntentSimulationReport,
@@ -39,7 +40,9 @@ from finharness.statecore.models import (
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
+    IdentityAlias,
     ImportBatch,
+    InstrumentIdentity,
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
@@ -63,6 +66,7 @@ DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-cor
 
 StateCoreRecord = (
     Account
+    | AccountIdentity
     | ActionIntent
     | ActionIntentAuthorityBinding
     | ActionIntentSimulationReport
@@ -80,6 +84,8 @@ StateCoreRecord = (
     | CashflowEvent
     | TaxEvent
     | InsurancePolicy
+    | IdentityAlias
+    | InstrumentIdentity
     | DocumentRef
     | PaperAccount
     | PaperExecutionReceipt
@@ -195,7 +201,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 8
+CURRENT_STATE_CORE_USER_VERSION = 9
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -306,9 +312,7 @@ def _migrate_add_agent_authority_grant_bindings(connection: Connection) -> None:
     inspector = inspect(connection)
     if "agent_authority_grants" not in set(inspector.get_table_names()):
         return
-    columns = {
-        column["name"] for column in inspector.get_columns("agent_authority_grants")
-    }
+    columns = {column["name"] for column in inspector.get_columns("agent_authority_grants")}
     additions = {
         "mandate_version_id": "VARCHAR",
         "principal_id": "VARCHAR",
@@ -353,6 +357,27 @@ def _migrate_add_import_semantics(connection: Connection) -> None:
             )
 
 
+def _migrate_add_canonical_identities(connection: Connection) -> None:
+    """Add nullable identity bindings without inventing identity for legacy rows."""
+    for table in ("account_identities", "instrument_identities", "identity_aliases"):
+        SQLModel.metadata.tables[table].create(connection, checkfirst=True)
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    additions = {
+        "accounts": ("canonical_account_id", "VARCHAR"),
+        "positions": ("instrument_id", "VARCHAR"),
+    }
+    for table, (column, declaration) in additions.items():
+        if table not in tables:
+            continue
+        columns = {item["name"] for item in inspector.get_columns(table)}
+        if column not in columns:
+            connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+        connection.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_{table}_{column} ON {table} ({column})"
+        )
+
+
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
@@ -387,6 +412,7 @@ def migrate_state_core(engine: Engine) -> None:
         (6, _migrate_add_agent_authority_grant_bindings),
         (7, _migrate_add_import_provenance_tables),
         (8, _migrate_add_import_semantics),
+        (9, _migrate_add_canonical_identities),
     )
     try:
         with engine.connect() as connection:
@@ -453,6 +479,7 @@ def upsert_records(
         with Session(active_engine) as session:
             with session.begin():
                 for record in materialized:
+                    _reject_alias_retarget(session, record)
                     saved.append(session.merge(record))
                     session.flush()
             for record in saved:
@@ -472,9 +499,7 @@ def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -
     """Keep generic store helpers from bypassing W0 for known production adapters."""
     for record in records:
         if isinstance(record, ReceiptIndex) and record.kind in _PRODUCTION_IMPORT_KINDS:
-            raise StateCoreStoreError(
-                "production import receipts require materialize_import_batch"
-            )
+            raise StateCoreStoreError("production import receipts require materialize_import_batch")
         if (
             isinstance(record, Snapshot)
             and record.payload.get("source") in _PRODUCTION_IMPORT_KINDS
@@ -496,9 +521,24 @@ def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -
             )
             and record.source in _PRODUCTION_IMPORT_KINDS
         ):
-            raise StateCoreStoreError(
-                "production import state requires materialize_import_batch"
-            )
+            raise StateCoreStoreError("production import state requires materialize_import_batch")
+
+
+def _reject_alias_retarget(session: Session, record: StateCoreRecord) -> None:
+    if not isinstance(record, IdentityAlias):
+        return
+    existing = session.get(IdentityAlias, record.alias_id)
+    if existing is None:
+        return
+    identity_fields = (
+        "identity_kind",
+        "provider_namespace",
+        "provider_alias",
+        "canonical_id",
+        "mapping_version",
+    )
+    if any(getattr(existing, field) != getattr(record, field) for field in identity_fields):
+        raise StateCoreStoreError("identity alias mapping is immutable")
 
 
 def _validate_import_envelope(
@@ -626,6 +666,7 @@ def materialize_import_batch(
                 for statement in _SOURCE_DELETES:
                     session.execute(statement, {"source": source})
                 for record in [batch, manifest, *materialized]:
+                    _reject_alias_retarget(session, record)
                     saved.append(session.merge(record))
                 session.flush()
             for record in saved:

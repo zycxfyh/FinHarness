@@ -19,6 +19,7 @@ PositionKey = tuple[str, str]
 @dataclass(frozen=True)
 class PositionExposure:
     account_id: str
+    instrument_id: str | None
     symbol: str
     quantity: Decimal
     market_value: Decimal
@@ -73,7 +74,10 @@ def _snapshot_or_raise(session: Session, snapshot_id: str) -> Snapshot:
 
 
 def _position_key(position: Position) -> PositionKey:
-    return (position.account_id, position.symbol.upper())
+    # Legacy rows retain their historical diff projection, but remain explicitly
+    # unresolved and cannot participate in trusted canonical aggregation.
+    identity_key = position.instrument_id or f"legacy-symbol:{position.symbol.upper()}"
+    return (position.account_id, identity_key)
 
 
 def _positions_by_key(session: Session, snapshot_id: str) -> dict[PositionKey, PositionExposure]:
@@ -86,7 +90,8 @@ def _positions_by_key(session: Session, snapshot_id: str) -> dict[PositionKey, P
         if existing is None:
             exposures[key] = PositionExposure(
                 account_id=key[0],
-                symbol=key[1],
+                instrument_id=row.instrument_id,
+                symbol=row.symbol.upper(),
                 quantity=row.quantity,
                 market_value=row.market_value,
                 source_refs=source_refs,
@@ -94,7 +99,8 @@ def _positions_by_key(session: Session, snapshot_id: str) -> dict[PositionKey, P
             continue
         exposures[key] = PositionExposure(
             account_id=key[0],
-            symbol=key[1],
+            instrument_id=existing.instrument_id,
+            symbol=existing.symbol,
             quantity=existing.quantity + row.quantity,
             market_value=existing.market_value + row.market_value,
             source_refs=tuple(sorted(set(existing.source_refs).union(row.source_refs))),
@@ -108,22 +114,21 @@ def _change(
     before: PositionExposure | None,
     after: PositionExposure | None,
 ) -> PositionChange:
+    exposure = after or before
+    if exposure is None:  # Defensive: callers always supply one side.
+        raise StateCoreStoreError("position change lacks before and after exposure")
     before_quantity = before.quantity if before else Decimal("0")
     after_quantity = after.quantity if after else Decimal("0")
     before_market_value = before.market_value if before else Decimal("0")
     after_market_value = after.market_value if after else Decimal("0")
     source_refs = tuple(
-        sorted(
-            set(before.source_refs if before else ()).union(
-                after.source_refs if after else ()
-            )
-        )
+        sorted(set(before.source_refs if before else ()).union(after.source_refs if after else ()))
     )
     # Aggregate exactly in Decimal, present the diff as float (JSON/evidence layer).
     return PositionChange(
         change_type=change_type,
         account_id=key[0],
-        symbol=key[1],
+        symbol=exposure.symbol,
         before_quantity=float(before_quantity),
         after_quantity=float(after_quantity),
         quantity_delta=float(after_quantity - before_quantity),
@@ -157,13 +162,9 @@ def diff_snapshots(
     removed_keys = before_keys - after_keys
     common_keys = before_keys & after_keys
 
-    added = tuple(
-        _change("added", key, None, after_positions[key])
-        for key in sorted(added_keys)
-    )
+    added = tuple(_change("added", key, None, after_positions[key]) for key in sorted(added_keys))
     removed = tuple(
-        _change("removed", key, before_positions[key], None)
-        for key in sorted(removed_keys)
+        _change("removed", key, before_positions[key], None) for key in sorted(removed_keys)
     )
     changed = tuple(
         _change("changed", key, before_positions[key], after_positions[key])

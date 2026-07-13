@@ -13,7 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Index
+from sqlalchemy import Index, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -30,6 +30,9 @@ class Account(StateCoreBase, table=True):
     __tablename__ = "accounts"
 
     account_id: str = Field(primary_key=True)
+    canonical_account_id: str | None = Field(
+        default=None, foreign_key="account_identities.canonical_account_id", index=True
+    )
     kind: str
     venue: str
     display_name: str
@@ -53,10 +56,80 @@ class Position(StateCoreBase, table=True):
     position_id: str = Field(primary_key=True)
     snapshot_id: str = Field(foreign_key="snapshots.snapshot_id", index=True)
     account_id: str = Field(foreign_key="accounts.account_id")
+    instrument_id: str | None = Field(
+        default=None, foreign_key="instrument_identities.instrument_id", index=True
+    )
     symbol: str
     quantity: Decimal = Field(sa_column=money_column())
     market_value: Decimal = Field(sa_column=money_column())
     cost_basis: Decimal | None = Field(default=None, sa_column=money_column(nullable=True))
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class AccountIdentity(StateCoreBase, table=True):
+    """Canonical account identity; display names are deliberately non-identifying."""
+
+    __tablename__ = "account_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_namespace",
+            "source_native_id",
+            "identity_version",
+            name="uq_account_identity_source_native_version",
+        ),
+    )
+
+    canonical_account_id: str = Field(primary_key=True)
+    source_namespace: str = Field(index=True)
+    source_native_id: str
+    identity_version: str = "finharness.account_identity.v0"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class InstrumentIdentity(StateCoreBase, table=True):
+    """Small, explicit identity key; this is not a full security master."""
+
+    __tablename__ = "instrument_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "instrument_type",
+            "venue",
+            "quote_currency",
+            "identity_version",
+            name="uq_instrument_identity_components_version",
+        ),
+    )
+
+    instrument_id: str = Field(primary_key=True)
+    symbol: str = Field(index=True)
+    instrument_type: str
+    venue: str
+    quote_currency: str
+    identity_version: str = "finharness.instrument_identity.v0"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class IdentityAlias(StateCoreBase, table=True):
+    """Versioned evidence that a provider-native alias maps to a canonical ID."""
+
+    __tablename__ = "identity_aliases"
+    __table_args__ = (
+        UniqueConstraint(
+            "identity_kind",
+            "provider_namespace",
+            "provider_alias",
+            "mapping_version",
+            name="uq_identity_alias_mapping_version",
+        ),
+    )
+
+    alias_id: str = Field(primary_key=True)
+    identity_kind: str = Field(index=True)
+    provider_namespace: str
+    provider_alias: str
+    canonical_id: str = Field(index=True)
+    mapping_version: str = "finharness.identity_alias.v0"
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
 
 

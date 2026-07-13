@@ -21,6 +21,7 @@ from finharness.statecore.models import (
 from finharness.statecore.store import (
     CURRENT_STATE_CORE_USER_VERSION,
     StateCoreStoreError,
+    ensure_state_core_schema,
     get_account,
     get_snapshot,
     init_state_core,
@@ -54,12 +55,8 @@ class StateCoreStoreTest(unittest.TestCase):
         with engine.connect() as connection:
             journal_mode = connection.execute(text("PRAGMA journal_mode")).scalar_one()
         self.assertEqual(str(journal_mode).lower(), "wal")
-        snapshot_indexes = {
-            index["name"] for index in inspector.get_indexes("snapshots")
-        }
-        position_indexes = {
-            index["name"] for index in inspector.get_indexes("positions")
-        }
+        snapshot_indexes = {index["name"] for index in inspector.get_indexes("snapshots")}
+        position_indexes = {index["name"] for index in inspector.get_indexes("positions")}
         self.assertIn("ix_snapshots_kind_as_of_utc", snapshot_indexes)
         self.assertIn("ix_positions_snapshot_id", position_indexes)
 
@@ -173,6 +170,8 @@ class StateCoreStoreTest(unittest.TestCase):
                 )
             )
 
+        ensure_state_core_schema(engine)
+
         write_records(
             [
                 Account(account_id="a", kind="broker", venue="m", display_name="A"),
@@ -265,8 +264,7 @@ class StateCoreStoreTest(unittest.TestCase):
             connection.exec_driver_sql("PRAGMA user_version = 2")
         with engine.connect() as connection:
             columns = {
-                row[1]
-                for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
+                row[1] for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
             }
             self.assertNotIn("decision_scaffold", columns)  # legacy state confirmed
 
@@ -278,8 +276,7 @@ class StateCoreStoreTest(unittest.TestCase):
                 CURRENT_STATE_CORE_USER_VERSION,
             )
             columns = {
-                row[1]
-                for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
+                row[1] for row in connection.execute(text("PRAGMA table_info(proposals)")).all()
             }
             self.assertIn("decision_scaffold", columns)
             self.assertEqual(
@@ -298,12 +295,9 @@ class StateCoreStoreTest(unittest.TestCase):
         engine = open_state_core(self.db_path, create=True)
         with engine.begin() as connection:
             connection.exec_driver_sql(
-                "CREATE TABLE agent_authority_grants ("
-                "agent_authority_grant_id VARCHAR PRIMARY KEY)"
+                "CREATE TABLE agent_authority_grants (agent_authority_grant_id VARCHAR PRIMARY KEY)"
             )
-            connection.exec_driver_sql(
-                "INSERT INTO agent_authority_grants VALUES ('legacy-grant')"
-            )
+            connection.exec_driver_sql("INSERT INTO agent_authority_grants VALUES ('legacy-grant')")
             connection.exec_driver_sql("PRAGMA user_version = 5")
 
         migrate_state_core(engine)
@@ -349,6 +343,55 @@ class StateCoreStoreTest(unittest.TestCase):
         self.assertEqual(batch.findings, [])
         migrate_state_core(engine)
 
+    def test_migration_adds_identity_bindings_without_forging_legacy_identity(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE accounts ("
+                "account_id VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL, "
+                "venue VARCHAR NOT NULL, display_name VARCHAR NOT NULL, "
+                "source_refs JSON NOT NULL, created_at_utc VARCHAR NOT NULL, "
+                "schema_version VARCHAR NOT NULL, as_of_utc VARCHAR NOT NULL, "
+                "authority_level VARCHAR NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE positions ("
+                "position_id VARCHAR PRIMARY KEY, snapshot_id VARCHAR NOT NULL, "
+                "account_id VARCHAR NOT NULL, symbol VARCHAR NOT NULL, "
+                "quantity TEXT NOT NULL, market_value TEXT NOT NULL, cost_basis TEXT, "
+                "source_refs JSON NOT NULL, schema_version VARCHAR NOT NULL, "
+                "as_of_utc VARCHAR NOT NULL, authority_level VARCHAR NOT NULL)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO accounts VALUES "
+                "('legacy', 'broker', 'legacy', 'Legacy', '[]', '2026-01-01Z', "
+                "'finharness.state_core.v1', '2026-01-01Z', 'read_only')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO positions VALUES "
+                "('legacy-pos', 'legacy-snapshot', 'legacy', 'ABC', '1', '10', NULL, "
+                "'[]', 'finharness.state_core.v1', '2026-01-01Z', 'read_only')"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 8")
+
+        ensure_state_core_schema(engine)
+
+        with engine.connect() as connection:
+            account = connection.execute(
+                text("SELECT canonical_account_id FROM accounts WHERE account_id='legacy'")
+            ).one()
+            position = connection.execute(
+                text("SELECT instrument_id FROM positions WHERE position_id='legacy-pos'")
+            ).one()
+            tables = set(inspect(connection).get_table_names())
+            version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+        self.assertIsNone(account[0])
+        self.assertIsNone(position[0])
+        self.assertTrue(
+            {"account_identities", "instrument_identities", "identity_aliases"} <= tables
+        )
+        self.assertEqual(version, CURRENT_STATE_CORE_USER_VERSION)
+
     def test_migration_updates_review_event_kind_constraint_for_agent_artifacts(self) -> None:
         engine = init_state_core(self.db_path)
         write_records(
@@ -387,8 +430,7 @@ class StateCoreStoreTest(unittest.TestCase):
             )
             table_sql = connection.execute(
                 text(
-                    "SELECT sql FROM sqlite_master "
-                    "WHERE type = 'table' AND name = 'review_events'"
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'"
                 )
             ).scalar_one()
             self.assertIn("agent_review_note", table_sql)
