@@ -55,6 +55,12 @@ ACTION_INTENT_SIMULATION_STATUSES: tuple[str, ...] = (
     "blocked",
 )
 CAPITAL_MANDATE_STATUSES: tuple[str, ...] = ("active", "superseded")
+CAPITAL_MANDATE_LIFECYCLE_EVENTS: tuple[str, ...] = (
+    "activated",
+    "suspended",
+    "resumed",
+    "revoked",
+)
 CAPITAL_MANDATE_AUTONOMY_LEVELS: tuple[str, ...] = (
     "L0_read_only",
     "L1_candidate_only",
@@ -427,6 +433,122 @@ class CapitalMandate(StateCoreBase, table=True):
         if value:
             raise ValueError("capital mandates never carry authority transitions")
         return False
+
+
+class CapitalMandateVersion(StateCoreBase, table=True):
+    """Immutable, principal-bound version of a CapitalMandate limit book."""
+
+    __tablename__ = "capital_mandate_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "version_number > 0",
+            name="ck_capital_mandate_versions_positive_version",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_capital_mandate_versions_execution_allowed_false",
+        ),
+        CheckConstraint(
+            "authority_transition = 0",
+            name="ck_capital_mandate_versions_authority_transition_false",
+        ),
+    )
+
+    mandate_version_id: str = Field(primary_key=True)
+    capital_mandate_id: str = Field(index=True)
+    principal_id: str = Field(index=True)
+    version_number: int
+    mandate_content_hash: str = Field(index=True)
+    effective_at_utc: str = Field(index=True)
+    expires_at_utc: str | None = Field(default=None, index=True)
+    supersedes_version_id: str | None = Field(default=None, index=True)
+    policy_payload: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    typed_limits: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    kill_switch_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    receipt_ref: str | None = None
+    authenticated_actor_receipt_ref: str | None = None
+    legacy_actor_label: str | None = None
+    legacy_actor_label_verified: bool = False
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator(
+        "mandate_version_id",
+        "capital_mandate_id",
+        "principal_id",
+        "mandate_content_hash",
+        "effective_at_utc",
+    )
+    @classmethod
+    def require_version_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("capital mandate version identity fields are required")
+        return value.strip()
+
+    @field_validator("version_number")
+    @classmethod
+    def require_positive_version(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("capital mandate version number must be positive")
+        return value
+
+    @field_validator("execution_allowed", "authority_transition")
+    @classmethod
+    def reject_runtime_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("capital mandate versions never authorize execution or transition")
+        return False
+
+
+class CapitalMandateLifecycleEvent(StateCoreBase, table=True):
+    """Append-only suspend/resume/revoke history for a mandate series."""
+
+    __tablename__ = "capital_mandate_lifecycle_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ("
+            + ", ".join(f"'{event}'" for event in CAPITAL_MANDATE_LIFECYCLE_EVENTS)
+            + ")",
+            name="ck_capital_mandate_lifecycle_event_type_closed",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_capital_mandate_lifecycle_execution_allowed_false",
+        ),
+    )
+
+    mandate_lifecycle_event_id: str = Field(primary_key=True)
+    capital_mandate_id: str = Field(index=True)
+    mandate_version_id: str = Field(
+        foreign_key="capital_mandate_versions.mandate_version_id",
+        index=True,
+    )
+    principal_id: str = Field(index=True)
+    event_type: str
+    effective_at_utc: str = Field(index=True)
+    authenticated_actor_principal_id: str
+    reason: str
+    receipt_ref: str
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    execution_allowed: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator("event_type")
+    @classmethod
+    def require_lifecycle_event(cls, value: str) -> str:
+        if value not in CAPITAL_MANDATE_LIFECYCLE_EVENTS:
+            raise ValueError("unknown capital mandate lifecycle event")
+        return value
+
+    @field_validator("reason", "authenticated_actor_principal_id")
+    @classmethod
+    def require_event_context(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("mandate lifecycle commands require actor and reason")
+        return value.strip()
 
 
 class AgentAuthorityGrant(StateCoreBase, table=True):
