@@ -14,6 +14,10 @@ silently confusing source changes, repairs, or deletions.
 - retain append-only `ImportTombstone` evidence for rows missing from a full
   import and rows explicitly deleted by a delta import;
 - make repeated materialization of the same batch deterministic;
+- audit receipt artifacts, receipt files, manifests, indexes, and materialized
+  snapshots as one consistency boundary;
+- fail closed for unverified batches and apply only deterministic repairs with
+  a new immutable recovery receipt;
 - expose unsupported corporate-action interpretation as a typed data gap.
 
 ## Non-goals
@@ -43,6 +47,8 @@ receipt index, historical snapshots, and source-owned current-state rows.
 - `src/finharness/personal_finance.py`
 - `src/finharness/beancount_adapter.py`
 - `src/finharness/statecore/diff.py`
+- `src/finharness/capital_import_recovery.py`
+- `scripts/reconcile_capital_imports.py`
 
 ## Mature Wheels / External Systems
 
@@ -63,8 +69,18 @@ fields validated by the database envelope.
 Snapshot diffs classify changes as `transaction_like`, `price_fx`, `deletion`,
 or `correction`. These are descriptive causes, not execution authorization.
 
+Artifact Store descriptors and bytes remain evidence truth. The receipt file,
+`ReceiptIndex`, manifest binding, and materialized snapshot are audited mirrors.
+`batch_is_verified()` admits a batch only when its complete cross-store binding
+is intact. Recovery may rebuild reconstructable indexes, restore a receipt file
+from its valid artifact, replay a receipt whose source is still available, or
+remove an orphan lookup row; it never invents missing bytes.
+
 ## Upgrade Log
 
+- 2026-07-13: added cross-store audit classifications, fail-closed batch
+  admission, deterministic replay/repair, stale-index cleanup, crash recovery,
+  and immutable recovery receipts for issue #263.
 - 2026-07-13: added full/delta materialization semantics, covered domains,
   correction/supersession lineage, append-only tombstones, deterministic delta
   replay, cause-classified diffs, and explicit unsupported corporate-action
@@ -74,9 +90,10 @@ or `correction`. These are descriptive causes, not execution authorization.
 
 - Corporate actions are disclosed but not interpreted.
 - Delta deletion callers must name the prior record identity explicitly.
-- Reconciliation between receipt files and the DB mirror remains issue #263.
+- Replay currently requires the receipt's original `source_ref` to remain
+  readable; source-artifact-only reconstruction for multi-file ledgers remains
+  an explicit gap.
 
 ## Next Upgrades
 
-- Build receipt/mirror recovery and quarantine semantics (#263).
 - Publish verified current/as-of capital projections (#258 and #261).

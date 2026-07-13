@@ -127,6 +127,13 @@ class ArtifactStore(Protocol):
 
     def read(self, artifact_id: str) -> bytes: ...
 
+    def list_descriptors(
+        self,
+        *,
+        owner_domain: str | None = None,
+        artifact_schema: str | None = None,
+    ) -> tuple[ArtifactDescriptor, ...]: ...
+
     def audit(
         self, *, expected_schemas: Mapping[str, set[str]] | None = None
     ) -> ArtifactAuditReport: ...
@@ -204,6 +211,29 @@ class LocalArtifactStore:
         if hashlib.sha256(content).hexdigest() != descriptor.content_sha256:
             raise ArtifactStoreError(f"artifact content hash mismatch: {artifact_id}")
         return content
+
+    def list_descriptors(
+        self,
+        *,
+        owner_domain: str | None = None,
+        artifact_schema: str | None = None,
+    ) -> tuple[ArtifactDescriptor, ...]:
+        """List immutable descriptors without treating the replaceable index as truth."""
+        descriptors = self._descriptor_map().values()
+        return tuple(
+            sorted(
+                (
+                    descriptor
+                    for descriptor in descriptors
+                    if (owner_domain is None or descriptor.owner_domain == owner_domain)
+                    and (
+                        artifact_schema is None
+                        or descriptor.artifact_schema == artifact_schema
+                    )
+                ),
+                key=lambda descriptor: descriptor.artifact_id,
+            )
+        )
 
     def audit(
         self, *, expected_schemas: Mapping[str, set[str]] | None = None

@@ -16,6 +16,8 @@ execution authorization.
 | --- | --- | --- |
 | `task status` | Show local lab/tool status. | Read-only. |
 | `task setup` | Sync locked Python groups, install the editable `src` package, and sync locked JS dependencies. | May install/update local packages. |
+| `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
+| `task capital:reconcile -- --receipt-root <path> --apply` | Apply deterministic import repairs and write a recovery receipt. | Never invents missing evidence or grants authority. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
 | `task check:fast` | Ensure locked setup, then lint, typecheck, and run the full Python test gate (compile + unittest + pytest). | Fast local feedback without stale-environment false failures. |
 | `task check:ci` | Fast checks, base-profile rebuild, integration, frontend, governance, and rules. | Main merge gate. |

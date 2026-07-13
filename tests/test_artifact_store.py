@@ -57,6 +57,17 @@ class ArtifactStoreTest(unittest.TestCase):
         self.assertNotEqual(descriptor.artifact_id, descriptor.metadata["trace_id"])
         self.assertEqual(self.store.read(descriptor.artifact_id), b'{"decision":"review"}')
 
+    def test_descriptor_listing_filters_without_trusting_the_index(self) -> None:
+        descriptor = self._put()
+        (self.root / "index.json").write_text("{bad json", encoding="utf-8")
+        self.assertEqual(
+            self.store.list_descriptors(
+                owner_domain="decision",
+                artifact_schema="finharness.decision_record",
+            ),
+            (descriptor,),
+        )
+
     def test_destructive_fixtures_detect_missing_stale_schema_and_orphans(self) -> None:
         descriptor = self._put()
         object_path = (
