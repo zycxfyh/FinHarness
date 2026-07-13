@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Connection, Engine, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,6 +39,7 @@ from finharness.statecore.models import (
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
+    ImportBatch,
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
@@ -48,6 +50,7 @@ from finharness.statecore.models import (
     Position,
     Proposal,
     ReceiptIndex,
+    ReceiptManifest,
     ReviewEvent,
     Snapshot,
     TaxEvent,
@@ -97,7 +100,12 @@ StateCoreRecord = (
     | ExecutionReport
     | PositionDelta
     | ReconciliationReport
+    | ImportBatch
+    | ReceiptManifest
 )
+
+if TYPE_CHECKING:
+    from finharness.artifact_store import ArtifactStore
 
 
 class StateCoreStoreError(RuntimeError):
@@ -187,7 +195,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 6
+CURRENT_STATE_CORE_USER_VERSION = 7
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -321,6 +329,12 @@ def _migrate_add_agent_authority_grant_bindings(connection: Connection) -> None:
         )
 
 
+def _migrate_add_import_provenance_tables(connection: Connection) -> None:
+    """Add W0 provenance tables without inventing manifests for legacy receipts."""
+    SQLModel.metadata.tables["import_batches"].create(connection, checkfirst=True)
+    SQLModel.metadata.tables["receipt_manifests"].create(connection, checkfirst=True)
+
+
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
@@ -353,6 +367,7 @@ def migrate_state_core(engine: Engine) -> None:
         (4, _migrate_review_events_kind_constraint),
         (5, _migrate_review_events_kind_constraint),
         (6, _migrate_add_agent_authority_grant_bindings),
+        (7, _migrate_add_import_provenance_tables),
     )
     try:
         with engine.connect() as connection:
@@ -377,13 +392,15 @@ def write_records(
     engine: Engine | None = None,
 ) -> list[StateCoreRecord]:
     """Write records in one SQLite transaction."""
+    materialized = list(records)
+    _reject_unmanifested_production_import(materialized)
     owned_engine = engine is None
     active_engine = engine or open_state_core(path)
     saved: list[StateCoreRecord] = []
     try:
         with Session(active_engine) as session:
             with session.begin():
-                for record in records:
+                for record in materialized:
                     session.add(record)
                     session.flush()
                     saved.append(record)
@@ -408,13 +425,15 @@ def upsert_records(
     Use this for idempotent indexing/ingestion paths. ``write_records`` remains
     the stricter insert-only helper for tests and one-shot writes.
     """
+    materialized = list(records)
+    _reject_unmanifested_production_import(materialized)
     owned_engine = engine is None
     active_engine = engine or open_state_core(path)
     saved: list[StateCoreRecord] = []
     try:
         with Session(active_engine) as session:
             with session.begin():
-                for record in records:
+                for record in materialized:
                     saved.append(session.merge(record))
                     session.flush()
             for record in saved:
@@ -427,27 +446,162 @@ def upsert_records(
     return saved
 
 
-def replace_source_records(
+_PRODUCTION_IMPORT_KINDS = {"personal_finance_export", "beancount_ledger"}
+
+
+def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -> None:
+    """Keep generic store helpers from bypassing W0 for known production adapters."""
+    for record in records:
+        if isinstance(record, ReceiptIndex) and record.kind in _PRODUCTION_IMPORT_KINDS:
+            raise StateCoreStoreError(
+                "production import receipts require materialize_import_batch"
+            )
+        if (
+            isinstance(record, Snapshot)
+            and record.payload.get("source") in _PRODUCTION_IMPORT_KINDS
+        ):
+            raise StateCoreStoreError(
+                "production import snapshots require materialize_import_batch"
+            )
+        if (
+            isinstance(
+                record,
+                (
+                    Liability,
+                    FinancialGoal,
+                    CashflowEvent,
+                    TaxEvent,
+                    InsurancePolicy,
+                    DocumentRef,
+                ),
+            )
+            and record.source in _PRODUCTION_IMPORT_KINDS
+        ):
+            raise StateCoreStoreError(
+                "production import state requires materialize_import_batch"
+            )
+
+
+def _validate_import_envelope(
+    *,
+    source: str,
+    batch: ImportBatch,
+    manifest: ReceiptManifest,
+    records: Sequence[StateCoreRecord],
+    artifact_store: ArtifactStore,
+) -> None:
+    from finharness.artifact_store import ArtifactStoreError
+
+    if batch.source_kind != source:
+        raise StateCoreStoreError("import batch source does not match materialization source")
+    if manifest.batch_id != batch.batch_id:
+        raise StateCoreStoreError("receipt manifest does not bind the import batch")
+    if manifest.source_artifact_id != batch.source_artifact_id:
+        raise StateCoreStoreError("receipt manifest does not bind the source evidence")
+    if manifest.materialization_status != "materialized":
+        raise StateCoreStoreError("only a materialized receipt manifest can become current")
+    try:
+        source_descriptor = artifact_store.descriptor(batch.source_artifact_id)
+        receipt_descriptor = artifact_store.descriptor(manifest.receipt_artifact_id)
+        artifact_store.read(batch.source_artifact_id)
+        receipt_content = artifact_store.read(manifest.receipt_artifact_id)
+    except ArtifactStoreError as exc:
+        raise StateCoreStoreError(f"import evidence failed integrity validation: {exc}") from exc
+    if source_descriptor.content_sha256 != batch.source_sha256:
+        raise StateCoreStoreError("source artifact hash does not match the import batch")
+    if receipt_descriptor.content_sha256 != manifest.receipt_sha256:
+        raise StateCoreStoreError("receipt artifact hash does not match the manifest")
+    _validate_receipt_binding(
+        receipt_content=receipt_content,
+        source_schema=source_descriptor.artifact_schema,
+        receipt_schema=receipt_descriptor.artifact_schema,
+        batch=batch,
+        manifest=manifest,
+    )
+    receipt_indexes = [record for record in records if isinstance(record, ReceiptIndex)]
+    if len(receipt_indexes) != 1:
+        raise StateCoreStoreError("production import requires exactly one receipt index")
+    receipt_index = receipt_indexes[0]
+    if (
+        receipt_index.receipt_id != manifest.receipt_id
+        or receipt_index.path != manifest.receipt_ref
+    ):
+        raise StateCoreStoreError("receipt index does not match the receipt manifest")
+
+
+def _validate_receipt_binding(
+    *,
+    receipt_content: bytes,
+    source_schema: str,
+    receipt_schema: str,
+    batch: ImportBatch,
+    manifest: ReceiptManifest,
+) -> None:
+    if source_schema != "finharness.import_source_evidence":
+        raise StateCoreStoreError("source artifact has the wrong provenance schema")
+    if receipt_schema != "finharness.import_receipt":
+        raise StateCoreStoreError("receipt artifact has the wrong provenance schema")
+    try:
+        receipt_payload = json.loads(receipt_content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StateCoreStoreError("receipt artifact is not valid JSON") from exc
+    expected_receipt_fields = {
+        "import_batch_id": batch.batch_id,
+        "receipt_manifest_id": manifest.manifest_id,
+        "source_artifact_id": batch.source_artifact_id,
+        "receipt_id": manifest.receipt_id,
+        "source_sha256": batch.source_sha256,
+        "adapter_version": batch.adapter_version,
+        "coverage_mode": batch.coverage_mode,
+        "record_counts": batch.record_counts,
+    }
+    if any(receipt_payload.get(key) != value for key, value in expected_receipt_fields.items()):
+        raise StateCoreStoreError("receipt artifact does not bind the import envelope")
+    if manifest.record_counts != batch.record_counts:
+        raise StateCoreStoreError("manifest record counts do not match the import batch")
+
+
+def materialize_import_batch(
     records: Iterable[StateCoreRecord],
     *,
     source: str,
+    batch: ImportBatch,
+    manifest: ReceiptManifest,
+    artifact_store: ArtifactStore,
     engine: Engine,
 ) -> list[StateCoreRecord]:
-    """Reconcile a personal-finance import: replace ``source``-owned rows, then upsert.
+    """Atomically commit a provenance-bound production capital import.
 
     Source-owned tables (liabilities, goals, cashflows, tax events, insurance,
     documents) are deleted for ``source`` first so a re-import drops rows that no
-    longer exist upstream, instead of accumulating them. Other records (snapshot,
-    accounts, positions, receipt index) are merged as usual. All in one transaction.
+    longer exist upstream. The batch and manifest are committed in the same database
+    transaction as the queryable records; callers cannot make an import current by
+    supplying only direct state payloads.
     """
     materialized = list(records)
+    _validate_import_envelope(
+        source=source,
+        batch=batch,
+        manifest=manifest,
+        records=materialized,
+        artifact_store=artifact_store,
+    )
     saved: list[StateCoreRecord] = []
     try:
         with Session(engine) as session:
             with session.begin():
+                existing_batch = session.get(ImportBatch, batch.batch_id)
+                if existing_batch is not None and existing_batch.model_dump() != batch.model_dump():
+                    raise StateCoreStoreError("import batch identity is immutable")
+                existing_manifest = session.get(ReceiptManifest, manifest.manifest_id)
+                if (
+                    existing_manifest is not None
+                    and existing_manifest.model_dump() != manifest.model_dump()
+                ):
+                    raise StateCoreStoreError("receipt manifest identity is immutable")
                 for statement in _SOURCE_DELETES:
                     session.execute(statement, {"source": source})
-                for record in materialized:
+                for record in [batch, manifest, *materialized]:
                     saved.append(session.merge(record))
                 session.flush()
             for record in saved:

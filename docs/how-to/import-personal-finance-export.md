@@ -109,9 +109,17 @@ one Snapshot (kind=portfolio only when the file has positions; otherwise
   kind=personal_finance so a holdings view is not shadowed)
 one personal-finance receipt
 one ReceiptIndex row
+one stable ImportBatch and one ReceiptManifest row
+immutable source-evidence and receipt artifacts in the shared Artifact Store
 ```
 
 Every generated record keeps `execution_allowed=false`.
+
+Both adapters currently declare full-source coverage. Re-importing identical
+content reuses the same batch, manifest, and receipt bytes. If the process stops
+after evidence is stored but before State Core commits, running the same import
+again completes the same batch. Existing receipts from before this contract stay
+readable as `legacy_unmanifested`; they are not assigned invented provenance.
 
 ## Boundary
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
+from finharness.artifact_store import LocalArtifactStore
+from finharness.import_provenance import receipt_provenance
 from finharness.personal_finance import (
     PersonalFinanceExportError,
     ingest_personal_finance_export,
@@ -16,14 +20,21 @@ from finharness.statecore.models import (
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
+    ImportBatch,
     InsurancePolicy,
     Liability,
     Position,
     ReceiptIndex,
+    ReceiptManifest,
     Snapshot,
     TaxEvent,
 )
-from finharness.statecore.store import init_state_core, read_all
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    init_state_core,
+    read_all,
+    upsert_records,
+)
 
 
 class PersonalFinanceExportAdapterTest(unittest.TestCase):
@@ -129,6 +140,97 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         self.assertEqual(receipt_payload["record_counts"], {"position": 2})
         self.assertEqual(receipts[0].kind, "personal_finance_export")
         self.assertEqual(receipts[0].path, result.receipt_ref)
+        batches = read_all(ImportBatch, engine=self.engine)
+        manifests = read_all(ReceiptManifest, engine=self.engine)
+        self.assertEqual([batch.batch_id for batch in batches], [result.batch_id])
+        self.assertEqual([manifest.manifest_id for manifest in manifests], [result.manifest_id])
+        self.assertEqual(manifests[0].materialization_status, "materialized")
+        self.assertEqual(
+            manifests[0].receipt_sha256,
+            hashlib.sha256(Path(result.receipt_ref).read_bytes()).hexdigest(),
+        )
+
+    def test_duplicate_content_is_one_batch_and_one_manifest(self) -> None:
+        export = self.write_export(
+            [{
+                "account_id": "Assets:Cash",
+                "account_name": "Cash",
+                "account_kind": "cash",
+                "venue": "manual",
+                "symbol": "USD",
+                "quantity": "10",
+                "market_value": "10",
+                "cost_basis": "",
+                "as_of_utc": "2026-06-19T00:00:00+00:00",
+            }]
+        )
+        first = ingest_personal_finance_export(
+            export, engine=self.engine, receipt_root=self.receipt_root
+        )
+        receipt_bytes = Path(first.receipt_ref).read_bytes()
+        second = ingest_personal_finance_export(
+            export, engine=self.engine, receipt_root=self.receipt_root
+        )
+        self.assertEqual(first.batch_id, second.batch_id)
+        self.assertEqual(first.manifest_id, second.manifest_id)
+        self.assertEqual(Path(second.receipt_ref).read_bytes(), receipt_bytes)
+        self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
+
+    def test_failed_materialization_leaves_replayable_evidence(self) -> None:
+        export = self.write_export(
+            [{
+                "account_id": "Assets:Cash",
+                "account_name": "Cash",
+                "account_kind": "cash",
+                "venue": "manual",
+                "symbol": "USD",
+                "quantity": "10",
+                "market_value": "10",
+                "cost_basis": "",
+                "as_of_utc": "2026-06-19T00:00:00+00:00",
+            }]
+        )
+        with patch(
+            "finharness.personal_finance.materialize_import_batch",
+            side_effect=StateCoreStoreError("simulated crash before commit"),
+        ), self.assertRaises(StateCoreStoreError):
+            ingest_personal_finance_export(
+                export, engine=self.engine, receipt_root=self.receipt_root
+            )
+        artifact_store = LocalArtifactStore(self.receipt_root / "artifact-store")
+        self.assertTrue(artifact_store.audit().ok)
+        self.assertEqual(artifact_store.audit().descriptor_count, 2)
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
+        recovered = ingest_personal_finance_export(
+            export, engine=self.engine, receipt_root=self.receipt_root
+        )
+        self.assertEqual(artifact_store.audit().descriptor_count, 2)
+        self.assertEqual(
+            receipt_provenance(recovered.receipt_id, engine=self.engine).status,
+            "materialized",
+        )
+
+    def test_unmanifested_receipt_remains_explicitly_legacy(self) -> None:
+        legacy = ReceiptIndex(
+            receipt_id="legacy_receipt",
+            kind="legacy_import",
+            path="data/receipts/legacy.json",
+        )
+        upsert_records([legacy], engine=self.engine)
+        status = receipt_provenance("legacy_receipt", engine=self.engine)
+        self.assertEqual(status.status, "legacy_unmanifested")
+        self.assertIsNone(status.batch_id)
+
+    def test_direct_production_snapshot_cannot_bypass_manifest(self) -> None:
+        direct = Snapshot(
+            snapshot_id="direct_import",
+            kind="portfolio",
+            payload={"source": "personal_finance_export"},
+        )
+        with self.assertRaisesRegex(StateCoreStoreError, "materialize_import_batch"):
+            upsert_records([direct], engine=self.engine)
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
 
     def test_ingests_typed_personal_finance_records_into_first_class_tables(self) -> None:
         columns = [
