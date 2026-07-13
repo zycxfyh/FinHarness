@@ -207,6 +207,25 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
 | `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
+### Agent Authority Grant Consumption Receipt
+
+Location: `data/receipts/state-core/agent-authority-grant-consumptions/`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `receipt_id` | `str` | Unique consumption receipt id. |
+| `kind` | `str` | `state_core_agent_authority_grant_consumption`. |
+| `consumption` | `AgentAuthorityGrantConsumption` | Principal, runtime, mandate version, nonce, scope, and notional consumed. |
+| `validation` | `AgentAuthorityGrantValidationResult` | Pre-transaction structured validation evidence. |
+| `usage_after` | `object` | Usage count and aggregate notional after this atomic use. |
+| `execution_allowed` | `bool` | Always false. |
+| `authority_transition` | `bool` | Always false. |
+
+Grant revocation receipts live under
+`data/receipts/state-core/agent-authority-grants/lifecycle/`. They record the
+prior and resulting grant projections, authenticated owner, reason, and retain
+both authority booleans as false.
+
 ### Agent Authority Grant Receipt
 
 Location: `data/receipts/state-core/agent-authority-grants/`
@@ -218,6 +237,7 @@ Location: `data/receipts/state-core/agent-authority-grants/`
 | `created_at_utc` | `str` | Creation timestamp. |
 | `agent_authority_grant` | `AgentAuthorityGrant` | Mandate-bound authority credential payload. |
 | `source_capital_mandate` | `CapitalMandate` | Linked mandate snapshot at grant creation time. |
+| `source_capital_mandate_version` | `CapitalMandateVersion` | Exact immutable mandate version bound at issuance. |
 | `creation_validation` | `AgentAuthorityGrantValidationResult` | Structured create-time validation result. |
 | `governance_boundary.execution_allowed` | `bool` | Always false. |
 | `governance_boundary.authority_transition` | `bool` | Always false. |

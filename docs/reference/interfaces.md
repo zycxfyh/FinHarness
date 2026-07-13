@@ -16,7 +16,7 @@ Use this as a lookup page. For system ownership, read
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
 | CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; requires human attester/reason/explicit confirmation and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
-| AgentAuthorityGrantInterface | Mandate-bound authority credential | Receipt-backed AgentAuthorityGrant plus dynamic validator with closed deny reasons; requires active CapitalMandate and never approves trade plans, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate` |
+| AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; structured product/instrument/action/direction/notional/broker scope; closed validation reasons; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
 | ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
@@ -42,7 +42,9 @@ Use this as a lookup page. For system ownership, read
   instruction, or execution authorization.
 - AgentAuthorityGrant is a mandate-bound authority credential, not authentication
   or execution permission. It must reference an active CapitalMandate at creation
-  time, and validation re-checks the current grant and mandate state at use time.
+  time, bind the authenticated principal and agent runtime to an exact mandate
+  version, and re-check lifecycle, scope, usage, and nonce at use time. Only
+  atomic consumption spends capacity; validation never does.
   Its validator returns closed deny reasons such as `capital_mandate_not_active`,
   `requested_scope_exceeds_grant`, and forbidden execution/approval/broker/
   preflight-bypass semantics. It does not approve trade plans, bypass preflight,

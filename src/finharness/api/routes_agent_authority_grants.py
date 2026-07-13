@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,15 +11,19 @@ from sqlmodel import Session
 
 from finharness.api.dependencies import (
     EngineDependency,
+    OptionalOperatorDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
 )
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
+    AgentAuthorityGrantConsumptionResult,
     AgentAuthorityGrantValidationError,
     AgentAuthorityGrantValidationResult,
+    consume_agent_authority_grant,
     list_agent_authority_grants,
     record_agent_authority_grant,
+    revoke_agent_authority_grant,
     validate_agent_authority_grant,
 )
 from finharness.statecore.models import AgentAuthorityGrant
@@ -27,6 +32,8 @@ router = APIRouter(tags=["agent-authority-grants"])
 
 
 class AgentAuthorityGrantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     capital_mandate_id: str
     agent_id: str
     agent_profile_name: str | None = None
@@ -37,6 +44,9 @@ class AgentAuthorityGrantRequest(BaseModel):
     source_refs: list[str] = Field(default_factory=list)
     receipt_refs: list[str] = Field(default_factory=list)
     agent_authority_grant_id: str | None = None
+    agent_runtime_id: str | None = None
+    max_uses: int | None = None
+    max_total_notional: Decimal | None = None
 
 
 class AgentAuthorityGrantWriteResponse(BaseModel):
@@ -58,8 +68,28 @@ class AgentAuthorityGrantListResponse(BaseModel):
 
 
 class AgentAuthorityGrantValidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     requested_scope: dict[str, Any] = Field(default_factory=dict)
     now_utc: str | None = None
+    nonce: str | None = None
+    requested_notional: Decimal | None = None
+
+
+class AgentAuthorityGrantConsumeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nonce: str
+    requested_scope: dict[str, Any] = Field(default_factory=dict)
+    requested_notional: Decimal = Decimal("0")
+    now_utc: str | None = None
+
+
+class AgentAuthorityGrantRevokeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+    revoked_at_utc: str | None = None
 
 
 @router.post("/agent-authority-grants", response_model=AgentAuthorityGrantWriteResponse)
@@ -67,7 +97,7 @@ async def post_agent_authority_grant(
     body: AgentAuthorityGrantRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    _write_capability: WriteCapabilityDependency,
+    operator: WriteCapabilityDependency,
 ) -> AgentAuthorityGrantWriteResponse:
     try:
         grant = record_agent_authority_grant(
@@ -75,12 +105,16 @@ async def post_agent_authority_grant(
             agent_id=body.agent_id,
             agent_profile_name=body.agent_profile_name,
             grant_scope=body.grant_scope,
-            issued_by=body.issued_by,
+            issued_by=operator.principal.principal_id,
             issued_reason=body.issued_reason,
             expires_at_utc=body.expires_at_utc,
             source_refs=body.source_refs,
             receipt_refs=body.receipt_refs,
             agent_authority_grant_id=body.agent_authority_grant_id,
+            principal_id=operator.principal.principal_id,
+            agent_runtime_id=body.agent_runtime_id or body.agent_id,
+            max_uses=body.max_uses,
+            max_total_notional=body.max_total_notional,
             engine=engine,
             receipt_root=receipt_root,
         )
@@ -130,6 +164,7 @@ async def post_agent_authority_grant_validate(
     grant_id: str,
     body: AgentAuthorityGrantValidateRequest,
     engine: EngineDependency,
+    operator: OptionalOperatorDependency,
 ) -> AgentAuthorityGrantValidationResult:
     try:
         return validate_agent_authority_grant(
@@ -137,6 +172,76 @@ async def post_agent_authority_grant_validate(
             engine=engine,
             requested_scope=body.requested_scope,
             now_utc=body.now_utc,
+            nonce=body.nonce,
+            requested_notional=body.requested_notional,
+            principal_id=(operator.principal.principal_id if operator else None),
+            agent_runtime_id=(
+                operator.agent_runtime.agent_runtime_id
+                if operator and operator.agent_runtime
+                else None
+            ),
         )
     except AgentAuthorityGrantValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/agent-authority-grants/{grant_id}/consume",
+    response_model=AgentAuthorityGrantConsumptionResult,
+)
+async def post_agent_authority_grant_consume(
+    grant_id: str,
+    body: AgentAuthorityGrantConsumeRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+    operator: WriteCapabilityDependency,
+) -> AgentAuthorityGrantConsumptionResult:
+    if operator.agent_runtime is None:
+        raise HTTPException(
+            status_code=422,
+            detail="grant consumption requires an authenticated agent runtime",
+        )
+    try:
+        return consume_agent_authority_grant(
+            grant_id,
+            principal_id=operator.principal.principal_id,
+            agent_runtime_id=operator.agent_runtime.agent_runtime_id,
+            nonce=body.nonce,
+            requested_scope=body.requested_scope,
+            requested_notional=body.requested_notional,
+            now_utc=body.now_utc,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except AgentAuthorityGrantValidationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/agent-authority-grants/{grant_id}/revoke",
+    response_model=AgentAuthorityGrantWriteResponse,
+)
+async def post_agent_authority_grant_revoke(
+    grant_id: str,
+    body: AgentAuthorityGrantRevokeRequest,
+    engine: EngineDependency,
+    receipt_root: ReceiptRootDependency,
+    operator: WriteCapabilityDependency,
+) -> AgentAuthorityGrantWriteResponse:
+    try:
+        grant = revoke_agent_authority_grant(
+            grant_id,
+            principal_id=operator.principal.principal_id,
+            reason=body.reason,
+            revoked_at_utc=body.revoked_at_utc,
+            engine=engine,
+            receipt_root=receipt_root,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"grant not found: {exc.args[0]}") from exc
+    except AgentAuthorityGrantValidationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return AgentAuthorityGrantWriteResponse(
+        agent_authority_grant=grant,
+        receipt_ref=grant.receipt_refs[-1],
+    )

@@ -37,7 +37,8 @@ domain model / read model / write(command) model / adapters / invariants
   的个性化阈值与 policy compliance check;CapitalMandate 则在 IPS 之上记录
   human-attested policy domain,供未来 delegated authority 对象引用;
   AgentAuthorityGrant 在 active CapitalMandate 下授予 Agent 受限 authority
-  credential,并提供 dynamic validator。
+  credential,绑定 principal、runtime 与精确 mandate version,并提供
+  replay-safe consumption 与 dynamic validator。
 - **domain**:`ips.py`、`InvestmentPolicyStatement`、`statecore/capital_mandates.py`、
   `CapitalMandate`、`statecore/agent_authority_grants.py`、`AgentAuthorityGrant`。
 - **read**:`GET /ips/current`、`GET /ips/check`、`GET /capital-mandates/current`、
@@ -48,14 +49,16 @@ domain model / read model / write(command) model / adapters / invariants
   human-attested mandate;`POST /agent-authority-grants` /
   `record_agent_authority_grant` 写 receipt-backed mandate-bound credential;
   `POST /agent-authority-grants/{grant_id}/validate` 动态重查 grant 与 mandate
-  当前状态并返回 structured deny reasons。
+  当前状态并返回 structured deny reasons;`POST .../consume` 原子记录 nonce、
+  usage 与 notional receipt;`POST .../revoke` 由 owner 原子撤销并留痕。
 - **invariants**:IPS 是用户政策;`execution_allowed=false`;
   compliance check 是描述性检查。CapitalMandate 要求
   `human_attester`、`human_reason`、`explicit_confirmation=true`,且
   `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
   是 mandate-bound authority credential,没有 active CapitalMandate 时
-  default-deny,grant validation 必须 use-time
-  重查当前 grant/mandate/scope。
+  default-deny,grant validation 必须 use-time 重查当前 grant/mandate/scope;
+  cross-principal、cross-runtime、expired、revoked、exhausted 与 replayed nonce
+  均 fail closed,且 consumption 不产生 execution authority。
 
 ### 4. Decision Workflow
 

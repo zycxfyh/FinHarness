@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import field_validator
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -583,6 +583,9 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
         foreign_key="capital_mandates.capital_mandate_id",
         index=True,
     )
+    mandate_version_id: str | None = Field(default=None, index=True)
+    principal_id: str | None = Field(default=None, index=True)
+    agent_runtime_id: str | None = Field(default=None, index=True)
     agent_id: str = Field(index=True)
     agent_profile_name: str | None = None
     status: str = "active"
@@ -591,6 +594,11 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
     issued_reason: str
     issued_against_mandate_receipt_ref: str | None = None
     expires_at_utc: str | None = None
+    max_uses: int | None = None
+    max_total_notional: Decimal | None = Field(
+        default=None,
+        sa_column=money_column(nullable=True),
+    )
     revoked_at_utc: str | None = None
     revoked_reason: str | None = None
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
@@ -630,6 +638,68 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
     def reject_authority_transition(cls, value: bool) -> bool:
         if value:
             raise ValueError("agent authority grants never carry authority transitions")
+        return False
+
+
+class AgentAuthorityGrantConsumption(StateCoreBase, table=True):
+    """Append-only, nonce-unique consumption of a bounded authority grant."""
+
+    __tablename__ = "agent_authority_grant_consumptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_authority_grant_id",
+            "nonce",
+            name="uq_agent_authority_grant_consumption_nonce",
+        ),
+        CheckConstraint(
+            "execution_allowed = 0",
+            name="ck_agent_authority_grant_consumptions_execution_false",
+        ),
+    )
+
+    grant_consumption_id: str = Field(primary_key=True)
+    agent_authority_grant_id: str = Field(
+        foreign_key="agent_authority_grants.agent_authority_grant_id",
+        index=True,
+    )
+    principal_id: str = Field(index=True)
+    agent_runtime_id: str = Field(index=True)
+    mandate_version_id: str = Field(index=True)
+    nonce: str = Field(index=True)
+    requested_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
+    requested_notional: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    receipt_ref: str
+    execution_allowed: bool = False
+    authority_transition: bool = False
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+    @field_validator(
+        "grant_consumption_id",
+        "agent_authority_grant_id",
+        "principal_id",
+        "agent_runtime_id",
+        "mandate_version_id",
+        "nonce",
+        "receipt_ref",
+    )
+    @classmethod
+    def require_consumption_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("grant consumption identity fields are required")
+        return value.strip()
+
+    @field_validator("requested_notional")
+    @classmethod
+    def require_non_negative_notional(cls, value: Decimal) -> Decimal:
+        if value < 0:
+            raise ValueError("requested_notional must be non-negative")
+        return value
+
+    @field_validator("execution_allowed", "authority_transition")
+    @classmethod
+    def reject_consumption_authority(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("grant consumption is not execution authority")
         return False
 
 
