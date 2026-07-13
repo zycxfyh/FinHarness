@@ -10,22 +10,26 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
+    resolve_capital_mandate,
 )
 from finharness.statecore.models import (
     CAPITAL_MANDATE_AUTONOMY_LEVELS,
     AgentAuthorityGrant,
+    AgentAuthorityGrantConsumption,
     CapitalMandate,
+    CapitalMandateVersion,
     ReceiptIndex,
 )
 from finharness.statecore.receipt_io import (
@@ -48,6 +52,12 @@ AgentAuthorityGrantDenyReason = Literal[
     "grant_not_found",
     "grant_not_active",
     "grant_expired",
+    "principal_mismatch",
+    "agent_runtime_mismatch",
+    "mandate_version_changed",
+    "grant_exhausted",
+    "grant_notional_exhausted",
+    "nonce_replayed",
     "capital_mandate_not_found",
     "capital_mandate_not_active",
     "grant_scope_exceeds_mandate",
@@ -62,6 +72,12 @@ AGENT_AUTHORITY_GRANT_DENY_REASONS: tuple[str, ...] = (
     "grant_not_found",
     "grant_not_active",
     "grant_expired",
+    "principal_mismatch",
+    "agent_runtime_mismatch",
+    "mandate_version_changed",
+    "grant_exhausted",
+    "grant_notional_exhausted",
+    "nonce_replayed",
     "capital_mandate_not_found",
     "capital_mandate_not_active",
     "grant_scope_exceeds_mandate",
@@ -119,7 +135,19 @@ class AgentAuthorityGrantValidationError(ValueError):
     """Raised when an authority grant write crosses its policy boundary."""
 
 
-def record_agent_authority_grant(
+class AgentAuthorityGrantConsumptionResult(BaseModel):
+    """Receipt-backed result of one atomic, nonce-unique grant consumption."""
+
+    consumption: AgentAuthorityGrantConsumption
+    usage_count: int
+    used_notional: Decimal
+    remaining_uses: int | None = None
+    remaining_notional: Decimal | None = None
+    execution_allowed: bool = False
+    authority_transition: bool = False
+
+
+def record_agent_authority_grant(  # noqa: C901
     *,
     capital_mandate_id: str,
     agent_id: str,
@@ -134,6 +162,10 @@ def record_agent_authority_grant(
     receipt_refs: Sequence[str] | None = None,
     agent_authority_grant_id: str | None = None,
     created_at_utc: str | None = None,
+    principal_id: str | None = None,
+    agent_runtime_id: str | None = None,
+    max_uses: int | None = None,
+    max_total_notional: Decimal | str | None = None,
 ) -> AgentAuthorityGrant:
     """Create a receipt-backed active AgentAuthorityGrant.
 
@@ -157,8 +189,43 @@ def record_agent_authority_grant(
         raise KeyError(capital_mandate_id)
     if mandate.status != "active":
         raise AgentAuthorityGrantValidationError("capital mandate must be active")
-    if not _scope_within_mandate(scope, mandate):
+    latest_version = _latest_mandate_version(engine, mandate.capital_mandate_id)
+    if latest_version is None:
+        raise AgentAuthorityGrantValidationError("capital mandate version is required")
+    current_resolution = resolve_capital_mandate(
+        principal_id=latest_version.principal_id,
+        engine=engine,
+        at_utc=created_at,
+    )
+    mandate_version = current_resolution.version
+    if (
+        current_resolution.status != "active"
+        or mandate_version is None
+        or mandate_version.capital_mandate_id != mandate.capital_mandate_id
+    ):
+        raise AgentAuthorityGrantValidationError("capital mandate must resolve active")
+    if not _scope_within_mandate(scope, mandate, mandate_version=mandate_version):
         raise AgentAuthorityGrantValidationError("grant_scope exceeds capital mandate scope")
+    resolved_principal = principal_id or mandate_version.principal_id
+    if resolved_principal != mandate_version.principal_id:
+        raise AgentAuthorityGrantValidationError("grant principal must own mandate version")
+    resolved_runtime = (agent_runtime_id or agent_id).strip()
+    if not resolved_runtime:
+        raise AgentAuthorityGrantValidationError("agent_runtime_id is required")
+    if max_uses is not None and max_uses <= 0:
+        raise AgentAuthorityGrantValidationError("max_uses must be positive")
+    parsed_max_notional = (
+        Decimal(str(max_total_notional)) if max_total_notional is not None else None
+    )
+    if parsed_max_notional is not None and parsed_max_notional <= 0:
+        raise AgentAuthorityGrantValidationError("max_total_notional must be positive")
+    mandate_notional = _money_amount(mandate_version.typed_limits.get("max_notional"))
+    if parsed_max_notional is not None and (
+        mandate_notional is None or parsed_max_notional > mandate_notional
+    ):
+        raise AgentAuthorityGrantValidationError(
+            "max_total_notional exceeds capital mandate limit"
+        )
 
     resolved_id = (
         _safe_id(agent_authority_grant_id)
@@ -178,6 +245,9 @@ def record_agent_authority_grant(
     grant = AgentAuthorityGrant(
         agent_authority_grant_id=resolved_id,
         capital_mandate_id=mandate.capital_mandate_id,
+        mandate_version_id=mandate_version.mandate_version_id,
+        principal_id=resolved_principal,
+        agent_runtime_id=resolved_runtime,
         agent_id=agent_id.strip(),
         agent_profile_name=agent_profile_name,
         status="active",
@@ -186,6 +256,8 @@ def record_agent_authority_grant(
         issued_reason=issued_reason.strip(),
         issued_against_mandate_receipt_ref=mandate.receipt_ref,
         expires_at_utc=expires_at_utc,
+        max_uses=max_uses,
+        max_total_notional=parsed_max_notional,
         source_refs=list(source_refs or []),
         receipt_refs=resolved_receipt_refs,
         non_claims=list(AGENT_AUTHORITY_GRANT_NON_CLAIMS),
@@ -215,6 +287,7 @@ def record_agent_authority_grant(
         _agent_authority_grant_receipt_payload(
             grant=grant,
             mandate=mandate,
+            mandate_version=mandate_version,
             receipt_id=receipt_id,
             creation_validation=creation_validation,
         ),
@@ -242,12 +315,16 @@ def record_agent_authority_grant(
     return grant
 
 
-def validate_agent_authority_grant(
+def validate_agent_authority_grant(  # noqa: C901
     grant_id: str,
     *,
     engine: Engine,
     requested_scope: Mapping[str, Any] | None = None,
     now_utc: str | None = None,
+    principal_id: str | None = None,
+    agent_runtime_id: str | None = None,
+    nonce: str | None = None,
+    requested_notional: Decimal | str | None = None,
     candidate_grant: AgentAuthorityGrant | None = None,
     candidate_mandate: CapitalMandate | None = None,
 ) -> AgentAuthorityGrantValidationResult:
@@ -272,12 +349,54 @@ def validate_agent_authority_grant(
         deny_reasons.append("grant_not_active")
     if _is_expired(grant.expires_at_utc, now_utc=now_utc):
         deny_reasons.append("grant_expired")
+    if principal_id is not None and grant.principal_id != principal_id:
+        deny_reasons.append("principal_mismatch")
+    if agent_runtime_id is not None and grant.agent_runtime_id != agent_runtime_id:
+        deny_reasons.append("agent_runtime_mismatch")
 
     mandate = candidate_mandate or _get_capital_mandate(engine, grant.capital_mandate_id)
     if mandate is None:
         deny_reasons.append("capital_mandate_not_found")
     elif mandate.status != "active":
         deny_reasons.append("capital_mandate_not_active")
+
+    mandate_version = _get_mandate_version(engine, grant.mandate_version_id)
+    if grant.principal_id:
+        resolution = resolve_capital_mandate(
+            principal_id=grant.principal_id,
+            engine=engine,
+        )
+        if resolution.status != "active" and "capital_mandate_not_active" not in deny_reasons:
+            deny_reasons.append("capital_mandate_not_active")
+        if (
+            resolution.version is not None
+            and resolution.version.capital_mandate_id == grant.capital_mandate_id
+            and resolution.version.mandate_version_id != grant.mandate_version_id
+        ):
+            deny_reasons.append("mandate_version_changed")
+
+    if candidate_grant is None:
+        consumptions = _grant_consumptions(engine, grant.agent_authority_grant_id)
+        usage_count = len(consumptions)
+        used_notional = sum(
+            (item.requested_notional for item in consumptions),
+            start=Decimal("0"),
+        )
+        if grant.max_uses is not None and usage_count >= grant.max_uses:
+            deny_reasons.append("grant_exhausted")
+        parsed_requested_notional = (
+            Decimal(str(requested_notional)) if requested_notional is not None else None
+        )
+        if grant.max_total_notional is not None and (
+            used_notional >= grant.max_total_notional
+            or (
+                parsed_requested_notional is not None
+                and used_notional + parsed_requested_notional > grant.max_total_notional
+            )
+        ):
+            deny_reasons.append("grant_notional_exhausted")
+        if nonce is not None and any(item.nonce == nonce for item in consumptions):
+            deny_reasons.append("nonce_replayed")
 
     forbidden_reasons = _forbidden_scope_reasons(grant.grant_scope)
     forbidden_reasons.extend(_forbidden_scope_reasons(requested))
@@ -289,6 +408,7 @@ def validate_agent_authority_grant(
         scope_result["grant_scope_within_mandate"] = _scope_within_mandate(
             grant.grant_scope,
             mandate,
+            mandate_version=mandate_version,
         )
         if not scope_result["grant_scope_within_mandate"]:
             deny_reasons.append("grant_scope_exceeds_mandate")
@@ -311,6 +431,244 @@ def validate_agent_authority_grant(
         execution_allowed=False,
         authority_transition=False,
     )
+
+
+def consume_agent_authority_grant(  # noqa: C901
+    grant_id: str,
+    *,
+    principal_id: str,
+    agent_runtime_id: str,
+    nonce: str,
+    requested_scope: Mapping[str, Any],
+    requested_notional: Decimal | str,
+    engine: Engine,
+    receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
+    now_utc: str | None = None,
+) -> AgentAuthorityGrantConsumptionResult:
+    """Atomically consume one bounded use; validation alone never consumes."""
+
+    if not nonce.strip():
+        raise AgentAuthorityGrantValidationError("nonce is required")
+    notional = Decimal(str(requested_notional))
+    if notional < 0:
+        raise AgentAuthorityGrantValidationError("requested_notional must be non-negative")
+    validation = validate_agent_authority_grant(
+        grant_id,
+        engine=engine,
+        requested_scope=requested_scope,
+        now_utc=now_utc,
+        principal_id=principal_id,
+        agent_runtime_id=agent_runtime_id,
+        nonce=nonce,
+        requested_notional=notional,
+    )
+    if not validation.allowed:
+        raise AgentAuthorityGrantValidationError(
+            "grant consumption denied: " + ", ".join(validation.deny_reasons)
+        )
+    validated_grant = _get_agent_authority_grant(engine, grant_id)
+    per_use_notional = (
+        _money_amount(validated_grant.grant_scope.get("max_notional"))
+        if validated_grant is not None
+        else None
+    )
+    if per_use_notional is not None and notional > per_use_notional:
+        raise AgentAuthorityGrantValidationError("requested_scope_exceeds_grant")
+    created_at = now_utc or _now_utc()
+    receipt_id = f"receipt_agent_authority_grant_consumption_{_stamp()}_{uuid4().hex[:8]}"
+    receipt_path = resolve_under(
+        receipt_root,
+        "agent-authority-grant-consumptions",
+        f"{receipt_id}.json",
+    )
+    receipt_existed = receipt_path.exists()
+    try:
+        with Session(engine) as session:
+            if engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            grant = session.exec(
+                select(AgentAuthorityGrant)
+                .where(AgentAuthorityGrant.agent_authority_grant_id == grant_id)
+                .with_for_update()
+            ).one_or_none()
+            if grant is None or grant.mandate_version_id is None:
+                raise AgentAuthorityGrantValidationError("grant is not AUTH-03 bound")
+            locked_validation = validate_agent_authority_grant(
+                grant_id,
+                engine=engine,
+                requested_scope=requested_scope,
+                now_utc=now_utc,
+                principal_id=principal_id,
+                agent_runtime_id=agent_runtime_id,
+                nonce=nonce,
+                requested_notional=notional,
+            )
+            if not locked_validation.allowed:
+                raise AgentAuthorityGrantValidationError(
+                    "grant consumption denied under lock: "
+                    + ", ".join(locked_validation.deny_reasons)
+                )
+            validation = locked_validation
+            existing = list(
+                session.exec(
+                    select(AgentAuthorityGrantConsumption).where(
+                        AgentAuthorityGrantConsumption.agent_authority_grant_id == grant_id
+                    )
+                ).all()
+            )
+            if any(item.nonce == nonce for item in existing):
+                raise AgentAuthorityGrantValidationError("nonce_replayed")
+            usage_count = len(existing)
+            used_notional = sum(
+                (item.requested_notional for item in existing),
+                start=Decimal("0"),
+            )
+            if grant.max_uses is not None and usage_count >= grant.max_uses:
+                raise AgentAuthorityGrantValidationError("grant_exhausted")
+            if (
+                grant.max_total_notional is not None
+                and used_notional + notional > grant.max_total_notional
+            ):
+                raise AgentAuthorityGrantValidationError("grant_notional_exhausted")
+            consumption = AgentAuthorityGrantConsumption(
+                grant_consumption_id=f"grant_consumption_{_stamp()}_{uuid4().hex[:8]}",
+                agent_authority_grant_id=grant_id,
+                principal_id=principal_id,
+                agent_runtime_id=agent_runtime_id,
+                mandate_version_id=grant.mandate_version_id,
+                nonce=nonce.strip(),
+                requested_scope=dict(requested_scope),
+                requested_notional=notional,
+                receipt_ref=_display_path(receipt_path),
+                created_at_utc=created_at,
+                as_of_utc=created_at,
+            )
+            next_count = usage_count + 1
+            next_notional = used_notional + notional
+            payload = {
+                "receipt_id": receipt_id,
+                "kind": "state_core_agent_authority_grant_consumption",
+                "created_at_utc": created_at,
+                "consumption": consumption.model_dump(mode="json"),
+                "validation": validation.model_dump(mode="json"),
+                "usage_after": {
+                    "usage_count": next_count,
+                    "used_notional": str(next_notional),
+                },
+                "execution_allowed": False,
+                "authority_transition": False,
+            }
+            atomic_write_json(receipt_path, payload)
+            session.add(consumption)
+            session.add(
+                ReceiptIndex(
+                    receipt_id=receipt_id,
+                    kind="state_core_agent_authority_grant_consumption",
+                    path=_display_path(receipt_path),
+                    created_at_utc=created_at,
+                    source_refs=[_display_path(receipt_path)],
+                    refs=[grant_id, grant.mandate_version_id, principal_id, agent_runtime_id],
+                )
+            )
+            session.commit()
+            return AgentAuthorityGrantConsumptionResult(
+                consumption=consumption,
+                usage_count=next_count,
+                used_notional=next_notional,
+                remaining_uses=(
+                    grant.max_uses - next_count if grant.max_uses is not None else None
+                ),
+                remaining_notional=(
+                    grant.max_total_notional - next_notional
+                    if grant.max_total_notional is not None
+                    else None
+                ),
+            )
+    except Exception:
+        if not receipt_existed:
+            remove_file_best_effort(receipt_path)
+        raise
+
+
+def revoke_agent_authority_grant(
+    grant_id: str,
+    *,
+    principal_id: str,
+    reason: str,
+    engine: Engine,
+    receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
+    revoked_at_utc: str | None = None,
+) -> AgentAuthorityGrant:
+    """Revoke a principal-owned grant and append an audit receipt atomically."""
+
+    if not reason.strip():
+        raise AgentAuthorityGrantValidationError("revocation reason is required")
+    timestamp = revoked_at_utc or _now_utc()
+    receipt_id = f"receipt_agent_authority_grant_revoked_{_stamp()}_{uuid4().hex[:8]}"
+    receipt_path = resolve_under(
+        receipt_root,
+        "agent-authority-grants",
+        "lifecycle",
+        f"{receipt_id}.json",
+    )
+    receipt_existed = receipt_path.exists()
+    try:
+        with Session(engine) as session:
+            if engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            grant = session.exec(
+                select(AgentAuthorityGrant)
+                .where(AgentAuthorityGrant.agent_authority_grant_id == grant_id)
+                .with_for_update()
+            ).one_or_none()
+            if grant is None:
+                raise KeyError(grant_id)
+            if grant.principal_id != principal_id:
+                raise AgentAuthorityGrantValidationError(
+                    "grant revocation principal mismatch"
+                )
+            if grant.status not in {"active", "suspended"}:
+                raise AgentAuthorityGrantValidationError(
+                    f"cannot revoke grant in {grant.status} state"
+                )
+            prior = grant.model_dump(mode="json")
+            receipt_ref = _display_path(receipt_path)
+            grant.status = "revoked"
+            grant.revoked_at_utc = timestamp
+            grant.revoked_reason = reason.strip()
+            grant.receipt_refs = [*grant.receipt_refs, receipt_ref]
+            atomic_write_json(
+                receipt_path,
+                {
+                    "receipt_id": receipt_id,
+                    "kind": "state_core_agent_authority_grant_revoked",
+                    "created_at_utc": timestamp,
+                    "prior_grant": prior,
+                    "grant_after": grant.model_dump(mode="json"),
+                    "actor_principal_id": principal_id,
+                    "reason": reason.strip(),
+                    "execution_allowed": False,
+                    "authority_transition": False,
+                },
+            )
+            session.add(grant)
+            session.add(
+                ReceiptIndex(
+                    receipt_id=receipt_id,
+                    kind="state_core_agent_authority_grant_revoked",
+                    path=receipt_ref,
+                    created_at_utc=timestamp,
+                    source_refs=[receipt_ref],
+                    refs=[grant_id, grant.capital_mandate_id, principal_id],
+                )
+            )
+            session.commit()
+            session.refresh(grant)
+            return grant
+    except Exception:
+        if not receipt_existed:
+            remove_file_best_effort(receipt_path)
+        raise
 
 
 def list_agent_authority_grants(
@@ -341,25 +699,73 @@ def _get_capital_mandate(
         return session.get(CapitalMandate, capital_mandate_id)
 
 
-def _scope_within_mandate(scope: Mapping[str, Any], mandate: CapitalMandate) -> bool:
+def _get_mandate_version(
+    engine: Engine,
+    mandate_version_id: str | None,
+) -> CapitalMandateVersion | None:
+    if mandate_version_id is None:
+        return None
+    with Session(engine) as session:
+        return session.get(CapitalMandateVersion, mandate_version_id)
+
+
+def _grant_consumptions(
+    engine: Engine,
+    grant_id: str,
+) -> list[AgentAuthorityGrantConsumption]:
+    with Session(engine) as session:
+        return list(
+            session.exec(
+                select(AgentAuthorityGrantConsumption).where(
+                    AgentAuthorityGrantConsumption.agent_authority_grant_id == grant_id
+                )
+            ).all()
+        )
+
+
+def _latest_mandate_version(
+    engine: Engine,
+    capital_mandate_id: str,
+) -> CapitalMandateVersion | None:
+    with Session(engine) as session:
+        return session.exec(
+            select(CapitalMandateVersion)
+            .where(CapitalMandateVersion.capital_mandate_id == capital_mandate_id)
+            .order_by(col(CapitalMandateVersion.version_number).desc())
+        ).first()
+
+
+def _scope_within_mandate(
+    scope: Mapping[str, Any],
+    mandate: CapitalMandate,
+    *,
+    mandate_version: CapitalMandateVersion | None = None,
+) -> bool:
+    typed_limits = mandate_version.typed_limits if mandate_version is not None else {}
     return _scope_within_scope(
         scope,
         {
             "allowed_asset_classes": mandate.allowed_asset_classes,
             "allowed_action_types": mandate.allowed_action_types,
             "autonomy_level": mandate.autonomy_level,
+            "product_ids": typed_limits.get("product_ids", []),
+            "instrument_ids": typed_limits.get("instrument_ids", []),
+            "action_types": typed_limits.get("action_types", []),
+            "max_notional": typed_limits.get("max_notional"),
         },
         restricted_asset_classes=mandate.restricted_asset_classes,
         restricted_action_types=mandate.restricted_action_types,
+        unbounded_keys=("directions", "broker_ids"),
     )
 
 
-def _scope_within_scope(
+def _scope_within_scope(  # noqa: C901
     requested: Mapping[str, Any],
     allowed: Mapping[str, Any],
     *,
     restricted_asset_classes: Sequence[str] | None = None,
     restricted_action_types: Sequence[str] | None = None,
+    unbounded_keys: Sequence[str] = (),
 ) -> bool:
     requested_assets = _string_set(requested.get("allowed_asset_classes"))
     allowed_assets = _string_set(allowed.get("allowed_asset_classes"))
@@ -375,6 +781,27 @@ def _scope_within_scope(
     if requested_actions - allowed_actions:
         return False
     if requested_actions & restricted_actions:
+        return False
+
+    for key in (
+        "product_ids",
+        "instrument_ids",
+        "action_types",
+        "directions",
+        "broker_ids",
+    ):
+        requested_values = _string_set(requested.get(key))
+        allowed_values = _string_set(allowed.get(key))
+        if key in unbounded_keys:
+            continue
+        if requested_values and (not allowed_values or requested_values - allowed_values):
+            return False
+
+    requested_notional = _money_amount(requested.get("max_notional"))
+    allowed_notional = _money_amount(allowed.get("max_notional"))
+    if requested_notional is not None and (
+        allowed_notional is None or requested_notional > allowed_notional
+    ):
         return False
 
     requested_autonomy = requested.get("autonomy_level")
@@ -435,6 +862,18 @@ def _string_set(value: Any) -> set[str]:
     return set()
 
 
+def _money_amount(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        value = value.get("amount")
+    try:
+        amount = Decimal(str(value))
+    except Exception:
+        return None
+    return amount if amount >= 0 else None
+
+
 def _dedupe_reasons(
     reasons: Sequence[AgentAuthorityGrantDenyReason],
 ) -> list[AgentAuthorityGrantDenyReason]:
@@ -491,6 +930,7 @@ def _agent_authority_grant_receipt_payload(
     *,
     grant: AgentAuthorityGrant,
     mandate: CapitalMandate,
+    mandate_version: CapitalMandateVersion,
     receipt_id: str,
     creation_validation: AgentAuthorityGrantValidationResult,
 ) -> dict[str, Any]:
@@ -500,6 +940,7 @@ def _agent_authority_grant_receipt_payload(
         "created_at_utc": grant.created_at_utc,
         "agent_authority_grant": grant.model_dump(mode="json"),
         "source_capital_mandate": mandate.model_dump(mode="json"),
+        "source_capital_mandate_version": mandate_version.model_dump(mode="json"),
         "creation_validation": creation_validation.model_dump(mode="json"),
         "governance_boundary": {
             "execution_allowed": False,

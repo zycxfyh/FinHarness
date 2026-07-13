@@ -293,6 +293,34 @@ class StateCoreStoreTest(unittest.TestCase):
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
 
+    def test_migration_adds_auth03_bindings_without_forging_legacy_identity(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE agent_authority_grants ("
+                "agent_authority_grant_id VARCHAR PRIMARY KEY)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO agent_authority_grants VALUES ('legacy-grant')"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 5")
+
+        migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT mandate_version_id, principal_id, agent_runtime_id, "
+                    "max_uses, max_total_notional FROM agent_authority_grants"
+                )
+            ).one()
+            self.assertEqual(tuple(row), (None, None, None, None, None))
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()),
+                CURRENT_STATE_CORE_USER_VERSION,
+            )
+        migrate_state_core(engine)
+
     def test_migration_updates_review_event_kind_constraint_for_agent_artifacts(self) -> None:
         engine = init_state_core(self.db_path)
         write_records(

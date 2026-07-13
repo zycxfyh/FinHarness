@@ -29,6 +29,7 @@ from finharness.statecore.models import (
     ActionIntentAuthorityBinding,
     ActionIntentSimulationReport,
     AgentAuthorityGrant,
+    AgentAuthorityGrantConsumption,
     Attestation,
     CapitalMandate,
     CapitalMandateLifecycleEvent,
@@ -63,6 +64,7 @@ StateCoreRecord = (
     | ActionIntentAuthorityBinding
     | ActionIntentSimulationReport
     | AgentAuthorityGrant
+    | AgentAuthorityGrantConsumption
     | CapitalMandate
     | CapitalMandateLifecycleEvent
     | CapitalMandateVersion
@@ -185,7 +187,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 5
+CURRENT_STATE_CORE_USER_VERSION = 6
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -290,6 +292,35 @@ def _migrate_add_decision_scaffold_column(connection: Connection) -> None:
     )
 
 
+def _migrate_add_agent_authority_grant_bindings(connection: Connection) -> None:
+    """Add nullable AUTH-03 bindings without inventing identity for legacy grants."""
+
+    inspector = inspect(connection)
+    if "agent_authority_grants" not in set(inspector.get_table_names()):
+        return
+    columns = {
+        column["name"] for column in inspector.get_columns("agent_authority_grants")
+    }
+    additions = {
+        "mandate_version_id": "VARCHAR",
+        "principal_id": "VARCHAR",
+        "agent_runtime_id": "VARCHAR",
+        "max_uses": "INTEGER",
+        "max_total_notional": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE agent_authority_grants ADD COLUMN {name} {declaration}"
+            )
+    for name in ("mandate_version_id", "principal_id", "agent_runtime_id"):
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS "
+            f"ix_agent_authority_grants_{name} "
+            f"ON agent_authority_grants ({name})"
+        )
+
+
 def _review_events_kind_constraint_current(connection: Connection) -> bool:
     row = connection.execute(
         text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'review_events'")
@@ -321,6 +352,7 @@ def migrate_state_core(engine: Engine) -> None:
         (3, _migrate_add_decision_scaffold_column),
         (4, _migrate_review_events_kind_constraint),
         (5, _migrate_review_events_kind_constraint),
+        (6, _migrate_add_agent_authority_grant_bindings),
     )
     try:
         with engine.connect() as connection:

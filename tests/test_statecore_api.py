@@ -419,6 +419,12 @@ class StateCoreApiTest(unittest.TestCase):
             "/agent-authority-grants/{grant_id}/validate": {
                 "methods": {"post": "validation_only"},
             },
+            "/agent-authority-grants/{grant_id}/consume": {
+                "methods": {"post": "state_changing"},
+            },
+            "/agent-authority-grants/{grant_id}/revoke": {
+                "methods": {"post": "state_changing"},
+            },
             # ── Execution Kernel routes ──
             "/execution/order-drafts": {
                 "methods": {"post": "state_changing"},
@@ -497,8 +503,8 @@ class StateCoreApiTest(unittest.TestCase):
         self.assertEqual(read_ops, 60, f"expected 60 read ops, got {read_ops}")
         self.assertEqual(
             state_changing_ops,
-            26,
-            f"expected 26 state_changing ops, got {state_changing_ops}",
+            28,
+            f"expected 28 state_changing ops, got {state_changing_ops}",
         )
         self.assertEqual(
             validation_only_ops,
@@ -1108,6 +1114,8 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/paper-accounts"),
             ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
             ("POST", "/agent-authority-grants"),
+            ("POST", "/agent-authority-grants/{grant_id}/consume"),
+            ("POST", "/agent-authority-grants/{grant_id}/revoke"),
             ("POST", "/capital-mandates"),
             ("POST", "/capital-mandates/{capital_mandate_id}/suspend"),
             ("POST", "/capital-mandates/{capital_mandate_id}/resume"),
@@ -1209,6 +1217,8 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/paper-accounts"),
             ("POST", "/paper-accounts/{paper_account_id}/execution-applications"),
             ("POST", "/agent-authority-grants"),
+            ("POST", "/agent-authority-grants/{grant_id}/consume"),
+            ("POST", "/agent-authority-grants/{grant_id}/revoke"),
             ("POST", "/capital-mandates"),
             ("POST", "/capital-mandates/{capital_mandate_id}/suspend"),
             ("POST", "/capital-mandates/{capital_mandate_id}/resume"),

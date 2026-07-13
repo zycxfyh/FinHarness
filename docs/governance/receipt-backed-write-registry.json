@@ -545,6 +545,58 @@
       "behavior_change": false,
       "execution_substrate": "simulated",
       "real_external_execution_allowed": false
+    },
+    {
+      "id": "RBW-0021",
+      "bounded_context": "authority",
+      "module": "finharness.statecore.agent_authority_grants",
+      "file": "src/finharness/statecore/agent_authority_grants.py",
+      "function": "consume_agent_authority_grant",
+      "route_refs": [
+        "POST /agent-authority-grants/{grant_id}/consume"
+      ],
+      "db_write_models": [
+        "AgentAuthorityGrantConsumption",
+        "ReceiptIndex"
+      ],
+      "db_write_call": "single locked Session transaction",
+      "receipt_kind": "state_core_agent_authority_grant_consumption",
+      "receipt_subdir": "state-core/agent-authority-grant-consumptions",
+      "receipt_payload_builder": "inline consumption, validation, and usage-after payload",
+      "receipt_indexed": true,
+      "receipt_index_builder": "ReceiptIndex(...) in the locked transaction",
+      "stale_guard": "principal/runtime/version validation plus transaction-locked usage totals and unique grant+nonce constraint",
+      "failure_cleanup": "remove_file_best_effort on every transaction failure when the receipt did not previously exist",
+      "execution_allowed": false,
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
+    },
+    {
+      "id": "RBW-0022",
+      "bounded_context": "authority",
+      "module": "finharness.statecore.agent_authority_grants",
+      "file": "src/finharness/statecore/agent_authority_grants.py",
+      "function": "revoke_agent_authority_grant",
+      "route_refs": [
+        "POST /agent-authority-grants/{grant_id}/revoke"
+      ],
+      "db_write_models": [
+        "AgentAuthorityGrant",
+        "ReceiptIndex"
+      ],
+      "db_write_call": "single locked Session transaction",
+      "receipt_kind": "state_core_agent_authority_grant_revoked",
+      "receipt_subdir": "state-core/agent-authority-grants/lifecycle",
+      "receipt_payload_builder": "inline prior-grant and grant-after lifecycle payload",
+      "receipt_indexed": true,
+      "receipt_index_builder": "ReceiptIndex(...) in the locked transaction",
+      "stale_guard": "principal ownership and active/suspended lifecycle-state check under row/write lock",
+      "failure_cleanup": "remove_file_best_effort on every transaction failure when the receipt did not previously exist",
+      "execution_allowed": false,
+      "behavior_change": false,
+      "execution_substrate": "none",
+      "real_external_execution_allowed": false
     }
   ]
 }
