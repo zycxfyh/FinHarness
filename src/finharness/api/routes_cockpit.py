@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import desc, func
+from sqlalchemy import desc, exists, func, or_
 from sqlmodel import Session, col, select
 
 from finharness.api.dependencies import EngineDependency
@@ -26,7 +26,6 @@ from finharness.statecore.models import (
     ReceiptIndex,
     Snapshot,
     TaxEvent,
-    attestation_closes_current_review,
 )
 
 router = APIRouter(tags=["cockpit"])
@@ -116,18 +115,32 @@ def _latest_brief_receipt(session: Session) -> ReceiptIndex | None:
     ).first()
 
 
-def _open_proposal_count(
-    proposals: list[Proposal],
-    attestations: list[Attestation],
-) -> int:
-    proposals_by_id = {proposal.proposal_id: proposal for proposal in proposals}
-    attested_ids = {
-        attestation.proposal_id
-        for attestation in attestations
-        if (proposal := proposals_by_id.get(attestation.proposal_id)) is not None
-        and attestation_closes_current_review(attestation, proposal)
-    }
-    return sum(1 for proposal in proposals if proposal.proposal_id not in attested_ids)
+def _open_proposal_count(session: Session) -> int:
+    """Count current proposal revisions without materializing proposal history."""
+
+    refs = func.json_each(Attestation.source_refs).table_valued("value").alias("refs")
+    current_revision_is_attested = or_(
+        col(Proposal.receipt_ref).is_(None),
+        exists(
+            select(1)
+            .select_from(refs)
+            .where(refs.c.value == Proposal.receipt_ref)
+            .correlate(Proposal, Attestation)
+        ),
+    )
+    has_closing_attestation = exists(
+        select(Attestation.attestation_id)
+        .where(
+            Attestation.proposal_id == Proposal.proposal_id,
+            col(Attestation.decision).in_(("approved", "rejected")),
+            current_revision_is_attested,
+        )
+        .correlate(Proposal)
+    )
+    count = session.scalar(
+        select(func.count()).select_from(Proposal).where(~has_closing_attestation)
+    )
+    return int(count or 0)
 
 
 @router.get("/exposure", response_model=ExposureReport)
@@ -145,56 +158,51 @@ async def daily_brief(engine: EngineDependency) -> DailyBrief:
 @router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryResponse:
     with Session(engine) as session:
-        accounts = list(session.exec(select(Account)).all())
-        proposals = list(session.exec(select(Proposal)).all())
-        attestations = list(session.exec(select(Attestation)).all())
+        account_count = session.scalar(select(func.count()).select_from(Account)) or 0
+        open_proposal_count = _open_proposal_count(session)
         receipt_count = session.scalar(select(func.count()).select_from(ReceiptIndex)) or 0
         latest_brief = _latest_brief_receipt(session)
-        liabilities = list(session.exec(select(Liability)).all())
-        goals = list(session.exec(select(FinancialGoal)).all())
-        cashflows = list(session.exec(select(CashflowEvent)).all())
-        tax_events = list(session.exec(select(TaxEvent)).all())
-        insurance_policies = list(session.exec(select(InsurancePolicy)).all())
-        documents = list(session.exec(select(DocumentRef)).all())
+        liability_count, liability_balance_total = session.exec(
+            select(func.count(), func.coalesce(func.sum(Liability.balance), 0))
+        ).one()
+        goal_count = session.scalar(select(func.count()).select_from(FinancialGoal)) or 0
+        cashflow_count = session.scalar(select(func.count()).select_from(CashflowEvent)) or 0
+        tax_event_count = session.scalar(select(func.count()).select_from(TaxEvent)) or 0
+        insurance_policy_count = (
+            session.scalar(select(func.count()).select_from(InsurancePolicy)) or 0
+        )
+        document_count = session.scalar(select(func.count()).select_from(DocumentRef)) or 0
         latest_snapshot = _latest_portfolio_snapshot(session)
-        positions: list[Position] = []
+        position_count = 0
+        total_market_value = Decimal("0")
         if latest_snapshot is not None:
-            positions = list(
-                session.exec(
-                    select(Position).where(Position.snapshot_id == latest_snapshot.snapshot_id)
-                ).all()
-            )
+            position_aggregate = session.exec(
+                select(func.count(), func.coalesce(func.sum(Position.market_value), 0)).where(
+                    Position.snapshot_id == latest_snapshot.snapshot_id
+                )
+            ).one()
+            position_count = int(position_aggregate[0])
+            total_market_value = position_aggregate[1] or Decimal("0")
 
     source_refs = tuple(sorted(set(latest_snapshot.source_refs if latest_snapshot else ())))
     return DashboardSummaryResponse(
-        account_count=len(accounts),
+        account_count=int(account_count),
         latest_snapshot_id=latest_snapshot.snapshot_id if latest_snapshot else None,
         latest_snapshot_as_of_utc=latest_snapshot.as_of_utc if latest_snapshot else None,
-        position_count=len(positions),
-        total_market_value=float(
-            sum(
-                (
-                    position.market_value
-                    for position in positions
-                    if position.market_value is not None
-                ),
-                Decimal("0"),
-            )
-        ),
-        open_proposal_count=_open_proposal_count(proposals, attestations),
-        receipt_count=receipt_count,
+        position_count=int(position_count),
+        total_market_value=float(total_market_value),
+        open_proposal_count=open_proposal_count,
+        receipt_count=int(receipt_count),
         latest_brief_receipt_id=latest_brief.receipt_id if latest_brief else None,
-        liability_count=len(liabilities),
+        liability_count=int(liability_count),
         # Sum exactly in Decimal, then expose a float display rollup (the raw
         # /state/liabilities rows keep the exact Decimal balance).
-        liability_balance_total=float(
-            sum((liability.balance for liability in liabilities), Decimal("0"))
-        ),
-        goal_count=len(goals),
-        cashflow_count=len(cashflows),
-        tax_event_count=len(tax_events),
-        insurance_policy_count=len(insurance_policies),
-        document_count=len(documents),
+        liability_balance_total=float(liability_balance_total),
+        goal_count=int(goal_count),
+        cashflow_count=int(cashflow_count),
+        tax_event_count=int(tax_event_count),
+        insurance_policy_count=int(insurance_policy_count),
+        document_count=int(document_count),
         source_refs=source_refs,
     )
 
