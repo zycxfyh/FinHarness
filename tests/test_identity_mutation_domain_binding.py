@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -1847,6 +1849,221 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             self.assertEqual(pending["state"], "pending")
             self.assertNotIn("reconciliation", pending)
             self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_accepts_committed_foreign_later_revision(
+        self,
+    ) -> None:
+        """A committed foreign later revision must safely skip as verified inherited candidate.
+
+        When Revision A is pending reconciliation and a later Revision B is
+        fully committed (terminal state, canonical response points to B's
+        receipt), reconciling A must succeed: B is independently proven as a
+        foreign effect belonging to a different mutation.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # Keyed Revision A — terminal loss
+            key_a = "foreign-positive-revision-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A: counter_evidence",
+                "decision_scaffold": {
+                    "counter_evidence": "Foreign positive test counter-evidence."
+                },
+                "source_refs": ["test:foreign-positive-a"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            # Keyed Revision B — normal committed
+            key_b = "foreign-positive-revision-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision alternatives."},
+                "source_refs": ["test:foreign-positive-b"],
+            }
+
+            rev_b_response = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b_response.status_code, 200, rev_b_response.text)
+            rev_b_body = rev_b_response.json()
+            revision_b_receipt_ref = rev_b_body["receipt_ref"]
+
+            # Prove candidates >= 2
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+            candidates = [i for i in indexes if mutation_ref_a in list(i.refs or [])]
+            self.assertGreaterEqual(
+                len(candidates), 2, "Need >= 2 candidates for positive foreign test"
+            )
+
+            # Reconcile A — must succeed
+            reconciled = reconcile_identity_mutation_from_domain_truth(
+                receipt_path_a,
+                engine=self.engine,
+                receipt_root=(self.root / "receipts"),
+                reconciled_by="operator:alice",
+                reason="Committed foreign later revision must safely skip.",
+            )
+            self.assertEqual(reconciled["state"], "reconciled_applied")
+            self.assertEqual(
+                reconciled["reconciliation"]["resolver_id"],
+                "finharness.api.proposal_scaffold_revision.v1",
+            )
+
+            # Current Proposal stays at Rev B
+            with Session(self.engine) as session:
+                final = session.get(Proposal, proposal_id)
+            self.assertIsNotNone(final)
+            assert final is not None
+            self.assertEqual(final.receipt_ref, revision_b_receipt_ref)
+
+            # No extra receipt index
+            with Session(self.engine) as session:
+                final_indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+            a_matches = [i for i in final_indexes if revision_b_receipt_ref in (i.path or "")]
+            self.assertEqual(len(a_matches), 1)
+
+    def test_scaffold_reconciliation_rejects_pending_foreign_claim(
+        self,
+    ) -> None:
+        """A pending foreign identity receipt is not a proven terminal effect."""
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "pending-foreign-revision-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Pending foreign test."},
+                "source_refs": ["test:pending-foreign-a"],
+            }
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Revision B — also with terminal loss, so foreign receipt stays pending
+            key_b = "pending-foreign-revision-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later."},
+                "source_refs": ["test:pending-foreign-b"],
+            }
+
+            _, _lose_ignored = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_b, body=body_b
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+            self.assertGreaterEqual(
+                len([i for i in indexes if mutation_ref_a in list(i.refs or [])]),
+                2,
+            )
+
+            # B's identity receipt is pending — reconciliation must fail
+            before = receipt_path_a.read_bytes()
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "not a proven terminal domain effect",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Pending foreign must fail.",
+                )
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            self.assertEqual(json.loads(after)["state"], "pending")
+
+    def test_scaffold_reconciliation_rejects_foreign_receipt_identity_mismatch(
+        self,
+    ) -> None:
+        """Receipt internal identity must match filename claim_id."""
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "identity-mismatch-revision-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Identity mismatch test."},
+                "source_refs": ["test:identity-mismatch-a"],
+            }
+            _, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Revision B — committed normally
+            key_b = "identity-mismatch-revision-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B",
+                "decision_scaffold": {"alternatives": "Later."},
+                "source_refs": ["test:identity-mismatch-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            receipt_id_b = rev_b.headers[IDENTITY_RECEIPT_HEADER]
+
+            # Tamper B's identity receipt: change internal receipt_id
+            identity_b_path = self.root / "receipts" / "identity" / f"{receipt_id_b}.json"
+            self.assertTrue(identity_b_path.is_file())
+            b_receipt = json.loads(identity_b_path.read_text(encoding="utf-8"))
+            b_receipt["receipt_id"] = "wrong_id_mismatch"
+            # Recompute content hash so integrity check passes
+
+            recompute = copy.deepcopy(b_receipt)
+            recompute.pop("content_sha256", None)
+            content = json.dumps(
+                recompute, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")
+            )
+            b_receipt["content_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+            identity_b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "foreign receipt internal identity",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Receipt identity mismatch must fail.",
+                )
+            self.assertEqual(receipt_path_a.read_bytes(), before)
 
 
 if __name__ == "__main__":

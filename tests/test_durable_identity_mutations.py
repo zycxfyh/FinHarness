@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import multiprocessing
+import shutil
 import tempfile
 import time
 import unittest
@@ -36,6 +37,7 @@ from finharness.identity import (
 )
 from finharness.project_paths import ROOT
 from finharness.statecore.models import Proposal
+from finharness.statecore.proposals import proposal_content_hash
 from finharness.statecore.receipt_io import (
     ReceiptIntegrityError,
     atomic_write_json,
@@ -133,6 +135,47 @@ class DurableIdentityMutationTest(unittest.TestCase):
         )
 
     @staticmethod
+    def _setup_domain_receipt_location(
+        scenario: str,
+        domain_receipt_path: Path,
+        root: Path,
+        proposal,
+        engine,
+    ) -> None:
+        """Set up a location-based domain receipt scenario."""
+        if scenario == "domain_receipt_wrong_typed_directory":
+            wrong_dir = root / "receipts" / "review-events"
+            wrong_dir.mkdir(parents=True, exist_ok=True)
+            wrong_path = wrong_dir / "proposal.json"
+            shutil.copy2(domain_receipt_path, wrong_path)
+            with Session(engine) as session:
+                row = session.get(Proposal, proposal.proposal_id)
+                if row is None:
+                    raise AssertionError("proposal disappeared before tamper")
+                row.receipt_ref = str(wrong_path)
+                session.add(row)
+                session.commit()
+        elif scenario == "domain_receipt_symlink":
+            symlink_path = Path(str(domain_receipt_path) + ".link")
+            if not symlink_path.exists():
+                symlink_path.symlink_to(domain_receipt_path)
+            with Session(engine) as session:
+                row = session.get(Proposal, proposal.proposal_id)
+                if row is None:
+                    raise AssertionError("proposal disappeared before tamper")
+                row.receipt_ref = str(symlink_path)
+                session.add(row)
+                session.commit()
+        elif scenario == "domain_receipt_not_regular_file":
+            with Session(engine) as session:
+                row = session.get(Proposal, proposal.proposal_id)
+                if row is None:
+                    raise AssertionError("proposal disappeared before tamper")
+                row.receipt_ref = str(root / "receipts" / "proposals")
+                session.add(row)
+                session.commit()
+
+    @staticmethod
     def _tamper_domain_receipt(
         domain_receipt_path: Path,
         scenario: str,
@@ -142,6 +185,8 @@ class DurableIdentityMutationTest(unittest.TestCase):
 
         if scenario == "proposal_payload_mismatch":
             domain_receipt["proposal"]["claim"] = "tampered proposal claim"
+            p = Proposal.model_validate(domain_receipt["proposal"])
+            domain_receipt["content_hash"] = proposal_content_hash(p)
         elif scenario == "proposal_content_hash_mismatch":
             domain_receipt["content_hash"] = "0" * 64
         elif scenario == "mutation_receipt_id_mismatch":
@@ -569,19 +614,19 @@ class DurableIdentityMutationTest(unittest.TestCase):
         scenarios = (
             (
                 "missing_domain_receipt",
-                "proposal domain receipt is unreadable",
+                "domain receipt is missing or unreadable",
             ),
             (
                 "malformed_domain_receipt",
-                "proposal domain receipt is unreadable",
+                "domain receipt is unreadable",
             ),
             (
                 "proposal_payload_mismatch",
-                "proposal row and domain receipt do not match",
+                "proposal row and domain receipt snapshot do not match",
             ),
             (
                 "proposal_content_hash_mismatch",
-                "proposal domain receipt content hash does not match",
+                "proposal receipt content hash does not match its snapshot",
             ),
             (
                 "mutation_receipt_id_mismatch",
@@ -621,7 +666,19 @@ class DurableIdentityMutationTest(unittest.TestCase):
             ),
             (
                 "domain_receipt_outside_root",
-                "proposal receipt is outside the configured receipt root",
+                "domain receipt is missing or unreadable",
+            ),
+            (
+                "domain_receipt_wrong_typed_directory",
+                "domain receipt is outside its typed receipt directory",
+            ),
+            (
+                "domain_receipt_symlink",
+                "domain receipt cannot be a symlink",
+            ),
+            (
+                "domain_receipt_not_regular_file",
+                "domain receipt is not a regular file",
             ),
         )
 
@@ -690,6 +747,19 @@ class DurableIdentityMutationTest(unittest.TestCase):
                         row.receipt_ref = str(self.root / "outside-receipts" / "proposal.json")
                         session.add(row)
                         session.commit()
+
+                elif scenario in {
+                    "domain_receipt_wrong_typed_directory",
+                    "domain_receipt_symlink",
+                    "domain_receipt_not_regular_file",
+                }:
+                    self._setup_domain_receipt_location(
+                        scenario,
+                        domain_receipt_path,
+                        self.root,
+                        proposal,
+                        self.engine,
+                    )
 
                 with self.assertRaisesRegex(
                     IdentityMutationError,

@@ -22,6 +22,7 @@ from finharness.identity import (
     IdentityMutationError,
     load_identity_mutation_receipt,
     record_verified_identity_mutation_reconciliation,
+    replay_identity_mutation,
 )
 from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import (
@@ -203,21 +204,6 @@ def proposal_create_response_payload(
     ).model_dump(mode="json")
 
 
-def _resolve_proposal_domain_receipt(
-    receipt_ref: str,
-    *,
-    receipt_root: Path,
-) -> Path:
-    candidate = Path(receipt_ref)
-    if not candidate.is_absolute():
-        candidate = ROOT / candidate
-    resolved = candidate.resolve()
-    allowed_root = receipt_root.resolve()
-    if not resolved.is_relative_to(allowed_root):
-        raise IdentityMutationError("proposal receipt is outside the configured receipt root")
-    return resolved
-
-
 def _require_proposal_create_mutation_binding(
     mutation: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
@@ -254,17 +240,13 @@ def _load_verified_proposal_effect(
     if not domain_receipt_ref:
         raise IdentityMutationError("proposal effect has no canonical domain receipt")
 
-    domain_receipt_path = _resolve_proposal_domain_receipt(
+    snapshot_proposal, domain_receipt = _verified_proposal_snapshot(
         domain_receipt_ref,
         receipt_root=receipt_root,
     )
-    try:
-        domain_receipt = json.loads(domain_receipt_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise IdentityMutationError("proposal domain receipt is unreadable") from exc
 
-    if not isinstance(domain_receipt, dict):
-        raise IdentityMutationError("proposal domain receipt is not an object")
+    if snapshot_proposal.model_dump(mode="json") != proposal.model_dump(mode="json"):
+        raise IdentityMutationError("proposal row and domain receipt snapshot do not match")
 
     return (
         proposal,
@@ -831,15 +813,31 @@ def _require_verifiable_foreign_mutation_claim(
     claim_id: object,
     context: dict[str, Any],
     candidate_proposal: Proposal,
+    candidate_ref: str,
     receipt_root: Path,
 ) -> None:
-    """Verify that a foreign mutation claim is a real, intact identity receipt.
+    """Verify that a foreign mutation claim is a proven, terminal domain effect.
 
     A scaffold candidate that claims a different identity_mutation_receipt_id
-    is only a legitimate inherited reference if the foreign identity receipt
-    actually exists, has valid integrity, and its request binding matches the
-    candidate's revision_context.
+    is only a legitimate inherited reference if **all** of the following hold:
+
+    1. The foreign identity receipt exists, has valid integrity, and its
+       internal ``receipt_id`` matches the filename.
+    2. The foreign receipt is in a terminal state (committed or
+       reconciled_applied).
+    3. The foreign request is a PATCH to the **same proposal's**
+       decision-scaffold route without query.
+    4. The foreign receipt's canonical terminal response can be decoded,
+       hash-validated, and parsed through the real scaffold revision
+       response model.
+    5. The terminal response points to **this** candidate receipt, its
+       proposal snapshot matches the candidate's proposal snapshot, and
+       the response fields match the candidate's revision_context.
+
+    If any step cannot be proven, the candidate is not a verified foreign
+    effect and reconciliation must fail closed.
     """
+    # ── 1.  Claim ID validity ──────────────────────────────────────
     if not isinstance(claim_id, str) or not claim_id:
         raise IdentityMutationError("scaffold candidate foreign claim id is not a valid receipt id")
 
@@ -850,6 +848,7 @@ def _require_verifiable_foreign_mutation_claim(
             "but snapshot does not contain its mutation ref"
         )
 
+    # ── 2.  Load foreign identity receipt ─────────────────────────
     foreign_path = receipt_root / "identity" / f"{claim_id}.json"
     try:
         foreign_receipt = load_identity_mutation_receipt(foreign_path)
@@ -859,19 +858,123 @@ def _require_verifiable_foreign_mutation_claim(
             "but the identity receipt is missing or invalid"
         ) from err
 
+    if foreign_receipt.get("receipt_id") != claim_id:
+        raise IdentityMutationError(
+            "scaffold candidate foreign receipt internal identity "
+            "does not match the filename-based claim id"
+        )
+
+    # ── 3.  Terminal state ────────────────────────────────────────
+    foreign_state = foreign_receipt.get("state")
+    if foreign_state not in ("committed", "reconciled_applied"):
+        raise IdentityMutationError(
+            f"scaffold candidate foreign receipt state is {foreign_state!r}, "
+            "not a proven terminal domain effect"
+        )
+
+    # ── 4.  Route ownership ───────────────────────────────────────
     foreign_request = foreign_receipt.get("request")
     if not isinstance(foreign_request, dict):
         raise IdentityMutationError(
-            "scaffold candidate claims foreign receipt_id "
-            "but the identity receipt has no request binding"
+            "scaffold candidate foreign identity receipt has no request binding"
         )
 
+    target_proposal_id = candidate_proposal.proposal_id
+    expected_path = f"/proposals/{target_proposal_id}/decision-scaffold"
+
+    if foreign_request.get("method") != "PATCH":
+        raise IdentityMutationError("scaffold candidate foreign request is not a PATCH")
+    if foreign_request.get("path") != expected_path:
+        raise IdentityMutationError(
+            "scaffold candidate foreign request is not for the same proposal's scaffold route"
+        )
+    if foreign_request.get("target") != expected_path:
+        raise IdentityMutationError(
+            "scaffold candidate foreign request target does not match the scaffold route"
+        )
+
+    # ── 5.  Exact binding between context and foreign request ─────
     _require_exact_domain_binding(
         context,
         receipt_id=claim_id,
         request_binding=foreign_request,
         effect_kind="api_proposal_decision_scaffold_revision",
     )
+
+    # ── 6.  Canonical terminal response → candidate ownership ─────
+    _require_foreign_response_ownership(
+        foreign_receipt,
+        candidate_proposal=candidate_proposal,
+        candidate_ref=candidate_ref,
+        context=context,
+    )
+
+
+def _require_foreign_response_ownership(
+    foreign_receipt: dict[str, Any],
+    *,
+    candidate_proposal: Proposal,
+    candidate_ref: str,
+    context: dict[str, Any],
+) -> None:
+    """Verify the foreign terminal response points to this candidate receipt."""
+    try:
+        status_code, body, content_type = replay_identity_mutation(foreign_receipt)
+    except IdentityMutationError as err:
+        raise IdentityMutationError(
+            "scaffold candidate foreign receipt has no valid terminal response"
+        ) from err
+
+    if status_code != 200:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response status is not 200"
+        )
+    if content_type != "application/json":
+        raise IdentityMutationError("scaffold candidate foreign terminal response is not JSON")
+
+    try:
+        foreign_response = ProposalScaffoldRevisionResponse.model_validate_json(body)
+    except Exception as err:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response is not a valid scaffold revision"
+        ) from err
+
+    if foreign_response.receipt_ref != candidate_ref:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response does not point to this candidate receipt"
+        )
+
+    if foreign_response.proposal.receipt_ref != candidate_ref:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response proposal receipt_ref does not match"
+        )
+
+    if foreign_response.proposal.model_dump(mode="json") != candidate_proposal.model_dump(
+        mode="json"
+    ):
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response proposal"
+            " does not match candidate snapshot"
+        )
+
+    if foreign_response.execution_allowed is not False:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response execution_allowed is not False"
+        )
+
+    ctx_previous = context.get("previous_receipt_ref")
+    if foreign_response.previous_receipt_ref != ctx_previous:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response"
+            " previous_receipt_ref does not match context"
+        )
+
+    ctx_changed = context.get("changed_scaffold_fields", [])
+    if tuple(ctx_changed) != foreign_response.changed_scaffold_fields:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response changed_scaffold_fields "
+            "does not match context"
+        )
 
 
 def _validate_scaffold_candidate_revision(
@@ -932,6 +1035,7 @@ def _validate_scaffold_candidate_revision(
             claim_id=claim_id,
             context=context,
             candidate_proposal=candidate_proposal,
+            candidate_ref=candidate_ref,
             receipt_root=receipt_root,
         )
         return None
