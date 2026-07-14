@@ -66,7 +66,23 @@ separately below so they are not mistaken for current authority.
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
 | Capital objective fit | direct JSON dictionary | `state_core_capital_objective_fit` | n/a | `CapitalObjectiveFit` | n/a |
 | Trade plan review gate | direct JSON dictionary | `state_core_trade_plan_review_gate` | n/a | `TradePlanReviewGate` | n/a |
-| API mutation identity | direct JSON dictionary | `finharness.api_mutation_identity_receipt.v1` schema | n/a | authenticated actor + request/response hash binding | `pending | committed | rejected | reconciled_applied` |
+| API mutation identity | direct JSON dictionary | `finharness.api_mutation_identity_receipt.v1` schema | n/a | actor + canonical target/query + semantic-header + body-hash binding; terminal response or typed reconciliation evidence | `pending | committed | rejected | reconciled_applied` |
+
+### API mutation identity state semantics
+
+- `pending`: the key is durably claimed, but a terminal outcome is not proven.
+  Identical retry is blocked with `mutation_outcome_ambiguous`.
+- `committed`: the successful canonical response is integrity-bound and
+  replayable without reinvoking the route.
+- `rejected`: the terminal rejected response is integrity-bound and replayable.
+- `reconciled_applied`: a supported route resolver verified the domain effect
+  and reconstructed the canonical response. Operator-supplied response bytes
+  are not accepted.
+
+Every terminal transition is serialized by the receipt-directory lock, checks
+the expected pending state and content hash, and records prior-hash lineage.
+Mutation identity receipts prove request ownership and retry semantics only;
+they grant no capital, decision, or execution authority.
 
 ## Historical / Archived Receipt Envelope By Surface
 
