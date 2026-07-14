@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -19,10 +21,17 @@ from finharness.identity import (
     OperatorContext,
     PrincipalIdentity,
     TestIdentityProvider,
+    begin_identity_mutation,
+    complete_identity_mutation,
     reconcile_identity_mutation_as_applied,
+    request_body_sha256,
 )
 from finharness.statecore.models import Proposal
-from finharness.statecore.receipt_io import atomic_write_json, durable_atomic_write_json
+from finharness.statecore.receipt_io import (
+    atomic_write_json,
+    durable_atomic_write_json,
+    durable_compare_and_swap_json,
+)
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 
@@ -61,6 +70,24 @@ class DurableIdentityMutationTest(unittest.TestCase):
     def _proposal_count(self) -> int:
         with Session(self.engine) as session:
             return len(session.exec(select(Proposal)).all())
+
+    def _pending_claim(self, idempotency_key: str):
+        body = json.dumps(
+            self.body,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return begin_identity_mutation(
+            self.root / "receipts" / "identity",
+            context=_context(),
+            method="POST",
+            path="/proposals",
+            request_target="/proposals",
+            semantic_headers={"content-type": "application/json"},
+            trace_id="trace:cas-test",
+            idempotency_key=idempotency_key,
+            body_sha256=request_body_sha256(body),
+        )
 
     def test_durable_write_fsyncs_file_and_directory_but_atomic_write_does_not(self) -> None:
         with patch("finharness.statecore.receipt_io.os.fsync") as fsync:
@@ -128,9 +155,7 @@ class DurableIdentityMutationTest(unittest.TestCase):
     def test_key_reuse_with_different_content_type_fails_before_route(self) -> None:
         body = json.dumps(self.body, separators=(",", ":")).encode()
         first_headers = self.headers | {"content-type": "application/json"}
-        changed_headers = self.headers | {
-            "content-type": "application/vnd.finharness+json"
-        }
+        changed_headers = self.headers | {"content-type": "application/vnd.finharness+json"}
 
         with TestClient(self.app) as client:
             first = client.post(
@@ -204,12 +229,7 @@ class DurableIdentityMutationTest(unittest.TestCase):
         self.assertEqual(self._proposal_count(), 1)
 
         receipt_id = response.headers[IDENTITY_RECEIPT_HEADER]
-        receipt_path = (
-            self.root
-            / "receipts"
-            / "identity"
-            / f"{receipt_id}.json"
-        )
+        receipt_path = self.root / "receipts" / "identity" / f"{receipt_id}.json"
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(receipt["state"], "pending")
 
@@ -223,6 +243,81 @@ class DurableIdentityMutationTest(unittest.TestCase):
             receipt_id,
         )
         self.assertEqual(self._proposal_count(), 1)
+
+    def test_compare_and_swap_allows_exactly_one_terminal_writer(self) -> None:
+        path = self.root / "receipt-cas.json"
+        pending = {
+            "state": "pending",
+            "content_sha256": "pending-version",
+        }
+        durable_atomic_write_json(path, pending)
+        barrier = Barrier(2)
+
+        def transition(state: str) -> bool:
+            barrier.wait()
+            return durable_compare_and_swap_json(
+                path,
+                expected_content_sha256="pending-version",
+                expected_state="pending",
+                payload={
+                    "state": state,
+                    "content_sha256": f"{state}-version",
+                },
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(
+                    transition,
+                    ["committed", "reconciled_applied"],
+                )
+            )
+
+        self.assertEqual(sorted(results), [False, True])
+        terminal = json.loads(path.read_text(encoding="utf-8"))
+        self.assertIn(
+            terminal["state"],
+            {"committed", "reconciled_applied"},
+        )
+
+    def test_stale_reconciliation_cannot_overwrite_committed_receipt(self) -> None:
+        claim = self._pending_claim("stale-reconcile-0001")
+        completed = complete_identity_mutation(
+            claim,
+            trace_id="trace:complete",
+            status_code=200,
+            response_body=b'{"ok":true}',
+            content_type="application/json",
+        )
+
+        with (
+            patch(
+                "finharness.identity._load_identity_mutation_receipt",
+                return_value=claim.payload,
+            ),
+            self.assertRaisesRegex(
+                IdentityMutationError,
+                "changed before terminal transition",
+            ),
+        ):
+            reconcile_identity_mutation_as_applied(
+                claim.receipt_path,
+                reconciled_by="operator:alice",
+                reason="Stale operator view must not replace committed truth.",
+                status_code=200,
+                response_body=b'{"incorrect":"replacement"}',
+            )
+
+        persisted = json.loads(claim.receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["state"], "committed")
+        self.assertEqual(
+            persisted["content_sha256"],
+            completed["content_sha256"],
+        )
+        self.assertEqual(
+            persisted["previous_content_sha256"],
+            claim.payload["content_sha256"],
+        )
 
     def test_tampered_completed_receipt_fails_closed_before_route(self) -> None:
         with TestClient(self.app) as client:

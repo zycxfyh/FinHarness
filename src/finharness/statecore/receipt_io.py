@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 from enum import StrEnum
@@ -161,6 +162,42 @@ def durable_atomic_write_json(path: str | Path, payload: dict[str, Any]) -> Path
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
     ).encode()
     return durable_atomic_write_bytes(path, content)
+
+
+def durable_compare_and_swap_json(
+    path: str | Path,
+    *,
+    expected_content_sha256: str,
+    expected_state: str,
+    payload: dict[str, Any],
+) -> bool:
+    """Durably replace JSON only when the locked current version still matches.
+
+    A single persistent lock file per receipt directory serializes terminal
+    transitions across threads and processes. The target is replaced only when
+    both its state and content hash equal the caller's expected pending version.
+    """
+
+    target = Path(path)
+    _ensure_directory_durable(target.parent)
+    lock_path = target.parent / ".receipt-transition.lock"
+    lock_flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_path, lock_flags, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        current = json.loads(target.read_text(encoding="utf-8"))
+        if (
+            current.get("content_sha256") != expected_content_sha256
+            or current.get("state") != expected_state
+        ):
+            return False
+        durable_atomic_write_json(target, payload)
+        return True
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 def durable_create_json_exclusive(path: str | Path, payload: dict[str, Any]) -> bool:

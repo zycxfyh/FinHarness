@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from finharness.statecore.receipt_io import (
     durable_atomic_write_json,
+    durable_compare_and_swap_json,
     durable_create_json_exclusive,
     resolve_under,
 )
@@ -210,6 +211,39 @@ def _require_valid_content_hash(payload: dict[str, Any]) -> None:
         raise IdentityMutationError("mutation identity receipt content hash mismatch")
 
 
+def _load_identity_mutation_receipt(path: Path) -> dict[str, Any]:
+    """Read and integrity-check one mutation receipt."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IdentityMutationError(f"existing mutation receipt is unreadable: {path}") from exc
+    _require_valid_content_hash(payload)
+    return payload
+
+
+def _transition_identity_mutation(
+    path: Path,
+    *,
+    expected_payload: dict[str, Any],
+    next_payload: dict[str, Any],
+) -> None:
+    """Apply exactly one terminal transition from the expected pending version."""
+
+    expected_hash = expected_payload.get("content_sha256")
+    if expected_payload.get("state") != "pending" or not isinstance(expected_hash, str):
+        raise IdentityMutationError(
+            "terminal transition requires an integrity-bound pending receipt"
+        )
+    if not durable_compare_and_swap_json(
+        path,
+        expected_content_sha256=expected_hash,
+        expected_state="pending",
+        payload=next_payload,
+    ):
+        raise IdentityMutationError("mutation receipt changed before terminal transition")
+
+
 def _mutation_receipt_id(
     *, context: OperatorContext, method: str, path: str, idempotency_key: str
 ) -> str:
@@ -277,11 +311,7 @@ def begin_identity_mutation(
     )
     if durable_create_json_exclusive(target, pending):
         return IdentityMutationClaim("execute", receipt_id, target, pending)
-    try:
-        existing = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise IdentityMutationError(f"existing mutation receipt is unreadable: {target}") from exc
-    _require_valid_content_hash(existing)
+    existing = _load_identity_mutation_receipt(target)
     existing_request = existing.get("request", {})
     same_request = all(existing_request.get(key) == value for key, value in request_binding.items())
     if not same_request:
@@ -316,6 +346,7 @@ def complete_identity_mutation(
             **{key: value for key, value in claim.payload.items() if key != "content_sha256"},
             "state": "committed" if status_code < 400 else "rejected",
             "completed_at_utc": datetime.now(UTC).isoformat(),
+            "previous_content_sha256": claim.payload["content_sha256"],
             "request": request_payload,
             "response": {
                 "status_code": status_code,
@@ -325,7 +356,11 @@ def complete_identity_mutation(
             },
         }
     )
-    durable_atomic_write_json(claim.receipt_path, completed)
+    _transition_identity_mutation(
+        claim.receipt_path,
+        expected_payload=claim.payload,
+        next_payload=completed,
+    )
     return completed
 
 
@@ -341,8 +376,7 @@ def reconcile_identity_mutation_as_applied(
     """Close a pending receipt after an operator proves its effect was applied."""
 
     path = Path(receipt_path)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    _require_valid_content_hash(payload)
+    payload = _load_identity_mutation_receipt(path)
     if payload.get("state") != "pending":
         raise IdentityMutationError("only a pending mutation can be reconciled")
     if not reconciled_by.strip() or not reason.strip():
@@ -352,6 +386,7 @@ def reconcile_identity_mutation_as_applied(
             **{key: value for key, value in payload.items() if key != "content_sha256"},
             "state": "reconciled_applied",
             "completed_at_utc": datetime.now(UTC).isoformat(),
+            "previous_content_sha256": payload["content_sha256"],
             "response": {
                 "status_code": status_code,
                 "content_type": content_type,
@@ -364,7 +399,11 @@ def reconcile_identity_mutation_as_applied(
             },
         }
     )
-    durable_atomic_write_json(path, reconciled)
+    _transition_identity_mutation(
+        path,
+        expected_payload=payload,
+        next_payload=reconciled,
+    )
     return reconciled
 
 
