@@ -1019,7 +1019,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
         self._assert_reconciliation_fails_closed(
             identity_path,
-            message_pattern=("verified scaffold revision receipt not found"),
+            message_pattern=("domain receipt is missing or unreadable"),
         )
 
         with Session(self.engine) as session:
@@ -1441,6 +1441,214 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Remove the duplicate receipt file.
             if duplicate_path.is_file():
                 duplicate_path.unlink()
+
+    def test_scaffold_reconciliation_rejects_unreadable_candidate_alongside_exact_match(
+        self,
+    ) -> None:
+        """Reconciliation must fail closed when one of several candidates is unreadable.
+
+        If Candidate A is the exact match and Candidate B is unreadable/corrupt,
+        the system cannot prove that B is merely an inherited reference — it could
+        be a second domain effect, a tampered receipt, or corrupted duplicate
+        evidence. The only safe disposition is to keep the mutation pending.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            # -- Base Proposal --
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # -- Keyed Revision A with terminal loss --
+            key_a = "corrupt-candidate-revision-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A: counter_evidence",
+                "decision_scaffold": {
+                    "counter_evidence": "Corrupt-candidate test counter-evidence."
+                },
+                "source_refs": ["test:corrupt-candidate-a"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            # -- Later unkeyed Revision B that inherits A's mutation_ref --
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision alternatives."},
+                "source_refs": ["test:corrupt-candidate-b"],
+            }
+
+            rev_b_response = client.patch(
+                endpoint,
+                headers={"Authorization": "Bearer alice"},
+                json=body_b,
+            )
+
+            self.assertEqual(rev_b_response.status_code, 200, rev_b_response.text)
+            rev_b_body = rev_b_response.json()
+            revision_b_receipt_ref = rev_b_body["receipt_ref"]
+
+            # -- Prove candidates >= 2 --
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            candidates = [index for index in indexes if mutation_ref_a in list(index.refs or [])]
+            self.assertGreaterEqual(
+                len(candidates),
+                2,
+                "Need at least 2 candidates to reproduce the defect.",
+            )
+
+            # -- Corrupt Revision B receipt (delete it) --
+            revision_b_path = self._resolve_receipt_path(revision_b_receipt_ref)
+            self.assertTrue(revision_b_path.is_file())
+            revision_b_path.unlink()
+            self.assertFalse(revision_b_path.exists())
+
+            # -- Reconciliation must fail closed, not silently skip B --
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "domain receipt is missing or unreadable",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Must fail because one candidate is unreadable.",
+                )
+
+            # Identity receipt bytes unchanged
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+
+            # State remains pending
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+            # Current Proposal remains Revision B
+            with Session(self.engine) as session:
+                final_proposal = session.get(Proposal, proposal_id)
+
+            self.assertIsNotNone(final_proposal)
+            assert final_proposal is not None
+            self.assertEqual(
+                final_proposal.receipt_ref,
+                revision_b_receipt_ref,
+            )
+
+    def test_scaffold_reconciliation_rejects_snapshot_without_mutation_ref(
+        self,
+    ) -> None:
+        """Reconciliation must fail closed when index claims a binding the snapshot denies.
+
+        ReceiptIndex.refs is a lookup surface; the immutable proposal snapshot is
+        the authoritative source of truth. If ReceiptIndex claims mutation_ref is
+        present but the proposal's source_refs do not contain it, the evidence
+        sources contradict and the system must refuse to reconcile.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "snapshot-without-mutation-ref-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision for snapshot binding test",
+                "decision_scaffold": {
+                    "counter_evidence": "Snapshot binding test counter-evidence."
+                },
+                "source_refs": ["test:snapshot-binding"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            bound = [index for index in indexes if mutation_ref_a in list(index.refs or [])]
+            self.assertEqual(len(bound), 1)
+            revision_a_ref = bound[0].path
+
+            # -- Corrupt the proposal snapshot: remove mutation_ref from source_refs,
+            #    but keep revision_context intact and recompute content_hash --
+            revision_a_path = self._resolve_receipt_path(revision_a_ref)
+            receipt = json.loads(revision_a_path.read_text(encoding="utf-8"))
+
+            snapshot = receipt["proposal"]
+            original_source_refs = list(snapshot.get("source_refs", []))
+            self.assertIn(mutation_ref_a, original_source_refs)
+
+            # Remove mutation_ref but keep other refs
+            snapshot["source_refs"] = [ref for ref in original_source_refs if ref != mutation_ref_a]
+
+            # Recompute content_hash so receipt is internally self-consistent
+            dup_proposal = Proposal.model_validate(snapshot)
+            receipt["content_hash"] = proposal_content_hash(dup_proposal)
+
+            revision_a_path.write_text(
+                json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            # -- Reconciliation must fail closed: index vs snapshot contradiction --
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "scaffold candidate index claims mutation ref",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Must fail because index and snapshot disagree.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
 
 
 if __name__ == "__main__":

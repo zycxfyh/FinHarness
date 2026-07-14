@@ -793,6 +793,34 @@ def _reconcile_attestation_identity_mutation(
     )
 
 
+_MUTATION_BINDING_FIELDS = frozenset(
+    {
+        "identity_mutation_receipt_id",
+        "identity_mutation_request_body_sha256",
+        "identity_mutation_request_target",
+        "identity_mutation_method",
+        "identity_mutation_path",
+    }
+)
+
+
+def _require_no_partial_mutation_binding(
+    context: dict[str, Any],
+) -> None:
+    """Reject a scaffold revision_context that carries mutation-binding
+    fields without an identity_mutation_receipt_id.
+
+    A legitimate unkeyed revision has none of these fields.  Partial
+    bindings are corrupt evidence and must fail closed.
+    """
+    partial = sorted(_MUTATION_BINDING_FIELDS & set(context))
+    if partial:
+        raise IdentityMutationError(
+            "scaffold revision context has partial mutation-binding "
+            "fields without identity_mutation_receipt_id: " + ", ".join(partial)
+        )
+
+
 def _validate_scaffold_candidate_revision(
     candidate_ref: str,
     *,
@@ -800,33 +828,56 @@ def _validate_scaffold_candidate_revision(
     request_binding: dict[str, Any],
     proposal_id: str,
     receipt_root: Path,
+    mutation_ref: str,
 ) -> tuple[str, Proposal, dict[str, Any]] | None:
     """Validate one candidate scaffold revision receipt against an exact identity mutation.
 
-    Returns (receipt_ref, proposal, receipt) when validation passes.
-    Returns None when the candidate is a non-target (inherited refs only,
-    no revision_context, or unreadable receipt).
-    Raises IdentityMutationError when the candidate claims the target
-    receipt_id but its binding evidence is invalid.
+    Returns (receipt_ref, proposal, receipt) when the candidate is an exact match.
+    Returns None when the candidate is a verified inherited candidate
+    (belongs to a different revision and is fully readable).
+    Raises IdentityMutationError on any unverifiable, corrupt, or
+    inconsistent evidence — a candidate that cannot be fully validated
+    must block reconciliation, not be silently skipped.
     """
-    try:
-        candidate_proposal, candidate_receipt = _verified_proposal_snapshot(
-            candidate_ref,
-            receipt_root=receipt_root,
-        )
-    except IdentityMutationError:
-        return None
+    # 1. Load typed proposal receipt.  Any failure here is a corrupt
+    #    candidate and must fail closed — the system cannot distinguish
+    #    "inherited ref on a broken receipt" from "second domain effect
+    #    whose evidence was damaged".
+    candidate_proposal, candidate_receipt = _verified_proposal_snapshot(
+        candidate_ref,
+        receipt_root=receipt_root,
+    )
 
+    # 2. Index must agree with the immutable domain snapshot.
+    if mutation_ref not in candidate_proposal.source_refs:
+        raise IdentityMutationError(
+            "scaffold candidate index claims mutation ref but proposal snapshot does not contain it"
+        )
+
+    # 3. Must have a revision_context of the correct kind.
     context = candidate_receipt.get("revision_context")
     if not isinstance(context, dict):
+        raise IdentityMutationError("scaffold candidate receipt has no revision context")
+
+    if context.get("kind") != "decision_scaffold_revision":
+        raise IdentityMutationError("scaffold candidate is not a decision scaffold revision")
+
+    # 4. Determine claim disposition.
+    claim_id = context.get("identity_mutation_receipt_id")
+
+    if not claim_id:
+        # Unkeyed later revision — must carry zero mutation-binding
+        # fields; partial bindings are corrupt evidence.
+        _require_no_partial_mutation_binding(context)
         return None
 
-    if context.get("identity_mutation_receipt_id") != receipt_id:
+    if claim_id != receipt_id:
+        # Verified candidate belonging to a different mutation.
         return None
 
-    # The candidate **claims** this exact receipt_id.
-    # Full binding validation is mandatory; any mismatch
-    # is evidence of a tampered or inconsistent receipt.
+    # 5. Candidate **claims** this exact receipt_id.
+    #    Full binding validation is mandatory; any mismatch
+    #    is evidence of a tampered or inconsistent receipt.
     try:
         _require_exact_domain_binding(
             context,
@@ -839,11 +890,6 @@ def _validate_scaffold_candidate_revision(
             "scaffold revision receipt claims target receipt_id "
             "but its exact mutation binding is invalid"
         ) from err
-
-    if context.get("kind") != "decision_scaffold_revision":
-        raise IdentityMutationError(
-            "scaffold revision receipt claims target receipt_id but is not a scaffold revision"
-        )
 
     previous_receipt_ref = context.get("previous_receipt_ref")
     if previous_receipt_ref is not None and not isinstance(previous_receipt_ref, str):
@@ -916,6 +962,7 @@ def _reconcile_scaffold_revision_identity_mutation(
             request_binding=request_binding,
             proposal_id=proposal_id,
             receipt_root=receipt_root,
+            mutation_ref=mutation_ref,
         )
         if result is not None:
             exact_matches.append(result)
