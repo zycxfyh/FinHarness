@@ -351,6 +351,11 @@ tasks:
     cmds:
       - uv run python scripts/prune_backups.py {{.CLI_ARGS}}
 
+  identity:reconcile:
+    desc: Inspect a pending mutation identity receipt; reconciliation requires --apply
+    cmds:
+      - uv run python scripts/reconcile_identity_mutation.py {{.CLI_ARGS}}
+
   cockpit:daily:
     desc: Build a governed deterministic daily portfolio-change brief
     cmds:

@@ -66,6 +66,7 @@ separately below so they are not mistaken for current authority.
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
 | Capital objective fit | direct JSON dictionary | `state_core_capital_objective_fit` | n/a | `CapitalObjectiveFit` | n/a |
 | Trade plan review gate | direct JSON dictionary | `state_core_trade_plan_review_gate` | n/a | `TradePlanReviewGate` | n/a |
+| API mutation identity | direct JSON dictionary | `finharness.api_mutation_identity_receipt.v1` schema | n/a | authenticated actor + request/response hash binding | `pending | committed | rejected | reconciled_applied` |
 
 ## Historical / Archived Receipt Envelope By Surface
 
