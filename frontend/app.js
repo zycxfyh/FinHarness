@@ -553,6 +553,56 @@ function renderAttestations(parent, attestations) {
   }
 }
 
+async function submitGovernedFormWrite({
+  form,
+  write,
+}) {
+  const submitButton = form.querySelector(
+    'button[type="submit"]',
+  );
+
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+
+  try {
+    await write();
+  } catch (error) {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+
+    setStatus("Write failed", "error");
+    selectors.proposalDetail.prepend(
+      textElement(
+        "p",
+        "error-text",
+        `Write failed: ${error.message}`,
+      ),
+    );
+    return false;
+  }
+
+  form.reset();
+  setStatus("Saved", "ok");
+
+  try {
+    await renderProposals();
+  } catch (error) {
+    setStatus("Saved; refresh failed", "error");
+    selectors.proposalDetail.prepend(
+      textElement(
+        "p",
+        "error-text",
+        `Saved, but refresh failed: ${error.message}`,
+      ),
+    );
+  }
+
+  return true;
+}
+
+
 function renderAttestationForm(parent, proposalId, proposalVersion) {
   const form = document.createElement("form");
   form.className = "attestation-form";
@@ -578,20 +628,22 @@ function renderAttestationForm(parent, proposalId, proposalVersion) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(form);
-    try {
-      await ReviewActionShell.post(`/proposals/${proposalId}/attest`, {
-        decision: data.get("decision"),
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        expected_proposal_version_id: proposalVersion.proposal_version_id,
-        expected_proposal_receipt_ref: proposalVersion.receipt_ref,
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.post(
+          `/proposals/${proposalId}/attest`,
+          {
+            decision: data.get("decision"),
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            expected_proposal_version_id:
+              proposalVersion.proposal_version_id,
+            expected_proposal_receipt_ref:
+              proposalVersion.receipt_ref,
+          },
+        ),
+    });
   });
   parent.append(form);
 }
@@ -648,20 +700,21 @@ function renderScaffoldRevisionForm(parent, proposalId) {
       return;
     }
     const data = new FormData(form);
-    try {
-      await ReviewActionShell.patch(`/proposals/${proposalId}/decision-scaffold`, {
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        decision_scaffold: {
-          counter_evidence: data.get("counter_evidence"),
-        },
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.patch(
+          `/proposals/${proposalId}/decision-scaffold`,
+          {
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            decision_scaffold: {
+              counter_evidence:
+                data.get("counter_evidence"),
+            },
+          },
+        ),
+    });
   });
   parent.append(form);
 }
@@ -878,19 +931,19 @@ function renderReviewEventForm(parent, proposalId) {
     if (!window.confirm(`Record review action "${kind}"? It is logged with your name and reason.`)) {
       return; // explicit confirm required; no write on cancel
     }
-    try {
-      await ReviewActionShell.post(`/proposals/${proposalId}/review-events`, {
-        kind,
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        text: data.get("text") || null,
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.post(
+          `/proposals/${proposalId}/review-events`,
+          {
+            kind,
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            text: data.get("text") || null,
+          },
+        ),
+    });
   });
   parent.append(form);
 }
