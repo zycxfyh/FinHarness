@@ -191,8 +191,8 @@
       "consumer_id": "ATT-CONS-006",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "create_governed_attestation",
-      "line_start": 431,
-      "line_end": 498,
+      "line_start": 438,
+      "line_end": 507,
       "match_terms": [
         "Attestation",
         "attestation_id",
@@ -220,8 +220,8 @@
       "consumer_id": "ATT-CONS-007",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "GovernedAttestationWrite",
-      "line_start": 478,
-      "line_end": 508,
+      "line_start": 487,
+      "line_end": 517,
       "match_terms": [
         "Attestation"
       ],
@@ -244,8 +244,8 @@
       "consumer_id": "ATT-CONS-008",
       "path": "src/finharness/statecore/proposals.py",
       "symbol": "create_governed_review_event / ReviewEvent.attestation_ref",
-      "line_start": 562,
-      "line_end": 654,
+      "line_start": 581,
+      "line_end": 681,
       "match_terms": [
         "attestation_ref"
       ],
@@ -268,8 +268,8 @@
       "consumer_id": "ATT-CONS-009",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "attest_proposal",
-      "line_start": 1317,
-      "line_end": 1369,
+      "line_start": 1412,
+      "line_end": 1478,
       "match_terms": [
         "Attestation",
         "attest_proposal",
@@ -296,8 +296,8 @@
       "consumer_id": "ATT-CONS-010",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "_proposal_review_response",
-      "line_start": 736,
-      "line_end": 767,
+      "line_start": 817,
+      "line_end": 848,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -323,8 +323,8 @@
       "consumer_id": "ATT-CONS-011",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "ProposalReviewResponse.open_for_review",
-      "line_start": 358,
-      "line_end": 369,
+      "line_start": 439,
+      "line_end": 450,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -350,8 +350,8 @@
       "consumer_id": "ATT-CONS-012",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "ReviewTaskLifecycle",
-      "line_start": 394,
-      "line_end": 405,
+      "line_start": 475,
+      "line_end": 486,
       "match_terms": [
         "Attestation",
         "attestation_id",
@@ -385,8 +385,8 @@
       "consumer_id": "ATT-CONS-013",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "status filter",
-      "line_start": 899,
-      "line_end": 930,
+      "line_start": 980,
+      "line_end": 1011,
       "match_terms": [
         "attestations"
       ],
@@ -411,8 +411,8 @@
       "consumer_id": "ATT-CONS-014",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "_agent_review_surface",
-      "line_start": 704,
-      "line_end": 733,
+      "line_start": 785,
+      "line_end": 814,
       "match_terms": [
         "human_attestation_recorded"
       ],
@@ -630,8 +630,8 @@
       "consumer_id": "ATT-CONS-022",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "AgentReviewSurface non_claims",
-      "line_start": 351,
-      "line_end": 355,
+      "line_start": 432,
+      "line_end": 436,
       "match_terms": [
         "decision of record"
       ],
@@ -654,8 +654,8 @@
       "consumer_id": "ATT-CONS-023",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "get_proposal_timeline docstring",
-      "line_start": 1420,
-      "line_end": 1427,
+      "line_start": 1529,
+      "line_end": 1536,
       "match_terms": [
         "Attestation",
         "attestations",
@@ -1117,8 +1117,8 @@
       "consumer_id": "ATT-CONS-041",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "AttestationReviewView",
-      "line_start": 316,
-      "line_end": 330,
+      "line_start": 397,
+      "line_end": 411,
       "match_terms": [
         "Attestation",
         "attestation_id"
@@ -1146,8 +1146,8 @@
       "consumer_id": "ATT-CONS-042",
       "path": "src/finharness/api/routes_proposals.py",
       "symbol": "_attestation_review_views",
-      "line_start": 796,
-      "line_end": 822,
+      "line_start": 877,
+      "line_end": 903,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -1276,31 +1276,31 @@
     },
     {
       "path": "src/finharness/statecore/proposals.py",
-      "match_line": 525,
+      "match_line": 534,
       "term": "attestation_ref",
       "reason": "ReviewEvent attestation_ref in create_governed_review_event. Covered by ATT-CONS-008."
     },
     {
       "path": "src/finharness/statecore/proposals.py",
-      "match_line": 536,
+      "match_line": 545,
       "term": "attestation_ref",
       "reason": "ReviewEvent attestation_ref receipt payload. Covered by ATT-CONS-008."
     },
     {
       "path": "src/finharness/statecore/proposals.py",
-      "match_line": 458,
+      "match_line": 466,
       "term": "attestation_id",
       "reason": "Internal attestation_id generation. Covered by ATT-CONS-006."
     },
     {
       "path": "src/finharness/statecore/proposals.py",
-      "match_line": 459,
+      "match_line": 467,
       "term": "attestation_id",
       "reason": "Internal attestation_id usage. Covered by ATT-CONS-006."
     },
     {
       "path": "src/finharness/statecore/proposals.py",
-      "match_line": 463,
+      "match_line": 471,
       "term": "attestation_id",
       "reason": "Internal attestation_id assignment. Covered by ATT-CONS-006."
     },
@@ -1696,121 +1696,121 @@
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 286,
+      "match_line": 367,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 76."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 309,
+      "match_line": 390,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 92."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 310,
+      "match_line": 391,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 93."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 338,
+      "match_line": 419,
       "term": "human_attestation_recorded",
       "reason": "Hit outside consumer range in file with existing consumers. human_attestation_recorded at line 107."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 560,
+      "match_line": 641,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 329."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 564,
+      "match_line": 645,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 333."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 567,
+      "match_line": 648,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 336."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 568,
+      "match_line": 649,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 337."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 569,
+      "match_line": 650,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 338."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 569,
+      "match_line": 650,
       "term": "attestation_id",
       "reason": "Hit outside consumer range in file with existing consumers. attestation_id at line 338."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 951,
+      "match_line": 1032,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 666."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 954,
+      "match_line": 1035,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 669."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 976,
+      "match_line": 1057,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 691."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 979,
+      "match_line": 1060,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 694."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1001,
+      "match_line": 1082,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 716."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1007,
+      "match_line": 1088,
       "term": "attestations",
       "reason": "Hit outside consumer range in file with existing consumers. attestations at line 722."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1316,
+      "match_line": 1411,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Hit outside consumer range in file with existing consumers. /proposals/{proposal_id}/attest at line 988."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1316,
+      "match_line": 1411,
       "term": "Attestation",
       "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 988."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1402,
+      "match_line": 1511,
       "term": "attestation_ref",
       "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 1053."
     },
     {
       "path": "src/finharness/api/routes_proposals.py",
-      "match_line": 1465,
+      "match_line": 1587,
       "term": "attestation_ref",
       "reason": "Hit outside consumer range in file with existing consumers. attestation_ref at line 1118."
     },
