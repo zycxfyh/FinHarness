@@ -421,6 +421,7 @@
         "tests/test_execution_lifecycle_hardening.py",
         "tests/test_execution_schema.py",
         "tests/test_execution_services.py",
+        "tests/test_identity_mutation_domain_binding.py",
         "tests/test_proposal_version.py",
         "tests/test_review_read.py",
         "tests/test_scaffold_candidate_apply.py",
