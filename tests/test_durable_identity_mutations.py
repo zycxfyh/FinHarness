@@ -15,6 +15,7 @@ from finharness.identity import (
     IDEMPOTENCY_HEADER,
     IDEMPOTENT_REPLAY_HEADER,
     IDENTITY_RECEIPT_HEADER,
+    IdentityMutationError,
     OperatorContext,
     PrincipalIdentity,
     TestIdentityProvider,
@@ -119,6 +120,43 @@ class DurableIdentityMutationTest(unittest.TestCase):
         self.assertEqual(retry.status_code, 409, retry.text)
         self.assertEqual(retry.json()["detail"]["code"], "invalid_idempotency_contract")
         self.assertEqual(self._proposal_count(), 1)
+
+    def test_invalid_identity_contract_hides_internal_details(self) -> None:
+        secret_path = "/root/private/identity/secret-receipt.json"
+        internal_error = f"existing mutation receipt is unreadable: {secret_path}"
+        with (
+            patch(
+                "finharness.api.app.begin_identity_mutation",
+                side_effect=IdentityMutationError(internal_error),
+            ),
+            patch("finharness.api.app.logger.warning") as warning,
+            TestClient(self.app) as client,
+        ):
+            response = client.post(
+                "/proposals",
+                headers=self.headers,
+                json=self.body,
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["code"], "invalid_idempotency_contract")
+        self.assertEqual(
+            detail["message"],
+            "The mutation identity receipt could not be validated.",
+        )
+        self.assertEqual(
+            detail["trace_id"],
+            response.headers["x-finharness-trace-id"],
+        )
+        self.assertNotIn(secret_path, response.text)
+        self.assertNotIn(internal_error, response.text)
+
+        warning.assert_called_once()
+        log_fields = warning.call_args.kwargs
+        self.assertEqual(log_fields["trace_id"], detail["trace_id"])
+        self.assertEqual(log_fields["error_type"], "IdentityMutationError")
+        self.assertEqual(log_fields["error_message"], internal_error)
 
     def test_failure_before_domain_call_has_no_effect(self) -> None:
         with (

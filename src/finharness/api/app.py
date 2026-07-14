@@ -159,13 +159,23 @@ async def _call_with_identity_protocol(
             body_sha256=request_body_sha256(await request.body()),
         )
     except IdentityMutationError as exc:
+        logger.warning(
+            "invalid_idempotency_contract",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            execution_allowed=False,
+        )
         return (
             JSONResponse(
                 status_code=409,
                 content={
                     "detail": {
                         "code": "invalid_idempotency_contract",
-                        "message": str(exc),
+                        "message": ("The mutation identity receipt could not be validated."),
+                        "trace_id": trace_id,
                         "execution_allowed": False,
                     }
                 },
