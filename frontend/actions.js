@@ -37,7 +37,7 @@ const ReviewActionShell = Object.freeze({
         );
       }
 
-      response.acknowledge();
+      await response.acknowledge();
 
       console.debug(
         "ReviewActionShell: write completed",

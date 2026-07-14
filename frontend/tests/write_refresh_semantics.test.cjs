@@ -4,6 +4,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { JSDOM } = require("jsdom");
+const {
+  installWebLocks,
+} = require("./_web_locks.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
@@ -34,6 +37,7 @@ function loadCockpitWindow() {
     url: "https://cockpit.finharness.test/",
   });
 
+  installWebLocks(dom.window);
   dom.window.console.debug = () => {};
   dom.window.console.error = () => {};
 

@@ -4,6 +4,9 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { JSDOM } = require("jsdom");
+const {
+  installWebLocks,
+} = require("./_web_locks.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(frontendDir, "index.html"), "utf-8");
@@ -15,6 +18,7 @@ const dom = new JSDOM(html, {
   runScripts: "outside-only",
   url: "https://cockpit.finharness.test/",
 });
+installWebLocks(dom.window);
 
 dom.window.eval(apiSource);
 dom.window.eval(stateSource);
@@ -36,6 +40,7 @@ const browserLikeDom = new JSDOM(html, {
   runScripts: "outside-only",
   url: "https://cockpit.finharness.test/",
 });
+installWebLocks(browserLikeDom.window);
 browserLikeDom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
 assert.doesNotThrow(
   () => browserLikeDom.window.eval([apiSource, stateSource, actionsSource, appSource].join("\n")),

@@ -7,6 +7,8 @@ const MUTATION_ATTEMPTS_STORAGE_KEY =
   "finharness.cockpit.mutation-attempts.v1";
 const MUTATION_ATTEMPTS_SCHEMA =
   "finharness.cockpit_mutation_attempts.v1";
+const MUTATION_ATTEMPTS_LOCK_NAME =
+  "finharness.cockpit.mutation-attempts.lock.v1";
 const MAX_PENDING_MUTATION_ATTEMPTS = 128;
 
 const RETAINED_MUTATION_CODES = new Set([
@@ -48,6 +50,28 @@ class MutationAttemptStorageError extends Error {
     super(message);
     this.name = "MutationAttemptStorageError";
     this.cause = cause;
+    this.executionAllowed = false;
+  }
+}
+
+class MutationAcknowledgementError extends Error {
+  constructor({
+    cause,
+    body,
+    idempotencyKey,
+    identityReceiptId,
+  }) {
+    super(
+      "The governed write was saved, but its local retry " +
+        "state could not be cleared.",
+    );
+    this.name = "MutationAcknowledgementError";
+    this.cause = cause;
+    this.body = body;
+    this.idempotencyKey = idempotencyKey;
+    this.identityReceiptId = identityReceiptId;
+    this.mutationCommitted = true;
+    this.attemptRetained = true;
     this.executionAllowed = false;
   }
 }
@@ -127,6 +151,40 @@ function mutationStorage() {
   } catch (error) {
     throw new MutationAttemptStorageError(
       "Governed writes require persistent local mutation storage.",
+      error,
+    );
+  }
+}
+
+async function withMutationRegistryLock(operation) {
+  const lockManager =
+    window.navigator &&
+    window.navigator.locks;
+
+  if (
+    !lockManager ||
+    typeof lockManager.request !== "function"
+  ) {
+    throw new MutationAttemptStorageError(
+      "Governed writes require Web Locks support " +
+        "for cross-context mutation serialization.",
+    );
+  }
+
+  try {
+    return await lockManager.request(
+      MUTATION_ATTEMPTS_LOCK_NAME,
+      { mode: "exclusive" },
+      async () => operation(),
+    );
+  } catch (error) {
+    if (error instanceof MutationAttemptStorageError) {
+      throw error;
+    }
+
+    throw new MutationAttemptStorageError(
+      "Could not serialize the persistent " +
+        "mutation-attempt lifecycle.",
       error,
     );
   }
@@ -244,55 +302,69 @@ function newIdempotencyKey() {
   return `cockpit:${time}:${random}`;
 }
 
-function beginMutationAttempt(
+async function beginMutationAttempt(
   method,
   endpoint,
   body,
 ) {
-  const registry = readMutationRegistry();
-  const existing = registry.attempts.find(
-    (attempt) =>
-      attempt.method === method &&
-      attempt.endpoint === endpoint &&
-      attempt.body === body,
-  );
+  return withMutationRegistryLock(() => {
+    // Re-read inside the cross-context lock. A registry
+    // snapshot obtained before the lock is never trusted.
+    const registry = readMutationRegistry();
 
-  if (existing) {
-    return existing;
-  }
-
-  if (
-    registry.attempts.length >=
-    MAX_PENDING_MUTATION_ATTEMPTS
-  ) {
-    throw new MutationAttemptStorageError(
-      "Too many unresolved governed mutation attempts; " +
-        "operator reconciliation is required.",
+    const existing = registry.attempts.find(
+      (attempt) =>
+        attempt.method === method &&
+        attempt.endpoint === endpoint &&
+        attempt.body === body,
     );
-  }
 
-  const attempt = {
-    method,
-    endpoint,
-    body,
-    idempotency_key: newIdempotencyKey(),
-    created_at_utc: new Date().toISOString(),
-  };
-  registry.attempts.push(attempt);
+    if (existing) {
+      return existing;
+    }
 
-  // The attempt is durable before fetch is invoked.
-  writeMutationRegistry(registry);
-  return attempt;
+    if (
+      registry.attempts.length >=
+      MAX_PENDING_MUTATION_ATTEMPTS
+    ) {
+      throw new MutationAttemptStorageError(
+        "Too many unresolved governed mutation attempts; " +
+          "operator reconciliation is required.",
+      );
+    }
+
+    const attempt = {
+      method,
+      endpoint,
+      body,
+      idempotency_key: newIdempotencyKey(),
+      created_at_utc: new Date().toISOString(),
+    };
+
+    registry.attempts.push(attempt);
+
+    // The attempt is durable before fetch is invoked,
+    // while the same-origin cross-context lock is held.
+    writeMutationRegistry(registry);
+    return attempt;
+  });
 }
 
-function clearMutationAttempt(attempt) {
-  const registry = readMutationRegistry();
-  registry.attempts = registry.attempts.filter(
-    (candidate) =>
-      candidate.idempotency_key !==
-      attempt.idempotency_key,
-  );
-  writeMutationRegistry(registry);
+async function clearMutationAttempt(attempt) {
+  return withMutationRegistryLock(() => {
+    // Re-read inside the lock so clearing one operation
+    // cannot overwrite another context's newly persisted
+    // operation.
+    const registry = readMutationRegistry();
+
+    registry.attempts = registry.attempts.filter(
+      (candidate) =>
+        candidate.idempotency_key !==
+        attempt.idempotency_key,
+    );
+
+    writeMutationRegistry(registry);
+  });
 }
 
 function shouldRetainMutationAttempt(
@@ -349,7 +421,7 @@ async function apiMutation(
   }
 
   const bodyText = mutationRequestBody(payload);
-  const attempt = beginMutationAttempt(
+  const attempt = await beginMutationAttempt(
     normalizedMethod,
     path,
     bodyText,
@@ -378,19 +450,35 @@ async function apiMutation(
   const body = await responseBody(response);
 
   if (!response.ok) {
-    const attemptRetained =
-      shouldRetainMutationAttempt(
+    const terminalResponse =
+      !shouldRetainMutationAttempt(
         response,
         body,
       );
-    if (!attemptRetained) {
-      clearMutationAttempt(attempt);
+
+    let attemptRetained = !terminalResponse;
+    let cleanupError = null;
+
+    if (terminalResponse) {
+      try {
+        await clearMutationAttempt(attempt);
+      } catch (error) {
+        // The server result remains terminal. Retaining the
+        // attempt is safe because a later retry replays the
+        // same terminal response under the same key.
+        attemptRetained = true;
+        cleanupError = error;
+      }
     }
-    throw apiError(response, body, {
+
+    const error = apiError(response, body, {
       idempotencyKey:
         attempt.idempotency_key,
       attemptRetained,
     });
+    error.mutationTerminal = terminalResponse;
+    error.cleanupError = cleanupError;
+    throw error;
   }
 
   let acknowledged = false;
@@ -410,11 +498,26 @@ async function apiMutation(
 
     // The action shell calls this only after validating
     // the governed response contract.
-    acknowledge() {
+    async acknowledge() {
       if (acknowledged) {
         return;
       }
-      clearMutationAttempt(attempt);
+
+      try {
+        await clearMutationAttempt(attempt);
+      } catch (error) {
+        throw new MutationAcknowledgementError({
+          cause: error,
+          body,
+          idempotencyKey:
+            attempt.idempotency_key,
+          identityReceiptId: responseHeader(
+            response,
+            "x-finharness-identity-receipt",
+          ),
+        });
+      }
+
       acknowledged = true;
     },
   });
@@ -433,8 +536,10 @@ window.FinHarness =
 window.FinHarness.api = Object.freeze({
   ApiError,
   MutationAttemptStorageError,
+  MutationAcknowledgementError,
   MutationTransportError,
   MUTATION_ATTEMPTS_STORAGE_KEY,
+  MUTATION_ATTEMPTS_LOCK_NAME,
   apiGet,
   apiMutation,
   apiPost,

@@ -7,6 +7,9 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const path = require("node:path");
 const { JSDOM } = require("jsdom");
+const {
+  installWebLocks,
+} = require("./_web_locks.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
@@ -16,6 +19,7 @@ function loadCockpitWindow() {
   runScripts: "outside-only",
   url: "https://cockpit.finharness.test/",
 });
+  installWebLocks(dom.window);
   dom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "state.js"), "utf-8"));

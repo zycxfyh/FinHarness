@@ -553,6 +553,28 @@ function renderAttestations(parent, attestations) {
   }
 }
 
+async function refreshAfterCommittedWrite({
+  retainedAttempt = false,
+} = {}) {
+  try {
+    await renderProposals();
+  } catch (error) {
+    setStatus(
+      retainedAttempt
+        ? "Saved; retry retained; refresh failed"
+        : "Saved; refresh failed",
+      "error",
+    );
+    selectors.proposalDetail.prepend(
+      textElement(
+        "p",
+        "error-text",
+        `Saved, but refresh failed: ${error.message}`,
+      ),
+    );
+  }
+}
+
 async function submitGovernedFormWrite({
   form,
   write,
@@ -568,6 +590,30 @@ async function submitGovernedFormWrite({
   try {
     await write();
   } catch (error) {
+    if (error.mutationCommitted === true) {
+      // The server mutation is terminal. The form remains
+      // disabled so local cleanup failure cannot induce a
+      // second logical operation with a new key.
+      form.reset();
+      setStatus(
+        "Saved; retry state retained",
+        "error",
+      );
+      selectors.proposalDetail.prepend(
+        textElement(
+          "p",
+          "error-text",
+          "Saved, but local retry state could not " +
+            `be cleared: ${error.message}`,
+        ),
+      );
+
+      await refreshAfterCommittedWrite({
+        retainedAttempt: true,
+      });
+      return true;
+    }
+
     if (submitButton) {
       submitButton.disabled = false;
     }
@@ -586,19 +632,7 @@ async function submitGovernedFormWrite({
   form.reset();
   setStatus("Saved", "ok");
 
-  try {
-    await renderProposals();
-  } catch (error) {
-    setStatus("Saved; refresh failed", "error");
-    selectors.proposalDetail.prepend(
-      textElement(
-        "p",
-        "error-text",
-        `Saved, but refresh failed: ${error.message}`,
-      ),
-    );
-  }
-
+  await refreshAfterCommittedWrite();
   return true;
 }
 
