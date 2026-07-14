@@ -179,6 +179,7 @@ tasks:
       - node frontend/tests/review_retrospective.test.cjs
       - node frontend/tests/review_compare.test.cjs
       - node frontend/tests/api_error.test.cjs
+      - node frontend/tests/idempotent_mutations.test.cjs
       - node frontend/tests/cockpit_execution.test.cjs
 
   test:browser:

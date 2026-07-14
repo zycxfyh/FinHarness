@@ -12,7 +12,10 @@ const frontendDir = path.resolve(__dirname, "..");
 
 function loadCockpitWindow() {
   const html = fs.readFileSync(path.join(frontendDir, "index.html"), "utf-8");
-  const dom = new JSDOM(html, { runScripts: "outside-only" });
+  const dom = new JSDOM(html, {
+  runScripts: "outside-only",
+  url: "https://cockpit.finharness.test/",
+});
   dom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8"));
   dom.window.eval(fs.readFileSync(path.join(frontendDir, "state.js"), "utf-8"));

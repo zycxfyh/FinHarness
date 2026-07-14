@@ -11,7 +11,10 @@ const apiSource = fs.readFileSync(path.join(frontendDir, "api.js"), "utf-8");
 const appSource = fs.readFileSync(path.join(frontendDir, "app.js"), "utf-8");
 const stateSource = fs.readFileSync(path.join(frontendDir, "state.js"), "utf-8");
 const actionsSource = fs.readFileSync(path.join(frontendDir, "actions.js"), "utf-8");
-const dom = new JSDOM(html, { runScripts: "outside-only" });
+const dom = new JSDOM(html, {
+  runScripts: "outside-only",
+  url: "https://cockpit.finharness.test/",
+});
 
 dom.window.eval(apiSource);
 dom.window.eval(stateSource);
@@ -29,7 +32,10 @@ assert.strictEqual(
   "all three governed review forms use the shared action shell",
 );
 
-const browserLikeDom = new JSDOM(html, { runScripts: "outside-only" });
+const browserLikeDom = new JSDOM(html, {
+  runScripts: "outside-only",
+  url: "https://cockpit.finharness.test/",
+});
 browserLikeDom.window.fetch = () => Promise.reject(new Error("fetch disabled in test"));
 assert.doesNotThrow(
   () => browserLikeDom.window.eval([apiSource, stateSource, actionsSource, appSource].join("\n")),
@@ -41,7 +47,18 @@ dom.window.fetch = (endpoint, options) => {
   requests.push([endpoint, options]);
   return Promise.resolve({
     ok: true,
-    json: () => Promise.resolve({ execution_allowed: false }),
+    status: 200,
+    headers: {
+      get: (name) =>
+        String(name).toLowerCase() ===
+        "x-finharness-identity-receipt"
+          ? "identity_mutation_test"
+          : null,
+    },
+    json: () =>
+      Promise.resolve({
+        execution_allowed: false,
+      }),
   });
 };
 
@@ -49,17 +66,56 @@ dom.window.fetch = (endpoint, options) => {
   await dom.window.FinHarness.ReviewActionShell.post("/review", { reason: "test" });
   assert.strictEqual(requests.length, 1);
   assert.strictEqual(requests[0][1].method, "POST");
+  assert.match(
+    requests[0][1].headers["Idempotency-Key"],
+    /^cockpit:/,
+  );
+  assert.strictEqual(
+    dom.window.localStorage.getItem(
+      dom.window.FinHarness.api
+        .MUTATION_ATTEMPTS_STORAGE_KEY,
+    ),
+    null,
+    "successful governed write clears its attempt",
+  );
 
   dom.window.fetch = () =>
     Promise.resolve({
       ok: true,
-      json: () => Promise.resolve({ execution_allowed: true }),
+      status: 200,
+      headers: {
+        get: (name) =>
+          String(name).toLowerCase() ===
+          "x-finharness-identity-receipt"
+            ? "identity_mutation_bad_contract"
+            : null,
+      },
+      json: () =>
+        Promise.resolve({
+          execution_allowed: true,
+        }),
     });
   await assert.rejects(
-    dom.window.FinHarness.ReviewActionShell.patch("/review", {}),
+    dom.window.FinHarness.ReviewActionShell.patch(
+      "/review",
+      {},
+    ),
     /unexpected execution_allowed/,
   );
-  console.log("module_boundaries.test.cjs: all assertions passed");
+  const pending = JSON.parse(
+    dom.window.localStorage.getItem(
+      dom.window.FinHarness.api
+        .MUTATION_ATTEMPTS_STORAGE_KEY,
+    ),
+  );
+  assert.strictEqual(
+    pending.attempts.length,
+    1,
+    "invalid governed response retains its attempt",
+  );
+  console.log(
+    "module_boundaries.test.cjs: all assertions passed",
+  );
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
