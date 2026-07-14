@@ -24,6 +24,7 @@ from finharness.statecore.receipt_io import (
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 IDENTITY_RECEIPT_HEADER = "X-FinHarness-Identity-Receipt"
 IDEMPOTENT_REPLAY_HEADER = "X-FinHarness-Idempotent-Replay"
+IDEMPOTENCY_SEMANTIC_HEADERS = ("content-type", "if-match")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
 
@@ -225,6 +226,8 @@ def begin_identity_mutation(
     context: OperatorContext,
     method: str,
     path: str,
+    request_target: str,
+    semantic_headers: dict[str, str],
     trace_id: str,
     idempotency_key: str,
     body_sha256: str,
@@ -242,9 +245,16 @@ def begin_identity_mutation(
         idempotency_key=idempotency_key,
     )
     target = resolve_under(root, f"{receipt_id}.json")
+    normalized_headers = {
+        name.lower(): value.strip()
+        for name, value in semantic_headers.items()
+        if name.lower() in IDEMPOTENCY_SEMANTIC_HEADERS
+    }
     request_binding = {
         "method": method.upper(),
         "path": path,
+        "target": request_target,
+        "semantic_headers": dict(sorted(normalized_headers.items())),
         "body_sha256": body_sha256,
         "idempotency_key_sha256": hashlib.sha256(idempotency_key.encode()).hexdigest(),
     }

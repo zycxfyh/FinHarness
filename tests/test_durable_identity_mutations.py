@@ -104,6 +104,126 @@ class DurableIdentityMutationTest(unittest.TestCase):
         )
         self.assertEqual(self._proposal_count(), 1)
 
+    def test_key_reuse_with_different_query_fails_before_route(self) -> None:
+        with TestClient(self.app) as client:
+            first = client.post(
+                "/proposals?mode=first",
+                headers=self.headers,
+                json=self.body,
+            )
+            conflict = client.post(
+                "/proposals?mode=second",
+                headers=self.headers,
+                json=self.body,
+            )
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(
+            conflict.json()["detail"]["code"],
+            "idempotency_key_reused_for_different_request",
+        )
+        self.assertEqual(self._proposal_count(), 1)
+
+    def test_key_reuse_with_different_content_type_fails_before_route(self) -> None:
+        body = json.dumps(self.body, separators=(",", ":")).encode()
+        first_headers = self.headers | {"content-type": "application/json"}
+        changed_headers = self.headers | {
+            "content-type": "application/vnd.finharness+json"
+        }
+
+        with TestClient(self.app) as client:
+            first = client.post(
+                "/proposals",
+                headers=first_headers,
+                content=body,
+            )
+            conflict = client.post(
+                "/proposals",
+                headers=changed_headers,
+                content=body,
+            )
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        self.assertEqual(
+            conflict.json()["detail"]["code"],
+            "idempotency_key_reused_for_different_request",
+        )
+        self.assertEqual(self._proposal_count(), 1)
+
+    def test_oversized_keyed_request_is_rejected_before_route(self) -> None:
+        def body_chunks():
+            yield b'{"padding":"'
+            yield b"x" * 128
+            yield b'"}'
+
+        headers = self.headers | {"content-type": "application/json"}
+        with (
+            patch("finharness.api.app._MAX_IDEMPOTENT_REQUEST_BYTES", 32),
+            TestClient(self.app) as client,
+        ):
+            response = client.post(
+                "/proposals",
+                headers=headers,
+                content=body_chunks(),
+            )
+
+        self.assertEqual(response.status_code, 413, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "idempotent_request_too_large",
+        )
+        self.assertEqual(response.json()["detail"]["limit_bytes"], 32)
+        self.assertEqual(self._proposal_count(), 0)
+        self.assertNotIn(IDENTITY_RECEIPT_HEADER, response.headers)
+
+    def test_oversized_response_leaves_pending_and_blocks_retry(self) -> None:
+        with TestClient(self.app) as client:
+            with patch(
+                "finharness.api.app._MAX_IDEMPOTENT_RESPONSE_BYTES",
+                1,
+            ):
+                response = client.post(
+                    "/proposals",
+                    headers=self.headers,
+                    json=self.body,
+                )
+            retry = client.post(
+                "/proposals",
+                headers=self.headers,
+                json=self.body,
+            )
+
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "idempotent_response_too_large",
+        )
+        self.assertEqual(response.json()["detail"]["limit_bytes"], 1)
+        self.assertEqual(self._proposal_count(), 1)
+
+        receipt_id = response.headers[IDENTITY_RECEIPT_HEADER]
+        receipt_path = (
+            self.root
+            / "receipts"
+            / "identity"
+            / f"{receipt_id}.json"
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["state"], "pending")
+
+        self.assertEqual(retry.status_code, 409, retry.text)
+        self.assertEqual(
+            retry.json()["detail"]["code"],
+            "mutation_outcome_ambiguous",
+        )
+        self.assertEqual(
+            retry.headers[IDENTITY_RECEIPT_HEADER],
+            receipt_id,
+        )
+        self.assertEqual(self._proposal_count(), 1)
+
     def test_tampered_completed_receipt_fails_closed_before_route(self) -> None:
         with TestClient(self.app) as client:
             first = client.post("/proposals", headers=self.headers, json=self.body)
