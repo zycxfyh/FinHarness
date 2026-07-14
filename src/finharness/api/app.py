@@ -281,6 +281,9 @@ async def _call_with_identity_protocol(
         )
     if claim.disposition != "execute":
         return _protocol_response(claim), claim
+
+    # Route-owned domain writes bind their canonical effect to this claim.
+    request.state.identity_mutation_claim = claim
     response = await call_next(request)
     try:
         response, body = await _buffer_response(response)

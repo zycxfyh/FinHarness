@@ -222,6 +222,14 @@ def _load_identity_mutation_receipt(path: Path) -> dict[str, Any]:
     return payload
 
 
+def load_identity_mutation_receipt(
+    receipt_path: str | Path,
+) -> dict[str, Any]:
+    """Load an integrity-checked mutation receipt for typed reconciliation."""
+
+    return _load_identity_mutation_receipt(Path(receipt_path))
+
+
 def _transition_identity_mutation(
     path: Path,
     *,
@@ -364,29 +372,58 @@ def complete_identity_mutation(
     return completed
 
 
-def reconcile_identity_mutation_as_applied(
+def record_verified_identity_mutation_reconciliation(
     receipt_path: str | Path,
     *,
+    expected_payload: dict[str, Any],
     reconciled_by: str,
     reason: str,
+    resolver_id: str,
+    evidence_refs: list[str],
+    domain_effect: dict[str, Any],
     status_code: int,
     response_body: bytes,
     content_type: str = "application/json",
 ) -> dict[str, Any]:
-    """Close a pending receipt after an operator proves its effect was applied."""
+    """Record a response produced by a typed, domain-verifying resolver.
+
+    This is the terminal receipt writer, not the operator-facing reconciliation
+    interface. Callers must first verify the domain row and its canonical receipt.
+    """
 
     path = Path(receipt_path)
-    payload = _load_identity_mutation_receipt(path)
-    if payload.get("state") != "pending":
+    _require_valid_content_hash(expected_payload)
+    if expected_payload.get("state") != "pending":
         raise IdentityMutationError("only a pending mutation can be reconciled")
     if not reconciled_by.strip() or not reason.strip():
         raise IdentityMutationError("reconciliation requires an operator and written reason")
+    if not resolver_id.strip():
+        raise IdentityMutationError("reconciliation requires a typed resolver id")
+    if not 200 <= status_code < 300:
+        raise IdentityMutationError(
+            "applied reconciliation requires a successful canonical response"
+        )
+    if len(response_body) > 1_048_576:
+        raise IdentityMutationError("canonical reconciliation response exceeds the supported size")
+    if not content_type.lower().startswith("application/json"):
+        raise IdentityMutationError("canonical reconciliation response must be JSON")
+
+    cleaned_evidence = list(
+        dict.fromkeys(ref.strip() for ref in evidence_refs if isinstance(ref, str) and ref.strip())
+    )
+    if not cleaned_evidence:
+        raise IdentityMutationError("reconciliation requires verified domain evidence refs")
+    if not isinstance(domain_effect.get("kind"), str) or not isinstance(
+        domain_effect.get("canonical_resource"), str
+    ):
+        raise IdentityMutationError("reconciliation domain effect is incomplete")
+
     reconciled = _with_content_hash(
         {
-            **{key: value for key, value in payload.items() if key != "content_sha256"},
+            **{key: value for key, value in expected_payload.items() if key != "content_sha256"},
             "state": "reconciled_applied",
             "completed_at_utc": datetime.now(UTC).isoformat(),
-            "previous_content_sha256": payload["content_sha256"],
+            "previous_content_sha256": expected_payload["content_sha256"],
             "response": {
                 "status_code": status_code,
                 "content_type": content_type,
@@ -394,14 +431,18 @@ def reconcile_identity_mutation_as_applied(
                 "body_sha256": hashlib.sha256(response_body).hexdigest(),
             },
             "reconciliation": {
+                "resolver_id": resolver_id.strip(),
+                "response_source": "canonical_route_reconstruction",
                 "reconciled_by": reconciled_by.strip(),
                 "reason": reason.strip(),
+                "evidence_refs": cleaned_evidence,
+                "domain_effect": domain_effect,
             },
         }
     )
     _transition_identity_mutation(
         path,
-        expected_payload=payload,
+        expected_payload=expected_payload,
         next_payload=reconciled,
     )
     return reconciled

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import tempfile
 import unittest
@@ -13,6 +14,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from finharness.api.app import create_app
+from finharness.api.routes_proposals import (
+    ProposalCreateResponse,
+    reconcile_proposal_create_identity_mutation,
+)
 from finharness.identity import (
     IDEMPOTENCY_HEADER,
     IDEMPOTENT_REPLAY_HEADER,
@@ -23,7 +28,7 @@ from finharness.identity import (
     TestIdentityProvider,
     begin_identity_mutation,
     complete_identity_mutation,
-    reconcile_identity_mutation_as_applied,
+    record_verified_identity_mutation_reconciliation,
     request_body_sha256,
 )
 from finharness.statecore.models import Proposal
@@ -290,20 +295,21 @@ class DurableIdentityMutationTest(unittest.TestCase):
             content_type="application/json",
         )
 
-        with (
-            patch(
-                "finharness.identity._load_identity_mutation_receipt",
-                return_value=claim.payload,
-            ),
-            self.assertRaisesRegex(
-                IdentityMutationError,
-                "changed before terminal transition",
-            ),
+        with self.assertRaisesRegex(
+            IdentityMutationError,
+            "changed before terminal transition",
         ):
-            reconcile_identity_mutation_as_applied(
+            record_verified_identity_mutation_reconciliation(
                 claim.receipt_path,
+                expected_payload=claim.payload,
                 reconciled_by="operator:alice",
-                reason="Stale operator view must not replace committed truth.",
+                reason=("Stale operator view must not replace committed truth."),
+                resolver_id="test.stale-reconciliation.v1",
+                evidence_refs=["test:stale-domain-evidence"],
+                domain_effect={
+                    "kind": "test_effect",
+                    "canonical_resource": "/test/effect",
+                },
                 status_code=200,
                 response_body=b'{"incorrect":"replacement"}',
             )
@@ -318,6 +324,31 @@ class DurableIdentityMutationTest(unittest.TestCase):
             persisted["previous_content_sha256"],
             claim.payload["content_sha256"],
         )
+
+    def test_typed_reconciliation_accepts_no_operator_response(self) -> None:
+        parameters = inspect.signature(reconcile_proposal_create_identity_mutation).parameters
+        self.assertNotIn("response_body", parameters)
+        self.assertNotIn("response_file", parameters)
+        self.assertNotIn("status_code", parameters)
+        self.assertNotIn("content_type", parameters)
+
+    def test_reconciliation_without_verified_effect_stays_pending(self) -> None:
+        claim = self._pending_claim("missing-effect-0001")
+
+        with self.assertRaisesRegex(
+            IdentityMutationError,
+            "verified proposal effect not found",
+        ):
+            reconcile_proposal_create_identity_mutation(
+                claim.receipt_path,
+                engine=self.engine,
+                receipt_root=self.root / "receipts",
+                reconciled_by="operator:alice",
+                reason="No matching domain effect exists.",
+            )
+
+        persisted = json.loads(claim.receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["state"], "pending")
 
     def test_tampered_completed_receipt_fails_closed_before_route(self) -> None:
         with TestClient(self.app) as client:
@@ -387,37 +418,82 @@ class DurableIdentityMutationTest(unittest.TestCase):
         self.assertEqual(self._proposal_count(), 0)
 
     def test_failure_after_domain_commit_blocks_retry_until_reconciled(self) -> None:
-        with TestClient(self.app, raise_server_exceptions=False) as client:
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
             with patch(
                 "finharness.api.app.complete_identity_mutation",
                 side_effect=OSError("simulated post-commit receipt failure"),
             ):
-                lost_response = client.post("/proposals", headers=self.headers, json=self.body)
-            retry = client.post("/proposals", headers=self.headers, json=self.body)
+                lost_response = client.post(
+                    "/proposals",
+                    headers=self.headers,
+                    json=self.body,
+                )
+            retry = client.post(
+                "/proposals",
+                headers=self.headers,
+                json=self.body,
+            )
 
         self.assertEqual(lost_response.status_code, 500)
         self.assertEqual(retry.status_code, 409, retry.text)
-        self.assertEqual(retry.json()["detail"]["code"], "mutation_outcome_ambiguous")
+        self.assertEqual(
+            retry.json()["detail"]["code"],
+            "mutation_outcome_ambiguous",
+        )
         self.assertEqual(self._proposal_count(), 1)
+
         receipt_id = retry.headers[IDENTITY_RECEIPT_HEADER]
         receipt_path = self.root / "receipts" / "identity" / f"{receipt_id}.json"
-        self.assertEqual(json.loads(receipt_path.read_text(encoding="utf-8"))["state"], "pending")
-
-        reconciled_body = json.dumps(
-            {"reconciled": True, "execution_allowed": False}, separators=(",", ":")
-        ).encode()
-        reconcile_identity_mutation_as_applied(
-            receipt_path,
-            reconciled_by="operator:alice",
-            reason="Verified the proposal row and domain receipt after response loss.",
-            status_code=200,
-            response_body=reconciled_body,
+        self.assertEqual(
+            json.loads(receipt_path.read_text(encoding="utf-8"))["state"],
+            "pending",
         )
+
+        reconciled = reconcile_proposal_create_identity_mutation(
+            receipt_path,
+            engine=self.engine,
+            receipt_root=self.root / "receipts",
+            reconciled_by="operator:alice",
+            reason=("Verified the bound Proposal row and domain receipt after response loss."),
+        )
+        self.assertEqual(
+            reconciled["state"],
+            "reconciled_applied",
+        )
+        self.assertEqual(
+            reconciled["reconciliation"]["resolver_id"],
+            "finharness.api.proposal_create.v1",
+        )
+        self.assertEqual(
+            reconciled["reconciliation"]["response_source"],
+            "canonical_route_reconstruction",
+        )
+
         with TestClient(self.app) as client:
-            replay = client.post("/proposals", headers=self.headers, json=self.body)
-        self.assertEqual(replay.status_code, 200)
-        self.assertEqual(replay.json(), {"reconciled": True, "execution_allowed": False})
-        self.assertEqual(replay.headers[IDEMPOTENT_REPLAY_HEADER], "true")
+            replay = client.post(
+                "/proposals",
+                headers=self.headers,
+                json=self.body,
+            )
+
+        self.assertEqual(replay.status_code, 200, replay.text)
+        replay_model = ProposalCreateResponse.model_validate(replay.json())
+        self.assertFalse(replay_model.execution_allowed)
+        self.assertEqual(
+            replay_model.receipt_ref,
+            replay_model.proposal.receipt_ref,
+        )
+        self.assertIn(
+            f"identity-mutation:{receipt_id}",
+            replay_model.proposal.source_refs,
+        )
+        self.assertEqual(
+            replay.headers[IDEMPOTENT_REPLAY_HEADER],
+            "true",
+        )
         self.assertEqual(self._proposal_count(), 1)
 
 

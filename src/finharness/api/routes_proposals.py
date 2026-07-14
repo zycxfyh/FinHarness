@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import desc
+from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
 from finharness.api.dependencies import (
     EngineDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
+)
+from finharness.identity import (
+    IdentityMutationClaim,
+    IdentityMutationError,
+    load_identity_mutation_receipt,
+    record_verified_identity_mutation_reconciliation,
 )
 from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import (
@@ -43,6 +51,7 @@ from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
     create_governed_review_event,
+    proposal_content_hash,
     revise_governed_proposal_scaffold,
 )
 from finharness.statecore.risk_classification import HighRiskConfirmationError
@@ -77,6 +86,201 @@ class ProposalCreateResponse(BaseModel):
     proposal: Proposal
     receipt_ref: str
     execution_allowed: bool = False
+
+
+_PROPOSAL_CREATE_RECONCILIATION_RESOLVER = "finharness.api.proposal_create.v1"
+_IDENTITY_MUTATION_SOURCE_PREFIX = "identity-mutation:"
+
+
+def proposal_id_for_identity_mutation(receipt_id: str) -> str:
+    """Derive one stable Proposal id from one mutation receipt."""
+
+    digest = hashlib.sha256(receipt_id.encode()).hexdigest()[:24]
+    return f"prop_api_{digest}"
+
+
+def identity_mutation_source_ref(receipt_id: str) -> str:
+    return f"{_IDENTITY_MUTATION_SOURCE_PREFIX}{receipt_id}"
+
+
+def proposal_create_response_payload(
+    proposal: Proposal,
+    *,
+    receipt_ref: str,
+) -> dict[str, Any]:
+    """Build the single canonical Proposal-create response contract."""
+
+    return ProposalCreateResponse(
+        proposal=proposal,
+        receipt_ref=receipt_ref,
+        execution_allowed=False,
+    ).model_dump(mode="json")
+
+
+def _resolve_proposal_domain_receipt(
+    receipt_ref: str,
+    *,
+    receipt_root: Path,
+) -> Path:
+    candidate = Path(receipt_ref)
+    if not candidate.is_absolute():
+        candidate = ROOT / candidate
+    resolved = candidate.resolve()
+    allowed_root = receipt_root.resolve()
+    if not resolved.is_relative_to(allowed_root):
+        raise IdentityMutationError("proposal receipt is outside the configured receipt root")
+    return resolved
+
+
+def _require_proposal_create_mutation_binding(
+    mutation: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    request_binding = mutation.get("request")
+    if not isinstance(request_binding, dict):
+        raise IdentityMutationError("mutation receipt request binding is missing")
+    if request_binding.get("method") != "POST" or request_binding.get("path") != "/proposals":
+        raise IdentityMutationError("no typed reconciliation resolver for this mutation route")
+
+    receipt_id = mutation.get("receipt_id")
+    if not isinstance(receipt_id, str) or not receipt_id:
+        raise IdentityMutationError("mutation receipt id is missing")
+    return receipt_id, request_binding
+
+
+def _load_verified_proposal_effect(
+    *,
+    receipt_id: str,
+    engine: Engine,
+    receipt_root: Path,
+) -> tuple[Proposal, str, str, dict[str, Any]]:
+    proposal_id = proposal_id_for_identity_mutation(receipt_id)
+    mutation_ref = identity_mutation_source_ref(receipt_id)
+
+    with Session(engine) as session:
+        proposal = session.get(Proposal, proposal_id)
+
+    if proposal is None:
+        raise IdentityMutationError("verified proposal effect not found; mutation remains pending")
+    if mutation_ref not in proposal.source_refs:
+        raise IdentityMutationError("proposal effect is not bound to the mutation receipt")
+
+    domain_receipt_ref = proposal.receipt_ref
+    if not domain_receipt_ref:
+        raise IdentityMutationError("proposal effect has no canonical domain receipt")
+
+    domain_receipt_path = _resolve_proposal_domain_receipt(
+        domain_receipt_ref,
+        receipt_root=receipt_root,
+    )
+    try:
+        domain_receipt = json.loads(domain_receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IdentityMutationError("proposal domain receipt is unreadable") from exc
+
+    if not isinstance(domain_receipt, dict):
+        raise IdentityMutationError("proposal domain receipt is not an object")
+
+    return (
+        proposal,
+        mutation_ref,
+        domain_receipt_ref,
+        domain_receipt,
+    )
+
+
+def _require_proposal_domain_receipt_binding(
+    *,
+    proposal: Proposal,
+    domain_receipt: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+) -> None:
+    if domain_receipt.get("kind") != "state_core_proposal":
+        raise IdentityMutationError("domain receipt is not a proposal receipt")
+    if domain_receipt.get("proposal") != proposal.model_dump(mode="json"):
+        raise IdentityMutationError("proposal row and domain receipt do not match")
+    if domain_receipt.get("content_hash") != proposal_content_hash(proposal):
+        raise IdentityMutationError("proposal domain receipt content hash does not match")
+
+    revision_context = domain_receipt.get("revision_context")
+    if not isinstance(revision_context, dict):
+        raise IdentityMutationError("proposal domain receipt has no mutation binding")
+    if (
+        revision_context.get("kind") != "api_proposal_create"
+        or revision_context.get("identity_mutation_receipt_id") != receipt_id
+        or revision_context.get("identity_mutation_request_body_sha256")
+        != request_binding.get("body_sha256")
+    ):
+        raise IdentityMutationError("proposal domain receipt mutation binding does not match")
+
+
+def reconcile_proposal_create_identity_mutation(
+    receipt_path: str | Path,
+    *,
+    engine: Engine,
+    receipt_root: str | Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Reconcile POST /proposals from verified StateCore truth only."""
+
+    mutation_path = Path(receipt_path)
+    mutation = load_identity_mutation_receipt(mutation_path)
+    if mutation.get("state") != "pending":
+        raise IdentityMutationError("only a pending mutation can be reconciled")
+
+    receipt_id, request_binding = _require_proposal_create_mutation_binding(mutation)
+    (
+        proposal,
+        mutation_ref,
+        domain_receipt_ref,
+        domain_receipt,
+    ) = _load_verified_proposal_effect(
+        receipt_id=receipt_id,
+        engine=engine,
+        receipt_root=Path(receipt_root),
+    )
+    _require_proposal_domain_receipt_binding(
+        proposal=proposal,
+        domain_receipt=domain_receipt,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+    )
+
+    response_payload = proposal_create_response_payload(
+        proposal,
+        receipt_ref=domain_receipt_ref,
+    )
+    response_body = json.dumps(
+        response_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+
+    return record_verified_identity_mutation_reconciliation(
+        mutation_path,
+        expected_payload=mutation,
+        reconciled_by=reconciled_by,
+        reason=reason,
+        resolver_id=_PROPOSAL_CREATE_RECONCILIATION_RESOLVER,
+        evidence_refs=[
+            mutation_ref,
+            domain_receipt_ref,
+        ],
+        domain_effect={
+            "kind": "proposal_create",
+            "proposal_id": proposal.proposal_id,
+            "proposal_content_hash": proposal_content_hash(proposal),
+            "receipt_ref": domain_receipt_ref,
+            "canonical_resource": (f"/proposals/{proposal.proposal_id}"),
+            "execution_allowed": False,
+        },
+        status_code=200,
+        response_body=response_body,
+        content_type="application/json",
+    )
 
 
 class AttestationCreateRequest(BaseModel):
@@ -1034,10 +1238,52 @@ async def apply_scaffold_revision_candidate(
 @router.post("/proposals", response_model=ProposalCreateResponse)
 async def create_proposal(
     request: ProposalCreateRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
 ) -> ProposalCreateResponse:
+    raw_identity_claim = getattr(
+        http_request.state,
+        "identity_mutation_claim",
+        None,
+    )
+    identity_claim = (
+        raw_identity_claim
+        if isinstance(
+            raw_identity_claim,
+            IdentityMutationClaim,
+        )
+        and raw_identity_claim.disposition == "execute"
+        else None
+    )
+
+    source_refs = list(request.source_refs)
+    proposal_id: str | None = None
+    revision_context: dict[str, Any] | None = None
+    idempotent = False
+
+    if identity_claim is not None:
+        mutation_receipt_id = identity_claim.receipt_id
+        mutation_ref = identity_mutation_source_ref(mutation_receipt_id)
+        if mutation_ref not in source_refs:
+            source_refs.append(mutation_ref)
+
+        request_binding = identity_claim.payload.get(
+            "request",
+            {},
+        )
+        proposal_id = proposal_id_for_identity_mutation(mutation_receipt_id)
+        idempotent = True
+        revision_context = {
+            "kind": "api_proposal_create",
+            "identity_mutation_receipt_id": (mutation_receipt_id),
+            "identity_mutation_request_body_sha256": (
+                request_binding.get("body_sha256") if isinstance(request_binding, dict) else None
+            ),
+            "execution_allowed": False,
+        }
+
     try:
         result = create_governed_proposal(
             kind=request.kind.strip(),
@@ -1046,19 +1292,24 @@ async def create_proposal(
             assumptions=request.assumptions,
             limitations=request.limitations,
             non_claims=request.non_claims,
-            source_refs=list(request.source_refs),
+            source_refs=source_refs,
             decision_scaffold=request.decision_scaffold,
             engine=engine,
             receipt_root=receipt_root,
+            proposal_id=proposal_id,
+            idempotent=idempotent,
+            revision_context=revision_context,
         )
     except DecisionScaffoldError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StateCoreStoreError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ProposalCreateResponse(
-        proposal=result.proposal,
-        receipt_ref=result.receipt_ref,
-        execution_allowed=False,
+
+    return ProposalCreateResponse.model_validate(
+        proposal_create_response_payload(
+            result.proposal,
+            receipt_ref=result.receipt_ref,
+        )
     )
 
 
