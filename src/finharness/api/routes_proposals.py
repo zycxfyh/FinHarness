@@ -291,13 +291,16 @@ def _require_proposal_domain_receipt_binding(
     revision_context = domain_receipt.get("revision_context")
     if not isinstance(revision_context, dict):
         raise IdentityMutationError("proposal domain receipt has no mutation binding")
-    if (
-        revision_context.get("kind") != "api_proposal_create"
-        or revision_context.get("identity_mutation_receipt_id") != receipt_id
-        or revision_context.get("identity_mutation_request_body_sha256")
-        != request_binding.get("body_sha256")
-    ):
-        raise IdentityMutationError("proposal domain receipt mutation binding does not match")
+
+    if revision_context.get("kind") != "api_proposal_create":
+        raise IdentityMutationError("proposal domain receipt is not a proposal create receipt")
+
+    _require_exact_domain_binding(
+        revision_context,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        effect_kind="api_proposal_create",
+    )
 
 
 def reconcile_proposal_create_identity_mutation(
@@ -800,6 +803,8 @@ _MUTATION_BINDING_FIELDS = frozenset(
         "identity_mutation_request_target",
         "identity_mutation_method",
         "identity_mutation_path",
+        "schema",
+        "effect_kind",
     }
 )
 
@@ -819,6 +824,54 @@ def _require_no_partial_mutation_binding(
             "scaffold revision context has partial mutation-binding "
             "fields without identity_mutation_receipt_id: " + ", ".join(partial)
         )
+
+
+def _require_verifiable_foreign_mutation_claim(
+    *,
+    claim_id: object,
+    context: dict[str, Any],
+    candidate_proposal: Proposal,
+    receipt_root: Path,
+) -> None:
+    """Verify that a foreign mutation claim is a real, intact identity receipt.
+
+    A scaffold candidate that claims a different identity_mutation_receipt_id
+    is only a legitimate inherited reference if the foreign identity receipt
+    actually exists, has valid integrity, and its request binding matches the
+    candidate's revision_context.
+    """
+    if not isinstance(claim_id, str) or not claim_id:
+        raise IdentityMutationError("scaffold candidate foreign claim id is not a valid receipt id")
+
+    expected_ref = identity_mutation_source_ref(claim_id)
+    if expected_ref not in candidate_proposal.source_refs:
+        raise IdentityMutationError(
+            "scaffold candidate claims foreign receipt_id "
+            "but snapshot does not contain its mutation ref"
+        )
+
+    foreign_path = receipt_root / "identity" / f"{claim_id}.json"
+    try:
+        foreign_receipt = load_identity_mutation_receipt(foreign_path)
+    except IdentityMutationError as err:
+        raise IdentityMutationError(
+            "scaffold candidate claims foreign receipt_id "
+            "but the identity receipt is missing or invalid"
+        ) from err
+
+    foreign_request = foreign_receipt.get("request")
+    if not isinstance(foreign_request, dict):
+        raise IdentityMutationError(
+            "scaffold candidate claims foreign receipt_id "
+            "but the identity receipt has no request binding"
+        )
+
+    _require_exact_domain_binding(
+        context,
+        receipt_id=claim_id,
+        request_binding=foreign_request,
+        effect_kind="api_proposal_decision_scaffold_revision",
+    )
 
 
 def _validate_scaffold_candidate_revision(
@@ -872,7 +925,15 @@ def _validate_scaffold_candidate_revision(
         return None
 
     if claim_id != receipt_id:
-        # Verified candidate belonging to a different mutation.
+        # Candidate claims to belong to a different mutation.
+        # This is only safe to skip if the foreign claim can be
+        # independently verified as a real, intact identity receipt.
+        _require_verifiable_foreign_mutation_claim(
+            claim_id=claim_id,
+            context=context,
+            candidate_proposal=candidate_proposal,
+            receipt_root=receipt_root,
+        )
         return None
 
     # 5. Candidate **claims** this exact receipt_id.
@@ -2207,19 +2268,9 @@ async def create_proposal(
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
 ) -> ProposalCreateResponse:
-    raw_identity_claim = getattr(
-        http_request.state,
-        "identity_mutation_claim",
-        None,
-    )
-    identity_claim = (
-        raw_identity_claim
-        if isinstance(
-            raw_identity_claim,
-            IdentityMutationClaim,
-        )
-        and raw_identity_claim.disposition == "execute"
-        else None
+    binding = _route_identity_mutation_binding(
+        http_request,
+        effect_kind="api_proposal_create",
     )
 
     source_refs = list(request.source_refs)
@@ -2227,25 +2278,18 @@ async def create_proposal(
     revision_context: dict[str, Any] | None = None
     idempotent = False
 
-    if identity_claim is not None:
-        mutation_receipt_id = identity_claim.receipt_id
-        mutation_ref = identity_mutation_source_ref(mutation_receipt_id)
+    if binding is not None:
+        mutation_ref, mutation_context = binding
         if mutation_ref not in source_refs:
             source_refs.append(mutation_ref)
 
-        request_binding = identity_claim.payload.get(
-            "request",
-            {},
-        )
-        proposal_id = proposal_id_for_identity_mutation(mutation_receipt_id)
+        mutation_receipt_id = mutation_context.get("identity_mutation_receipt_id")
+        if isinstance(mutation_receipt_id, str) and mutation_receipt_id:
+            proposal_id = proposal_id_for_identity_mutation(mutation_receipt_id)
         idempotent = True
         revision_context = {
+            **mutation_context,
             "kind": "api_proposal_create",
-            "identity_mutation_receipt_id": (mutation_receipt_id),
-            "identity_mutation_request_body_sha256": (
-                request_binding.get("body_sha256") if isinstance(request_binding, dict) else None
-            ),
-            "execution_allowed": False,
         }
 
     try:

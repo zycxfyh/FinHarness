@@ -132,6 +132,37 @@ class DurableIdentityMutationTest(unittest.TestCase):
             body_sha256=request_body_sha256(body),
         )
 
+    @staticmethod
+    def _tamper_domain_receipt(
+        domain_receipt_path: Path,
+        scenario: str,
+    ) -> None:
+        domain_receipt = json.loads(domain_receipt_path.read_text(encoding="utf-8"))
+        ctx = domain_receipt.setdefault("revision_context", {})
+
+        if scenario == "proposal_payload_mismatch":
+            domain_receipt["proposal"]["claim"] = "tampered proposal claim"
+        elif scenario == "proposal_content_hash_mismatch":
+            domain_receipt["content_hash"] = "0" * 64
+        elif scenario == "mutation_receipt_id_mismatch":
+            ctx["identity_mutation_receipt_id"] = "identity_mutation_wrong"
+        elif scenario == "request_body_hash_mismatch":
+            ctx["identity_mutation_request_body_sha256"] = "0" * 64
+        elif scenario == "mutation_target_mismatch":
+            ctx["identity_mutation_request_target"] = "tampered-target"
+        elif scenario == "mutation_method_mismatch":
+            ctx["identity_mutation_method"] = "DELETE"
+        elif scenario == "mutation_path_mismatch":
+            ctx["identity_mutation_path"] = "/tampered"
+        elif scenario == "mutation_schema_mismatch":
+            ctx["schema"] = "tampered.schema"
+        elif scenario == "mutation_effect_kind_mismatch":
+            ctx["effect_kind"] = "tampered_effect"
+        elif scenario == "mutation_execution_allowed_true":
+            ctx["execution_allowed"] = True
+
+        durable_atomic_write_json(domain_receipt_path, domain_receipt)
+
     def _ambiguous_applied_mutation(
         self,
         idempotency_key: str,
@@ -554,15 +585,39 @@ class DurableIdentityMutationTest(unittest.TestCase):
             ),
             (
                 "mutation_receipt_id_mismatch",
-                "proposal domain receipt mutation binding does not match",
+                "domain receipt mutation binding does not match",
             ),
             (
                 "request_body_hash_mismatch",
-                "proposal domain receipt mutation binding does not match",
+                "domain receipt mutation binding does not match",
             ),
             (
                 "missing_mutation_source_ref",
                 "proposal effect is not bound to the mutation receipt",
+            ),
+            (
+                "mutation_target_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_method_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_path_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_schema_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_effect_kind_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_execution_allowed_true",
+                "domain receipt mutation binding does not match",
             ),
             (
                 "domain_receipt_outside_root",
@@ -596,25 +651,16 @@ class DurableIdentityMutationTest(unittest.TestCase):
                     "proposal_content_hash_mismatch",
                     "mutation_receipt_id_mismatch",
                     "request_body_hash_mismatch",
+                    "mutation_target_mismatch",
+                    "mutation_method_mismatch",
+                    "mutation_path_mismatch",
+                    "mutation_schema_mismatch",
+                    "mutation_effect_kind_mismatch",
+                    "mutation_execution_allowed_true",
                 }:
-                    domain_receipt = json.loads(domain_receipt_path.read_text(encoding="utf-8"))
-
-                    if scenario == "proposal_payload_mismatch":
-                        domain_receipt["proposal"]["claim"] = "tampered proposal claim"
-                    elif scenario == "proposal_content_hash_mismatch":
-                        domain_receipt["content_hash"] = "0" * 64
-                    elif scenario == "mutation_receipt_id_mismatch":
-                        domain_receipt["revision_context"]["identity_mutation_receipt_id"] = (
-                            "identity_mutation_wrong"
-                        )
-                    else:
-                        domain_receipt["revision_context"][
-                            "identity_mutation_request_body_sha256"
-                        ] = "0" * 64
-
-                    durable_atomic_write_json(
+                    self._tamper_domain_receipt(
                         domain_receipt_path,
-                        domain_receipt,
+                        scenario,
                     )
 
                 elif scenario == "missing_mutation_source_ref":

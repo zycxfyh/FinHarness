@@ -1650,6 +1650,204 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             self.assertNotIn("reconciliation", pending)
             self.assertNotIn("response", pending)
 
+    def test_scaffold_reconciliation_rejects_relabelled_duplicate_candidate(
+        self,
+    ) -> None:
+        """A duplicate effect receipt relabelled as a foreign mutation must fail closed.
+
+        Changing identity_mutation_receipt_id on a duplicate receipt to a
+        different value must not allow the system to silently skip it as a
+        "verified foreign candidate".  The system cannot prove the candidate
+        genuinely belongs to a valid other mutation without verifying the
+        foreign identity receipt exists and is internally consistent.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "relabel-duplicate-revision-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision for relabel test",
+                "decision_scaffold": {"counter_evidence": "Relabel bypass test counter-evidence."},
+                "source_refs": ["test:relabel-duplicate"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            bound = [index for index in indexes if mutation_ref_a in list(index.refs or [])]
+            self.assertEqual(len(bound), 1)
+            revision_a_ref = bound[0].path
+
+            # Clone Revision A's receipt with a relabelled claim_id.
+            revision_a_path = self._resolve_receipt_path(revision_a_ref)
+            receipt = json.loads(revision_a_path.read_text(encoding="utf-8"))
+
+            fake_claim_id = "identity_mutation_fake_relabelled_bad"
+            context = receipt["revision_context"]
+            context["identity_mutation_receipt_id"] = fake_claim_id
+
+            # Write the duplicate receipt to a new path so it can be
+            # registered alongside the original.
+            dup_receipt_ref = str(revision_a_path.parent / "proposal_relabelled_duplicate.json")
+            # Patch receipt_ref in proposal snapshot for hash consistency.
+            receipt["proposal"]["receipt_ref"] = dup_receipt_ref
+            dup_proposal = Proposal.model_validate(receipt["proposal"])
+            receipt["content_hash"] = proposal_content_hash(dup_proposal)
+
+            dup_path = self._resolve_receipt_path(dup_receipt_ref)
+            dup_path.write_text(
+                json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            with Session(self.engine) as session:
+                dup_index = ReceiptIndex(
+                    receipt_id="receipt:relabel-duplicate-0001",
+                    refs=[mutation_ref_a],
+                    kind="state_core_proposal",
+                    path=dup_receipt_ref,
+                )
+                session.add(dup_index)
+                session.commit()
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "scaffold candidate claims foreign receipt_id",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Relabelled duplicate must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+
+            # Clean up.
+            with Session(self.engine) as session:
+                dup_row = session.exec(
+                    select(ReceiptIndex).where(ReceiptIndex.path == dup_receipt_ref)
+                ).first()
+                if dup_row is not None:
+                    session.delete(dup_row)
+                    session.commit()
+            if dup_path.is_file():
+                dup_path.unlink()
+
+    def test_scaffold_reconciliation_rejects_schema_only_partial_binding(
+        self,
+    ) -> None:
+        """An unkeyed revision with residual schema field must fail closed.
+
+        _MUTATION_BINDING_FIELDS currently omits 'schema' and 'effect_kind'.
+        A receipt that carries 'schema' without identity_mutation_receipt_id
+        is a partial binding and must block reconciliation.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # Keyed Revision A with terminal loss.
+            key_a = "partial-schema-binding-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A for partial-binding test",
+                "decision_scaffold": {"counter_evidence": "Partial binding test counter-evidence."},
+                "source_refs": ["test:partial-binding"],
+            }
+
+            _, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            # Keyed Revision B — normally, with a different key.
+            key_b = "partial-binding-revision-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision alternatives."},
+                "source_refs": ["test:partial-binding-b"],
+            }
+
+            rev_b_response = client.patch(
+                endpoint,
+                headers=self._headers(key_b),
+                json=body_b,
+            )
+            self.assertEqual(rev_b_response.status_code, 200, rev_b_response.text)
+            rev_b_body = rev_b_response.json()
+            revision_b_receipt_ref = rev_b_body["receipt_ref"]
+
+            # Corrupt Revision B's context: remove identity_mutation_receipt_id
+            # but keep 'schema'.
+            revision_b_path = self._resolve_receipt_path(revision_b_receipt_ref)
+            b_receipt = json.loads(revision_b_path.read_text(encoding="utf-8"))
+            b_context = b_receipt["revision_context"]
+            b_context.pop("identity_mutation_receipt_id", None)
+            b_context["schema"] = "finharness.api_domain_mutation_binding.v1"
+
+            revision_b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "partial mutation-binding",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Schema-only partial binding must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
 
 if __name__ == "__main__":
     unittest.main()
