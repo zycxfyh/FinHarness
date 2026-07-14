@@ -103,6 +103,87 @@ def identity_mutation_source_ref(receipt_id: str) -> str:
     return f"{_IDENTITY_MUTATION_SOURCE_PREFIX}{receipt_id}"
 
 
+def _route_identity_mutation_binding(
+    http_request: Request,
+    *,
+    effect_kind: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """Bind one route-owned effect to its executing identity claim."""
+
+    raw_claim = getattr(
+        http_request.state,
+        "identity_mutation_claim",
+        None,
+    )
+
+    if raw_claim is None:
+        return None
+
+    if not isinstance(raw_claim, IdentityMutationClaim) or raw_claim.disposition != "execute":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_idempotency_contract",
+                "message": ("The executing mutation claim is invalid."),
+                "execution_allowed": False,
+            },
+        )
+
+    request_binding = raw_claim.payload.get(
+        "request",
+    )
+
+    if not isinstance(request_binding, dict):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_idempotency_contract",
+                "message": ("The mutation request binding is invalid."),
+                "execution_allowed": False,
+            },
+        )
+
+    method = request_binding.get("method")
+    path = request_binding.get("path")
+    target = request_binding.get("target")
+    body_sha256 = request_binding.get(
+        "body_sha256",
+    )
+
+    if (
+        not isinstance(method, str)
+        or not isinstance(path, str)
+        or not isinstance(target, str)
+        or not isinstance(body_sha256, str)
+        or method != http_request.method
+        or path != http_request.url.path
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "invalid_idempotency_contract",
+                "message": ("The mutation request binding does not match the executing route."),
+                "execution_allowed": False,
+            },
+        )
+
+    source_ref = identity_mutation_source_ref(raw_claim.receipt_id)
+
+    return (
+        source_ref,
+        {
+            "schema": ("finharness.api_domain_mutation_binding.v1"),
+            "effect_kind": effect_kind,
+            "identity_mutation_receipt_id": (raw_claim.receipt_id),
+            "identity_mutation_request_body_sha256": (body_sha256),
+            "identity_mutation_request_target": target,
+            "identity_mutation_method": method,
+            "identity_mutation_path": path,
+            "execution_allowed": False,
+        },
+    )
+
+
 def proposal_create_response_payload(
     proposal: Proposal,
     *,
@@ -1057,17 +1138,31 @@ async def get_proposal_revisions(
 async def revise_proposal_decision_scaffold(
     proposal_id: str,
     request: ProposalScaffoldRevisionRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
 ) -> ProposalScaffoldRevisionResponse:
+    binding = _route_identity_mutation_binding(
+        http_request,
+        effect_kind=("api_proposal_decision_scaffold_revision"),
+    )
+    source_refs = list(request.source_refs)
+    mutation_context: dict[str, Any] | None = None
+
+    if binding is not None:
+        mutation_ref, mutation_context = binding
+        if mutation_ref not in source_refs:
+            source_refs.append(mutation_ref)
+
     try:
         result = revise_governed_proposal_scaffold(
             proposal_id=proposal_id,
             scaffold_patch=request.decision_scaffold,
             attester=request.attester.strip(),
             reason=request.reason.strip(),
-            source_refs=list(request.source_refs),
+            source_refs=source_refs,
+            revision_context_extra=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
@@ -1317,10 +1412,23 @@ async def create_proposal(
 async def attest_proposal(
     proposal_id: str,
     request: AttestationCreateRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
 ) -> AttestationCreateResponse:
+    binding = _route_identity_mutation_binding(
+        http_request,
+        effect_kind="api_attestation_create",
+    )
+    source_refs = list(request.source_refs)
+    mutation_context: dict[str, Any] | None = None
+
+    if binding is not None:
+        mutation_ref, mutation_context = binding
+        if mutation_ref not in source_refs:
+            source_refs.append(mutation_ref)
+
     try:
         expected_version = request.expected_proposal_version_id
         expected_receipt = request.expected_proposal_receipt_ref
@@ -1342,7 +1450,8 @@ async def attest_proposal(
             decision=request.decision,
             attester=request.attester.strip(),
             reason=request.reason.strip(),
-            source_refs=list(request.source_refs),
+            source_refs=source_refs,
+            mutation_context=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
@@ -1451,10 +1560,23 @@ async def get_proposal_timeline(
 async def add_review_event(
     proposal_id: str,
     request: ReviewEventCreateRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     _write_capability: WriteCapabilityDependency,
 ) -> ReviewEventCreateResponse:
+    binding = _route_identity_mutation_binding(
+        http_request,
+        effect_kind="api_review_event_create",
+    )
+    source_refs = list(request.source_refs)
+    mutation_context: dict[str, Any] | None = None
+
+    if binding is not None:
+        mutation_ref, mutation_context = binding
+        if mutation_ref not in source_refs:
+            source_refs.append(mutation_ref)
+
     try:
         result = create_governed_review_event(
             proposal_id=proposal_id,
@@ -1464,7 +1586,8 @@ async def add_review_event(
             text=request.text,
             attestation_ref=request.attestation_ref,
             compare_with=request.compare_with,
-            source_refs=list(request.source_refs),
+            source_refs=source_refs,
+            mutation_context=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
