@@ -2330,6 +2330,12 @@
       "match_line": 1360,
       "term": "attestation_id",
       "reason": "Reconciler dispatch call to _reconcile_attestation_identity_mutation; covered by ATT-CONS-044."
+    },
+    {
+      "path": "docs/proposals/2026-07-13-durable-write-and-api-mutation-semantics.md",
+      "match_line": 105,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "Documentation enumerating typed reconciliation surfaces; not a code consumer."
     }
   ],
   "unclassified_hits": []
