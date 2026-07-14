@@ -37,7 +37,12 @@ from finharness.scaffold_candidate_preflight import (
     preflight_scaffold_revision_candidate,
 )
 from finharness.statecore.decision_scaffold import DecisionScaffoldError
-from finharness.statecore.models import Attestation, Proposal, ReviewEvent
+from finharness.statecore.models import (
+    Attestation,
+    Proposal,
+    ReceiptIndex,
+    ReviewEvent,
+)
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
@@ -362,6 +367,765 @@ def reconcile_proposal_create_identity_mutation(
         response_body=response_body,
         content_type="application/json",
     )
+
+
+_ATTESTATION_CREATE_RECONCILIATION_RESOLVER = "finharness.api.attestation_create.v1"
+_SCAFFOLD_REVISION_RECONCILIATION_RESOLVER = "finharness.api.proposal_scaffold_revision.v1"
+_REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER = "finharness.api.review_event_create.v1"
+
+
+def _proposal_mutation_route(
+    *,
+    method: str,
+    path: str,
+) -> tuple[str | None, str | None]:
+    if method == "POST" and path == "/proposals":
+        return (
+            _PROPOSAL_CREATE_RECONCILIATION_RESOLVER,
+            None,
+        )
+
+    parts = path.strip("/").split("/")
+    if len(parts) != 3 or parts[0] != "proposals" or not parts[1]:
+        return None, None
+
+    proposal_id = parts[1]
+    operation = parts[2]
+
+    if method == "POST" and operation == "attest":
+        return (
+            _ATTESTATION_CREATE_RECONCILIATION_RESOLVER,
+            proposal_id,
+        )
+
+    if method == "PATCH" and operation == "decision-scaffold":
+        return (
+            _SCAFFOLD_REVISION_RECONCILIATION_RESOLVER,
+            proposal_id,
+        )
+
+    if method == "POST" and operation == "review-events":
+        return (
+            _REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER,
+            proposal_id,
+        )
+
+    return None, None
+
+
+def identity_mutation_reconciliation_resolver_id(
+    mutation: dict[str, Any],
+) -> str | None:
+    request_binding = mutation.get("request")
+    if not isinstance(request_binding, dict):
+        return None
+
+    method = request_binding.get("method")
+    path = request_binding.get("path")
+
+    if not isinstance(method, str):
+        return None
+    if not isinstance(path, str):
+        return None
+
+    resolver_id, _proposal_id = _proposal_mutation_route(
+        method=method,
+        path=path,
+    )
+    return resolver_id
+
+
+def _require_pending_mutation_route(
+    mutation: dict[str, Any],
+) -> tuple[
+    str,
+    dict[str, Any],
+    str,
+    str | None,
+]:
+    if mutation.get("state") != "pending":
+        raise IdentityMutationError("only a pending mutation can be reconciled")
+
+    receipt_id = mutation.get("receipt_id")
+    request_binding = mutation.get("request")
+
+    if not isinstance(receipt_id, str) or not receipt_id:
+        raise IdentityMutationError("mutation receipt id is missing")
+
+    if not isinstance(request_binding, dict):
+        raise IdentityMutationError("mutation receipt request binding is missing")
+
+    method = request_binding.get("method")
+    path = request_binding.get("path")
+
+    if not isinstance(method, str):
+        raise IdentityMutationError("mutation request method is missing")
+    if not isinstance(path, str):
+        raise IdentityMutationError("mutation request path is missing")
+
+    resolver_id, proposal_id = _proposal_mutation_route(
+        method=method,
+        path=path,
+    )
+
+    if resolver_id is None:
+        raise IdentityMutationError("no typed reconciliation resolver for this mutation route")
+
+    return (
+        receipt_id,
+        request_binding,
+        resolver_id,
+        proposal_id,
+    )
+
+
+def _resolve_typed_domain_receipt(
+    receipt_ref: str,
+    *,
+    receipt_root: Path,
+    expected_directory: str,
+) -> Path:
+    candidate = Path(receipt_ref)
+    if not candidate.is_absolute():
+        candidate = ROOT / candidate
+
+    if candidate.is_symlink():
+        raise IdentityMutationError("domain receipt cannot be a symlink")
+
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise IdentityMutationError("domain receipt is missing or unreadable") from exc
+
+    allowed_root = (receipt_root / expected_directory).resolve()
+
+    if not resolved.is_relative_to(allowed_root):
+        raise IdentityMutationError("domain receipt is outside its typed receipt directory")
+
+    if not resolved.is_file():
+        raise IdentityMutationError("domain receipt is not a regular file")
+
+    return resolved
+
+
+def _load_typed_domain_receipt(
+    receipt_ref: str,
+    *,
+    receipt_root: Path,
+    expected_directory: str,
+) -> tuple[Path, dict[str, Any]]:
+    path = _resolve_typed_domain_receipt(
+        receipt_ref,
+        receipt_root=receipt_root,
+        expected_directory=expected_directory,
+    )
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise IdentityMutationError("domain receipt is unreadable") from exc
+
+    if not isinstance(payload, dict):
+        raise IdentityMutationError("domain receipt is not a JSON object")
+
+    return path, payload
+
+
+def _domain_receipt_sha256(
+    payload: dict[str, Any],
+) -> str:
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _canonical_response_body(
+    response: BaseModel,
+) -> bytes:
+    return json.dumps(
+        response.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+
+
+def _require_exact_domain_binding(
+    context: Any,
+    *,
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    effect_kind: str,
+) -> None:
+    if not isinstance(context, dict):
+        raise IdentityMutationError("domain receipt has no typed mutation binding")
+
+    expected = {
+        "schema": ("finharness.api_domain_mutation_binding.v1"),
+        "effect_kind": effect_kind,
+        "identity_mutation_receipt_id": receipt_id,
+        "identity_mutation_request_body_sha256": (request_binding.get("body_sha256")),
+        "identity_mutation_request_target": (request_binding.get("target")),
+        "identity_mutation_method": (request_binding.get("method")),
+        "identity_mutation_path": (request_binding.get("path")),
+        "execution_allowed": False,
+    }
+
+    for key, value in expected.items():
+        if context.get(key) != value:
+            raise IdentityMutationError(f"domain receipt mutation binding does not match: {key}")
+
+
+def _require_unqueried_route_target(
+    request_binding: dict[str, Any],
+) -> None:
+    path = request_binding.get("path")
+    target = request_binding.get("target")
+
+    if target != path:
+        raise IdentityMutationError(
+            "typed Cockpit reconciliation does not accept query-bearing mutation targets"
+        )
+
+
+def _single_bound_effect(
+    values: list[Any],
+    *,
+    mutation_ref: str,
+    label: str,
+) -> Any:
+    matches = [
+        value for value in values if mutation_ref in list(getattr(value, "source_refs", []) or [])
+    ]
+
+    if not matches:
+        raise IdentityMutationError(f"verified {label} effect not found; mutation remains pending")
+
+    if len(matches) != 1:
+        raise IdentityMutationError(f"multiple {label} effects are bound to one mutation receipt")
+
+    return matches[0]
+
+
+def _receipt_ref_from_source_refs(
+    source_refs: list[str],
+    *,
+    directory: str,
+) -> str:
+    matches = [ref for ref in source_refs if isinstance(ref, str) and directory in Path(ref).parts]
+
+    if len(matches) != 1:
+        raise IdentityMutationError(f"domain row does not identify exactly one {directory} receipt")
+
+    return matches[0]
+
+
+def _verified_proposal_snapshot(
+    receipt_ref: str,
+    *,
+    receipt_root: Path,
+) -> tuple[Proposal, dict[str, Any]]:
+    _path, receipt = _load_typed_domain_receipt(
+        receipt_ref,
+        receipt_root=receipt_root,
+        expected_directory="proposals",
+    )
+
+    if receipt.get("kind") != "state_core_proposal":
+        raise IdentityMutationError("referenced proposal receipt has the wrong kind")
+
+    proposal_payload = receipt.get("proposal")
+    if not isinstance(proposal_payload, dict):
+        raise IdentityMutationError("proposal receipt snapshot is missing")
+
+    try:
+        proposal = Proposal.model_validate(proposal_payload)
+    except ValueError as exc:
+        raise IdentityMutationError("proposal receipt snapshot is invalid") from exc
+
+    if proposal.receipt_ref != receipt_ref:
+        raise IdentityMutationError("proposal snapshot receipt ref does not match its receipt")
+
+    if receipt.get("content_hash") != proposal_content_hash(proposal):
+        raise IdentityMutationError("proposal receipt content hash does not match its snapshot")
+
+    return proposal, receipt
+
+
+def _record_typed_reconciliation(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    resolver_id: str,
+    reconciled_by: str,
+    reason: str,
+    evidence_refs: list[str],
+    domain_effect: dict[str, Any],
+    response: BaseModel,
+) -> dict[str, Any]:
+    return record_verified_identity_mutation_reconciliation(
+        mutation_path,
+        expected_payload=mutation,
+        reconciled_by=reconciled_by,
+        reason=reason,
+        resolver_id=resolver_id,
+        evidence_refs=evidence_refs,
+        domain_effect=domain_effect,
+        status_code=200,
+        response_body=_canonical_response_body(response),
+        content_type="application/json",
+    )
+
+
+def _reconcile_attestation_identity_mutation(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    _require_unqueried_route_target(request_binding)
+    mutation_ref = identity_mutation_source_ref(receipt_id)
+
+    with Session(engine) as session:
+        current_proposal = session.get(
+            Proposal,
+            proposal_id,
+        )
+        attestations = list(
+            session.exec(select(Attestation).where(Attestation.proposal_id == proposal_id)).all()
+        )
+
+    if current_proposal is None:
+        raise IdentityMutationError("attestation proposal no longer exists")
+
+    attestation = _single_bound_effect(
+        attestations,
+        mutation_ref=mutation_ref,
+        label="attestation",
+    )
+
+    receipt_ref = _receipt_ref_from_source_refs(
+        attestation.source_refs,
+        directory="attestations",
+    )
+    _path, receipt = _load_typed_domain_receipt(
+        receipt_ref,
+        receipt_root=receipt_root,
+        expected_directory="attestations",
+    )
+
+    if receipt.get("kind") != ("state_core_attestation"):
+        raise IdentityMutationError("domain receipt is not an attestation receipt")
+
+    if receipt.get("attestation") != attestation.model_dump(mode="json"):
+        raise IdentityMutationError("attestation row and receipt do not match")
+
+    if receipt.get("proposal_id") != proposal_id:
+        raise IdentityMutationError("attestation receipt proposal id does not match the route")
+
+    _require_exact_domain_binding(
+        receipt.get("mutation_context"),
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        effect_kind="api_attestation_create",
+    )
+
+    proposal_receipt_ref = receipt.get("proposal_receipt_ref")
+    if not isinstance(
+        proposal_receipt_ref,
+        str,
+    ):
+        raise IdentityMutationError("attestation receipt has no bound proposal receipt")
+
+    proposal, _proposal_receipt = _verified_proposal_snapshot(
+        proposal_receipt_ref,
+        receipt_root=receipt_root,
+    )
+
+    if proposal.proposal_id != proposal_id:
+        raise IdentityMutationError("attestation proposal snapshot does not match the route")
+
+    response = AttestationCreateResponse(
+        attestation=attestation,
+        proposal=proposal,
+        receipt_ref=receipt_ref,
+        approved_is_not_execution_authorization=True,
+        execution_allowed=False,
+    )
+
+    return _record_typed_reconciliation(
+        mutation_path,
+        mutation=mutation,
+        resolver_id=(_ATTESTATION_CREATE_RECONCILIATION_RESOLVER),
+        reconciled_by=reconciled_by,
+        reason=reason,
+        evidence_refs=[
+            mutation_ref,
+            receipt_ref,
+            proposal_receipt_ref,
+        ],
+        domain_effect={
+            "kind": "attestation_create",
+            "attestation_id": (attestation.attestation_id),
+            "proposal_id": proposal_id,
+            "receipt_ref": receipt_ref,
+            "receipt_sha256": (_domain_receipt_sha256(receipt)),
+            "canonical_resource": (f"/proposals/{proposal_id}"),
+            "execution_allowed": False,
+        },
+        response=response,
+    )
+
+
+def _reconcile_scaffold_revision_identity_mutation(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    _require_unqueried_route_target(request_binding)
+    mutation_ref = identity_mutation_source_ref(receipt_id)
+
+    with Session(engine) as session:
+        current_proposal = session.get(
+            Proposal,
+            proposal_id,
+        )
+        indexes = list(
+            session.exec(
+                select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+            ).all()
+        )
+
+    if current_proposal is None:
+        raise IdentityMutationError("scaffold proposal no longer exists")
+
+    matches = [index for index in indexes if mutation_ref in list(index.refs or [])]
+
+    if not matches:
+        raise IdentityMutationError(
+            "verified scaffold revision receipt not found; mutation remains pending"
+        )
+
+    if len(matches) != 1:
+        raise IdentityMutationError("multiple scaffold revisions are bound to one mutation receipt")
+
+    receipt_ref = matches[0].path
+    proposal, receipt = _verified_proposal_snapshot(
+        receipt_ref,
+        receipt_root=receipt_root,
+    )
+
+    if proposal.proposal_id != proposal_id:
+        raise IdentityMutationError("scaffold revision proposal id does not match the route")
+
+    if mutation_ref not in proposal.source_refs:
+        raise IdentityMutationError(
+            "scaffold revision snapshot is not bound to the mutation receipt"
+        )
+
+    context = receipt.get("revision_context")
+    _require_exact_domain_binding(
+        context,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        effect_kind=("api_proposal_decision_scaffold_revision"),
+    )
+
+    if context.get("kind") != ("decision_scaffold_revision"):
+        raise IdentityMutationError("proposal receipt is not a scaffold revision")
+
+    previous_receipt_ref = context.get("previous_receipt_ref")
+    if previous_receipt_ref is not None and not isinstance(
+        previous_receipt_ref,
+        str,
+    ):
+        raise IdentityMutationError("scaffold previous receipt ref is invalid")
+
+    changed_fields = context.get("changed_scaffold_fields")
+    if (
+        not isinstance(changed_fields, list)
+        or not changed_fields
+        or not all(isinstance(field, str) and field for field in changed_fields)
+    ):
+        raise IdentityMutationError("scaffold changed-field evidence is invalid")
+
+    if receipt.get("supersedes") != previous_receipt_ref:
+        raise IdentityMutationError("scaffold supersedes link does not match revision context")
+
+    response = ProposalScaffoldRevisionResponse(
+        proposal=proposal,
+        receipt_ref=receipt_ref,
+        previous_receipt_ref=(previous_receipt_ref),
+        changed_scaffold_fields=tuple(changed_fields),
+        execution_allowed=False,
+    )
+
+    evidence_refs = [
+        mutation_ref,
+        receipt_ref,
+    ]
+    if previous_receipt_ref:
+        evidence_refs.append(previous_receipt_ref)
+
+    return _record_typed_reconciliation(
+        mutation_path,
+        mutation=mutation,
+        resolver_id=(_SCAFFOLD_REVISION_RECONCILIATION_RESOLVER),
+        reconciled_by=reconciled_by,
+        reason=reason,
+        evidence_refs=evidence_refs,
+        domain_effect={
+            "kind": "proposal_scaffold_revision",
+            "proposal_id": proposal_id,
+            "receipt_ref": receipt_ref,
+            "previous_receipt_ref": (previous_receipt_ref),
+            "changed_scaffold_fields": (changed_fields),
+            "receipt_sha256": (_domain_receipt_sha256(receipt)),
+            "canonical_resource": (f"/proposals/{proposal_id}/revisions"),
+            "execution_allowed": False,
+        },
+        response=response,
+    )
+
+
+def _review_event_content_hash_from_row(
+    event: ReviewEvent,
+    *,
+    proposal_receipt_ref: str,
+    receipt_ref: str,
+) -> str:
+    if len(event.source_refs) < 2:
+        raise IdentityMutationError("review event source refs are incomplete")
+
+    if event.source_refs[0] != proposal_receipt_ref or event.source_refs[1] != receipt_ref:
+        raise IdentityMutationError("review event generated source refs do not match its receipt")
+
+    original_source_refs = event.source_refs[2:]
+    core = {
+        "proposal_id": event.proposal_id,
+        "kind": event.kind,
+        "attester": event.attester,
+        "reason": event.reason,
+        "text": event.text,
+        "attestation_ref": (event.attestation_ref),
+        "compare_with": event.compare_with,
+        "source_refs": original_source_refs,
+        "created_at_utc": (event.created_at_utc),
+    }
+
+    return hashlib.sha256(
+        json.dumps(
+            core,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _reconcile_review_event_identity_mutation(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    _require_unqueried_route_target(request_binding)
+    mutation_ref = identity_mutation_source_ref(receipt_id)
+
+    with Session(engine) as session:
+        current_proposal = session.get(
+            Proposal,
+            proposal_id,
+        )
+        events = list(
+            session.exec(select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)).all()
+        )
+
+    if current_proposal is None:
+        raise IdentityMutationError("review-event proposal no longer exists")
+
+    event = _single_bound_effect(
+        events,
+        mutation_ref=mutation_ref,
+        label="review event",
+    )
+
+    receipt_ref = _receipt_ref_from_source_refs(
+        event.source_refs,
+        directory="review-events",
+    )
+    _path, receipt = _load_typed_domain_receipt(
+        receipt_ref,
+        receipt_root=receipt_root,
+        expected_directory="review-events",
+    )
+
+    if receipt.get("kind") != ("state_core_review_event"):
+        raise IdentityMutationError("domain receipt is not a review-event receipt")
+
+    if receipt.get("review_event") != event.model_dump(mode="json"):
+        raise IdentityMutationError("review-event row and receipt do not match")
+
+    if receipt.get("proposal_id") != proposal_id:
+        raise IdentityMutationError("review-event receipt proposal id does not match the route")
+
+    _require_exact_domain_binding(
+        receipt.get("mutation_context"),
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        effect_kind="api_review_event_create",
+    )
+
+    proposal_receipt_ref = receipt.get("proposal_receipt_ref")
+    if not isinstance(
+        proposal_receipt_ref,
+        str,
+    ):
+        raise IdentityMutationError("review-event receipt has no proposal receipt ref")
+
+    expected_content_hash = _review_event_content_hash_from_row(
+        event,
+        proposal_receipt_ref=(proposal_receipt_ref),
+        receipt_ref=receipt_ref,
+    )
+
+    if event.content_hash != expected_content_hash:
+        raise IdentityMutationError("review-event content hash does not match its row")
+
+    response = ReviewEventCreateResponse(
+        review_event=event,
+        receipt_ref=receipt_ref,
+        execution_allowed=False,
+    )
+
+    return _record_typed_reconciliation(
+        mutation_path,
+        mutation=mutation,
+        resolver_id=(_REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER),
+        reconciled_by=reconciled_by,
+        reason=reason,
+        evidence_refs=[
+            mutation_ref,
+            receipt_ref,
+            proposal_receipt_ref,
+        ],
+        domain_effect={
+            "kind": "review_event_create",
+            "review_event_id": (event.review_event_id),
+            "proposal_id": proposal_id,
+            "content_hash": event.content_hash,
+            "receipt_ref": receipt_ref,
+            "receipt_sha256": (_domain_receipt_sha256(receipt)),
+            "canonical_resource": (f"/proposals/{proposal_id}/timeline"),
+            "execution_allowed": False,
+        },
+        response=response,
+    )
+
+
+def reconcile_identity_mutation_from_domain_truth(
+    receipt_path: str | Path,
+    *,
+    engine: Engine,
+    receipt_root: str | Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Dispatch one pending mutation to its typed resolver."""
+
+    mutation_path = Path(receipt_path)
+    mutation = load_identity_mutation_receipt(mutation_path)
+
+    (
+        receipt_id,
+        request_binding,
+        resolver_id,
+        proposal_id,
+    ) = _require_pending_mutation_route(mutation)
+
+    if resolver_id == (_PROPOSAL_CREATE_RECONCILIATION_RESOLVER):
+        return reconcile_proposal_create_identity_mutation(
+            mutation_path,
+            engine=engine,
+            receipt_root=receipt_root,
+            reconciled_by=reconciled_by,
+            reason=reason,
+        )
+
+    if proposal_id is None:
+        raise IdentityMutationError("typed resolver requires a proposal id")
+
+    root = Path(receipt_root)
+
+    if resolver_id == (_ATTESTATION_CREATE_RECONCILIATION_RESOLVER):
+        return _reconcile_attestation_identity_mutation(
+            mutation_path,
+            mutation=mutation,
+            receipt_id=receipt_id,
+            request_binding=request_binding,
+            proposal_id=proposal_id,
+            engine=engine,
+            receipt_root=root,
+            reconciled_by=reconciled_by,
+            reason=reason,
+        )
+
+    if resolver_id == (_SCAFFOLD_REVISION_RECONCILIATION_RESOLVER):
+        return _reconcile_scaffold_revision_identity_mutation(
+            mutation_path,
+            mutation=mutation,
+            receipt_id=receipt_id,
+            request_binding=request_binding,
+            proposal_id=proposal_id,
+            engine=engine,
+            receipt_root=root,
+            reconciled_by=reconciled_by,
+            reason=reason,
+        )
+
+    if resolver_id == (_REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER):
+        return _reconcile_review_event_identity_mutation(
+            mutation_path,
+            mutation=mutation,
+            receipt_id=receipt_id,
+            request_binding=request_binding,
+            proposal_id=proposal_id,
+            engine=engine,
+            receipt_root=root,
+            reconciled_by=reconciled_by,
+            reason=reason,
+        )
+
+    raise IdentityMutationError("no typed reconciliation resolver for this mutation route")
 
 
 class AttestationCreateRequest(BaseModel):

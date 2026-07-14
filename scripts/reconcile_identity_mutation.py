@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 from finharness.api.routes_proposals import (
-    reconcile_proposal_create_identity_mutation,
+    identity_mutation_reconciliation_resolver_id,
+    reconcile_identity_mutation_from_domain_truth,
 )
 from finharness.identity import (
     IdentityMutationError,
@@ -41,12 +42,7 @@ def main(argv: list[str]) -> int:
     try:
         current = load_identity_mutation_receipt(args.receipt)
         request_binding = current.get("request", {})
-        resolver = (
-            "finharness.api.proposal_create.v1"
-            if request_binding.get("method") == "POST"
-            and request_binding.get("path") == "/proposals"
-            else None
-        )
+        resolver = identity_mutation_reconciliation_resolver_id(current)
 
         if not args.apply:
             print(
@@ -76,7 +72,7 @@ def main(argv: list[str]) -> int:
         )
         engine = open_state_core(args.state_core_db)
         try:
-            result = reconcile_proposal_create_identity_mutation(
+            result = reconcile_identity_mutation_from_domain_truth(
                 args.receipt,
                 engine=engine,
                 receipt_root=receipt_root,
