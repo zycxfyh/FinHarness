@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from time import perf_counter
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
@@ -28,7 +29,20 @@ from finharness.execution.capabilities import (
     ExecutionCapabilities,
     ExecutionCapabilityDeniedError,
 )
-from finharness.identity import IdentityProvider, write_identity_receipt
+from finharness.identity import (
+    IDEMPOTENCY_HEADER,
+    IDEMPOTENT_REPLAY_HEADER,
+    IDENTITY_RECEIPT_HEADER,
+    IdentityMutationClaim,
+    IdentityMutationError,
+    IdentityProvider,
+    OperatorContext,
+    begin_identity_mutation,
+    complete_identity_mutation,
+    replay_identity_mutation,
+    request_body_sha256,
+    write_identity_receipt,
+)
 from finharness.local_operator import LocalOperatorContext
 from finharness.observability import TRACE_HEADER, start_local_span, trace_context_from_headers
 from finharness.project_paths import ROOT
@@ -55,6 +69,171 @@ _OPTIONAL_DATA_IMPORTS = {
     "pandera",
     "yfinance",
 }
+
+
+async def _buffer_response(response: Response) -> tuple[Response, bytes]:
+    """Materialize an API response so it can be bound and safely replayed."""
+
+    body_iterator = getattr(response, "body_iterator", None)
+    if body_iterator is None:
+        body = bytes(response.body)
+    else:
+        body = b"".join([chunk async for chunk in body_iterator])
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    buffered = Response(
+        content=body,
+        status_code=response.status_code,
+        headers=headers,
+        background=response.background,
+    )
+    return buffered, body
+
+
+def _protocol_response(claim: IdentityMutationClaim) -> Response:
+    if claim.disposition == "replay":
+        status_code, body, content_type = replay_identity_mutation(claim.payload)
+        headers = {IDEMPOTENT_REPLAY_HEADER: "true"}
+        if content_type:
+            headers["content-type"] = content_type
+        return Response(content=body, status_code=status_code, headers=headers)
+    code = (
+        "idempotency_key_reused_for_different_request"
+        if claim.disposition == "conflict"
+        else "mutation_outcome_ambiguous"
+    )
+    message = (
+        "The key is already bound to a different request."
+        if claim.disposition == "conflict"
+        else "A prior attempt may have committed; automatic retry is denied pending reconciliation."
+    )
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "code": code,
+                "message": message,
+                "identity_receipt_id": claim.receipt_id,
+                "execution_allowed": False,
+            }
+        },
+    )
+
+
+async def _call_with_identity_protocol(
+    api: FastAPI,
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+    *,
+    trace_id: str,
+) -> tuple[Response, IdentityMutationClaim | None]:
+    write_method = request.method not in {"GET", "HEAD", "OPTIONS"}
+    idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
+    if not write_method or not idempotency_key:
+        return await call_next(request), None
+    provider = getattr(api.state, "identity_provider", None)
+    context = (
+        await provider.authenticate(request) if isinstance(provider, IdentityProvider) else None
+    )
+    if not isinstance(context, OperatorContext):
+        return await call_next(request), None
+    request.state.operator_context = context
+    receipt_root = (
+        Path(
+            getattr(
+                api.state,
+                "state_core_receipt_root",
+                ROOT / "data" / "receipts" / "state-core",
+            )
+        )
+        / "identity"
+    )
+    try:
+        claim = begin_identity_mutation(
+            receipt_root,
+            context=context,
+            method=request.method,
+            path=request.url.path,
+            trace_id=trace_id,
+            idempotency_key=idempotency_key,
+            body_sha256=request_body_sha256(await request.body()),
+        )
+    except IdentityMutationError as exc:
+        logger.warning(
+            "invalid_idempotency_contract",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            execution_allowed=False,
+        )
+        return (
+            JSONResponse(
+                status_code=409,
+                content={
+                    "detail": {
+                        "code": "invalid_idempotency_contract",
+                        "message": ("The mutation identity receipt could not be validated."),
+                        "trace_id": trace_id,
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            None,
+        )
+    if claim.disposition != "execute":
+        return _protocol_response(claim), claim
+    response = await call_next(request)
+    response, body = await _buffer_response(response)
+    completed = complete_identity_mutation(
+        claim,
+        trace_id=trace_id,
+        status_code=response.status_code,
+        response_body=body,
+        content_type=response.headers.get("content-type"),
+    )
+    replay_claim = IdentityMutationClaim("replay", claim.receipt_id, claim.receipt_path, completed)
+    return response, replay_claim
+
+
+def _bind_identity_receipt_header(
+    api: FastAPI,
+    request: Request,
+    response: Response,
+    claim: IdentityMutationClaim | None,
+    *,
+    trace_id: str,
+) -> None:
+    if claim is not None:
+        response.headers[IDENTITY_RECEIPT_HEADER] = claim.receipt_id
+        return
+    context = getattr(request.state, "operator_context", None)
+    if (
+        not isinstance(context, OperatorContext)
+        or request.method in {"GET", "HEAD", "OPTIONS"}
+        or response.status_code >= 400
+    ):
+        return
+    root = (
+        Path(
+            getattr(
+                api.state,
+                "state_core_receipt_root",
+                ROOT / "data" / "receipts" / "state-core",
+            )
+        )
+        / "identity"
+    )
+    receipt_path = write_identity_receipt(
+        root,
+        context=context,
+        method=request.method,
+        path=request.url.path,
+        trace_id=trace_id,
+        status_code=response.status_code,
+    )
+    response.headers[IDENTITY_RECEIPT_HEADER] = receipt_path.stem
 
 
 def _load_optional_data_routers():
@@ -147,6 +326,7 @@ def create_app(
         trace_context = trace_context_from_headers(request.headers)
         trace_id = trace_context.trace_id
         request.state.trace_id = trace_id
+        mutation_claim: IdentityMutationClaim | None = None
         with start_local_span(
             "finharness.api.request",
             trace_id=trace_id,
@@ -156,30 +336,11 @@ def create_app(
                 "finharness.trace_id_supplied": trace_context.accepted_supplied,
             },
         ) as span:
-            response = await call_next(request)
-            span.set_attribute("http.response.status_code", response.status_code)
-        operator_context = getattr(request.state, "operator_context", None)
-        if (
-            operator_context is not None
-            and request.method not in {"GET", "HEAD", "OPTIONS"}
-            and response.status_code < 400
-        ):
-            identity_receipt_root = Path(
-                getattr(
-                    api.state,
-                    "state_core_receipt_root",
-                    ROOT / "data" / "receipts" / "state-core",
-                )
-            ) / "identity"
-            receipt_path = write_identity_receipt(
-                identity_receipt_root,
-                context=operator_context,
-                method=request.method,
-                path=request.url.path,
-                trace_id=trace_id,
-                status_code=response.status_code,
+            response, mutation_claim = await _call_with_identity_protocol(
+                api, request, call_next, trace_id=trace_id
             )
-            response.headers["X-FinHarness-Identity-Receipt"] = receipt_path.stem
+            span.set_attribute("http.response.status_code", response.status_code)
+        _bind_identity_receipt_header(api, request, response, mutation_claim, trace_id=trace_id)
         response.headers[TRACE_HEADER] = trace_id
         logger.info(
             "state_api_request",

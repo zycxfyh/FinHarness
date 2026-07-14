@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from enum import StrEnum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -11,6 +12,13 @@ from typing import Any
 
 class ReceiptPathError(ValueError):
     """Raised when a receipt path would resolve outside its allowed root."""
+
+
+class LocalWriteDurability(StrEnum):
+    """Named guarantees for local receipt writes."""
+
+    REPLACE_ATOMIC = "replace_atomic"
+    POWER_LOSS_DURABLE = "power_loss_durable"
 
 
 def resolve_under(root: str | Path, *parts: str | Path) -> Path:
@@ -112,6 +120,103 @@ def atomic_write_json(path: str | Path, payload: dict[str, Any]) -> Path:
             remove_file_best_effort(temp_path)
         raise
     return target
+
+
+def durable_atomic_write_bytes(path: str | Path, content: bytes) -> Path:
+    """Replace a file atomically and fsync its data plus containing directory.
+
+    Unlike the legacy ``atomic_write_*`` helpers, successful return from this
+    function is the power-loss durability boundary on supported local filesystems.
+    """
+
+    target = Path(path)
+    _ensure_directory_durable(target.parent)
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        temp_path.replace(target)
+        temp_path = None
+        _fsync_directory(target.parent)
+    except Exception:
+        if temp_path is not None:
+            remove_file_best_effort(temp_path)
+        raise
+    return target
+
+
+def durable_atomic_write_json(path: str | Path, payload: dict[str, Any]) -> Path:
+    """Power-loss-durable JSON replacement for critical receipts."""
+
+    content = (
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
+    ).encode()
+    return durable_atomic_write_bytes(path, content)
+
+
+def durable_create_json_exclusive(path: str | Path, payload: dict[str, Any]) -> bool:
+    """Durably claim an immutable JSON path; return false if already claimed."""
+
+    target = Path(path)
+    _ensure_directory_durable(target.parent)
+    content = (
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str) + "\n"
+    ).encode()
+    temp_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "wb",
+            dir=target.parent,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        try:
+            os.link(temp_path, target)
+        except FileExistsError:
+            return False
+        _fsync_directory(target.parent)
+        return True
+    finally:
+        if temp_path is not None and remove_file_best_effort(temp_path):
+            _fsync_directory(target.parent)
+
+
+def _fsync_directory(path: Path) -> None:
+    """Persist directory-entry changes on platforms exposing directory fsync."""
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _ensure_directory_durable(path: Path) -> None:
+    """Create missing directory levels and persist each new parent entry."""
+
+    missing: list[Path] = []
+    cursor = path
+    while not cursor.exists():
+        missing.append(cursor)
+        cursor = cursor.parent
+    path.mkdir(parents=True, exist_ok=True)
+    for created in reversed(missing):
+        _fsync_directory(created.parent)
 
 
 def remove_file_best_effort(path: str | Path) -> bool:

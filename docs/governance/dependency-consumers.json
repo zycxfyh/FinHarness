@@ -90,6 +90,7 @@
         "fastapi"
       ],
       "import_consumers": [
+        "scripts/verify_debt_register.py",
         "src/finharness/api/app.py",
         "src/finharness/api/dependencies.py",
         "src/finharness/api/legacy_headers.py",
@@ -108,9 +109,9 @@
         "src/finharness/api/routes_state.py",
         "src/finharness/identity.py",
         "src/finharness/local_operator.py",
-        "scripts/verify_debt_register.py",
-        "tests/test_debt_register.py",
         "tests/test_authenticated_identity.py",
+        "tests/test_debt_register.py",
+        "tests/test_durable_identity_mutations.py",
         "tests/test_local_review_mode.py"
       ],
       "task_consumers": [
@@ -413,6 +414,7 @@
         "tests/test_agent_authority_grants.py",
         "tests/test_autonomy_statecore_adapter.py",
         "tests/test_capital_import_recovery.py",
+        "tests/test_durable_identity_mutations.py",
         "tests/test_execution_adapter_boundary.py",
         "tests/test_execution_capability_enforcement.py",
         "tests/test_execution_lifecycle_hardening.py",
