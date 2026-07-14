@@ -16,6 +16,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from finharness.statecore.receipt_io import (
+    canonical_json_sha256,
     durable_atomic_write_json,
     durable_compare_and_swap_json,
     durable_create_json_exclusive,
@@ -194,8 +195,7 @@ def request_body_sha256(body: bytes) -> str:
 
 
 def _canonical_sha256(payload: dict[str, Any]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical_json_sha256(payload)
 
 
 def _with_content_hash(payload: dict[str, Any]) -> dict[str, Any]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 from enum import StrEnum
@@ -13,6 +14,10 @@ from typing import Any
 
 class ReceiptPathError(ValueError):
     """Raised when a receipt path would resolve outside its allowed root."""
+
+
+class ReceiptIntegrityError(ValueError):
+    """Raised when durable receipt content fails its integrity contract."""
 
 
 class LocalWriteDurability(StrEnum):
@@ -164,6 +169,68 @@ def durable_atomic_write_json(path: str | Path, payload: dict[str, Any]) -> Path
     return durable_atomic_write_bytes(path, content)
 
 
+def canonical_json_sha256(payload: dict[str, Any]) -> str:
+    """Hash the canonical compact JSON representation used by receipts."""
+
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _require_valid_json_content_hash(
+    payload: dict[str, Any],
+    *,
+    label: str,
+) -> str:
+    claimed = payload.get("content_sha256")
+    unhashed = {key: value for key, value in payload.items() if key != "content_sha256"}
+    actual = canonical_json_sha256(unhashed)
+
+    if not isinstance(claimed, str) or claimed != actual:
+        raise ReceiptIntegrityError(f"{label} content hash mismatch")
+
+    return claimed
+
+
+def _read_json_object_no_follow(path: Path) -> dict[str, Any]:
+    """Read one receipt without following a final-component symlink."""
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ReceiptIntegrityError(f"locked receipt is unreadable: {path}") from exc
+
+    try:
+        try:
+            with os.fdopen(
+                descriptor,
+                "r",
+                encoding="utf-8",
+            ) as receipt_file:
+                descriptor = -1
+                payload = json.load(receipt_file)
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise ReceiptIntegrityError(f"locked receipt is unreadable: {path}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    if not isinstance(payload, dict):
+        raise ReceiptIntegrityError("locked receipt is not a JSON object")
+
+    return payload
+
+
 def durable_compare_and_swap_json(
     path: str | Path,
     *,
@@ -171,31 +238,57 @@ def durable_compare_and_swap_json(
     expected_state: str,
     payload: dict[str, Any],
 ) -> bool:
-    """Durably replace JSON only when the locked current version still matches.
+    """Durably replace one integrity-valid locked JSON version.
 
-    A single persistent lock file per receipt directory serializes terminal
-    transitions across threads and processes. The target is replaced only when
-    both its state and content hash equal the caller's expected pending version.
+    A persistent lock file per receipt directory serializes terminal
+    transitions across threads and processes. While holding that lock,
+    this function re-reads the target without following a final-component
+    symlink and verifies both the current and replacement content hashes.
     """
 
     target = Path(path)
     _ensure_directory_durable(target.parent)
+
+    # Never permit this primitive to create a malformed terminal receipt.
+    _require_valid_json_content_hash(
+        payload,
+        label="replacement receipt",
+    )
+
     lock_path = target.parent / ".receipt-transition.lock"
     lock_flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(lock_path, lock_flags, 0o600)
+    descriptor = os.open(
+        lock_path,
+        lock_flags,
+        0o600,
+    )
+
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        current = json.loads(target.read_text(encoding="utf-8"))
-        if (
-            current.get("content_sha256") != expected_content_sha256
-            or current.get("state") != expected_state
-        ):
+        fcntl.flock(
+            descriptor,
+            fcntl.LOCK_EX,
+        )
+
+        current = _read_json_object_no_follow(target)
+        current_hash = _require_valid_json_content_hash(
+            current,
+            label="locked receipt",
+        )
+
+        if current_hash != expected_content_sha256 or current.get("state") != expected_state:
             return False
-        durable_atomic_write_json(target, payload)
+
+        durable_atomic_write_json(
+            target,
+            payload,
+        )
         return True
     finally:
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            fcntl.flock(
+                descriptor,
+                fcntl.LOCK_UN,
+            )
         finally:
             os.close(descriptor)
 

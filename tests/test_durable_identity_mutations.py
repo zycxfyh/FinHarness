@@ -37,7 +37,9 @@ from finharness.identity import (
 from finharness.project_paths import ROOT
 from finharness.statecore.models import Proposal
 from finharness.statecore.receipt_io import (
+    ReceiptIntegrityError,
     atomic_write_json,
+    canonical_json_sha256,
     durable_atomic_write_json,
     durable_compare_and_swap_json,
 )
@@ -48,6 +50,7 @@ from tests._scaffold import VALID_SCAFFOLD
 def _cross_process_terminal_transition(
     path: str,
     state: str,
+    expected_content_sha256: str,
     ready_path: str,
     start_path: str,
 ) -> bool:
@@ -62,14 +65,17 @@ def _cross_process_terminal_transition(
             raise TimeoutError("cross-process CAS start barrier timed out")
         time.sleep(0.01)
 
+    terminal = {
+        "state": state,
+        "previous_content_sha256": (expected_content_sha256),
+    }
+    terminal["content_sha256"] = canonical_json_sha256(terminal)
+
     return durable_compare_and_swap_json(
         path,
-        expected_content_sha256="pending-version",
+        expected_content_sha256=(expected_content_sha256),
         expected_state="pending",
-        payload={
-            "state": state,
-            "content_sha256": f"{state}-version",
-        },
+        payload=terminal,
     )
 
 
@@ -472,12 +478,13 @@ class DurableIdentityMutationTest(unittest.TestCase):
 
     def test_cross_process_terminal_race_has_exactly_one_winner(self) -> None:
         path = self.root / "cross-process-receipt.json"
+        pending = {
+            "state": "pending",
+        }
+        pending["content_sha256"] = canonical_json_sha256(pending)
         durable_atomic_write_json(
             path,
-            {
-                "state": "pending",
-                "content_sha256": "pending-version",
-            },
+            pending,
         )
 
         ready_a = self.root / "worker-a.ready"
@@ -492,6 +499,7 @@ class DurableIdentityMutationTest(unittest.TestCase):
                 _cross_process_terminal_transition,
                 str(path),
                 "committed",
+                pending["content_sha256"],
                 str(ready_a),
                 str(start_path),
             )
@@ -499,6 +507,7 @@ class DurableIdentityMutationTest(unittest.TestCase):
                 _cross_process_terminal_transition,
                 str(path),
                 "reconciled_applied",
+                pending["content_sha256"],
                 str(ready_b),
                 str(start_path),
             )
@@ -727,21 +736,24 @@ class DurableIdentityMutationTest(unittest.TestCase):
         path = self.root / "receipt-cas.json"
         pending = {
             "state": "pending",
-            "content_sha256": "pending-version",
         }
+        pending["content_sha256"] = canonical_json_sha256(pending)
         durable_atomic_write_json(path, pending)
         barrier = Barrier(2)
 
         def transition(state: str) -> bool:
+            terminal = {
+                "state": state,
+                "previous_content_sha256": (pending["content_sha256"]),
+            }
+            terminal["content_sha256"] = canonical_json_sha256(terminal)
+
             barrier.wait()
             return durable_compare_and_swap_json(
                 path,
-                expected_content_sha256="pending-version",
+                expected_content_sha256=(pending["content_sha256"]),
                 expected_state="pending",
-                payload={
-                    "state": state,
-                    "content_sha256": f"{state}-version",
-                },
+                payload=terminal,
             )
 
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -757,6 +769,64 @@ class DurableIdentityMutationTest(unittest.TestCase):
         self.assertIn(
             terminal["state"],
             {"committed", "reconciled_applied"},
+        )
+
+    def test_locked_cas_rejects_tampered_pending_receipt_without_overwrite(
+        self,
+    ) -> None:
+        claim = self._pending_claim("tampered-locked-cas-0001")
+
+        tampered = json.loads(
+            claim.receipt_path.read_text(
+                encoding="utf-8",
+            )
+        )
+        original_claimed_hash = tampered["content_sha256"]
+        tampered["request"]["body_sha256"] = "0" * 64
+
+        # Preserve the old claimed hash to simulate a receipt
+        # whose content changed without a valid integrity
+        # transition.
+        durable_atomic_write_json(
+            claim.receipt_path,
+            tampered,
+        )
+
+        with self.assertRaisesRegex(
+            ReceiptIntegrityError,
+            "locked receipt content hash mismatch",
+        ):
+            complete_identity_mutation(
+                claim,
+                trace_id="trace:tampered-cas",
+                status_code=200,
+                response_body=b'{"ok":true}',
+                content_type="application/json",
+            )
+
+        persisted = json.loads(
+            claim.receipt_path.read_text(
+                encoding="utf-8",
+            )
+        )
+
+        self.assertEqual(
+            persisted["state"],
+            "pending",
+        )
+        self.assertEqual(
+            persisted["request"]["body_sha256"],
+            "0" * 64,
+        )
+        self.assertEqual(
+            persisted["content_sha256"],
+            original_claimed_hash,
+        )
+
+        unhashed = {key: value for key, value in persisted.items() if key != "content_sha256"}
+        self.assertNotEqual(
+            persisted["content_sha256"],
+            canonical_json_sha256(unhashed),
         )
 
     def test_stale_reconciliation_cannot_overwrite_committed_receipt(self) -> None:
