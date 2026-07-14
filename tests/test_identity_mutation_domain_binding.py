@@ -31,6 +31,7 @@ from finharness.statecore.models import (
     ReceiptIndex,
     ReviewEvent,
 )
+from finharness.statecore.proposals import proposal_content_hash
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 
@@ -1018,7 +1019,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
         self._assert_reconciliation_fails_closed(
             identity_path,
-            message_pattern=("domain receipt is missing or unreadable"),
+            message_pattern=("verified scaffold revision receipt not found"),
         )
 
         with Session(self.engine) as session:
@@ -1046,6 +1047,400 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             len(final_bound_indexes),
             1,
         )
+
+    def test_scaffold_reconciliation_selects_exact_revision_after_later_revision(
+        self,
+    ) -> None:
+        """Reconciliation must use exact revision_context binding, not inherited source_refs.
+
+        When mutation A creates Revision A (counter_evidence), then a separate
+        Revision B (alternatives) inherits A's source_refs, the scaffold resolver
+        must NOT treat both ReceiptIndex entries as exact evidence. It must locate
+        Revision A via its exact revision_context.identity_mutation_receipt_id and
+        reconstruct the canonical response from A's immutable receipt snapshot.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            # -- 7.1 Create base Proposal (unkeyed) --
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            initial_receipt_ref = proposal["receipt_ref"]
+
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # -- 7.2 Keyed Revision A with simulated terminal loss --
+            key_a = "recover-scaffold-before-later-revision-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A: counter_evidence",
+                "decision_scaffold": {
+                    "counter_evidence": "Reconciliation recovery counter-evidence."
+                },
+                "source_refs": ["test:scaffold-exact-revision-a"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            with Session(self.engine) as session:
+                current = session.get(Proposal, proposal_id)
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            self.assertIsNotNone(current)
+            assert current is not None
+
+            # After A's domain write, exactly one ReceiptIndex binds mutation_ref.
+            bound_a = [index for index in indexes if mutation_ref_a in list(index.refs or [])]
+            self.assertEqual(len(bound_a), 1)
+            revision_a_receipt_ref = bound_a[0].path
+            self.assertEqual(current.receipt_ref, revision_a_receipt_ref)
+            self.assertNotEqual(current.receipt_ref, initial_receipt_ref)
+
+            # Read Revision A's receipt to capture its changed fields and
+            # previous_receipt_ref for later assertions.
+            revision_a_path = self._resolve_receipt_path(revision_a_receipt_ref)
+            revision_a_receipt = json.loads(revision_a_path.read_text(encoding="utf-8"))
+            revision_a_context = revision_a_receipt.get("revision_context", {})
+            self.assertEqual(
+                revision_a_context.get("identity_mutation_receipt_id"),
+                receipt_id_a,
+            )
+            revision_a_previous_ref = revision_a_context.get("previous_receipt_ref")
+            revision_a_changed_fields = revision_a_context.get("changed_scaffold_fields", [])
+            self.assertIn("counter_evidence", revision_a_changed_fields)
+
+            # -- 7.3 Create legitimate later Revision B (different field, no key) --
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision alternatives."},
+                "source_refs": ["test:scaffold-exact-revision-b"],
+            }
+
+            rev_b_response = client.patch(
+                endpoint,
+                headers={"Authorization": "Bearer alice"},
+                json=body_b,
+            )
+
+            self.assertEqual(
+                rev_b_response.status_code,
+                200,
+                rev_b_response.text,
+            )
+            rev_b_body = rev_b_response.json()
+            revision_b_receipt_ref = rev_b_body["receipt_ref"]
+            self.assertNotEqual(revision_b_receipt_ref, revision_a_receipt_ref)
+
+            with Session(self.engine) as session:
+                current_b = session.get(Proposal, proposal_id)
+                indexes_b = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            self.assertIsNotNone(current_b)
+            assert current_b is not None
+            self.assertEqual(current_b.receipt_ref, revision_b_receipt_ref)
+
+            # -- 7.4 Prove mutation_ref is inherited by Revision B --
+            candidates_after_b = [
+                index for index in indexes_b if mutation_ref_a in list(index.refs or [])
+            ]
+            self.assertGreaterEqual(
+                len(candidates_after_b),
+                2,
+                "At least Revision A and Revision B ReceiptIndex "
+                "rows must contain the mutation_ref via inherited "
+                "source_refs; otherwise this test does not reproduce "
+                "the inherited-ref ambiguity defect.",
+            )
+
+            # -- 7.5 Execute typed reconciliation --
+            reconciled = reconcile_identity_mutation_from_domain_truth(
+                receipt_path_a,
+                engine=self.engine,
+                receipt_root=(self.root / "receipts"),
+                reconciled_by="operator:alice",
+                reason=(
+                    "Verified exact scaffold revision from immutable receipt "
+                    "after a later revision inherited the mutation ref."
+                ),
+            )
+
+            self.assertEqual(
+                reconciled["state"],
+                "reconciled_applied",
+            )
+            self.assertEqual(
+                reconciled["reconciliation"]["resolver_id"],
+                "finharness.api.proposal_scaffold_revision.v1",
+            )
+            self.assertEqual(
+                reconciled["reconciliation"]["response_source"],
+                "canonical_route_reconstruction",
+            )
+            domain_effect = reconciled["reconciliation"]["domain_effect"]
+            self.assertEqual(
+                domain_effect["receipt_ref"],
+                revision_a_receipt_ref,
+            )
+            self.assertEqual(
+                domain_effect["previous_receipt_ref"],
+                revision_a_previous_ref,
+            )
+            self.assertFalse(domain_effect["execution_allowed"])
+
+            # -- 7.6 Same-key replay returns Revision A history --
+            replay = client.request(
+                "PATCH",
+                endpoint,
+                headers=self._headers(key_a),
+                json=body_a,
+            )
+
+            self.assertEqual(replay.status_code, 200, replay.text)
+            self.assertEqual(
+                replay.headers[IDEMPOTENT_REPLAY_HEADER],
+                "true",
+            )
+            self.assertEqual(
+                replay.headers[IDENTITY_RECEIPT_HEADER],
+                receipt_id_a,
+            )
+
+            replay_body = replay.json()
+            self.assertEqual(
+                replay_body["receipt_ref"],
+                revision_a_receipt_ref,
+            )
+            self.assertEqual(
+                replay_body["previous_receipt_ref"],
+                revision_a_previous_ref,
+            )
+            self.assertIn(
+                "counter_evidence",
+                replay_body["changed_scaffold_fields"],
+            )
+            self.assertEqual(
+                replay_body["proposal"]["receipt_ref"],
+                revision_a_receipt_ref,
+            )
+            # Replay response must NOT return Revision B's current state.
+            self.assertNotEqual(
+                replay_body["proposal"]["receipt_ref"],
+                revision_b_receipt_ref,
+            )
+
+            # -- 7.7 Current domain state is not rolled back --
+            with Session(self.engine) as session:
+                final_proposal = session.get(Proposal, proposal_id)
+
+            self.assertIsNotNone(final_proposal)
+            assert final_proposal is not None
+            self.assertEqual(
+                final_proposal.receipt_ref,
+                revision_b_receipt_ref,
+            )
+
+            # -- 7.8 No extra domain effects --
+            with Session(self.engine) as session:
+                final_indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            # Exactly two Proposal ReceiptIndex entries:
+            # the initial creation + Revision B. Reconciliation
+            # must NOT create Revision C or a new ReceiptIndex.
+            # Note: the initial proposal create generates one ReceiptIndex,
+            # Revision A (keyed) generates one, Revision B (non-keyed)
+            # generates one. That makes three total.  But
+            # ReceiptIndex is created at proposal creation time too.
+            # Actually, both Revision A and B each produce one index,
+            # and the unkeyed proposal create also produces one.
+            # Total >= 3 is normal. The key assertion is that
+            # reconciliation does NOT add a new one.
+            exact_a_matches = [
+                index for index in final_indexes if revision_a_receipt_ref in (index.path or "")
+            ]
+            self.assertEqual(
+                len(exact_a_matches),
+                1,
+                "Revision A receipt must still be referenced exactly once.",
+            )
+            exact_b_matches = [
+                index for index in final_indexes if revision_b_receipt_ref in (index.path or "")
+            ]
+            self.assertEqual(
+                len(exact_b_matches),
+                1,
+                "Revision B receipt must still be referenced exactly once.",
+            )
+
+    def test_multiple_exact_scaffold_revision_bindings_fail_closed(
+        self,
+    ) -> None:
+        """Reconciliation must fail closed when two receipts claim the SAME
+        exact identity_mutation_receipt_id.
+
+        Unlike inherited source_refs — where a later revision happens to carry
+        an older mutation_ref — this test constructs genuine exact-effect
+        ambiguity: two distinct proposal receipts whose revision_context both
+        claim the target receipt_id with matching full binding.
+        """
+        with TestClient(
+            self.app,
+            raise_server_exceptions=False,
+        ) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # -- Keyed Revision A with terminal loss --
+            key_a = "exact-ambiguity-scaffold-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Ambiguity: counter_evidence",
+                "decision_scaffold": {"counter_evidence": "Ambiguity counter-evidence."},
+                "source_refs": ["test:exact-ambiguity-a"],
+            }
+
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=key_a,
+                body=body_a,
+            )
+
+            # Read Revision A's domain receipt to get its revision_context.
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+            bound = [index for index in indexes if mutation_ref_a in list(index.refs or [])]
+            self.assertEqual(len(bound), 1)
+            revision_a_ref = bound[0].path
+
+            revision_a_path = self._resolve_receipt_path(revision_a_ref)
+            revision_a_receipt = json.loads(revision_a_path.read_text(encoding="utf-8"))
+            revision_a_context = revision_a_receipt.get("revision_context", {})
+
+            # Verify Revision A has the correct exact binding.
+            self.assertEqual(
+                revision_a_context.get("identity_mutation_receipt_id"),
+                receipt_id_a,
+            )
+
+            # -- Clone Revision A's receipt to create a second receipt that
+            #    also claims the same exact identity_mutation_receipt_id --
+            #    This simulates a genuine exact-effect ambiguity where two
+            #    immutable receipts both claim the same mutation.
+
+            # Find the next available receipt ref path.
+            revision_a_dir = revision_a_path.parent
+            duplicate_receipt_ref = str(revision_a_dir / "proposal_duplicate_ambiguity.json")
+
+            # Write a distinct proposal snapshot that shares the same
+            # exact identity_mutation_receipt_id binding.
+            duplicate_proposal_snapshot = dict(revision_a_receipt["proposal"])
+            if duplicate_proposal_snapshot.get("claim"):
+                duplicate_proposal_snapshot["claim"] = (
+                    "AMBIGUITY DUPLICATE: " + duplicate_proposal_snapshot["claim"]
+                )
+
+            # Use the canonical domain hash so verification passes.
+            duplicate_proposal_snapshot["receipt_ref"] = duplicate_receipt_ref
+            dup_proposal = Proposal.model_validate(duplicate_proposal_snapshot)
+            duplicate_content_hash = proposal_content_hash(dup_proposal)
+
+            duplicate_receipt = {
+                "kind": "state_core_proposal",
+                "proposal": duplicate_proposal_snapshot,
+                "content_hash": duplicate_content_hash,
+                "revision_context": {
+                    **revision_a_context,
+                    "changed_scaffold_fields": [
+                        "counter_evidence",
+                        "thesis",
+                    ],
+                },
+                "supersedes": revision_a_context.get("previous_receipt_ref"),
+            }
+
+            duplicate_path = self._resolve_receipt_path(duplicate_receipt_ref)
+            duplicate_path.write_text(
+                json.dumps(duplicate_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            # Register the duplicate in ReceiptIndex.
+            with Session(self.engine) as session:
+                dup_index = ReceiptIndex(
+                    receipt_id="receipt:duplicate-ambiguity-0001",
+                    refs=[mutation_ref_a],
+                    kind="state_core_proposal",
+                    path=duplicate_receipt_ref,
+                )
+                session.add(dup_index)
+                session.commit()
+
+                # Confirm both receipts now claim the same mutation.
+                post_indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+
+            exact_candidates = [
+                index for index in post_indexes if mutation_ref_a in list(index.refs or [])
+            ]
+            self.assertGreaterEqual(
+                len(exact_candidates),
+                2,
+                "Both the original and duplicate receipts must "
+                "reference mutation_ref_a for the test to be valid.",
+            )
+
+            # Both receipts claim receipt_id_a in their exact binding.
+            self._assert_reconciliation_fails_closed(
+                receipt_path_a,
+                message_pattern=("multiple scaffold revisions are bound to one mutation receipt"),
+            )
+
+            # Clean up: remove the duplicate ReceiptIndex so it does not
+            # contaminate later tests.
+            with Session(self.engine) as session:
+                dup_row = session.exec(
+                    select(ReceiptIndex).where(ReceiptIndex.path == duplicate_receipt_ref)
+                ).first()
+                if dup_row is not None:
+                    session.delete(dup_row)
+                    session.commit()
+
+            # Remove the duplicate receipt file.
+            if duplicate_path.is_file():
+                duplicate_path.unlink()
 
 
 if __name__ == "__main__":

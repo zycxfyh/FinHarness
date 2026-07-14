@@ -793,6 +793,79 @@ def _reconcile_attestation_identity_mutation(
     )
 
 
+def _validate_scaffold_candidate_revision(
+    candidate_ref: str,
+    *,
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str,
+    receipt_root: Path,
+) -> tuple[str, Proposal, dict[str, Any]] | None:
+    """Validate one candidate scaffold revision receipt against an exact identity mutation.
+
+    Returns (receipt_ref, proposal, receipt) when validation passes.
+    Returns None when the candidate is a non-target (inherited refs only,
+    no revision_context, or unreadable receipt).
+    Raises IdentityMutationError when the candidate claims the target
+    receipt_id but its binding evidence is invalid.
+    """
+    try:
+        candidate_proposal, candidate_receipt = _verified_proposal_snapshot(
+            candidate_ref,
+            receipt_root=receipt_root,
+        )
+    except IdentityMutationError:
+        return None
+
+    context = candidate_receipt.get("revision_context")
+    if not isinstance(context, dict):
+        return None
+
+    if context.get("identity_mutation_receipt_id") != receipt_id:
+        return None
+
+    # The candidate **claims** this exact receipt_id.
+    # Full binding validation is mandatory; any mismatch
+    # is evidence of a tampered or inconsistent receipt.
+    try:
+        _require_exact_domain_binding(
+            context,
+            receipt_id=receipt_id,
+            request_binding=request_binding,
+            effect_kind="api_proposal_decision_scaffold_revision",
+        )
+    except IdentityMutationError as err:
+        raise IdentityMutationError(
+            "scaffold revision receipt claims target receipt_id "
+            "but its exact mutation binding is invalid"
+        ) from err
+
+    if context.get("kind") != "decision_scaffold_revision":
+        raise IdentityMutationError(
+            "scaffold revision receipt claims target receipt_id but is not a scaffold revision"
+        )
+
+    previous_receipt_ref = context.get("previous_receipt_ref")
+    if previous_receipt_ref is not None and not isinstance(previous_receipt_ref, str):
+        raise IdentityMutationError("scaffold previous receipt ref is invalid")
+
+    changed_fields = context.get("changed_scaffold_fields")
+    if (
+        not isinstance(changed_fields, list)
+        or not changed_fields
+        or not all(isinstance(field, str) and field for field in changed_fields)
+    ):
+        raise IdentityMutationError("scaffold changed-field evidence is invalid")
+
+    if candidate_receipt.get("supersedes") != previous_receipt_ref:
+        raise IdentityMutationError("scaffold supersedes link does not match revision context")
+
+    if candidate_proposal.proposal_id != proposal_id:
+        raise IdentityMutationError("scaffold revision proposal id does not match the route")
+
+    return (candidate_ref, candidate_proposal, candidate_receipt)
+
+
 def _reconcile_scaffold_revision_identity_mutation(
     mutation_path: Path,
     *,
@@ -822,58 +895,43 @@ def _reconcile_scaffold_revision_identity_mutation(
     if current_proposal is None:
         raise IdentityMutationError("scaffold proposal no longer exists")
 
-    matches = [index for index in indexes if mutation_ref in list(index.refs or [])]
+    # Phase 1 — candidate search: ReceiptIndex.refs can carry inherited
+    # mutation_refs from earlier revisions and is **not** proof of exact
+    # effect identity.  Candidates that merely inherit the mutation_ref
+    # without claiming it in their revision_context are skipped below.
+    candidates = [index for index in indexes if mutation_ref in list(index.refs or [])]
 
-    if not matches:
+    if not candidates:
         raise IdentityMutationError(
             "verified scaffold revision receipt not found; mutation remains pending"
         )
 
-    if len(matches) != 1:
-        raise IdentityMutationError("multiple scaffold revisions are bound to one mutation receipt")
+    # Phase 2 — exact revision_context matching.
+    exact_matches: list[tuple[str, Proposal, dict[str, Any]]] = []
 
-    receipt_ref = matches[0].path
-    proposal, receipt = _verified_proposal_snapshot(
-        receipt_ref,
-        receipt_root=receipt_root,
-    )
+    for candidate in candidates:
+        result = _validate_scaffold_candidate_revision(
+            candidate.path,
+            receipt_id=receipt_id,
+            request_binding=request_binding,
+            proposal_id=proposal_id,
+            receipt_root=receipt_root,
+        )
+        if result is not None:
+            exact_matches.append(result)
 
-    if proposal.proposal_id != proposal_id:
-        raise IdentityMutationError("scaffold revision proposal id does not match the route")
-
-    if mutation_ref not in proposal.source_refs:
+    if not exact_matches:
         raise IdentityMutationError(
-            "scaffold revision snapshot is not bound to the mutation receipt"
+            "verified scaffold revision receipt not found; mutation remains pending"
         )
 
-    context = receipt.get("revision_context")
-    _require_exact_domain_binding(
-        context,
-        receipt_id=receipt_id,
-        request_binding=request_binding,
-        effect_kind=("api_proposal_decision_scaffold_revision"),
-    )
+    if len(exact_matches) > 1:
+        raise IdentityMutationError("multiple scaffold revisions are bound to one mutation receipt")
 
-    if context.get("kind") != ("decision_scaffold_revision"):
-        raise IdentityMutationError("proposal receipt is not a scaffold revision")
-
+    receipt_ref, proposal, receipt = exact_matches[0]
+    context = receipt.get("revision_context", {})
     previous_receipt_ref = context.get("previous_receipt_ref")
-    if previous_receipt_ref is not None and not isinstance(
-        previous_receipt_ref,
-        str,
-    ):
-        raise IdentityMutationError("scaffold previous receipt ref is invalid")
-
-    changed_fields = context.get("changed_scaffold_fields")
-    if (
-        not isinstance(changed_fields, list)
-        or not changed_fields
-        or not all(isinstance(field, str) and field for field in changed_fields)
-    ):
-        raise IdentityMutationError("scaffold changed-field evidence is invalid")
-
-    if receipt.get("supersedes") != previous_receipt_ref:
-        raise IdentityMutationError("scaffold supersedes link does not match revision context")
+    changed_fields = context.get("changed_scaffold_fields", [])
 
     response = ProposalScaffoldRevisionResponse(
         proposal=proposal,
