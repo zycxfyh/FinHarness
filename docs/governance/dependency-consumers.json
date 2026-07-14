@@ -112,6 +112,7 @@
         "tests/test_authenticated_identity.py",
         "tests/test_debt_register.py",
         "tests/test_durable_identity_mutations.py",
+        "tests/test_identity_mutation_domain_binding.py",
         "tests/test_local_review_mode.py"
       ],
       "task_consumers": [
