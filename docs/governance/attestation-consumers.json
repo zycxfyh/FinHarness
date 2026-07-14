@@ -873,7 +873,7 @@
       "recommended_change": "Keep. Add DecisionRecord display section when available.",
       "test_implications": [],
       "evidence": [
-        "app.js:526-544"
+        "app.js:526-554"
       ]
     },
     {
@@ -881,7 +881,7 @@
       "path": "frontend/app.js",
       "symbol": "renderAttestationForm",
       "line_start": 555,
-      "line_end": 593,
+      "line_end": 688,
       "match_terms": [
         "Attestation"
       ],
@@ -899,15 +899,15 @@
         "frontend/tests/review_workspace.test.cjs"
       ],
       "evidence": [
-        "app.js:546-580"
+        "app.js:555-688"
       ]
     },
     {
       "consumer_id": "ATT-CONS-033",
       "path": "frontend/app.js",
       "symbol": "renderTimeline",
-      "line_start": 820,
-      "line_end": 843,
+      "line_start": 917,
+      "line_end": 940,
       "match_terms": [
         "attestations"
       ],
@@ -925,7 +925,7 @@
         "frontend/tests/review_workspace.test.cjs"
       ],
       "evidence": [
-        "app.js:807-830"
+        "app.js:917-940"
       ]
     },
     {
@@ -1600,27 +1600,27 @@
     },
     {
       "path": "frontend/app.js",
-      "match_line": 1163,
+      "match_line": 1260,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1150."
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1260."
     },
     {
       "path": "frontend/app.js",
-      "match_line": 1164,
+      "match_line": 1261,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1151."
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1261."
     },
     {
       "path": "frontend/app.js",
-      "match_line": 1164,
+      "match_line": 1261,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 1151."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 1261."
     },
     {
       "path": "frontend/app.js",
-      "match_line": 1164,
+      "match_line": 1261,
       "term": "Attestation",
-      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1152."
+      "reason": "Hit outside consumer range in file with existing consumers. Attestation at line 1261."
     },
     {
       "path": "src/finharness/agent_tools.py",
@@ -2152,7 +2152,7 @@
     },
     {
       "path": "frontend/app.js",
-      "match_line": 1166,
+      "match_line": 1263,
       "term": "Attestation",
       "reason": "Section heading only; behavior is covered by renderAttestations."
     }
