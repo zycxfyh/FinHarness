@@ -99,22 +99,32 @@ The operator cannot provide:
 - a response content type.
 
 A route-specific resolver must derive the outcome from verified domain truth.
-The currently implemented resolver covers keyed `POST /proposals`.
+The currently implemented resolvers cover four keyed routes:
 
-It verifies:
+- `POST /proposals`
+- `POST /proposals/{proposal_id}/attest`
+- `PATCH /proposals/{proposal_id}/decision-scaffold`
+- `POST /proposals/{proposal_id}/review-events`
 
-1. the mutation receipt is still `pending`;
-2. the route is supported by the resolver;
-3. the deterministic Proposal row exists;
-4. the Proposal is bound to the mutation receipt through its source reference;
-5. the domain receipt resolves inside the configured receipt root;
-6. the domain receipt is a Proposal receipt;
-7. the database row and receipt Proposal payload agree;
-8. the Proposal content hash agrees;
-9. the revision context binds the mutation receipt ID and request-body hash.
+All resolvers reconstruct canonical responses from typed domain truth
+(immutable receipts, revision contexts, and SQLite domain rows).  No resolver
+re-invokes its route, and no operator-supplied response body, status code, or
+effect assertion is accepted.
 
-Only after those checks does the route reconstruct the canonical
-`ProposalCreateResponse`. The terminal writer records the resolver ID,
+Proposal-create full binding:
+  schema, effect_kind, identity_mutation_receipt_id,
+  identity_mutation_request_body_sha256, identity_mutation_request_target,
+  identity_mutation_method, identity_mutation_path, execution_allowed=false
+
+Scaffold revision candidate classification:
+  ReceiptIndex.refs is a candidate locator, not effect-identity proof.
+  Exact candidates are proven through revision_context identity matching.
+  Unkeyed inherited candidates must carry zero mutation-binding fields.
+  Foreign candidates are only permitted when the foreign identity receipt is
+  terminal, its route matches the same proposal's scaffold route, and its
+  canonical terminal response points to the candidate receipt.
+  Unreadable, pending, rejected, other-proposal, response-mismatch, and
+  duplicate candidates all fail closed.
 evidence references, domain effect, and
 `response_source=canonical_route_reconstruction`, then performs the same
 locked CAS transition to `reconciled_applied`.
@@ -155,8 +165,10 @@ The acceptance suite proves:
 - cross-process terminal writers have exactly one winner;
 - stale reconciliation cannot overwrite committed truth;
 - false or incomplete reconciliation evidence leaves the receipt pending;
-- a real Cockpit attempt retains and reuses its key across simulated response
+- a JSDOM client attempt retains and reuses its key across simulated response
   loss and reload.
+- Complete real-browser (Chromium → Cockpit → FastAPI → SQLite) response-loss
+  acceptance is tracked by #385 and is not yet complete.
 
 ## Failure and rollback
 
