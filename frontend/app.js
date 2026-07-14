@@ -558,6 +558,7 @@ async function refreshAfterCommittedWrite({
 } = {}) {
   try {
     await renderProposals();
+    return true;
   } catch (error) {
     setStatus(
       retainedAttempt
@@ -572,6 +573,7 @@ async function refreshAfterCommittedWrite({
         `Saved, but refresh failed: ${error.message}`,
       ),
     );
+    return false;
   }
 }
 
@@ -595,10 +597,22 @@ async function submitGovernedFormWrite({
       // disabled so local cleanup failure cannot induce a
       // second logical operation with a new key.
       form.reset();
-      setStatus(
-        "Saved; retry state retained",
-        "error",
-      );
+
+      // Refresh first because renderProposals replaces the
+      // proposal-detail subtree. Render the cleanup warning
+      // afterward so successful refresh cannot erase it.
+      const refreshSucceeded =
+        await refreshAfterCommittedWrite({
+          retainedAttempt: true,
+        });
+
+      if (refreshSucceeded) {
+        setStatus(
+          "Saved; retry state retained",
+          "error",
+        );
+      }
+
       selectors.proposalDetail.prepend(
         textElement(
           "p",
@@ -607,10 +621,6 @@ async function submitGovernedFormWrite({
             `be cleared: ${error.message}`,
         ),
       );
-
-      await refreshAfterCommittedWrite({
-        retainedAttempt: true,
-      });
       return true;
     }
 
