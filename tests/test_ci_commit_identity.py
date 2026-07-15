@@ -48,6 +48,7 @@ class CICommitIdentityTest(unittest.TestCase):
         self.assertEqual(merge["result"], "passed")
         self.assertEqual(merge["ref_type"], "merge_ref")
         self.assertEqual(merge["commit_sha"], MERGE_SHA)
+        self.assertTrue(merge["pull_request_merge_sha_matches_github_sha"])
 
     def test_pr_head_proof_rejects_a_merge_ref_checkout(self) -> None:
         payload = verify_identity(
@@ -73,7 +74,7 @@ class CICommitIdentityTest(unittest.TestCase):
         self.assertEqual(payload["result"], "failed")
         self.assertTrue(any("PR-head SHA" in item for item in payload["errors"]))
 
-    def test_merge_ref_proof_rejects_event_merge_sha_drift(self) -> None:
+    def test_merge_ref_proof_records_non_authoritative_event_merge_sha_drift(self) -> None:
         context = _pr_context()
         context = CIContext(
             repository=context.repository,
@@ -95,8 +96,9 @@ class CICommitIdentityTest(unittest.TestCase):
             command="identity verification",
         )
 
-        self.assertEqual(payload["result"], "failed")
-        self.assertTrue(any("merge_commit_sha" in item for item in payload["errors"]))
+        self.assertEqual(payload["result"], "passed")
+        self.assertFalse(payload["pull_request_merge_sha_matches_github_sha"])
+        self.assertEqual(payload["pull_request_merge_sha"], "4" * 40)
 
     def test_final_main_commit_binds_push_after_sha(self) -> None:
         context = CIContext(

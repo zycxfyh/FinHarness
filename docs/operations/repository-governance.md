@@ -32,6 +32,11 @@ runs on the explicit PR head before merge and on the final main commit after a
 main push; other PR workflows may continue to exercise the synthetic merge ref
 as integration evidence.
 
+Merge-ref proof pins the event's `GITHUB_SHA` and requires
+`refs/pull/<number>/merge`. The payload's `pull_request.merge_commit_sha` is
+recorded with a match flag for diagnosis, but is not authoritative because
+GitHub can update it asynchronously around reopened and synchronize events.
+
 Missing, skipped, cancelled, stale, or different-SHA evidence does not satisfy
 the corresponding claim. PR descriptions must name the identity and SHA rather
 than use the ambiguous phrase "exact head".

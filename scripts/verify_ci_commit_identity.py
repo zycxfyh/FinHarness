@@ -88,8 +88,6 @@ def _verify_pull_request_claim(
         errors.append("merge-ref proof requires refs/pull/<number>/merge")
     if expected != github_sha:
         errors.append("merge-ref expected SHA is not GITHUB_SHA")
-    if merge_sha != github_sha:
-        errors.append("pull_request.merge_commit_sha is not GITHUB_SHA")
     if pr_head_sha == checked:
         errors.append("merge-ref proof checked out the PR-head SHA")
     return pr_head_sha, merge_sha
@@ -162,6 +160,9 @@ def verify_identity(
         "github_sha": github_sha,
         "pull_request_head_sha": pr_head_sha,
         "pull_request_merge_sha": merge_sha,
+        "pull_request_merge_sha_matches_github_sha": (
+            merge_sha == github_sha if merge_sha is not None else None
+        ),
         "command": command,
         "result": "passed" if not errors else "failed",
         "errors": errors,
@@ -257,6 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "github_sha": os.environ.get("GITHUB_SHA", ""),
             "pull_request_head_sha": None,
             "pull_request_merge_sha": None,
+            "pull_request_merge_sha_matches_github_sha": None,
             "command": args.command,
             "result": "failed",
             "errors": [str(exc)],
