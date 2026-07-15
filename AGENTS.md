@@ -222,6 +222,29 @@ DecisionReadiness, CapitalMandate policy, and the human decision/review/learning
 loop. Convert adopted invariants into executable tests whenever the protected
 behavior is machine-observable.
 
+## Backlog Taxonomy Contract
+
+GitHub Issue state and labels are the backlog truth. Every open Issue must have
+exactly one label in each dimension:
+
+```text
+plane:*   — the primary architectural owner
+type:*    — the work kind, independent of scheduling state
+status:*  — active, dormant, deferred, or temporary lifecycle
+```
+
+`status:active` authorizes work only in the dependency order recorded by the
+canonical Program. `status:dormant` means valid scope whose activation gate is
+not satisfied. `status:deferred` is an explicit closed gate, not an invitation
+to implement. `status:temporary` is limited ownership that must have an exit
+condition. Labels classify work; they never prove behavior or completion.
+
+Issue Forms record the requested plane and lifecycle for review but cannot apply
+dynamic labels. After creation, apply the matching labels and run
+`task issues:audit`. Program bodies may link GitHub-native searches and native
+relationships; do not copy live child status into Markdown or commit a snapshot
+of mutable Issue state.
+
 ## Layer Map
 
 The working architecture should evolve through layers:
