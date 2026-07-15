@@ -131,6 +131,39 @@ class CICommitIdentityTest(unittest.TestCase):
                     command="identity verification",
                 )
 
+    def test_empty_repository_cannot_pass_identity_proof(self) -> None:
+        context = _pr_context()
+        context = CIContext(
+            repository="  ",
+            event_name=context.event_name,
+            github_ref=context.github_ref,
+            github_sha=context.github_sha,
+            event=context.event,
+        )
+
+        payload = verify_identity(
+            claim="pr_head",
+            checked_out_sha=HEAD_SHA,
+            expected_sha=HEAD_SHA,
+            context=context,
+            command="identity verification",
+        )
+
+        self.assertEqual(payload["result"], "failed")
+        self.assertIn("repository identity is missing", payload["errors"])
+
+    def test_empty_command_cannot_pass_identity_proof(self) -> None:
+        payload = verify_identity(
+            claim="pr_head",
+            checked_out_sha=HEAD_SHA,
+            expected_sha=HEAD_SHA,
+            context=_pr_context(),
+            command="  ",
+        )
+
+        self.assertEqual(payload["result"], "failed")
+        self.assertIn("identity evidence command is missing", payload["errors"])
+
 
 if __name__ == "__main__":
     unittest.main()

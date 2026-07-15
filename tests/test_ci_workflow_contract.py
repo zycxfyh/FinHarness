@@ -21,6 +21,39 @@ REQUIRED_SECURITY_CHECKS = {
 }
 PR_HEAD_REF = "${{ github.event.pull_request.head.sha }}"
 EVENT_SHA = "${{ github.sha }}"
+PR_EVENT_CONDITION = "github.event_name == 'pull_request'"
+RELEVANT_MERGE_REF_JOBS = (
+    ("security.yml", "dependency-review", "dependency-review-merge-ref-commit-identity", None),
+    ("security.yml", "codeql", "codeql-merge-ref-commit-identity", None),
+    ("security.yml", "gitleaks", "gitleaks-merge-ref-commit-identity", None),
+    ("security.yml", "trivy", "trivy-merge-ref-commit-identity", None),
+    ("fuzz.yml", "deterministic-fuzz-baseline", "fuzz-merge-ref-commit-identity", None),
+    (
+        "dependency-profiles.yml",
+        "isolated-profile",
+        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
+        "data",
+    ),
+    (
+        "dependency-profiles.yml",
+        "isolated-profile",
+        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
+        "research",
+    ),
+    (
+        "dependency-profiles.yml",
+        "isolated-profile",
+        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
+        "agent",
+    ),
+    (
+        "dependency-profiles.yml",
+        "isolated-profile",
+        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
+        "eval",
+    ),
+    ("browser.yml", "browser-smoke", "browser-merge-ref-commit-identity", None),
+)
 
 
 def load_workflow(path: Path) -> dict[str, Any]:
@@ -119,6 +152,37 @@ class CIWorkflowContractTest(unittest.TestCase):
             "github.event.pull_request.head.sha || github.sha }}",
         )
 
+    def test_every_relevant_pr_job_proves_its_own_merge_ref_identity(self) -> None:
+        rendered_artifacts: set[str] = set()
+
+        for workflow_name, job_name, artifact_template, profile in RELEVANT_MERGE_REF_JOBS:
+            with self.subTest(workflow=workflow_name, job=job_name, profile=profile):
+                job = load_workflow(WORKFLOW_ROOT / workflow_name)["jobs"][job_name]
+                steps = job["steps"]
+                checkout, identity, upload = steps[:3]
+
+                self.assertEqual(checkout["with"]["ref"], EVENT_SHA)
+                self.assertEqual(identity["if"], PR_EVENT_CONDITION)
+                self.assertIn("verify_ci_commit_identity.py", identity["run"])
+                self.assertIn("--claim merge_ref", identity["run"])
+                self.assertIn('--expected-sha "${{ github.sha }}"', identity["run"])
+                self.assertIn("--command", identity["run"])
+                self.assertEqual(upload["if"], f"always() && {PR_EVENT_CONDITION}")
+                self.assertEqual(upload["with"]["name"], artifact_template)
+                self.assertEqual(upload["with"]["path"], ".artifacts/ci-commit-identity.json")
+                self.assertEqual(upload["with"]["if-no-files-found"], "error")
+
+                if profile is not None:
+                    profiles = job["strategy"]["matrix"]["profile"]
+                    self.assertIn(profile, profiles)
+                    rendered = artifact_template.replace("${{ matrix.profile }}", profile)
+                else:
+                    rendered = artifact_template
+                self.assertNotIn(rendered, rendered_artifacts)
+                rendered_artifacts.add(rendered)
+
+        self.assertEqual(len(rendered_artifacts), 10)
+
     def test_base_profile_has_one_pr_owner(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "dependency-profiles.yml")
         profiles = workflow["jobs"]["isolated-profile"]["strategy"]["matrix"]["profile"]
@@ -154,6 +218,8 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("--auto --squash --delete-branch=false", runbook)
         self.assertIn("passed `task check:ci`", runbook)
         self.assertIn("Do not use `--admin`", runbook)
+        self.assertIn("link the PR with `Refs #N`, not `Closes #N`", runbook)
+        self.assertIn("close the issue manually", runbook)
 
 
 if __name__ == "__main__":

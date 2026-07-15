@@ -41,6 +41,10 @@ Missing, skipped, cancelled, stale, or different-SHA evidence does not satisfy
 the corresponding claim. PR descriptions must name the identity and SHA rather
 than use the ambiguous phrase "exact head".
 
+The artifact `result` is only the result of commit-identity verification. It
+does not assert that the job's fuzz, browser, dependency, security, or project
+test command passed; consumers must evaluate those job results separately.
+
 ## Current Alerts
 
 - Dependabot: no open alerts after the current lockfile updates.

@@ -80,6 +80,12 @@ Pushes to `main`, schedules, and manual dispatches use unique groups instead:
 post-merge `main` runs remain intentional evidence for the canonical branch and
 are not cancelled as stale PR work.
 
+When an issue's acceptance contract requires evidence from the delivered main
+commit, link the PR with `Refs #N`, not `Closes #N`. After merge, keep the issue
+open until both the final-main identity job and main-push Local verification
+succeed on the same delivered SHA. Then close the issue manually and run the
+finish command below.
+
 ## Finish After Merge
 
 First preview the exact cleanup plan:

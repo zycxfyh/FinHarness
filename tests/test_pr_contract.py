@@ -65,6 +65,11 @@ class PullRequestContractTest(unittest.TestCase):
 
         self.assertTrue(any("PR head, merge ref" in finding for finding in findings))
 
+    def test_refs_issue_linkage_is_valid_for_post_merge_acceptance(self) -> None:
+        body = _valid_body().replace("Closes #338", "Refs #338")
+
+        self.assertEqual(validate_body(body), [])
+
 
 if __name__ == "__main__":
     unittest.main()

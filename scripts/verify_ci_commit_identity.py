@@ -125,9 +125,15 @@ def verify_identity(
     errors: list[str] = []
     pr_head_sha: str | None = None
     merge_sha: str | None = None
+    repository = context.repository.strip()
+    evidence_command = command.strip()
 
     if checked != expected:
         errors.append(f"checked-out SHA {checked} does not equal expected SHA {expected}")
+    if not repository:
+        errors.append("repository identity is missing")
+    if not evidence_command:
+        errors.append("identity evidence command is missing")
 
     if claim in {"pr_head", "merge_ref"}:
         pr_head_sha, merge_sha = _verify_pull_request_claim(
@@ -151,7 +157,7 @@ def verify_identity(
     return {
         "schema": SCHEMA,
         "claim": claim,
-        "repository": context.repository,
+        "repository": repository,
         "commit_sha": checked,
         "expected_sha": expected,
         "ref_type": claim,
@@ -163,7 +169,7 @@ def verify_identity(
         "pull_request_merge_sha_matches_github_sha": (
             merge_sha == github_sha if merge_sha is not None else None
         ),
-        "command": command,
+        "command": evidence_command,
         "result": "passed" if not errors else "failed",
         "errors": errors,
     }
