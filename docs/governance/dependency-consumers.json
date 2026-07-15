@@ -112,6 +112,7 @@
         "tests/test_authenticated_identity.py",
         "tests/test_debt_register.py",
         "tests/test_durable_identity_mutations.py",
+        "tests/test_identity_mutation_domain_binding.py",
         "tests/test_local_review_mode.py"
       ],
       "task_consumers": [
@@ -420,6 +421,7 @@
         "tests/test_execution_lifecycle_hardening.py",
         "tests/test_execution_schema.py",
         "tests/test_execution_services.py",
+        "tests/test_identity_mutation_domain_binding.py",
         "tests/test_proposal_version.py",
         "tests/test_review_read.py",
         "tests/test_scaffold_candidate_apply.py",

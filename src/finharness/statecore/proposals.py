@@ -199,8 +199,10 @@ def _attestation_receipt_payload(
     attestation: Attestation,
     proposal: Proposal,
     receipt_id: str,
+    *,
+    mutation_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "receipt_id": receipt_id,
         "kind": "state_core_attestation",
         "created_at_utc": attestation.created_at_utc,
@@ -214,6 +216,11 @@ def _attestation_receipt_payload(
             "not_investment_advice": True,
         },
     }
+
+    if mutation_context is not None:
+        payload["mutation_context"] = mutation_context
+
+    return payload
 
 
 def create_governed_proposal(
@@ -435,6 +442,7 @@ def create_governed_attestation(
     attester: str,
     reason: str,
     source_refs: list[str] | None = None,
+    mutation_context: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
 ) -> GovernedAttestationWrite:
@@ -475,6 +483,7 @@ def create_governed_attestation(
         attestation,
         proposal,
         receipt_id,
+        mutation_context=mutation_context,
     )
     atomic_write_json(receipt_path, receipt_payload)
     receipt_index = _receipt_index(
@@ -543,8 +552,13 @@ def _review_event_content_hash(
     ).hexdigest()
 
 
-def _review_event_receipt_payload(event: ReviewEvent, proposal: Proposal) -> dict[str, Any]:
-    return {
+def _review_event_receipt_payload(
+    event: ReviewEvent,
+    proposal: Proposal,
+    *,
+    mutation_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
         "receipt_id": f"receipt_{event.review_event_id}",
         "kind": "state_core_review_event",
         "created_at_utc": event.created_at_utc,
@@ -558,6 +572,11 @@ def _review_event_receipt_payload(event: ReviewEvent, proposal: Proposal) -> dic
         },
     }
 
+    if mutation_context is not None:
+        payload["mutation_context"] = mutation_context
+
+    return payload
+
 
 def create_governed_review_event(
     *,
@@ -569,6 +588,7 @@ def create_governed_review_event(
     attestation_ref: str | None = None,
     compare_with: str | None = None,
     source_refs: list[str] | None = None,
+    mutation_context: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
 ) -> GovernedReviewEventWrite:
@@ -633,7 +653,14 @@ def create_governed_review_event(
         created_at_utc=created_at,
         as_of_utc=created_at,
     )
-    atomic_write_json(receipt_path, _review_event_receipt_payload(event, proposal))
+    atomic_write_json(
+        receipt_path,
+        _review_event_receipt_payload(
+            event,
+            proposal,
+            mutation_context=mutation_context,
+        ),
+    )
     receipt_index = _receipt_index(
         receipt_id=receipt_id,
         kind="state_core_review_event",

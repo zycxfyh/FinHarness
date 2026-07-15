@@ -111,7 +111,7 @@ execution authorization.
 | `task backup` | Create a capacity-gated, atomically published State Core and receipt backup with bound hashes. |
 | `task backup:verify -- BACKUP` | Verify manifest bindings, SQLite integrity, and safe receipt-archive readability. |
 | `task backup:prune` | Preview verified retention candidates; pass `-- --apply` to delete them. |
-| `task identity:reconcile -- RECEIPT` | Inspect an ambiguous API mutation receipt; applied-effect reconciliation requires explicit `--apply`, operator/reason, and a verified response file. |
+| `task identity:reconcile -- RECEIPT` | Inspect an ambiguous API mutation receipt. `--apply` requires `--reconciled-by` and `--reason`; the typed route resolver verifies domain truth and reconstructs the canonical response. Operators cannot provide response bytes, status, or content type. |
 | `task docs:list` | List project docs. |
 | `task vocab:lint` | Run advisory controlled-vocabulary lint. |
 | `task smoke` | Run minimal local smoke (`test` + `experiments`). |

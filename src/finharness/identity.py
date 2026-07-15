@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,7 +17,9 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from finharness.statecore.receipt_io import (
+    canonical_json_sha256,
     durable_atomic_write_json,
+    durable_compare_and_swap_json,
     durable_create_json_exclusive,
     resolve_under,
 )
@@ -24,7 +27,9 @@ from finharness.statecore.receipt_io import (
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 IDENTITY_RECEIPT_HEADER = "X-FinHarness-Identity-Receipt"
 IDEMPOTENT_REPLAY_HEADER = "X-FinHarness-Idempotent-Replay"
+IDEMPOTENCY_SEMANTIC_HEADERS = ("content-type", "if-match")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+_IDENTITY_MUTATION_RECEIPT_ID = re.compile(r"^identity_mutation_[0-9a-f]{32}$")
 
 
 class PrincipalIdentity(BaseModel):
@@ -192,8 +197,7 @@ def request_body_sha256(body: bytes) -> str:
 
 
 def _canonical_sha256(payload: dict[str, Any]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical_json_sha256(payload)
 
 
 def _with_content_hash(payload: dict[str, Any]) -> dict[str, Any]:
@@ -207,6 +211,113 @@ def _require_valid_content_hash(payload: dict[str, Any]) -> None:
     unhashed = {key: value for key, value in payload.items() if key != "content_sha256"}
     if not isinstance(claimed, str) or claimed != _canonical_sha256(unhashed):
         raise IdentityMutationError("mutation identity receipt content hash mismatch")
+
+
+def _load_identity_mutation_receipt(path: Path) -> dict[str, Any]:
+    """Read and integrity-check one mutation receipt."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IdentityMutationError(f"existing mutation receipt is unreadable: {path}") from exc
+    _require_valid_content_hash(payload)
+    return payload
+
+
+def load_identity_mutation_receipt(
+    receipt_path: str | Path,
+) -> dict[str, Any]:
+    """Load an integrity-checked mutation receipt for typed reconciliation."""
+
+    return _load_identity_mutation_receipt(Path(receipt_path))
+
+
+def require_identity_mutation_receipt_id(
+    receipt_id: object,
+) -> str:
+    """Validate and return a canonical mutation receipt ID."""
+
+    if not isinstance(receipt_id, str) or not _IDENTITY_MUTATION_RECEIPT_ID.fullmatch(receipt_id):
+        raise IdentityMutationError("invalid mutation identity receipt id")
+    return receipt_id
+
+
+def load_identity_mutation_receipt_by_id(
+    identity_root: str | Path,
+    receipt_id: object,
+) -> dict[str, Any]:
+    """Load an identity mutation receipt by its canonical ID.
+
+    This is the safe boundary for untrusted claim IDs — it validates
+    the ID format, restricts resolution to the identity directory,
+    rejects symlinks, checks the schema, and proves the internal
+    ``receipt_id`` matches the canonical ID.
+    """
+
+    canonical_id = require_identity_mutation_receipt_id(receipt_id)
+
+    root = Path(identity_root)
+
+    try:
+        path = resolve_under(root, f"{canonical_id}.json")
+    except (ValueError, OSError) as exc:
+        raise IdentityMutationError("mutation identity receipt path is invalid") from exc
+
+    # Check for symlinks BEFORE resolving — resolve_under already
+    # follows symlinks, so we must check the raw path object.
+    try:
+        raw = Path(os.path.realpath(root)) / f"{canonical_id}.json"
+        if raw.is_symlink():
+            raise IdentityMutationError("mutation identity receipt cannot be a symlink")
+    except OSError:
+        pass  # will be caught by the resolve below
+
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise IdentityMutationError("mutation identity receipt is missing or unreadable") from exc
+
+    allowed_root = root.resolve()
+
+    if not resolved.is_relative_to(allowed_root):
+        raise IdentityMutationError(
+            "mutation identity receipt is outside the identity receipt directory"
+        )
+
+    if not resolved.is_file():
+        raise IdentityMutationError("mutation identity receipt is not a regular file")
+
+    payload = _load_identity_mutation_receipt(resolved)
+
+    if payload.get("schema") != "finharness.api_mutation_identity_receipt.v1":
+        raise IdentityMutationError("invalid mutation identity receipt schema")
+
+    if payload.get("receipt_id") != canonical_id:
+        raise IdentityMutationError("mutation identity receipt id mismatch")
+
+    return payload
+
+
+def _transition_identity_mutation(
+    path: Path,
+    *,
+    expected_payload: dict[str, Any],
+    next_payload: dict[str, Any],
+) -> None:
+    """Apply exactly one terminal transition from the expected pending version."""
+
+    expected_hash = expected_payload.get("content_sha256")
+    if expected_payload.get("state") != "pending" or not isinstance(expected_hash, str):
+        raise IdentityMutationError(
+            "terminal transition requires an integrity-bound pending receipt"
+        )
+    if not durable_compare_and_swap_json(
+        path,
+        expected_content_sha256=expected_hash,
+        expected_state="pending",
+        payload=next_payload,
+    ):
+        raise IdentityMutationError("mutation receipt changed before terminal transition")
 
 
 def _mutation_receipt_id(
@@ -225,6 +336,8 @@ def begin_identity_mutation(
     context: OperatorContext,
     method: str,
     path: str,
+    request_target: str,
+    semantic_headers: dict[str, str],
     trace_id: str,
     idempotency_key: str,
     body_sha256: str,
@@ -242,9 +355,16 @@ def begin_identity_mutation(
         idempotency_key=idempotency_key,
     )
     target = resolve_under(root, f"{receipt_id}.json")
+    normalized_headers = {
+        name.lower(): value.strip()
+        for name, value in semantic_headers.items()
+        if name.lower() in IDEMPOTENCY_SEMANTIC_HEADERS
+    }
     request_binding = {
         "method": method.upper(),
         "path": path,
+        "target": request_target,
+        "semantic_headers": dict(sorted(normalized_headers.items())),
         "body_sha256": body_sha256,
         "idempotency_key_sha256": hashlib.sha256(idempotency_key.encode()).hexdigest(),
     }
@@ -267,11 +387,7 @@ def begin_identity_mutation(
     )
     if durable_create_json_exclusive(target, pending):
         return IdentityMutationClaim("execute", receipt_id, target, pending)
-    try:
-        existing = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise IdentityMutationError(f"existing mutation receipt is unreadable: {target}") from exc
-    _require_valid_content_hash(existing)
+    existing = _load_identity_mutation_receipt(target)
     existing_request = existing.get("request", {})
     same_request = all(existing_request.get(key) == value for key, value in request_binding.items())
     if not same_request:
@@ -306,6 +422,7 @@ def complete_identity_mutation(
             **{key: value for key, value in claim.payload.items() if key != "content_sha256"},
             "state": "committed" if status_code < 400 else "rejected",
             "completed_at_utc": datetime.now(UTC).isoformat(),
+            "previous_content_sha256": claim.payload["content_sha256"],
             "request": request_payload,
             "response": {
                 "status_code": status_code,
@@ -315,33 +432,66 @@ def complete_identity_mutation(
             },
         }
     )
-    durable_atomic_write_json(claim.receipt_path, completed)
+    _transition_identity_mutation(
+        claim.receipt_path,
+        expected_payload=claim.payload,
+        next_payload=completed,
+    )
     return completed
 
 
-def reconcile_identity_mutation_as_applied(
+def record_verified_identity_mutation_reconciliation(
     receipt_path: str | Path,
     *,
+    expected_payload: dict[str, Any],
     reconciled_by: str,
     reason: str,
+    resolver_id: str,
+    evidence_refs: list[str],
+    domain_effect: dict[str, Any],
     status_code: int,
     response_body: bytes,
     content_type: str = "application/json",
 ) -> dict[str, Any]:
-    """Close a pending receipt after an operator proves its effect was applied."""
+    """Record a response produced by a typed, domain-verifying resolver.
+
+    This is the terminal receipt writer, not the operator-facing reconciliation
+    interface. Callers must first verify the domain row and its canonical receipt.
+    """
 
     path = Path(receipt_path)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    _require_valid_content_hash(payload)
-    if payload.get("state") != "pending":
+    _require_valid_content_hash(expected_payload)
+    if expected_payload.get("state") != "pending":
         raise IdentityMutationError("only a pending mutation can be reconciled")
     if not reconciled_by.strip() or not reason.strip():
         raise IdentityMutationError("reconciliation requires an operator and written reason")
+    if not resolver_id.strip():
+        raise IdentityMutationError("reconciliation requires a typed resolver id")
+    if not 200 <= status_code < 300:
+        raise IdentityMutationError(
+            "applied reconciliation requires a successful canonical response"
+        )
+    if len(response_body) > 1_048_576:
+        raise IdentityMutationError("canonical reconciliation response exceeds the supported size")
+    if not content_type.lower().startswith("application/json"):
+        raise IdentityMutationError("canonical reconciliation response must be JSON")
+
+    cleaned_evidence = list(
+        dict.fromkeys(ref.strip() for ref in evidence_refs if isinstance(ref, str) and ref.strip())
+    )
+    if not cleaned_evidence:
+        raise IdentityMutationError("reconciliation requires verified domain evidence refs")
+    if not isinstance(domain_effect.get("kind"), str) or not isinstance(
+        domain_effect.get("canonical_resource"), str
+    ):
+        raise IdentityMutationError("reconciliation domain effect is incomplete")
+
     reconciled = _with_content_hash(
         {
-            **{key: value for key, value in payload.items() if key != "content_sha256"},
+            **{key: value for key, value in expected_payload.items() if key != "content_sha256"},
             "state": "reconciled_applied",
             "completed_at_utc": datetime.now(UTC).isoformat(),
+            "previous_content_sha256": expected_payload["content_sha256"],
             "response": {
                 "status_code": status_code,
                 "content_type": content_type,
@@ -349,12 +499,20 @@ def reconcile_identity_mutation_as_applied(
                 "body_sha256": hashlib.sha256(response_body).hexdigest(),
             },
             "reconciliation": {
+                "resolver_id": resolver_id.strip(),
+                "response_source": "canonical_route_reconstruction",
                 "reconciled_by": reconciled_by.strip(),
                 "reason": reason.strip(),
+                "evidence_refs": cleaned_evidence,
+                "domain_effect": domain_effect,
             },
         }
     )
-    durable_atomic_write_json(path, reconciled)
+    _transition_identity_mutation(
+        path,
+        expected_payload=expected_payload,
+        next_payload=reconciled,
+    )
     return reconciled
 
 

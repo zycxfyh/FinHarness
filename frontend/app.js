@@ -553,6 +553,100 @@ function renderAttestations(parent, attestations) {
   }
 }
 
+async function refreshAfterCommittedWrite({
+  retainedAttempt = false,
+} = {}) {
+  try {
+    await renderProposals();
+    return true;
+  } catch (error) {
+    setStatus(
+      retainedAttempt
+        ? "Saved; retry retained; refresh failed"
+        : "Saved; refresh failed",
+      "error",
+    );
+    selectors.proposalDetail.prepend(
+      textElement(
+        "p",
+        "error-text",
+        `Saved, but refresh failed: ${error.message}`,
+      ),
+    );
+    return false;
+  }
+}
+
+async function submitGovernedFormWrite({
+  form,
+  write,
+}) {
+  const submitButton = form.querySelector(
+    'button[type="submit"]',
+  );
+
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+
+  try {
+    await write();
+  } catch (error) {
+    if (error.mutationCommitted === true) {
+      // The server mutation is terminal. The form remains
+      // disabled so local cleanup failure cannot induce a
+      // second logical operation with a new key.
+      form.reset();
+
+      // Refresh first because renderProposals replaces the
+      // proposal-detail subtree. Render the cleanup warning
+      // afterward so successful refresh cannot erase it.
+      const refreshSucceeded =
+        await refreshAfterCommittedWrite({
+          retainedAttempt: true,
+        });
+
+      if (refreshSucceeded) {
+        setStatus(
+          "Saved; retry state retained",
+          "error",
+        );
+      }
+
+      selectors.proposalDetail.prepend(
+        textElement(
+          "p",
+          "error-text",
+          "Saved, but local retry state could not " +
+            `be cleared: ${error.message}`,
+        ),
+      );
+      return true;
+    }
+
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+
+    setStatus("Write failed", "error");
+    selectors.proposalDetail.prepend(
+      textElement(
+        "p",
+        "error-text",
+        `Write failed: ${error.message}`,
+      ),
+    );
+    return false;
+  }
+
+  form.reset();
+  setStatus("Saved", "ok");
+
+  await refreshAfterCommittedWrite();
+  return true;
+}
+
+
 function renderAttestationForm(parent, proposalId, proposalVersion) {
   const form = document.createElement("form");
   form.className = "attestation-form";
@@ -578,20 +672,22 @@ function renderAttestationForm(parent, proposalId, proposalVersion) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(form);
-    try {
-      await ReviewActionShell.post(`/proposals/${proposalId}/attest`, {
-        decision: data.get("decision"),
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        expected_proposal_version_id: proposalVersion.proposal_version_id,
-        expected_proposal_receipt_ref: proposalVersion.receipt_ref,
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.post(
+          `/proposals/${proposalId}/attest`,
+          {
+            decision: data.get("decision"),
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            expected_proposal_version_id:
+              proposalVersion.proposal_version_id,
+            expected_proposal_receipt_ref:
+              proposalVersion.receipt_ref,
+          },
+        ),
+    });
   });
   parent.append(form);
 }
@@ -648,20 +744,21 @@ function renderScaffoldRevisionForm(parent, proposalId) {
       return;
     }
     const data = new FormData(form);
-    try {
-      await ReviewActionShell.patch(`/proposals/${proposalId}/decision-scaffold`, {
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        decision_scaffold: {
-          counter_evidence: data.get("counter_evidence"),
-        },
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.patch(
+          `/proposals/${proposalId}/decision-scaffold`,
+          {
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            decision_scaffold: {
+              counter_evidence:
+                data.get("counter_evidence"),
+            },
+          },
+        ),
+    });
   });
   parent.append(form);
 }
@@ -878,19 +975,19 @@ function renderReviewEventForm(parent, proposalId) {
     if (!window.confirm(`Record review action "${kind}"? It is logged with your name and reason.`)) {
       return; // explicit confirm required; no write on cancel
     }
-    try {
-      await ReviewActionShell.post(`/proposals/${proposalId}/review-events`, {
-        kind,
-        attester: data.get("attester"),
-        reason: data.get("reason"),
-        text: data.get("text") || null,
-      });
-      setStatus("Synced", "ok");
-      await renderProposals();
-    } catch (error) {
-      setStatus("API error", "error");
-      selectors.proposalDetail.prepend(textElement("p", "error-text", error.message));
-    }
+    await submitGovernedFormWrite({
+      form,
+      write: () =>
+        ReviewActionShell.post(
+          `/proposals/${proposalId}/review-events`,
+          {
+            kind,
+            attester: data.get("attester"),
+            reason: data.get("reason"),
+            text: data.get("text") || null,
+          },
+        ),
+    });
   });
   parent.append(form);
 }

@@ -31,6 +31,7 @@ from finharness.execution.capabilities import (
 )
 from finharness.identity import (
     IDEMPOTENCY_HEADER,
+    IDEMPOTENCY_SEMANTIC_HEADERS,
     IDEMPOTENT_REPLAY_HEADER,
     IDENTITY_RECEIPT_HEADER,
     IdentityMutationClaim,
@@ -70,15 +71,82 @@ _OPTIONAL_DATA_IMPORTS = {
     "yfinance",
 }
 
+_MAX_IDEMPOTENT_REQUEST_BYTES = 1_048_576
+_MAX_IDEMPOTENT_RESPONSE_BYTES = 1_048_576
+
+
+class _IdempotentRequestTooLarge(RuntimeError):
+    """Raised before a route when a keyed request exceeds its governed bound."""
+
+
+class _IdempotentResponseTooLarge(RuntimeError):
+    """Raised after a route when its response cannot be journaled safely."""
+
+
+async def _read_bounded_request_body(request: Request) -> bytes:
+    """Read and cache a keyed request without exceeding the configured bound."""
+
+    declared_length = request.headers.get("content-length")
+    if (
+        declared_length
+        and declared_length.isdecimal()
+        and int(declared_length) > _MAX_IDEMPOTENT_REQUEST_BYTES
+    ):
+        raise _IdempotentRequestTooLarge
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        chunk_bytes = bytes(chunk)
+        total += len(chunk_bytes)
+        if total > _MAX_IDEMPOTENT_REQUEST_BYTES:
+            raise _IdempotentRequestTooLarge
+        chunks.append(chunk_bytes)
+
+    body = b"".join(chunks)
+    # Starlette replays this cached body to the downstream route.
+    request._body = body
+    return body
+
+
+def _canonical_request_target(request: Request) -> str:
+    """Bind the exact path and raw query string that select mutation semantics."""
+
+    raw_query = request.scope.get("query_string", b"")
+    if not isinstance(raw_query, bytes) or not raw_query:
+        return request.url.path
+    return f"{request.url.path}?{raw_query.decode('latin-1')}"
+
+
+def _semantic_request_headers(request: Request) -> dict[str, str]:
+    """Select only headers whose values can alter the governed mutation."""
+
+    return {
+        name: request.headers[name].strip()
+        for name in IDEMPOTENCY_SEMANTIC_HEADERS
+        if name in request.headers
+    }
+
 
 async def _buffer_response(response: Response) -> tuple[Response, bytes]:
-    """Materialize an API response so it can be bound and safely replayed."""
+    """Materialize a bounded API response so it can be safely replayed."""
 
     body_iterator = getattr(response, "body_iterator", None)
     if body_iterator is None:
         body = bytes(response.body)
+        if len(body) > _MAX_IDEMPOTENT_RESPONSE_BYTES:
+            raise _IdempotentResponseTooLarge
     else:
-        body = b"".join([chunk async for chunk in body_iterator])
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in body_iterator:
+            chunk_bytes = bytes(chunk)
+            total += len(chunk_bytes)
+            if total > _MAX_IDEMPOTENT_RESPONSE_BYTES:
+                raise _IdempotentResponseTooLarge
+            chunks.append(chunk_bytes)
+        body = b"".join(chunks)
+
     headers = dict(response.headers)
     headers.pop("content-length", None)
     buffered = Response(
@@ -138,6 +206,33 @@ async def _call_with_identity_protocol(
     if not isinstance(context, OperatorContext):
         return await call_next(request), None
     request.state.operator_context = context
+    try:
+        request_body = await _read_bounded_request_body(request)
+    except _IdempotentRequestTooLarge:
+        logger.warning(
+            "idempotent_request_exceeds_limit",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            limit_bytes=_MAX_IDEMPOTENT_REQUEST_BYTES,
+            execution_allowed=False,
+        )
+        return (
+            JSONResponse(
+                status_code=413,
+                content={
+                    "detail": {
+                        "code": "idempotent_request_too_large",
+                        "message": ("The keyed mutation request exceeds the supported size."),
+                        "limit_bytes": _MAX_IDEMPOTENT_REQUEST_BYTES,
+                        "trace_id": trace_id,
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            None,
+        )
+
     receipt_root = (
         Path(
             getattr(
@@ -154,9 +249,11 @@ async def _call_with_identity_protocol(
             context=context,
             method=request.method,
             path=request.url.path,
+            request_target=_canonical_request_target(request),
+            semantic_headers=_semantic_request_headers(request),
             trace_id=trace_id,
             idempotency_key=idempotency_key,
-            body_sha256=request_body_sha256(await request.body()),
+            body_sha256=request_body_sha256(request_body),
         )
     except IdentityMutationError as exc:
         logger.warning(
@@ -184,8 +281,43 @@ async def _call_with_identity_protocol(
         )
     if claim.disposition != "execute":
         return _protocol_response(claim), claim
+
+    # Route-owned domain writes bind their canonical effect to this claim.
+    request.state.identity_mutation_claim = claim
     response = await call_next(request)
-    response, body = await _buffer_response(response)
+    try:
+        response, body = await _buffer_response(response)
+    except _IdempotentResponseTooLarge:
+        logger.error(
+            "idempotent_response_exceeds_limit",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            identity_receipt_id=claim.receipt_id,
+            limit_bytes=_MAX_IDEMPOTENT_RESPONSE_BYTES,
+            mutation_outcome_ambiguous=True,
+            execution_allowed=False,
+        )
+        return (
+            JSONResponse(
+                status_code=503,
+                content={
+                    "detail": {
+                        "code": "idempotent_response_too_large",
+                        "message": (
+                            "The mutation response exceeded the journal size limit; "
+                            "the mutation outcome requires reconciliation."
+                        ),
+                        "identity_receipt_id": claim.receipt_id,
+                        "limit_bytes": _MAX_IDEMPOTENT_RESPONSE_BYTES,
+                        "trace_id": trace_id,
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            claim,
+        )
+
     completed = complete_identity_mutation(
         claim,
         trace_id=trace_id,
