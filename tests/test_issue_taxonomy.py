@@ -10,6 +10,13 @@ from scripts.audit_issue_taxonomy import TAXONOMY, validate_issues
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMS = ROOT / ".github" / "ISSUE_TEMPLATE"
+EXPECTED_FORM_KINDS = {
+    "architecture.yml": "type:adr",
+    "bug.yml": "type:feature",
+    "deferred.yml": "type:deferred-gate",
+    "experiment.yml": "type:experiment",
+    "implementation.yml": "type:feature",
+}
 
 
 def _issue(number: int, *labels: str) -> dict[str, object]:
@@ -62,10 +69,20 @@ class IssueTaxonomyAuditTest(unittest.TestCase):
 
     def test_issue_forms_declare_plane_and_lifecycle_for_review(self) -> None:
         form_paths = sorted(path for path in FORMS.glob("*.yml") if path.name != "config.yml")
-        self.assertTrue(form_paths)
+        self.assertEqual({path.name for path in form_paths}, set(EXPECTED_FORM_KINDS))
         for path in form_paths:
             with self.subTest(form=path.name):
                 form = yaml.safe_load(path.read_text(encoding="utf-8"))
+                labels = set(form.get("labels", []))
+                kind_labels = {label for label in labels if label.startswith("type:")}
+                plane_labels = {label for label in labels if label.startswith("plane:")}
+                lifecycle_labels = {
+                    label for label in labels if label.startswith("status:")
+                }
+
+                self.assertEqual(kind_labels, {EXPECTED_FORM_KINDS[path.name]})
+                self.assertEqual(plane_labels, set())
+
                 fields = {item.get("id"): item for item in form["body"] if item.get("id")}
                 self.assertTrue(fields["primary_plane"]["validations"]["required"])
                 self.assertTrue(fields["lifecycle"]["validations"]["required"])
@@ -77,8 +94,12 @@ class IssueTaxonomyAuditTest(unittest.TestCase):
                 )
                 lifecycle_options = fields["lifecycle"]["attributes"]["options"]
                 declared = {option.split(" —", maxsplit=1)[0] for option in lifecycle_options}
-                self.assertTrue(declared)
-                self.assertLessEqual(declared, TAXONOMY["lifecycle"])
+                if path.name == "deferred.yml":
+                    self.assertEqual(lifecycle_labels, {"status:deferred"})
+                    self.assertEqual(declared, {"status:deferred"})
+                else:
+                    self.assertEqual(lifecycle_labels, set())
+                    self.assertEqual(declared, TAXONOMY["lifecycle"])
 
 
 if __name__ == "__main__":
