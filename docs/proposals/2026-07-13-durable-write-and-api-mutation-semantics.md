@@ -1,6 +1,8 @@
 # Durable Write And API Mutation Semantics Mini-RFC
 
-- Status: implemented on PR #384; merge-gated by exact-head CI and C3 review
+- Status: implemented on PR #384; its PR workflow evidence did not yet
+  distinguish PR head from the synthetic merge ref, and final-main commit
+  evidence is a separate post-merge claim governed by #386
 - Hardening issue: #383
 - Original issue: #352
 - Parent: #343

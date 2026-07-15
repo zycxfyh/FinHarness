@@ -11,6 +11,7 @@ from pathlib import Path
 ISSUE_BRANCH_RE = re.compile(r"^agent/(?P<issue>[1-9][0-9]*)-[a-z0-9][a-z0-9-]*$")
 SECTION_RE = re.compile(r"^## (?P<name>[^\n]+)\n(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 PLACEHOLDER_RE = re.compile(r"(?:TODO|TBD|<[^>]+>|Closes #\s*$)", re.IGNORECASE)
+AMBIGUOUS_COMMIT_CLAIM_RE = re.compile(r"\bexact[- ]head\b", re.IGNORECASE)
 REQUIRED_SECTIONS = {
     "Issue linkage",
     "Scope",
@@ -29,6 +30,12 @@ def validate_body(body: str) -> list[str]:
     findings = [f"missing section: {name}" for name in sorted(REQUIRED_SECTIONS - set(sections))]
     if findings:
         return findings
+
+    if AMBIGUOUS_COMMIT_CLAIM_RE.search(body):
+        findings.append(
+            "replace ambiguous `exact-head` language with PR head, merge ref, or "
+            "final main commit plus the full SHA"
+        )
 
     if not re.search(r"(?m)^(?:Closes|Refs) #[1-9][0-9]*\s*$", sections["Issue linkage"]):
         findings.append("Issue linkage must contain `Closes #N` or `Refs #N`")

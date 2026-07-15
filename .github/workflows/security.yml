@@ -35,6 +35,28 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify local-check commit identity
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          IDENTITY_CLAIM: ${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          python scripts/verify_ci_commit_identity.py
+          --claim "$IDENTITY_CLAIM"
+          --expected-sha "$EXPECTED_SHA"
+          --command "verify local-check commit identity before task check:timed"
+
+      - name: Upload local-check commit identity
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: local-check-commit-identity
+          path: .artifacts/ci-commit-identity.json
+          if-no-files-found: error
+          retention-days: 20
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 

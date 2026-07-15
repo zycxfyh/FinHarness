@@ -9,8 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_ROOT = REPO_ROOT / ".github" / "workflows"
 PR_CONCURRENCY_GROUP = (
-    "${{ github.workflow }}-"
-    "${{ github.event.pull_request.number || github.run_id }}"
+    "${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}"
 )
 PR_CANCEL_POLICY = "${{ github.event_name == 'pull_request' }}"
 REQUIRED_SECURITY_CHECKS = {
@@ -20,6 +19,8 @@ REQUIRED_SECURITY_CHECKS = {
     "Trivy filesystem scan",
     "CodeQL",
 }
+PR_HEAD_REF = "${{ github.event.pull_request.head.sha }}"
+EVENT_SHA = "${{ github.sha }}"
 
 
 def load_workflow(path: Path) -> dict[str, Any]:
@@ -77,6 +78,47 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("pnpm install", commands)
         self.assertIn("task check:timed", commands)
 
+    def test_commit_identity_workflow_proves_three_distinct_identities(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "commit-identity.yml")
+        jobs = workflow["jobs"]
+
+        head = jobs["pr-head-identity"]
+        merge = jobs["merge-ref-identity"]
+        main = jobs["main-commit-identity"]
+        self.assertEqual(head["steps"][0]["with"]["ref"], PR_HEAD_REF)
+        self.assertEqual(merge["steps"][0]["with"]["ref"], "${{ github.ref }}")
+        self.assertEqual(main["steps"][0]["with"]["ref"], EVENT_SHA)
+        self.assertIn("--claim pr_head", head["steps"][1]["run"])
+        self.assertIn("--claim merge_ref", merge["steps"][1]["run"])
+        self.assertIn("--claim main_commit", main["steps"][1]["run"])
+        for job in (head, merge, main):
+            upload = job["steps"][2]
+            self.assertEqual(upload["if"], "always()")
+            self.assertEqual(
+                upload["with"]["path"],
+                ".artifacts/ci-commit-identity.json",
+            )
+
+    def test_required_local_verification_checks_pr_head_and_final_main(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
+        steps = workflow["jobs"]["local-checks"]["steps"]
+        checkout = steps[0]
+        identity = next(
+            step for step in steps if step.get("name") == "Verify local-check commit identity"
+        )
+
+        self.assertEqual(
+            checkout["with"]["ref"],
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.sha || github.sha }}",
+        )
+        self.assertIn('--claim "$IDENTITY_CLAIM"', identity["run"])
+        self.assertEqual(
+            identity["env"]["EXPECTED_SHA"],
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.sha || github.sha }}",
+        )
+
     def test_base_profile_has_one_pr_owner(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "dependency-profiles.yml")
         profiles = workflow["jobs"]["isolated-profile"]["strategy"]["matrix"]["profile"]
@@ -106,9 +148,9 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("UV_PROJECT_ENVIRONMENT=.venv-probes/fuzz", taskfile)
 
     def test_runbook_uses_ruleset_guarded_squash_auto_merge(self) -> None:
-        runbook = (
-            REPO_ROOT / "docs" / "how-to" / "manage-issue-worktrees.md"
-        ).read_text(encoding="utf-8")
+        runbook = (REPO_ROOT / "docs" / "how-to" / "manage-issue-worktrees.md").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("--auto --squash --delete-branch=false", runbook)
         self.assertIn("passed `task check:ci`", runbook)
         self.assertIn("Do not use `--admin`", runbook)

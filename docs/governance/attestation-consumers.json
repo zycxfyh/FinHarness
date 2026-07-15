@@ -2333,7 +2333,7 @@
     },
     {
       "path": "docs/proposals/2026-07-13-durable-write-and-api-mutation-semantics.md",
-      "match_line": 105,
+      "match_line": 107,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Documentation enumerating typed reconciliation surfaces; not a code consumer."
     }
