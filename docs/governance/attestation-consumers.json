@@ -2273,13 +2273,13 @@
     },
     {
       "path": "docs/adr/2026-07-12-decision-ontology-and-version-triggers.md",
-      "match_line": 26,
+      "match_line": 32,
       "term": "Attestation",
       "reason": "ADR non-consumer statement separating Attestation review evidence from case-basis identity."
     },
     {
       "path": "docs/adr/2026-07-12-decision-ontology-and-version-triggers.md",
-      "match_line": 52,
+      "match_line": 58,
       "term": "Attestation",
       "reason": "Version-trigger matrix classifies Attestation as review-only and non-versioning."
     },

@@ -9,6 +9,7 @@ from finharness.architecture_boundaries import (
     audit_architecture,
     build_canonical_import_graph,
     load_layer_matrix,
+    validate_identity_model,
     validate_plane_model,
 )
 
@@ -99,6 +100,10 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["violations"], [])
         self.assertEqual(audit["plane_count"], 8)
         self.assertGreater(audit["plane_dependency_edges"], 0)
+        self.assertEqual(audit["identity_namespace_count"], 7)
+        self.assertEqual(audit["version_graph_node_count"], 8)
+        self.assertEqual(audit["version_graph_edges"], 7)
+        self.assertEqual(audit["freshness_rule_count"], 8)
         self.assertTrue(audit["ok"])
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
@@ -169,10 +174,116 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         )
         self.assertIn("ReviewStateVersion", planes["judgment"]["owned_objects"])
         self.assertIn("DecisionValidity", planes["judgment"]["owned_objects"])
+        self.assertIn("ProposalVersion", planes["judgment"]["owned_objects"])
+        self.assertIn("PolicyVersion", planes["control"]["owned_objects"])
         self.assertEqual(
             planes["product"]["canonical_outputs"],
             ["human commands", "explanations", "presentation and session state", "navigation"],
         )
+
+    def test_identity_namespaces_and_version_direction_are_canonical(self) -> None:
+        model = load_layer_matrix()["plane_model"]["identity_model"]
+        source = model["external_source_identity"]
+        self.assertEqual(source["canonical_key"], ["source_namespace", "source_native_id"])
+        self.assertEqual(source["shared_reference_planes"], ["truth", "knowledge"])
+        self.assertEqual(
+            set(source["non_authoritative_tokens"]),
+            {"display_id", "request_id", "local_alias", "path"},
+        )
+        self.assertEqual(
+            {namespace["name"] for namespace in model["namespaces"]},
+            {
+                "principal",
+                "agent-runtime",
+                "request",
+                "external-source",
+                "domain-logical",
+                "domain-version",
+                "git-commit",
+            },
+        )
+        nodes = {
+            node["name"]: node for node in model["version_graph"]["nodes"]
+        }
+        self.assertEqual(
+            nodes["DecisionCaseVersion"]["depends_on"],
+            [
+                "CapitalStateVersion",
+                "EvidenceSetVersion",
+                "PolicyVersion",
+                "ProposalVersion",
+            ],
+        )
+        self.assertNotIn(
+            "ScenarioVersion", nodes["DecisionCaseVersion"]["depends_on"]
+        )
+        self.assertEqual(
+            nodes["ScenarioVersion"]["depends_on"], ["DecisionCaseVersion"]
+        )
+        self.assertEqual(nodes["DecisionRecord"]["may_cite"], ["ScenarioVersion"])
+
+    def _identity_model(self) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+        plane_model = copy.deepcopy(load_layer_matrix()["plane_model"])
+        planes = {plane["name"]: plane for plane in plane_model["planes"]}
+        return plane_model["identity_model"], planes
+
+    def test_truth_and_knowledge_cannot_split_source_identity_authority(self) -> None:
+        model, planes = self._identity_model()
+        model["external_source_identity"]["shared_reference_planes"] = ["truth"]
+        with self.assertRaisesRegex(ValueError, "must share one external source"):
+            validate_identity_model(model, planes=planes)
+
+    def test_non_authoritative_tokens_cannot_replace_source_or_domain_identity(
+        self,
+    ) -> None:
+        for source, target in (
+            ("agent-runtime", "principal"),
+            ("request", "external-source"),
+            ("display_id", "principal"),
+            ("local_alias", "external-source"),
+            ("path", "external-source"),
+            ("content_digest", "domain-version"),
+            ("git-commit", "domain-version"),
+        ):
+            with self.subTest(source=source, target=target):
+                model, planes = self._identity_model()
+                barriers = {
+                    barrier["source"]: barrier
+                    for barrier in model["substitution_barriers"]
+                }
+                barriers[source]["cannot_replace"].remove(target)
+                with self.assertRaisesRegex(
+                    ValueError, "substitution barriers are incomplete"
+                ):
+                    validate_identity_model(model, planes=planes)
+
+    def test_scenario_cannot_enter_case_identity(self) -> None:
+        model, planes = self._identity_model()
+        nodes = {node["name"]: node for node in model["version_graph"]["nodes"]}
+        nodes["DecisionCaseVersion"]["depends_on"].append("ScenarioVersion")
+        with self.assertRaisesRegex(ValueError, "canonical pre-scenario basis"):
+            validate_identity_model(model, planes=planes)
+
+    def test_version_graph_cycle_is_rejected(self) -> None:
+        model, planes = self._identity_model()
+        nodes = {node["name"]: node for node in model["version_graph"]["nodes"]}
+        nodes["ProposalVersion"]["depends_on"].append("DecisionCaseVersion")
+        with self.assertRaisesRegex(ValueError, "version graph contains a cycle"):
+            validate_identity_model(model, planes=planes)
+
+    def test_freshness_trigger_requires_one_canonical_owner(self) -> None:
+        for mutation in ("missing", "duplicate"):
+            with self.subTest(mutation=mutation):
+                model, planes = self._identity_model()
+                rules = model["version_graph"]["freshness_rules"]
+                if mutation == "missing":
+                    rules[0].pop("owner_plane")
+                    message = "capital_state_admission requires owner truth"
+                else:
+                    rules.append(copy.deepcopy(rules[0]))
+                    message = "capital_state_admission has multiple owners"
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_identity_model(model, planes=planes)
 
     def test_reverse_plane_dependency_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])

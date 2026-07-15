@@ -16,6 +16,57 @@ from finharness.project_paths import ROOT
 
 DEFAULT_MATRIX_PATH = ROOT / "config" / "architecture-layers.yml"
 PLANE_MODEL_SCHEMA = "finharness.plane_model.v1"
+IDENTITY_MODEL_SCHEMA = "finharness.identity_version_graph.v1"
+REQUIRED_IDENTITY_NAMESPACES = frozenset(
+    {
+        "principal",
+        "agent-runtime",
+        "request",
+        "external-source",
+        "domain-logical",
+        "domain-version",
+        "git-commit",
+    }
+)
+REQUIRED_VERSION_NODES = frozenset(
+    {
+        "CapitalStateVersion",
+        "EvidenceSetVersion",
+        "PolicyVersion",
+        "ProposalVersion",
+        "DecisionCaseVersion",
+        "ScenarioVersion",
+        "ReviewStateVersion",
+        "DecisionRecord",
+    }
+)
+REQUIRED_SUBSTITUTION_BARRIERS = {
+    "agent-runtime": frozenset({"principal"}),
+    "request": frozenset(
+        {"principal", "external-source", "domain-logical", "domain-version"}
+    ),
+    "display_id": frozenset(
+        {"principal", "external-source", "domain-logical", "domain-version"}
+    ),
+    "local_alias": frozenset(
+        {"external-source", "domain-logical", "domain-version"}
+    ),
+    "path": frozenset({"external-source"}),
+    "content_digest": frozenset({"domain-version"}),
+    "git-commit": frozenset(
+        {"principal", "external-source", "domain-logical", "domain-version"}
+    ),
+}
+EXPECTED_FRESHNESS_OWNERS = {
+    "capital_state_admission": "truth",
+    "evidence_admission_or_withdrawal": "knowledge",
+    "policy_activation": "control",
+    "proposal_revision": "judgment",
+    "case_basis_change": "judgment",
+    "scenario_recalculation": "judgment",
+    "review_event": "judgment",
+    "decision_recorded": "judgment",
+}
 
 
 @dataclass(frozen=True)
@@ -298,6 +349,268 @@ def _record_owned_objects(
         object_owners[owned_object] = name
 
 
+def _identity_string_list(
+    record: dict[str, Any],
+    field: str,
+    *,
+    label: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    values = record.get(field)
+    if (
+        not isinstance(values, list)
+        or (not allow_empty and not values)
+        or any(not isinstance(value, str) or not value.strip() for value in values)
+    ):
+        qualifier = "a string list" if allow_empty else "a non-empty string list"
+        raise ValueError(f"{label} requires {field} as {qualifier}")
+    if len(values) != len(set(values)):
+        raise ValueError(f"{label} has duplicate {field}")
+    return values
+
+
+def _validate_external_source_identity(model: dict[str, Any]) -> None:
+    source = model.get("external_source_identity")
+    if not isinstance(source, dict):
+        raise ValueError("identity model requires external_source_identity")
+    if source.get("standard") != "W3C PROV-DM qualified name":
+        raise ValueError("external source identity must reuse W3C PROV-DM qualified names")
+    if source.get("canonical_key") != ["source_namespace", "source_native_id"]:
+        raise ValueError(
+            "external source identity key must be source_namespace + source_native_id"
+        )
+    if source.get("shared_reference_planes") != ["truth", "knowledge"]:
+        raise ValueError(
+            "Truth and Knowledge must share one external source identity authority"
+        )
+    if set(source.get("non_authoritative_tokens", [])) != {
+        "display_id",
+        "request_id",
+        "local_alias",
+        "path",
+    }:
+        raise ValueError("external source identity requires exact non-authoritative tokens")
+
+
+def _validate_identity_namespaces(model: dict[str, Any]) -> None:
+    namespaces = model.get("namespaces")
+    if not isinstance(namespaces, list) or not namespaces:
+        raise ValueError("identity model requires namespaces")
+    names: list[str] = []
+    for namespace in namespaces:
+        if not isinstance(namespace, dict):
+            raise ValueError("identity namespace entries must be mappings")
+        name = namespace.get("name")
+        authority = namespace.get("authority")
+        if not isinstance(name, str) or not name:
+            raise ValueError("identity namespace requires a name")
+        if not isinstance(authority, str) or not authority:
+            raise ValueError(f"identity namespace {name} requires authority semantics")
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise ValueError("identity namespace names must be unique")
+    if set(names) != REQUIRED_IDENTITY_NAMESPACES:
+        raise ValueError("identity namespace vocabulary is incomplete or unknown")
+
+
+def _validate_substitution_barriers(model: dict[str, Any]) -> None:
+    barriers = model.get("substitution_barriers")
+    if not isinstance(barriers, list) or not barriers:
+        raise ValueError("identity model requires substitution barriers")
+    actual: dict[str, frozenset[str]] = {}
+    for barrier in barriers:
+        if not isinstance(barrier, dict):
+            raise ValueError("identity substitution barriers must be mappings")
+        source = barrier.get("source")
+        if not isinstance(source, str) or not source:
+            raise ValueError("identity substitution barrier requires source")
+        if source in actual:
+            raise ValueError(f"identity substitution source {source} is duplicated")
+        targets = _identity_string_list(
+            barrier,
+            "cannot_replace",
+            label=f"identity substitution source {source}",
+            allow_empty=True,
+        )
+        if not set(targets) <= REQUIRED_IDENTITY_NAMESPACES:
+            raise ValueError(f"identity substitution source {source} has unknown target")
+        actual[source] = frozenset(targets)
+    if actual != REQUIRED_SUBSTITUTION_BARRIERS:
+        raise ValueError("identity substitution barriers are incomplete or unknown")
+
+
+def _parse_version_nodes(graph: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    nodes = graph.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError("version graph requires nodes")
+    by_name: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            raise ValueError("version graph nodes must be mappings")
+        name = node.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("version graph node requires a name")
+        if name in by_name:
+            raise ValueError(f"version graph node {name} is duplicated")
+        by_name[name] = node
+    if set(by_name) != REQUIRED_VERSION_NODES:
+        raise ValueError("version graph node vocabulary is incomplete or unknown")
+    return by_name
+
+
+def _validate_version_node(
+    name: str,
+    node: dict[str, Any],
+    *,
+    nodes: dict[str, dict[str, Any]],
+    planes: dict[str, dict[str, Any]],
+) -> list[str]:
+    owner = node.get("owner_plane")
+    if owner not in planes:
+        raise ValueError(f"version graph node {name} has unknown owner {owner}")
+    if name not in planes[str(owner)]["owned_objects"]:
+        raise ValueError(f"version graph node {name} is not owned by plane {owner}")
+    if node.get("identity_namespace") not in {"domain-logical", "domain-version"}:
+        raise ValueError(f"version graph node {name} has invalid identity namespace")
+    expected_history = "append-only" if name == "DecisionRecord" else "immutable"
+    if node.get("history") != expected_history:
+        raise ValueError(
+            f"version graph node {name} must preserve {expected_history} history"
+        )
+    dependencies = _identity_string_list(
+        node,
+        "depends_on",
+        label=f"version graph node {name}",
+        allow_empty=True,
+    )
+    citations = (
+        _identity_string_list(
+            node,
+            "may_cite",
+            label=f"version graph node {name}",
+            allow_empty=True,
+        )
+        if "may_cite" in node
+        else []
+    )
+    for target in (*dependencies, *citations):
+        if target not in nodes:
+            raise ValueError(f"version graph node {name} references unknown node {target}")
+    if name in dependencies:
+        raise ValueError(f"version graph node {name} cannot depend on itself")
+    return dependencies
+
+
+def _validate_case_scenario_direction(nodes: dict[str, dict[str, Any]]) -> None:
+    case_dependencies = set(nodes["DecisionCaseVersion"]["depends_on"])
+    if case_dependencies != {
+        "CapitalStateVersion",
+        "EvidenceSetVersion",
+        "PolicyVersion",
+        "ProposalVersion",
+    }:
+        raise ValueError("DecisionCaseVersion requires the canonical pre-scenario basis")
+    if nodes["ScenarioVersion"]["depends_on"] != ["DecisionCaseVersion"]:
+        raise ValueError("ScenarioVersion must depend on one DecisionCaseVersion")
+    if nodes["DecisionRecord"].get("may_cite") != ["ScenarioVersion"]:
+        raise ValueError("DecisionRecord may cite ScenarioVersion without changing Case")
+
+
+def _validate_acyclic_version_edges(
+    nodes: dict[str, dict[str, Any]],
+    dependencies: dict[str, list[str]],
+) -> None:
+    adjacency: dict[str, set[str]] = {name: set() for name in nodes}
+    indegree = dict.fromkeys(nodes, 0)
+    for name, upstream in dependencies.items():
+        for dependency in upstream:
+            adjacency[dependency].add(name)
+            indegree[name] += 1
+    queue = deque(sorted(name for name, degree in indegree.items() if degree == 0))
+    visited: list[str] = []
+    while queue:
+        current = queue.popleft()
+        visited.append(current)
+        for dependent in sorted(adjacency[current]):
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                queue.append(dependent)
+    if len(visited) != len(nodes):
+        raise ValueError("version graph contains a cycle")
+
+
+def _validate_freshness_rules(
+    graph: dict[str, Any],
+    *,
+    node_names: set[str],
+) -> None:
+    rules = graph.get("freshness_rules")
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("version graph requires freshness rules")
+    seen_triggers: set[str] = set()
+    affected_nodes: set[str] = set()
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError("freshness rules must be mappings")
+        trigger = rule.get("trigger")
+        owner = rule.get("owner_plane")
+        if not isinstance(trigger, str) or not trigger:
+            raise ValueError("freshness rule requires trigger")
+        if trigger in seen_triggers:
+            raise ValueError(f"freshness trigger {trigger} has multiple owners")
+        seen_triggers.add(trigger)
+        expected_owner = EXPECTED_FRESHNESS_OWNERS.get(trigger)
+        if owner != expected_owner:
+            raise ValueError(f"freshness trigger {trigger} requires owner {expected_owner}")
+        affected = _identity_string_list(
+            rule,
+            "affects",
+            label=f"freshness trigger {trigger}",
+        )
+        if not set(affected) <= node_names:
+            raise ValueError(f"freshness trigger {trigger} affects unknown node")
+        affected_nodes.update(affected)
+    if seen_triggers != set(EXPECTED_FRESHNESS_OWNERS):
+        raise ValueError("freshness trigger vocabulary is incomplete or unknown")
+    if affected_nodes != node_names:
+        raise ValueError("every version graph node requires a freshness owner")
+
+
+def _validate_version_graph(
+    model: dict[str, Any],
+    *,
+    planes: dict[str, dict[str, Any]],
+) -> None:
+    graph = model.get("version_graph")
+    if not isinstance(graph, dict):
+        raise ValueError("identity model requires version_graph")
+    if graph.get("edge_semantics") != "depends_on names immutable upstream identity inputs":
+        raise ValueError("version graph requires canonical edge semantics")
+    nodes = _parse_version_nodes(graph)
+    dependencies = {
+        name: _validate_version_node(name, node, nodes=nodes, planes=planes)
+        for name, node in nodes.items()
+    }
+    _validate_case_scenario_direction(nodes)
+    _validate_acyclic_version_edges(nodes, dependencies)
+    _validate_freshness_rules(graph, node_names=set(nodes))
+
+
+def validate_identity_model(
+    model: Any,
+    *,
+    planes: dict[str, dict[str, Any]],
+) -> None:
+    """Validate identity namespaces and the one-way domain version graph."""
+
+    if not isinstance(model, dict) or model.get("schema") != IDENTITY_MODEL_SCHEMA:
+        raise ValueError("unsupported identity and version graph model")
+    _validate_external_source_identity(model)
+    _validate_identity_namespaces(model)
+    _validate_substitution_barriers(model)
+    _validate_version_graph(model, planes=planes)
+
+
 def validate_plane_model(model: dict[str, Any]) -> None:
     """Validate the canonical conceptual plane DAG in the existing matrix."""
 
@@ -347,6 +660,7 @@ def validate_plane_model(model: dict[str, Any]) -> None:
             )
         else:
             raise ValueError(f"plane {name} has unsupported kind {plane.get('kind')}")
+    validate_identity_model(model.get("identity_model"), planes=by_name)
 
 
 def classify_modules(modules: set[str], matrix: dict[str, Any]) -> dict[str, str]:
@@ -467,6 +781,8 @@ def audit_architecture(
     cycles = strongly_connected_components(set(modules), edges)
     violations = boundary_violations(set(modules), edges, matrix)
     plane_model = matrix.get("plane_model")
+    identity_model = plane_model.get("identity_model") if plane_model else None
+    version_graph = identity_model.get("version_graph") if identity_model else None
     return {
         "schema": "finharness.architecture_audit.v1",
         "matrix_schema": matrix["schema"],
@@ -479,6 +795,18 @@ def audit_architecture(
             sum(len(plane.get("depends_on", [])) for plane in plane_model["planes"])
             if plane_model
             else 0
+        ),
+        "identity_namespace_count": (
+            len(identity_model["namespaces"]) if identity_model else 0
+        ),
+        "version_graph_node_count": len(version_graph["nodes"]) if version_graph else 0,
+        "version_graph_edges": (
+            sum(len(node.get("depends_on", [])) for node in version_graph["nodes"])
+            if version_graph
+            else 0
+        ),
+        "freshness_rule_count": (
+            len(version_graph["freshness_rules"]) if version_graph else 0
         ),
         "ok": not cycles and not violations,
     }
