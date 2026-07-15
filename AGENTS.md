@@ -161,6 +161,67 @@ Alpaca / OKX official tooling:
 FinHarness owns evidence and boundaries, not exchange semantics, matching,
 portfolio accounting, margin engines, or execution engines.
 
+## Reference-First Design Gate
+
+Before changing code, complete this gate when an Issue introduces or replaces a
+cross-cutting mechanism, abstraction, architecture boundary, or external
+dependency. A bounded correction with no mechanism choice may say so explicitly
+and proceed without ceremonial research.
+
+Start with repository truth: locate the current canonical owner, production
+path, tests, and prior ADRs. Then classify the problem:
+
+```text
+A — Adopt:
+  A mature library, standard, official Action, or platform capability owns the
+  mechanism. Integrate it through the thinnest safe boundary.
+
+B — Adapt:
+  A mature protocol or architecture pattern owns the invariants, but the local
+  deployment needs a small implementation or adapter.
+
+C — Own:
+  The behavior is FinHarness-specific capital-decision policy or product
+  semantics that an external mechanism cannot decide.
+```
+
+Record the following in the Issue before its worktree starts:
+
+```text
+current counterexample and canonical repository owner
+official standard/specification and mature implementation references
+Adopt: capabilities used directly
+Adapt: protocols, state machines, error semantics, or invariants reused
+Own: FinHarness-specific policy and product meaning retained locally
+rejected alternatives and the concrete reason each is insufficient
+forbidden reinvention for this Issue
+destructive fixtures derived from the reference invariants
+```
+
+Keep research proportional. Prefer official documentation, original standards,
+primary repositories, and original papers. Do not require a technology survey
+for a small bug whose mechanism and owner are already fixed.
+
+Use this implementation order:
+
+1. Delete or retire a duplicate mechanism.
+2. Use an existing canonical repository boundary.
+3. Use a standard-library, platform, or mature-project capability directly.
+4. Add the smallest adapter that preserves the mature invariants.
+5. Add a new abstraction only after the earlier options are shown insufficient.
+
+"Future flexibility" is not evidence for a new platform layer. Do not invent a
+second SHA classifier, workflow identity, idempotency protocol, authorization
+language, event store, file-index database, workflow engine, provenance format,
+Agent loop, browser state framework, or financial calculation engine without a
+documented and reviewed gap.
+
+External mechanisms own mechanics; FinHarness owns the domain decisions they
+cannot make: CapitalState admission, Evidence admission, DecisionCase meaning,
+DecisionReadiness, CapitalMandate policy, and the human decision/review/learning
+loop. Convert adopted invariants into executable tests whenever the protected
+behavior is machine-observable.
+
 ## Layer Map
 
 The working architecture should evolve through layers:

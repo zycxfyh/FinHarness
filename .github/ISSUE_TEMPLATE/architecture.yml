@@ -26,6 +26,24 @@ body:
       description: Link the program issue, audit, prior ADR, or incident that produced this work.
     validations:
       required: true
+  - type: dropdown
+    id: adoption_mode
+    attributes:
+      label: Reference-First adoption mode
+      description: Classify the mechanism before proposing architecture.
+      options:
+        - A — adopt a mature library, standard, or platform capability
+        - B — adapt a mature protocol or architecture pattern
+        - C — own FinHarness-specific domain or product semantics
+    validations:
+      required: true
+  - type: textarea
+    id: adopt_adapt_own
+    attributes:
+      label: Adopt / Adapt / Own and rejected alternatives
+      description: Name the canonical repository owner, primary references, directly adopted capabilities, adapted invariants, FinHarness-owned meaning, forbidden reinvention, and why rejected mature alternatives are insufficient.
+    validations:
+      required: true
   - type: textarea
     id: dependencies
     attributes:
