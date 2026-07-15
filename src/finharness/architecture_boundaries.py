@@ -207,12 +207,13 @@ EXPECTED_RECORD_CATEGORY_CONTRACT = {
         "explicit Knowledge or Truth policy required",
     ),
     "AgentRunTrace": (
-        "ordered telemetry of one bounded Agent runtime invocation",
+        "ordered durable execution history of one bounded Agent runtime invocation",
         "Agent runtime",
-        "OpenTelemetry-aligned runtime spans, links, events, and results",
-        "append-only trace events with a terminal run outcome",
-        "bounded observability lifecycle with policy-governed redaction",
-        "retained telemetry only; never inferred from business state",
+        "durable unsampled Agent runtime trace and event boundary",
+        "append-only canonical trace events with one terminal run outcome",
+        "Agent recovery and audit lifecycle with policy-governed redaction",
+        "canonical persisted trace records and referenced immutable artifacts;"
+        " never sampled telemetry",
         ("DomainRecord", "OperationReceipt", "ArtifactProvenance", "AgentRunTrace"),
         "none",
         "none",
@@ -250,50 +251,230 @@ EXPECTED_RECORD_CATEGORY_CONTRACT = {
     ),
 }
 EXPECTED_RECORD_MIGRATIONS = {
-    "statecore_receipt_backed_domain_writes": (
-        ("DomainRecord", "OperationReceipt", "ProjectionIndex"),
-        (258, 267, 268, 269, 270, 271, 383, 395),
-        "split roles at existing domain and operation boundaries without rewriting history",
+    "statecore_receipt_backed_domain_writes": {
+        "canonical_domain_state": {
+            "current_role": (
+                "receipt-backed canonical domain payload or state history"
+            ),
+            "current_conformance": "partial",
+            "target_category": "DomainRecord",
+            "owner_issues": (258, 267, 268, 269, 270, 271),
+            "completed_prerequisites": (),
+            "disposition": (
+                "preserve history and move authority to existing domain write"
+                " and admission boundaries"
+            ),
+        },
+        "mutation_operation_evidence": {
+            "current_role": (
+                "mutation attempt, terminal outcome, retry, and reconciliation"
+                " evidence"
+            ),
+            "current_conformance": "partial",
+            "target_category": "OperationReceipt",
+            "owner_issues": (383,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "retain operation identity and reconciliation semantics without"
+                " granting domain authority"
+            ),
+        },
+        "receipt_discovery_index": {
+            "current_role": (
+                "lookup rows over canonical receipt or artifact bytes"
+            ),
+            "current_conformance": "partial",
+            "target_category": "ProjectionIndex",
+            "owner_issues": (395,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "rebuild from authoritative inventory and prune stale entries"
+                " at a bound generation"
+            ),
+        },
+    },
+    "receipt_index": {
+        "generic_receipt_index_rows": {
+            "current_role": (
+                "replaceable discovery projection over canonical receipt or"
+                " artifact inventory"
+            ),
+            "current_conformance": "partial",
+            "target_category": "ProjectionIndex",
+            "owner_issues": (395,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "preserve as rebuildable projection and reject stale or dangling"
+                " entries after successful rebuild"
+            ),
+        },
+    },
+    "agent_receipt_search": {
+        "search_generation_index": {
+            "current_role": (
+                "generated search projection over retained Agent records"
+            ),
+            "current_conformance": "partial",
+            "target_category": "ProjectionIndex",
+            "owner_issues": (367,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "keep generation-bound search state rebuildable and"
+                " non-authoritative"
+            ),
+        },
+    },
+    "agent_run_receipt_and_trace_sink": {
+        "canonical_agent_run_trace": {
+            "current_role": (
+                "compatibility receipt and trace paths for one Agent work"
+                " request"
+            ),
+            "current_conformance": "partial",
+            "target_category": "AgentRunTrace",
+            "owner_issues": (291,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "consolidate compatibility paths into one durable ordered"
+                " canonical run trace"
+            ),
+        },
+    },
+    "legacy_attestation": {
+        "historical_review_evidence": {
+            "current_role": (
+                "retained historical human review and attestation evidence"
+            ),
+            "current_conformance": "partial",
+            "target_category": "DomainRecord",
+            "owner_issues": (273,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "preserve historical readability without treating legacy"
+                " attestation as current decision truth"
+            ),
+        },
+        "current_decision_truth": {
+            "current_role": (
+                "legacy consumers treating attestation as current decision or"
+                " authority truth"
+            ),
+            "current_conformance": "not_yet_conforming",
+            "target_category": "DomainRecord",
+            "owner_issues": (271, 272, 273),
+            "completed_prerequisites": (),
+            "disposition": (
+                "migrate current truth to canonical DecisionRecord and"
+                " authority provenance while retaining compatibility reads"
+            ),
+        },
+    },
+    "artifact_descriptor_and_import_provenance": {
+        "immutable_artifact_descriptor": {
+            "current_role": (
+                "immutable artifact identity, source bytes, derivation, and"
+                " integrity binding"
+            ),
+            "current_conformance": "partial",
+            "target_category": "ArtifactProvenance",
+            "owner_issues": (368, 371, 373, 376, 394),
+            "completed_prerequisites": (),
+            "disposition": (
+                "adopt shared immutable artifact and qualified external-source"
+                " boundaries"
+            ),
+        },
+    },
+    "keyed_mutation_identity_receipt": {
+        "keyed_mutation_state_machine": {
+            "current_role": (
+                "request ownership, pending claim, terminal outcome, replay, and"
+                " typed reconciliation evidence"
+            ),
+            "current_conformance": "partial",
+            "target_category": "OperationReceipt",
+            "owner_issues": (383, 385, 387, 388, 389),
+            "completed_prerequisites": (),
+            "disposition": (
+                "retain the keyed-mutation state machine while preventing"
+                " receipt presence from proving domain effect"
+            ),
+        },
+    },
+    "commit_identity_manifest_and_ci_artifacts": {
+        "commit_identity_verification_manifest": {
+            "current_role": (
+                "repository verification JSON artifact binding claim,"
+                " repository, commit SHA, ref type, command, and result"
+            ),
+            "current_conformance": "not_yet_conforming",
+            "target_category": "BuildAttestation",
+            "owner_issues": (379,),
+            "completed_prerequisites": (386,),
+            "disposition": (
+                "preserve existing commit-identity evidence as compatibility"
+                " input; future owner must add authenticated subject and"
+                " predicate semantics before claiming BuildAttestation"
+                " conformance"
+            ),
+        },
+    },
+    "market_data_and_import_receipts": {
+        "admitted_market_or_capital_state": {
+            "current_role": (
+                "domain state admitted from validated market or import data"
+            ),
+            "current_conformance": "partial",
+            "target_category": "DomainRecord",
+            "owner_issues": (258,),
+            "completed_prerequisites": (),
+            "disposition": (
+                "keep admitted financial truth behind the owning Truth admission"
+                " boundary"
+            ),
+        },
+        "import_operation_outcome": {
+            "current_role": (
+                "import attempt, validation result, failure, retry, and recovery"
+                " evidence"
+            ),
+            "current_conformance": "partial",
+            "target_category": "OperationReceipt",
+            "owner_issues": (373, 376),
+            "completed_prerequisites": (),
+            "disposition": (
+                "separate import outcome evidence from admitted financial truth"
+            ),
+        },
+        "imported_source_provenance": {
+            "current_role": (
+                "imported source identity, bytes, manifest, lineage, and"
+                " derivation"
+            ),
+            "current_conformance": "partial",
+            "target_category": "ArtifactProvenance",
+            "owner_issues": (373, 376, 394),
+            "completed_prerequisites": (),
+            "disposition": (
+                "preserve source provenance under the shared qualified-source"
+                " identity boundary"
+            ),
+        },
+    },
+}
+EXPECTED_AGENT_TRACE_OBSERVABILITY_EXPORT = {
+    "standard": (
+        "OpenTelemetry-aligned spans, links, events, and terminal status"
     ),
-    "receipt_index": (
-        ("ProjectionIndex",),
-        (395,),
-        "preserve as rebuildable discovery projection",
-    ),
-    "agent_receipt_search": (
-        ("ProjectionIndex",),
-        (367,),
-        "preserve generations as rebuildable search projections",
-    ),
-    "agent_run_receipt_and_trace_sink": (
-        ("AgentRunTrace",),
-        (291,),
-        "consolidate compatibility paths into one canonical run trace",
-    ),
-    "legacy_attestation": (
-        ("DomainRecord",),
-        (271, 272, 273),
-        "retain historical review evidence and migrate current decision truth",
-    ),
-    "artifact_descriptor_and_import_provenance": (
-        ("ArtifactProvenance",),
-        (368, 371, 373, 376, 394),
-        "adopt shared immutable artifact and qualified-source boundaries",
-    ),
-    "keyed_mutation_identity_receipt": (
-        ("OperationReceipt",),
-        (383, 385, 387, 388, 389),
-        "retain the existing keyed-mutation state machine and reconciliation contract",
-    ),
-    "commit_identity_manifest_and_ci_artifacts": (
-        ("BuildAttestation",),
-        (379, 386),
-        "preserve repository identity evidence outside financial admission",
-    ),
-    "market_data_and_import_receipts": (
-        ("DomainRecord", "OperationReceipt", "ArtifactProvenance"),
-        (258, 373, 376, 394),
-        "separate admitted capital facts from import outcome and source provenance",
+    "authority": "non-authoritative export of AgentRunTrace",
+    "sampling": "permitted for observability export only",
+    "redaction": "policy governed",
+    "cannot_satisfy": (
+        "canonical trace completeness",
+        "restart hydration",
+        "domain authority",
+        "decision validity",
+        "financial evidence admission",
     ),
 }
 
@@ -897,45 +1078,165 @@ def _validate_record_category_contract(
             raise ValueError(f"record category {name} violates canonical contract")
 
 
-def _validate_record_migrations(taxonomy: dict[str, Any]) -> None:
+_MIGRATION_COMPONENT_FIELDS = frozenset(
+    {
+        "component",
+        "current_role",
+        "current_conformance",
+        "target_category",
+        "owner_issues",
+        "completed_prerequisites",
+        "disposition",
+    }
+)
+_ALLOWED_CONFORMANCE = frozenset({"conforming", "partial", "not_yet_conforming"})
+_VALID_TARGET_CATEGORIES = frozenset(EXPECTED_RECORD_CATEGORY_CONTRACT)
+
+
+def _parse_record_surface_components(
+    taxonomy: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
     migrations = taxonomy.get("surface_migrations")
     if not isinstance(migrations, list) or not migrations:
-        raise ValueError("record taxonomy requires surface migration owners")
-    actual: dict[str, tuple[tuple[str, ...], tuple[int, ...], str]] = {}
+        raise ValueError("record taxonomy requires surface_migrations as a non-empty list")
+    surfaces: dict[str, list[dict[str, Any]]] = {}
     for migration in migrations:
         if not isinstance(migration, dict):
-            raise ValueError("record surface migrations must be mappings")
-        if set(migration) != {
-            "surface",
-            "current_overload",
-            "owner_issues",
-            "disposition",
-        }:
-            raise ValueError("record surface migration fields violate canonical contract")
+            raise ValueError("record surface migration must be a mapping")
+        if set(migration) != {"surface", "components"}:
+            raise ValueError(
+                "record surface migration fields violate canonical contract"
+            )
         surface = migration.get("surface")
         if not isinstance(surface, str) or not surface:
-            raise ValueError("record surface migration requires a surface")
-        if surface in actual:
-            raise ValueError(f"record surface migration {surface} is duplicated")
-        categories = _identity_string_list(
-            migration,
-            "current_overload",
-            label=f"record surface migration {surface}",
+            raise ValueError("record surface migration requires a surface name")
+        if surface in surfaces:
+            raise ValueError(f"record surface migration surface {surface} is duplicated")
+        components = migration.get("components")
+        if not isinstance(components, list) or not components:
+            raise ValueError(
+                f"record surface migration surface {surface} requires non-empty components"
+            )
+        surfaces[surface] = list(components)
+    return surfaces
+
+
+def _validate_record_surface_component(
+    surface: str,
+    component: dict[str, Any],
+) -> None:
+    if not isinstance(component, dict):
+        raise ValueError(
+            f"record surface {surface} component entries must be mappings"
         )
-        owner_issues = migration.get("owner_issues")
-        if (
-            not isinstance(owner_issues, list)
-            or not owner_issues
-            or any(not isinstance(issue, int) or issue <= 0 for issue in owner_issues)
-            or len(owner_issues) != len(set(owner_issues))
-        ):
-            raise ValueError(f"record surface migration {surface} requires issue owners")
-        disposition = migration.get("disposition")
-        if not isinstance(disposition, str) or not disposition:
-            raise ValueError(f"record surface migration {surface} requires disposition")
-        actual[surface] = (tuple(categories), tuple(owner_issues), disposition)
+    if set(component) != _MIGRATION_COMPONENT_FIELDS:
+        raise ValueError(
+            f"record surface {surface} component fields violate canonical contract"
+        )
+    component_name = component.get("component")
+    if not isinstance(component_name, str) or not component_name:
+        raise ValueError(
+            f"record surface {surface} component requires a name"
+        )
+    target = component.get("target_category")
+    if not isinstance(target, str) or not target:
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"target_category must be a single string"
+        )
+    if target not in _VALID_TARGET_CATEGORIES:
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"has unknown target_category {target}"
+        )
+    if component.get("current_conformance") not in _ALLOWED_CONFORMANCE:
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"violates canonical current_conformance"
+        )
+    owner_issues = component.get("owner_issues")
+    if (
+        not isinstance(owner_issues, list)
+        or not owner_issues
+        or any(not isinstance(issue, int) or issue <= 0 for issue in owner_issues)
+        or len(owner_issues) != len(set(owner_issues))
+    ):
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"requires non-empty, positive, unique owner_issues"
+        )
+    prereqs = component.get("completed_prerequisites")
+    if not isinstance(prereqs, list) or any(
+        not isinstance(p, int) or p <= 0 for p in prereqs
+    ):
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"completed_prerequisites must be a list of positive integers"
+        )
+    if len(prereqs) != len(set(prereqs)):
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"completed_prerequisites has duplicates"
+        )
+    disposition = component.get("disposition")
+    if not isinstance(disposition, str) or not disposition:
+        raise ValueError(
+            f"record surface {surface} component {component_name} "
+            f"requires disposition"
+        )
+
+
+def _validate_record_migrations(taxonomy: dict[str, Any]) -> None:
+    surfaces = _parse_record_surface_components(taxonomy)
+    actual: dict[str, dict[str, dict[str, object]]] = {}
+    for surface, components in surfaces.items():
+        component_names: set[str] = set()
+        surface_components: dict[str, dict[str, object]] = {}
+        for component in components:
+            _validate_record_surface_component(surface, component)
+            comp_name = str(component["component"])
+            if comp_name in component_names:
+                raise ValueError(
+                    f"record surface {surface} component {comp_name} is duplicated"
+                )
+            component_names.add(comp_name)
+            surface_components[comp_name] = {
+                "current_role": component["current_role"],
+                "current_conformance": component["current_conformance"],
+                "target_category": component["target_category"],
+                "owner_issues": tuple(component["owner_issues"]),
+                "completed_prerequisites": tuple(component["completed_prerequisites"]),
+                "disposition": component["disposition"],
+            }
+        actual[surface] = surface_components
     if actual != EXPECTED_RECORD_MIGRATIONS:
         raise ValueError("record surface migrations are incomplete or non-canonical")
+
+
+def _validate_agent_trace_observability_export(taxonomy: dict[str, Any]) -> None:
+    export = taxonomy.get("agent_trace_observability_export")
+    if not isinstance(export, dict):
+        raise ValueError("record taxonomy requires agent_trace_observability_export")
+    expected_keys = frozenset(EXPECTED_AGENT_TRACE_OBSERVABILITY_EXPORT)
+    if set(export) != expected_keys:
+        raise ValueError(
+            "agent_trace_observability_export fields violate canonical contract"
+        )
+    for key, expected_value in EXPECTED_AGENT_TRACE_OBSERVABILITY_EXPORT.items():
+        actual_value = export.get(key)
+        if isinstance(expected_value, tuple):
+            if not isinstance(actual_value, (list, tuple)):
+                raise ValueError(
+                    f"agent_trace_observability_export.{key} must be a list"
+                )
+            if tuple(actual_value) != expected_value:
+                raise ValueError(
+                    f"agent_trace_observability_export.{key} is non-canonical"
+                )
+        elif actual_value != expected_value:
+            raise ValueError(
+                f"agent_trace_observability_export.{key} is non-canonical"
+            )
 
 
 def validate_record_taxonomy(taxonomy: Any) -> None:
@@ -952,6 +1253,7 @@ def validate_record_taxonomy(taxonomy: Any) -> None:
     categories = _parse_record_categories(taxonomy)
     _validate_record_category_contract(categories)
     _validate_record_migrations(taxonomy)
+    _validate_agent_trace_observability_export(taxonomy)
 
 
 def validate_plane_model(model: dict[str, Any]) -> None:

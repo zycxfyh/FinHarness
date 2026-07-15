@@ -8,6 +8,14 @@ Existing receipt-shaped surfaces must be classified explicitly as a
 `BuildAttestation`, or `ProjectionIndex`; a suffix, path, JSON shape, or SQLite
 row cannot decide the category.
 
+Migration targets do not imply current conformance. A surface mapped to
+`BuildAttestation` is not yet an authenticated attestation. OTel telemetry
+export is not canonical `AgentRunTrace`. The current commit-identity JSON
+(`finharness.commit_identity_manifest.v1`) is repository verification evidence
+only, not an in-toto BuildAttestation. #349 owns portfolio and CapitalState
+snapshot retention/compaction only; it is not a universal retention owner for
+all receipt categories.
+
 Operation receipts are durable evidence roots for FinHarness operations. They
 record what was attempted or produced, which inputs and tools were used, where
 artifacts were written, and what the output does not authorize. Some historical
