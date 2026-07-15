@@ -23,6 +23,25 @@ body:
       label: Source / audit
     validations:
       required: true
+  - type: dropdown
+    id: adoption_mode
+    attributes:
+      label: Reference-First adoption mode
+      description: Classify the mechanism before implementation; use N/A only when the existing owner and mechanism are already fixed.
+      options:
+        - A — adopt a mature library, standard, or platform capability
+        - B — adapt a mature protocol or architecture pattern
+        - C — own FinHarness-specific domain or product semantics
+        - N/A — bounded correction with no mechanism choice
+    validations:
+      required: true
+  - type: textarea
+    id: adopt_adapt_own
+    attributes:
+      label: Adopt / Adapt / Own and rejected alternatives
+      description: Name the canonical repository owner, primary references, directly adopted capabilities, adapted invariants, FinHarness-owned meaning, forbidden reinvention, and why rejected mature alternatives are insufficient. For N/A, identify the already-fixed mechanism and owner.
+    validations:
+      required: true
   - type: textarea
     id: dependencies
     attributes:

@@ -9,12 +9,23 @@ next implementation until the current issue PR has merged.
 
 ## Before You Change Code
 
-1. Read the relevant module doc under `docs/modules/`.
-2. Prefer existing task entries over ad hoc commands.
-3. Check whether a mature wheel should own the heavy implementation.
-4. Keep FinHarness local code focused on adapters, governance models, quality,
+1. Confirm the problem has an open, calibrated Issue before creating a worktree.
+2. For a new mechanism or architecture choice, complete the
+   [Reference-First Design Gate](AGENTS.md#reference-first-design-gate) in the
+   Issue: classify A/B/C, record Adopt/Adapt/Own, and explain rejected mature
+   alternatives and forbidden reinvention.
+3. Read the relevant module doc under `docs/modules/` and locate the current
+   canonical production owner and tests.
+4. Prefer existing task entries over ad hoc commands.
+5. Check whether a mature wheel, standard, or platform capability should own
+   the heavy implementation.
+6. Keep FinHarness local code focused on adapters, governance models, quality,
    lineage, snapshots, receipts, permission boundaries, workflow orchestration,
    and tests.
+
+A bounded bug fix may state that the mechanism is already fixed and that no
+external adoption decision is involved. Reference-First is a design gate, not a
+requirement to produce ceremonial research for every edit.
 
 ## Documentation Definition Of Done
 
