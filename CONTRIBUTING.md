@@ -10,6 +10,8 @@ next implementation until the current issue PR has merged.
 ## Before You Change Code
 
 1. Confirm the problem has an open, calibrated Issue before creating a worktree.
+   The open Issue must have exactly one `plane:*`, one `type:*`, and one
+   `status:*` label; run `task issues:audit` after applying them.
 2. For a new mechanism or architecture choice, complete the
    [Reference-First Design Gate](AGENTS.md#reference-first-design-gate) in the
    Issue: classify A/B/C, record Adopt/Adapt/Own, and explain rejected mature

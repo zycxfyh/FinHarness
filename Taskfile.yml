@@ -50,6 +50,11 @@ tasks:
     cmds:
       - uv run python scripts/manage_issue_worktree.py finish {{.CLI_ARGS}}
 
+  issues:audit:
+    desc: Audit live open Issues for exactly one plane, kind, and lifecycle label
+    cmds:
+      - uv run python scripts/audit_issue_taxonomy.py {{.CLI_ARGS}}
+
   pr:body:
     desc: Render a concise PR body with issue and changed-file metadata
     cmds:

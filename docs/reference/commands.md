@@ -20,6 +20,7 @@ execution authorization.
 | `task issue:start -- <issue> --slug <slug>` | Create a numbered issue branch/worktree from current `origin/main`. | Requires an open issue and refuses naming/path collisions. |
 | `task issue:status -- [issue]` | Audit worktree numbering, cleanliness, and stale metadata. | Read-only. |
 | `task issue:finish -- <issue> [--apply]` | Preview or apply cleanup after verified PR merge. | Dry-run by default; refuses dirty, open, mismatched, or unmerged work. |
+| `task issues:audit [-- --repo OWNER/REPO]` | Audit live open Issues for exactly one plane, kind, and lifecycle label. | Read-only; derives from GitHub Issue truth and exits non-zero on missing, multiple, or unknown taxonomy labels. |
 | `task pr:body -- <fields>` | Render the concise PR contract with issue and changed-file metadata. | Derives the issue from the numbered branch unless `--issue` is supplied; manual risk and safety evidence remain required. |
 | `task pr:check -- --body-file <path>` | Validate issue linkage, scope, risk/classification, validation, and safety evidence. | Read-only; the required `Dependency review` check runs the same contract against the GitHub event. |
 | `task governance:inventory` | Check source-derived dependency consumers and attestation summary fields. | Read-only; prints the affected consumer and repair command on drift. |

@@ -27,6 +27,35 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: primary_plane
+    attributes:
+      label: Primary backlog plane
+      description: This declaration does not apply a label; after creation, a reviewer must apply the matching plane:* label.
+      options:
+        - plane:truth — capital facts, imports, reconciliation, and verified projections
+        - plane:knowledge — observations, claims, provenance, and evidence admission
+        - plane:judgment — cases, scenarios, readiness, decisions, and validity
+        - plane:control — identity, mandate, authorization, admission, and capability
+        - plane:agent — bounded context, tools, observations, evaluation, and stop
+        - plane:action-learning — execution, outcome review, lessons, and governed learning
+        - plane:product — human discovery, decision, review, and learning journeys
+        - plane:assurance — transactions, recovery, indexes, CI, proof, and engineering governance
+    validations:
+      required: true
+  - type: dropdown
+    id: lifecycle
+    attributes:
+      label: Backlog lifecycle
+      description: This declaration does not apply a label; active still follows dependency order, while dormant and deferred do not authorize implementation.
+      options:
+        - status:active — authorized only in canonical dependency order
+        - status:dormant — valid scope whose activation gate is not satisfied
+        - status:deferred — explicit closed gate
+        - status:temporary — limited owner with an exit condition
+    validations:
+      required: true
+
+  - type: dropdown
     id: adoption_mode
     attributes:
       label: Reference-First adoption mode
