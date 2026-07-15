@@ -34,7 +34,7 @@ plane_model:
       purpose: Resolve principal identity, mandate, authority, capability, and admission limits.
       canonical_inputs: [human constitutional choices, admitted capital truth, authenticated principal context]
       canonical_outputs: [effective mandate and authority views, typed admission decisions]
-      owned_objects: [Principal, CapitalMandateVersion, AgentAuthorityGrant, AdmissionDecision]
+      owned_objects: [Principal, CapitalMandateVersion, PolicyVersion, AgentAuthorityGrant, AdmissionDecision]
       forbidden_responsibilities: [capital fact creation, evidence interpretation, strategy choice, effect execution]
       depends_on: [truth]
     - name: judgment
@@ -43,7 +43,7 @@ plane_model:
       purpose: Compare scenarios and risk to produce a version-bound human capital decision.
       canonical_inputs: [admitted CapitalState versions, admitted EvidenceSet versions, effective control views]
       canonical_outputs: [DecisionCase versions, decision readiness and validity, recorded decisions]
-      owned_objects: [DecisionCaseVersion, ScenarioVersion, ReviewStateVersion, DecisionReadiness, DecisionValidity, DecisionRecord]
+      owned_objects: [ProposalVersion, DecisionCaseVersion, ScenarioVersion, ReviewStateVersion, DecisionReadiness, DecisionValidity, DecisionRecord]
       forbidden_responsibilities: [source ingestion, authority expansion, Agent runtime control, effect execution]
       depends_on: [truth, knowledge, control]
     - name: agent
@@ -82,6 +82,126 @@ plane_model:
       forbidden_responsibilities: [product roadmap, capital semantics, decision policy, permanent Program ownership]
       depends_on: []
       supports: [truth, knowledge, control, judgment, agent, action-learning, product]
+
+  # Identity and version truth extends the plane model rather than creating a
+  # second registry. Domain/version mechanics stay declarative in this ADR
+  # phase; runtime resolvers and persistence remain separate Issues.
+  identity_model:
+    schema: finharness.identity_version_graph.v1
+    external_source_identity:
+      standard: W3C PROV-DM qualified name
+      canonical_key: [source_namespace, source_native_id]
+      shared_reference_planes: [truth, knowledge]
+      non_authoritative_tokens: [display_id, request_id, local_alias, path]
+    namespaces:
+      - name: principal
+        authority: authenticated principal context
+      - name: agent-runtime
+        authority: bounded runtime invocation only
+      - name: request
+        authority: correlation and idempotency only
+      - name: external-source
+        authority: qualified external source key
+      - name: domain-logical
+        authority: owning domain logical-identity boundary
+      - name: domain-version
+        authority: owning domain version-creation boundary; encoded as RFC 9562 UUIDv7
+      - name: git-commit
+        authority: repository object and workflow identity only
+    namespace_substitution_policy: forbidden_unless_explicitly_allowed
+    allowed_namespace_substitutions: []
+    substitution_barriers:
+      - source: agent-runtime
+        cannot_replace: [principal]
+      - source: request
+        cannot_replace: [principal, external-source, domain-logical, domain-version]
+      - source: display_id
+        cannot_replace: [principal, external-source, domain-logical, domain-version]
+      - source: local_alias
+        cannot_replace: [external-source, domain-logical, domain-version]
+      - source: path
+        cannot_replace: [external-source]
+      - source: content_digest
+        cannot_replace: [domain-version]
+      - source: git-commit
+        cannot_replace: [principal, external-source, domain-logical, domain-version]
+    version_graph:
+      edge_semantics: depends_on names immutable upstream identity inputs
+      nodes:
+        - name: CapitalStateVersion
+          owner_plane: truth
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: []
+          may_cite: []
+        - name: EvidenceSetVersion
+          owner_plane: knowledge
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: []
+          may_cite: []
+        - name: PolicyVersion
+          owner_plane: control
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: []
+          may_cite: []
+        - name: ProposalVersion
+          owner_plane: judgment
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: []
+          may_cite: []
+        - name: DecisionCaseVersion
+          owner_plane: judgment
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: [CapitalStateVersion, EvidenceSetVersion, PolicyVersion, ProposalVersion]
+          may_cite: []
+        - name: ScenarioVersion
+          owner_plane: judgment
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: [DecisionCaseVersion]
+          may_cite: []
+        - name: ReviewStateVersion
+          owner_plane: judgment
+          identity_namespace: domain-version
+          history: immutable
+          depends_on: [DecisionCaseVersion]
+          may_cite: []
+        - name: DecisionRecord
+          owner_plane: judgment
+          identity_namespace: domain-logical
+          history: append-only
+          depends_on: [DecisionCaseVersion]
+          may_cite: [ScenarioVersion]
+      currentness_owner_semantics: affected_node.owner_plane
+      freshness_rules:
+        - trigger: capital_state_admission
+          trigger_owner_plane: truth
+          affects: [CapitalStateVersion, DecisionCaseVersion, ScenarioVersion]
+        - trigger: evidence_admission_or_withdrawal
+          trigger_owner_plane: knowledge
+          affects: [EvidenceSetVersion, DecisionCaseVersion, ScenarioVersion]
+        - trigger: policy_activation
+          trigger_owner_plane: control
+          affects: [PolicyVersion, DecisionCaseVersion, ScenarioVersion]
+        - trigger: proposal_revision
+          trigger_owner_plane: judgment
+          affects: [ProposalVersion, DecisionCaseVersion, ScenarioVersion]
+        - trigger: case_basis_change
+          trigger_owner_plane: judgment
+          affects: [DecisionCaseVersion, ScenarioVersion]
+        - trigger: scenario_recalculation
+          trigger_owner_plane: judgment
+          affects: [ScenarioVersion]
+        - trigger: review_event
+          trigger_owner_plane: judgment
+          affects: [ReviewStateVersion]
+        - trigger: decision_recorded
+          trigger_owner_plane: judgment
+          affects: [DecisionRecord]
 
 # First match wins. Keep narrow ownership rules before the core fallback.
 layers:

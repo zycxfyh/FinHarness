@@ -6,6 +6,10 @@ Date: 2026-07-12
 
 Issue: #255
 
+Case/Scenario direction was superseded by #403. The canonical direction is
+`DecisionCaseVersion -> ScenarioVersion`; runtime correction remains owned by
+#392.
+
 ## Decision
 
 FinHarness separates the following identities and responsibilities:
@@ -22,7 +26,9 @@ FinHarness separates the following identities and responsibilities:
 
 `DecisionCaseVersion` contains only references that can change the basis:
 the DecisionProblem, ProposalVersion, EvidenceSetVersion, adopted
-CapitalStateVersion, effective PolicyVersion, and ScenarioVersion identities.
+CapitalStateVersion, and effective PolicyVersion identities. A
+`ScenarioVersion` binds one exact `DecisionCaseVersion`; it never enters the
+Case basis.
 ReviewEvent, Attestation, ReviewStateVersion, and DecisionRecord are forbidden
 case-basis inputs.
 
@@ -47,7 +53,7 @@ basis hash but a distinct, later UUIDv7.
 | Evidence withdrawal | yes | Previously adopted basis is no longer available |
 | Adopted CapitalStateVersion change | yes | Financial truth basis changed |
 | Effective PolicyVersion change | yes | Governing constraints changed |
-| ScenarioVersion change | yes | Assumption/result basis changed |
+| ScenarioVersion add/recalculation/removal | no | Scenario evaluates an existing CaseVersion and cannot rewrite its basis |
 | ReviewEvent | no | Review state only |
 | Attestation | no | Review evidence only |
 | DecisionRecord | no | Decision event over an existing case version |
