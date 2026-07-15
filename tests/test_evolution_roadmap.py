@@ -36,7 +36,7 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Status: current", text)
-        self.assertIn("Updated: 2026-07-11", text)
+        self.assertIn("Updated: 2026-07-15", text)
         self.assertIn("| Evolution Roadmap |", framework)
         self.assertIn("finharness-evolution-roadmap.md", framework)
 
@@ -49,9 +49,9 @@ class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
 
         self.assertEqual(documented, active)
         self.assertTrue(resolved.isdisjoint(documented))
-        self.assertEqual(active, set())
-        self.assertEqual(len(resolved), 10)
-        self.assertIn("10 resolved; 0 active", _roadmap())
+        self.assertEqual(active, {"ENG-DEBT-0007", "ENG-DEBT-0010"})
+        self.assertEqual(len(resolved), 8)
+        self.assertIn("8 resolved; 2 active", _roadmap())
 
     def test_agent_acceptance_block_matches_executable_baseline(self) -> None:
         section = _marked_section(_roadmap(), "agent-open")

@@ -27,20 +27,33 @@ Every canonical debt verifier is a `VerifierSpec` in
 - the exact claim it supports;
 - the owning domain;
 - one evidence level;
+- the minimum evidence level required to close the debt;
 - the production paths under proof;
 - a sunset condition for deletion or replacement.
+
+When the executed verifier is weaker than the closure level, the spec must also
+name the canonical execution owner, destructive fixture, and the identity claim
+defined by #386. This metadata is a dependency declaration, not proof that the
+owner ran. The debt remains active until a consumer binds the owner's successful
+result to that exact identity; structural success alone cannot resolve it.
 
 The verifier executes its proof. Merely finding a symbol, test filename, or
 minimum registration count is insufficient for semantic/runtime claims. The
 register may grow without updating a fixed total; IDs and verifier bindings,
 not the number of entries, are the stable contract.
 
+`identity_claim` reuses #386's `pr_head`, `merge_ref`, and `main_commit`
+vocabulary. This contract must not infer or classify SHAs itself. CI identity is
+owned by the commit-identity workflow and its single manifest; proof consumers
+must reject a missing, skipped, cancelled, stale, or different-SHA owner result.
+
 ## False-green fixture
 
-`tests/test_debt_register.py` contains a destructive API fixture with an
-unguarded POST route. It also creates every string and test-name token accepted
-by the former verifier. The former rule reports green while the dependency-graph
-verifier rejects the route, preserving the reason for this contract.
+`tests/test_debt_register.py` contains destructive false-green fixtures. One
+adds an unguarded POST route while preserving every token accepted by the former
+API verifier. Two more create all source tokens accepted by the execution and
+frontend verifiers without executing their denial/no-effect fixtures. Structural
+evaluation stays useful, but the closure check rejects both runtime claims.
 
 ## Claim boundary
 

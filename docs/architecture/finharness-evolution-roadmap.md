@@ -1,7 +1,7 @@
 # FinHarness Evolution Roadmap
 
 Status: current
-Updated: 2026-07-11
+Updated: 2026-07-15
 Owner: architecture + product governance
 
 This is the maintained plan for evolving FinHarness after the 2026-07-10
@@ -49,7 +49,7 @@ not by PR count, model count, receipt count, or version labels.
 | Agent Operating Surface | semantically consumable | Tools, envelopes, playbooks, evaluators, memory, search, workspace, and trace primitives may be reused. |
 | Agent Operating Cycle v0.1 | current AUT2 foundation | One bounded cycle is observation-driven, admitted, durable, searchable, reviewable, and terminally reduced; cross-cycle session/resume is absent. |
 | Agent Work Loop / Agent Operating Cycle v0.1 | 15/15 acceptance contracts pass; AUT2 foundation current | Typed arguments, observation-driven decisions, independent budgets, preflight, autonomy admission, terminal receipts/results/search/workspace, and every declared stop reducer have behavioral evidence. This does not grant AUT3 decision authority. |
-| Registered engineering debt | 10 resolved; 0 active | All currently registered debts pass, but the register is incomplete: test collection, capital truth, decision versioning, execution monotonicity, API contracts, and architecture cycles are verified material debts to add. |
+| Registered engineering debt | 8 resolved; 2 active | ENG-DEBT-0007 and ENG-DEBT-0010 have structural evidence, but their runtime claims remain active until the named destructive fixtures are bound to exact-main CI identity. The register is still incomplete: test collection, capital truth, decision versioning, execution monotonicity, API contracts, and architecture cycles are verified material debts to add. |
 | Python merge gate | false green | `check:ci` passed 954 unittest-discovered cases, but two known pytest-only Agent files contribute 38 tests while unittest runs 0 of them. |
 | Capital-state truth | partial | Position lacks valuation currency/time/source and mixed-currency totals are still calculated; Scenario and Agent cannot treat it as a trusted current baseline. |
 | Decision integrity | partial | Attestation binds `proposal_id`, not an immutable ProposalVersion receipt/hash; revisions do not supersede old decisions. |
@@ -232,7 +232,11 @@ correctly.
 The following block is mechanically checked against the canonical register.
 
 <!-- active-debt:start -->
-(no active debt)
+- `ENG-DEBT-0007`: frontend structure is verified, but the jsdom
+  fail-closed/recoverability fixture is not yet consumed with its `main_commit`
+  identity.
+- `ENG-DEBT-0010`: capability guard placement is verified, but the runtime
+  denial/no-effect fixture is not yet consumed with its `main_commit` identity.
 <!-- active-debt:end -->
 
 Rules:
