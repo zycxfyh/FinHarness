@@ -4,6 +4,85 @@ source_roots:
   - scripts
   - experiments
 
+# Conceptual ownership and dependency truth. This extends the existing matrix;
+# it does not replace the code-level import layers and rules below.
+plane_model:
+  schema: finharness.plane_model.v1
+  dependency_semantics: depends_on names lower-rank semantic inputs; outputs never write backward without readmission.
+  planes:
+    - name: truth
+      kind: domain
+      dependency_rank: 0
+      purpose: Admit trustworthy, versioned facts about the person's capital world.
+      canonical_inputs: [external SourceArtifact records, valuation inputs, reconciliation artifacts and results awaiting truth admission]
+      canonical_outputs: [admitted CapitalState versions, capital-truth findings]
+      owned_objects: [ImportBatch, ImportManifest, CapitalStateVersion, CapitalTruthAdmission]
+      forbidden_responsibilities: [admitted Knowledge output consumption, evidence interpretation, decision choice, authority grant, user workflow]
+      depends_on: []
+    - name: knowledge
+      kind: domain
+      dependency_rank: 0
+      purpose: Admit observations and claims with provenance, uncertainty, and counter-evidence.
+      canonical_inputs: [external SourceArtifact records, external observations, research outputs]
+      canonical_outputs: [admitted EvidenceSet versions, evidence gaps and conflicts]
+      owned_objects: [Observation, Claim, EvidenceSetVersion, EvidenceAdmission]
+      forbidden_responsibilities: [admitted Truth output consumption, capital-state totals, decision choice, authority grant, external effect]
+      depends_on: []
+    - name: control
+      kind: domain
+      dependency_rank: 1
+      purpose: Resolve principal identity, mandate, authority, capability, and admission limits.
+      canonical_inputs: [human constitutional choices, admitted capital truth, authenticated principal context]
+      canonical_outputs: [effective mandate and authority views, typed admission decisions]
+      owned_objects: [Principal, CapitalMandateVersion, AgentAuthorityGrant, AdmissionDecision]
+      forbidden_responsibilities: [capital fact creation, evidence interpretation, strategy choice, effect execution]
+      depends_on: [truth]
+    - name: judgment
+      kind: domain
+      dependency_rank: 2
+      purpose: Compare scenarios and risk to produce a version-bound human capital decision.
+      canonical_inputs: [admitted CapitalState versions, admitted EvidenceSet versions, effective control views]
+      canonical_outputs: [DecisionCase versions, decision readiness and validity, recorded decisions]
+      owned_objects: [DecisionCaseVersion, ScenarioVersion, ReviewStateVersion, DecisionReadiness, DecisionValidity, DecisionRecord]
+      forbidden_responsibilities: [source ingestion, authority expansion, Agent runtime control, effect execution]
+      depends_on: [truth, knowledge, control]
+    - name: agent
+      kind: domain
+      dependency_rank: 3
+      purpose: Perform bounded observation, reasoning, tool use, replanning, and human handoff.
+      canonical_inputs: [admitted truth and evidence, judgment context, effective control views]
+      canonical_outputs: [typed work results, candidates, gaps, escalations and handoffs]
+      owned_objects: [AgentWorkRequest, AgentWorkObservation, AgentWorkResult, HumanHandoff]
+      forbidden_responsibilities: [canonical fact mutation, human decision impersonation, authority self-grant, direct external effect]
+      depends_on: [truth, knowledge, judgment, control]
+    - name: action-learning
+      kind: domain
+      dependency_rank: 4
+      purpose: Execute admitted actions through deterministic engines and review outcomes without automatic policy mutation.
+      canonical_inputs: [valid decisions, effective control views, admitted action requests, reconciled outcome facts]
+      canonical_outputs: [effect and reconciliation results, OutcomeReview, LessonCandidate]
+      owned_objects: [ActionRequest, EffectResult, OutcomeReview, LessonCandidate]
+      forbidden_responsibilities: [decision authorship, authority expansion, automatic policy update, unadmitted fact writeback]
+      depends_on: [truth, knowledge, judgment, control, agent]
+    - name: product
+      kind: domain
+      dependency_rank: 5
+      purpose: Let a human discover, compare, decide, return, review, and learn without internal proof vocabulary.
+      canonical_inputs: [domain read models, review commands, Agent handoffs, outcome views]
+      canonical_outputs: [human commands, explanations, presentation and session state, navigation]
+      owned_objects: [DecisionWorkspace, ReviewJourney, RecoverySurface, ProductExplanation]
+      forbidden_responsibilities: [canonical domain truth, policy inference, hidden authority, duplicated domain workflow]
+      depends_on: [truth, knowledge, judgment, control, agent, action-learning]
+    - name: assurance
+      kind: horizontal
+      purpose: Supply transactions, recovery, indexes, security, CI, observability, and falsifiable proof.
+      canonical_inputs: [domain invariants, failure models, repository and runtime events]
+      canonical_outputs: [mechanical guarantees, degraded-state evidence, verification results]
+      owned_objects: [IntegrityReceipt, RecoveryProof, ArchitectureAudit, VerificationManifest]
+      forbidden_responsibilities: [product roadmap, capital semantics, decision policy, permanent Program ownership]
+      depends_on: []
+      supports: [truth, knowledge, control, judgment, agent, action-learning, product]
+
 # First match wins. Keep narrow ownership rules before the core fallback.
 layers:
   - name: statecore

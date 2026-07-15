@@ -12,6 +12,17 @@ comes from `system-catalog.yml`; engineering debt comes from
 Long-term control ownership is governed by
 [`2026-07-11-agent-native-control-ownership.md`](../adr/2026-07-11-agent-native-control-ownership.md).
 
+## Canonical plane model
+
+Roadmap 的规范性 change ownership 使用
+[Plane Model ADR](../adr/2026-07-16-finharness-plane-model-and-dependency-direction.md)：
+**Truth、Knowledge、Control、Judgment、Agent、Action/Learning、Product** 与横向
+**Assurance**。下文 Human Principal、Capital Agent、Harness、deterministic engines
+是 control roles；W/A 是 maturity axes；Phase 是 delivery order。它们都不是额外的
+plane，也不能改变 `config/architecture-layers.yml` 中的 acyclic dependency
+direction。旧表格中的 Classical、Human security 等文字只描述实施责任，后续变更
+必须同时声明一个 canonical primary plane。
+
 ## 1. Executive Decision
 
 FinHarness should evolve toward an **Agent-native Personal Capital Operating

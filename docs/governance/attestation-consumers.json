@@ -1487,9 +1487,9 @@
     },
     {
       "path": "docs/architecture/finharness-evolution-roadmap.md",
-      "match_line": 55,
+      "match_line": 66,
       "term": "Attestation",
-      "reason": "Non-semantic hit: Attestation at line 55. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: Attestation at line 66. Not a direct Attestation consumer."
     },
     {
       "path": "docs/architecture/industry-benchmark/02-industry-benchmark-map-codex.md",
