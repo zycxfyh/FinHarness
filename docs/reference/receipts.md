@@ -1,8 +1,18 @@
 # Receipt Reference
 
-Receipts are durable evidence roots for FinHarness workflows. They record what
-was produced, which inputs and tools were used, where artifacts were written, and
-what the output does not authorize.
+`Receipt` is a historical storage/name family, not one authority category. The
+canonical taxonomy is defined by
+[`record-receipt-provenance-trace-attestation-projection-taxonomy`](../adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md).
+Existing receipt-shaped surfaces must be classified explicitly as a
+`DomainRecord`, `OperationReceipt`, `ArtifactProvenance`, `AgentRunTrace`,
+`BuildAttestation`, or `ProjectionIndex`; a suffix, path, JSON shape, or SQLite
+row cannot decide the category.
+
+Operation receipts are durable evidence roots for FinHarness operations. They
+record what was attempted or produced, which inputs and tools were used, where
+artifacts were written, and what the output does not authorize. Some historical
+schemas documented below also contain domain records or provenance and retain
+their names for compatibility.
 
 Receipts are evidence, not proof of correctness and not trading permission.
 
