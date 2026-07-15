@@ -86,7 +86,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         merge = jobs["merge-ref-identity"]
         main = jobs["main-commit-identity"]
         self.assertEqual(head["steps"][0]["with"]["ref"], PR_HEAD_REF)
-        self.assertEqual(merge["steps"][0]["with"]["ref"], "${{ github.ref }}")
+        self.assertEqual(merge["steps"][0]["with"]["ref"], EVENT_SHA)
         self.assertEqual(main["steps"][0]["with"]["ref"], EVENT_SHA)
         self.assertIn("--claim pr_head", head["steps"][1]["run"])
         self.assertIn("--claim merge_ref", merge["steps"][1]["run"])
