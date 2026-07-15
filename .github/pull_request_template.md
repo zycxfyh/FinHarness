@@ -13,7 +13,7 @@ Risk:
 
 ## Validation evidence
 
-<!-- Exact commands/checks and results for the pushed head. -->
+<!-- Name PR head, merge ref, or final main commit; include the full SHA and exact checks. -->
 
 ## Manual safety evidence
 

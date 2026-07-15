@@ -1,0 +1,141 @@
+name: commit-identity
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pull-request-identities:
+    name: PR head and merge-ref identities
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - id: head
+        name: Verify PR head identity
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: pr_head
+          expected_sha: ${{ github.event.pull_request.head.sha }}
+          command: verify PR head commit identity
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - id: merge
+        name: Verify synthetic merge-ref identity
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: verify pull request merge-ref commit identity
+
+      - name: Create pull request identity manifest
+        env:
+          HEAD_CLAIM: ${{ steps.head.outputs.claim }}
+          HEAD_REPOSITORY: ${{ steps.head.outputs.repository }}
+          HEAD_COMMIT_SHA: ${{ steps.head.outputs.commit_sha }}
+          HEAD_EXPECTED_SHA: ${{ steps.head.outputs.expected_sha }}
+          HEAD_REF_TYPE: ${{ steps.head.outputs.ref_type }}
+          HEAD_COMMAND: ${{ steps.head.outputs.command }}
+          HEAD_RESULT: ${{ steps.head.outputs.result }}
+          MERGE_CLAIM: ${{ steps.merge.outputs.claim }}
+          MERGE_REPOSITORY: ${{ steps.merge.outputs.repository }}
+          MERGE_COMMIT_SHA: ${{ steps.merge.outputs.commit_sha }}
+          MERGE_EXPECTED_SHA: ${{ steps.merge.outputs.expected_sha }}
+          MERGE_REF_TYPE: ${{ steps.merge.outputs.ref_type }}
+          MERGE_COMMAND: ${{ steps.merge.outputs.command }}
+          MERGE_RESULT: ${{ steps.merge.outputs.result }}
+        run: |
+          mkdir -p .artifacts
+          jq -n \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg head_claim "$HEAD_CLAIM" \
+            --arg head_repository "$HEAD_REPOSITORY" \
+            --arg head_commit_sha "$HEAD_COMMIT_SHA" \
+            --arg head_expected_sha "$HEAD_EXPECTED_SHA" \
+            --arg head_ref_type "$HEAD_REF_TYPE" \
+            --arg head_command "$HEAD_COMMAND" \
+            --arg head_result "$HEAD_RESULT" \
+            --arg merge_claim "$MERGE_CLAIM" \
+            --arg merge_repository "$MERGE_REPOSITORY" \
+            --arg merge_commit_sha "$MERGE_COMMIT_SHA" \
+            --arg merge_expected_sha "$MERGE_EXPECTED_SHA" \
+            --arg merge_ref_type "$MERGE_REF_TYPE" \
+            --arg merge_command "$MERGE_COMMAND" \
+            --arg merge_result "$MERGE_RESULT" \
+            '{schema: "finharness.commit_identity_manifest.v1", run_id: $run_id, claims: [
+              {claim: $head_claim, repository: $head_repository, commit_sha: $head_commit_sha, expected_sha: $head_expected_sha, ref_type: $head_ref_type, command: $head_command, result: $head_result},
+              {claim: $merge_claim, repository: $merge_repository, commit_sha: $merge_commit_sha, expected_sha: $merge_expected_sha, ref_type: $merge_ref_type, command: $merge_command, result: $merge_result}
+            ]}' > .artifacts/commit-identity-manifest.json
+
+      - name: Upload pull request identity manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: commit-identity-manifest
+          path: .artifacts/commit-identity-manifest.json
+          if-no-files-found: error
+          retention-days: 20
+
+  final-main-identity:
+    name: Final main commit identity
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - id: main
+        name: Verify final main commit identity
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: main_commit
+          expected_sha: ${{ github.sha }}
+          command: verify final main commit identity
+
+      - name: Create final main identity manifest
+        env:
+          CLAIM: ${{ steps.main.outputs.claim }}
+          REPOSITORY: ${{ steps.main.outputs.repository }}
+          COMMIT_SHA: ${{ steps.main.outputs.commit_sha }}
+          EXPECTED_SHA: ${{ steps.main.outputs.expected_sha }}
+          REF_TYPE: ${{ steps.main.outputs.ref_type }}
+          COMMAND: ${{ steps.main.outputs.command }}
+          RESULT: ${{ steps.main.outputs.result }}
+        run: |
+          mkdir -p .artifacts
+          jq -n \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg claim "$CLAIM" \
+            --arg repository "$REPOSITORY" \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg expected_sha "$EXPECTED_SHA" \
+            --arg ref_type "$REF_TYPE" \
+            --arg command "$COMMAND" \
+            --arg result "$RESULT" \
+            '{schema: "finharness.commit_identity_manifest.v1", run_id: $run_id, claims: [
+              {claim: $claim, repository: $repository, commit_sha: $commit_sha, expected_sha: $expected_sha, ref_type: $ref_type, command: $command, result: $result}
+            ]}' > .artifacts/commit-identity-manifest.json
+
+      - name: Upload final main identity manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: commit-identity-manifest
+          path: .artifacts/commit-identity-manifest.json
+          if-no-files-found: error
+          retention-days: 20

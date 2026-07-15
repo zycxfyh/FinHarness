@@ -30,18 +30,20 @@ class PullRequestContractTest(unittest.TestCase):
         self.assertIn("Changed files: scripts/manage_pr_contract.py", body)
 
     def test_missing_issue_and_manual_judgment_fail(self) -> None:
-        body = _valid_body().replace("Closes #338", "Closes #").replace(
-            "- Rollback: Revert the PR and restore the prior template.",
-            "- Rollback: TODO",
+        body = (
+            _valid_body()
+            .replace("Closes #338", "Closes #")
+            .replace(
+                "- Rollback: Revert the PR and restore the prior template.",
+                "- Rollback: TODO",
+            )
         )
         findings = validate_body(body)
         self.assertTrue(any("Issue linkage" in finding for finding in findings))
         self.assertTrue(any("Rollback" in finding for finding in findings))
 
     def test_template_comments_do_not_count_as_scope_or_validation(self) -> None:
-        template = (REPO_ROOT / ".github" / "pull_request_template.md").read_text(
-            encoding="utf-8"
-        )
+        template = (REPO_ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8")
         findings = validate_body(template)
         self.assertTrue(any("Scope" in finding for finding in findings))
         self.assertTrue(any("Validation evidence" in finding for finding in findings))
@@ -52,6 +54,11 @@ class PullRequestContractTest(unittest.TestCase):
         )
         self.assertIn("name: Dependency review", workflow)
         self.assertIn("manage_pr_contract.py check --event", workflow)
+
+    def test_refs_issue_linkage_is_valid_for_post_merge_acceptance(self) -> None:
+        body = _valid_body().replace("Closes #338", "Refs #338")
+
+        self.assertEqual(validate_body(body), [])
 
 
 if __name__ == "__main__":

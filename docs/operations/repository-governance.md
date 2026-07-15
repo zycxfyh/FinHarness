@@ -22,6 +22,30 @@ Generated for RC0.1 hardening on 2026-06-04.
 - Scorecard workflow: present
 - CODEOWNERS: present as ownership documentation for high-risk paths
 
+## Commit Identity Evidence
+
+CI treats PR head, pull-request merge ref, and final main commit as separate
+proof identities. Relevant jobs explicitly select their checkout, compare
+`git rev-parse HEAD` with that target, and write claim, repository, commit, ref,
+command, and result to the native job summary. Required Local verification runs
+on the explicit PR head before merge and on the final main commit after a main
+push; other PR workflows may continue to exercise the synthetic merge ref as
+integration evidence.
+
+Merge-ref proof pins the event's `GITHUB_SHA` and requires
+`refs/pull/<number>/merge`. PR-head proof uses
+`github.event.pull_request.head.sha`; final-main proof requires a push to
+`refs/heads/main` and uses that event's `GITHUB_SHA`.
+
+Missing, skipped, cancelled, stale, or different-SHA evidence does not satisfy
+the corresponding claim. The dedicated workflow passes successful job outputs
+to one machine-readable manifest per run; no per-job identity artifacts are
+created.
+
+The manifest `result` is only the result of commit-identity verification. It
+does not assert that fuzz, browser, dependency, security, or project tests
+passed; consumers must evaluate those job results separately.
+
 ## Current Alerts
 
 - Dependabot: no open alerts after the current lockfile updates.

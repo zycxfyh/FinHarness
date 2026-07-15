@@ -26,6 +26,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify browser checkout identity
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: task test:browser
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 

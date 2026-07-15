@@ -63,10 +63,30 @@ The browser golden-path job remains an explicitly optional signal, so review
 its result separately when the change touches the cockpit.
 
 PR workflow runs share a per-PR concurrency group. Pushing a newer commit
-cancels the superseded run for that workflow. Pushes to `main`, schedules, and
-manual dispatches use unique groups instead: post-merge `main` runs remain
-intentional evidence for the canonical branch and are not cancelled as stale PR
-work.
+cancels the superseded run for that workflow. Commit evidence distinguishes:
+
+```text
+PR head:     the submitted topic commit
+merge ref:   GitHub's synthetic integration commit for the PR and base
+main commit: the final squash/rebase/merge commit delivered to main
+```
+
+`Local verification` explicitly checks out the PR head on pull requests and the
+final main commit on main pushes. Every relevant job checks `git rev-parse HEAD`
+against its explicit checkout target and writes the claim and full SHA to the
+native job summary. The separate identity workflow publishes one manifest per
+run only when cross-job consumption is required; it does not create an artifact
+for every job. Name PR-head, merge-ref, and final-main evidence precisely.
+
+Pushes to `main`, schedules, and manual dispatches use unique groups instead:
+post-merge `main` runs remain intentional evidence for the canonical branch and
+are not cancelled as stale PR work.
+
+When an issue's acceptance contract requires evidence from the delivered main
+commit, link the PR with `Refs #N`, not `Closes #N`. After merge, keep the issue
+open until both the final-main identity job and main-push Local verification
+succeed on the same delivered SHA. Then close the issue manually and run the
+finish command below.
 
 ## Finish After Merge
 
@@ -84,9 +104,9 @@ task issue:finish -- 336 --apply
 
 Cleanup is allowed only when the issue is closed, exactly one merged PR exists
 for the branch, the local head is the exact PR head, naming is consistent, and
-the worktree is clean. The exact-head check is required because squash merges
-do not make the topic commit an ancestor of `main`; ordinary `git branch -d`
-cannot prove that cleanup is safe.
+the worktree is clean. Exact PR-head matching is required here because squash
+merges do not make the topic commit an ancestor of `main`; ordinary
+`git branch -d` cannot prove that cleanup is safe.
 
 The command never deletes arbitrary branches, never discards a dirty worktree,
 and does not delete a remote branch. Repository merge settings own remote branch

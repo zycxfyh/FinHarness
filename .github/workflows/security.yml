@@ -23,6 +23,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify dependency-review checkout identity
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: dependency review and PR contract
 
       - name: Validate pull request contract
         run: python scripts/manage_pr_contract.py check --event "$GITHUB_EVENT_PATH"
@@ -35,6 +45,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify Local verification checkout identity
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: ${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}
+          expected_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          command: task check:timed
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
@@ -79,6 +99,16 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify CodeQL checkout identity
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: CodeQL analysis
 
       - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
@@ -96,9 +126,18 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           # Full history so the CLI scan covers the repository history instead of
           # only a partial PR range.
           fetch-depth: 0
+
+      - name: Verify Gitleaks checkout identity
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: gitleaks detect
 
       - name: Install gitleaks CLI
         env:
@@ -128,6 +167,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify Trivy checkout identity
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: Trivy filesystem scan
 
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
