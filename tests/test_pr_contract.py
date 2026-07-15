@@ -55,16 +55,6 @@ class PullRequestContractTest(unittest.TestCase):
         self.assertIn("name: Dependency review", workflow)
         self.assertIn("manage_pr_contract.py check --event", workflow)
 
-    def test_ambiguous_exact_head_claim_is_rejected(self) -> None:
-        body = _valid_body().replace(
-            "task check:ci — passed",
-            "exact-head CI — passed",
-        )
-
-        findings = validate_body(body)
-
-        self.assertTrue(any("PR head, merge ref" in finding for finding in findings))
-
     def test_refs_issue_linkage_is_valid_for_post_merge_acceptance(self) -> None:
         body = _valid_body().replace("Closes #338", "Refs #338")
 

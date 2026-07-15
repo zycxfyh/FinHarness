@@ -28,22 +28,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Verify dependency-profile merge-ref identity
+      - name: Verify dependency-profile checkout identity
         if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim merge_ref
-          --expected-sha "${{ github.sha }}"
-          --command "verify dependency-profile-${{ matrix.profile }} merge-ref identity"
-
-      - name: Upload dependency-profile merge-ref identity
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: task deps:probe-${{ matrix.profile }}
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 

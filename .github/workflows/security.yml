@@ -26,22 +26,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Verify dependency-review merge-ref identity
+      - name: Verify dependency-review checkout identity
         if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim merge_ref
-          --expected-sha "${{ github.sha }}"
-          --command "verify dependency-review merge-ref identity"
-
-      - name: Upload dependency-review merge-ref identity
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: dependency-review-merge-ref-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: dependency review and PR contract
 
       - name: Validate pull request contract
         run: python scripts/manage_pr_contract.py check --event "$GITHUB_EVENT_PATH"
@@ -57,25 +48,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      - name: Verify local-check commit identity
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        env:
-          IDENTITY_CLAIM: ${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}
-          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim "$IDENTITY_CLAIM"
-          --expected-sha "$EXPECTED_SHA"
-          --command "verify local-check commit identity before task check:timed"
-
-      - name: Upload local-check commit identity
-        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: Verify Local verification checkout identity
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: local-check-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: ${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}
+          expected_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          command: task check:timed
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
@@ -123,22 +102,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Verify CodeQL merge-ref identity
+      - name: Verify CodeQL checkout identity
         if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim merge_ref
-          --expected-sha "${{ github.sha }}"
-          --command "verify CodeQL merge-ref identity"
-
-      - name: Upload CodeQL merge-ref identity
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: codeql-merge-ref-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: CodeQL analysis
 
       - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
@@ -161,22 +131,13 @@ jobs:
           # only a partial PR range.
           fetch-depth: 0
 
-      - name: Verify Gitleaks merge-ref identity
+      - name: Verify Gitleaks checkout identity
         if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim merge_ref
-          --expected-sha "${{ github.sha }}"
-          --command "verify Gitleaks merge-ref identity"
-
-      - name: Upload Gitleaks merge-ref identity
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: gitleaks-merge-ref-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: gitleaks detect
 
       - name: Install gitleaks CLI
         env:
@@ -209,22 +170,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Verify Trivy merge-ref identity
+      - name: Verify Trivy checkout identity
         if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/verify_ci_commit_identity.py
-          --claim merge_ref
-          --expected-sha "${{ github.sha }}"
-          --command "verify Trivy merge-ref identity"
-
-      - name: Upload Trivy merge-ref identity
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/verify-commit-identity
         with:
-          name: trivy-merge-ref-commit-identity
-          path: .artifacts/ci-commit-identity.json
-          if-no-files-found: error
-          retention-days: 20
+          claim: merge_ref
+          expected_sha: ${{ github.sha }}
+          command: Trivy filesystem scan
 
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

@@ -1,168 +1,155 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
-from scripts.verify_ci_commit_identity import CIContext, IdentityError, verify_identity
+import yaml
 
-HEAD_SHA = "1" * 40
-MERGE_SHA = "2" * 40
-MAIN_SHA = "3" * 40
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ACTION_PATH = REPO_ROOT / ".github" / "actions" / "verify-commit-identity" / "action.yml"
 
 
-def _pr_context() -> CIContext:
-    return CIContext(
-        repository="zycxfyh/FinHarness",
-        event_name="pull_request",
-        github_ref="refs/pull/386/merge",
-        github_sha=MERGE_SHA,
-        event={
-            "pull_request": {
-                "number": 386,
-                "head": {"sha": HEAD_SHA},
-                "merge_commit_sha": MERGE_SHA,
-            }
-        },
+def _run(*args: str, cwd: Path) -> str:
+    completed = subprocess.run(
+        args,
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    return completed.stdout.strip()
+
+
+def _action_script() -> str:
+    action = yaml.safe_load(ACTION_PATH.read_text(encoding="utf-8"))
+    return action["runs"]["steps"][0]["run"]
 
 
 class CICommitIdentityTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tempdir.name)
+        _run("git", "init", "--quiet", cwd=self.repo)
+        _run("git", "config", "user.name", "CI Identity Test", cwd=self.repo)
+        _run("git", "config", "user.email", "ci-identity@example.invalid", cwd=self.repo)
+
+        tracked = self.repo / "tracked.txt"
+        tracked.write_text("head\n", encoding="utf-8")
+        _run("git", "add", "tracked.txt", cwd=self.repo)
+        _run("git", "commit", "--quiet", "-m", "head", cwd=self.repo)
+        self.head_sha = _run("git", "rev-parse", "HEAD", cwd=self.repo)
+
+        tracked.write_text("merge\n", encoding="utf-8")
+        _run("git", "commit", "--quiet", "-am", "synthetic merge", cwd=self.repo)
+        self.merge_sha = _run("git", "rev-parse", "HEAD", cwd=self.repo)
+
+    def tearDown(self) -> None:
+        self.tempdir.cleanup()
+
+    def _verify(
+        self,
+        *,
+        claim: str,
+        expected_sha: str,
+        github_sha: str,
+        event_name: str = "pull_request",
+        github_ref: str = "refs/pull/386/merge",
+        repository: str = "zycxfyh/FinHarness",
+        command: str = "identity fixture",
+    ) -> subprocess.CompletedProcess[str]:
+        output = self.repo / "github-output.txt"
+        summary = self.repo / "github-summary.md"
+        env = os.environ | {
+            "IDENTITY_CLAIM": claim,
+            "EXPECTED_SHA": expected_sha,
+            "IDENTITY_COMMAND": command,
+            "GITHUB_REPOSITORY": repository,
+            "GITHUB_EVENT_NAME": event_name,
+            "GITHUB_REF": github_ref,
+            "GITHUB_SHA": github_sha,
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        }
+        return subprocess.run(
+            ["/bin/bash", "-c", _action_script()],
+            cwd=self.repo,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
     def test_pr_head_and_merge_ref_are_distinct_valid_claims(self) -> None:
-        head = verify_identity(
+        _run("git", "checkout", "--quiet", "--detach", self.head_sha, cwd=self.repo)
+        head = self._verify(
             claim="pr_head",
-            checked_out_sha=HEAD_SHA,
-            expected_sha=HEAD_SHA,
-            context=_pr_context(),
-            command="identity verification",
+            expected_sha=self.head_sha,
+            github_sha=self.merge_sha,
         )
-        merge = verify_identity(
+        self.assertEqual(head.returncode, 0, head.stderr)
+        output = (self.repo / "github-output.txt").read_text(encoding="utf-8")
+        self.assertIn("claim=pr_head", output)
+        self.assertIn(f"commit_sha={self.head_sha}", output)
+
+        _run("git", "checkout", "--quiet", "--detach", self.merge_sha, cwd=self.repo)
+        merge = self._verify(
             claim="merge_ref",
-            checked_out_sha=MERGE_SHA,
-            expected_sha=MERGE_SHA,
-            context=_pr_context(),
-            command="identity verification",
+            expected_sha=self.merge_sha,
+            github_sha=self.merge_sha,
         )
+        self.assertEqual(merge.returncode, 0, merge.stderr)
+        output = (self.repo / "github-output.txt").read_text(encoding="utf-8")
+        self.assertIn("claim=merge_ref", output)
+        self.assertIn(f"commit_sha={self.merge_sha}", output)
 
-        self.assertEqual(head["result"], "passed")
-        self.assertEqual(head["ref_type"], "pr_head")
-        self.assertEqual(head["commit_sha"], HEAD_SHA)
-        self.assertEqual(merge["result"], "passed")
-        self.assertEqual(merge["ref_type"], "merge_ref")
-        self.assertEqual(merge["commit_sha"], MERGE_SHA)
-        self.assertTrue(merge["pull_request_merge_sha_matches_github_sha"])
-
-    def test_pr_head_proof_rejects_a_merge_ref_checkout(self) -> None:
-        payload = verify_identity(
+    def test_pr_head_claim_rejects_merge_ref_checkout(self) -> None:
+        result = self._verify(
             claim="pr_head",
-            checked_out_sha=MERGE_SHA,
-            expected_sha=HEAD_SHA,
-            context=_pr_context(),
-            command="identity verification",
+            expected_sha=self.head_sha,
+            github_sha=self.merge_sha,
         )
 
-        self.assertEqual(payload["result"], "failed")
-        self.assertTrue(any("synthetic merge-ref" in item for item in payload["errors"]))
+        self.assertNotEqual(result.returncode, 0)
 
-    def test_merge_ref_proof_rejects_a_pr_head_checkout(self) -> None:
-        payload = verify_identity(
+    def test_merge_ref_claim_rejects_pr_head_checkout(self) -> None:
+        _run("git", "checkout", "--quiet", "--detach", self.head_sha, cwd=self.repo)
+        result = self._verify(
             claim="merge_ref",
-            checked_out_sha=HEAD_SHA,
-            expected_sha=MERGE_SHA,
-            context=_pr_context(),
-            command="identity verification",
+            expected_sha=self.merge_sha,
+            github_sha=self.merge_sha,
         )
 
-        self.assertEqual(payload["result"], "failed")
-        self.assertTrue(any("PR-head SHA" in item for item in payload["errors"]))
+        self.assertNotEqual(result.returncode, 0)
 
-    def test_merge_ref_proof_records_non_authoritative_event_merge_sha_drift(self) -> None:
-        context = _pr_context()
-        context = CIContext(
-            repository=context.repository,
-            event_name=context.event_name,
-            github_ref=context.github_ref,
-            github_sha=context.github_sha,
-            event={
-                "pull_request": {
-                    "head": {"sha": HEAD_SHA},
-                    "merge_commit_sha": "4" * 40,
-                }
-            },
-        )
-        payload = verify_identity(
-            claim="merge_ref",
-            checked_out_sha=MERGE_SHA,
-            expected_sha=MERGE_SHA,
-            context=context,
-            command="identity verification",
-        )
-
-        self.assertEqual(payload["result"], "passed")
-        self.assertFalse(payload["pull_request_merge_sha_matches_github_sha"])
-        self.assertEqual(payload["pull_request_merge_sha"], "4" * 40)
-
-    def test_final_main_commit_binds_push_after_sha(self) -> None:
-        context = CIContext(
-            repository="zycxfyh/FinHarness",
+    def test_final_main_claim_binds_main_push_sha(self) -> None:
+        result = self._verify(
+            claim="main_commit",
+            expected_sha=self.merge_sha,
+            github_sha=self.merge_sha,
             event_name="push",
             github_ref="refs/heads/main",
-            github_sha=MAIN_SHA,
-            event={"after": MAIN_SHA},
-        )
-        payload = verify_identity(
-            claim="main_commit",
-            checked_out_sha=MAIN_SHA,
-            expected_sha=MAIN_SHA,
-            context=context,
             command="task check:timed",
         )
 
-        self.assertEqual(payload["result"], "passed")
-        self.assertEqual(payload["repository"], "zycxfyh/FinHarness")
-        self.assertEqual(payload["command"], "task check:timed")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = (self.repo / "github-output.txt").read_text(encoding="utf-8")
+        self.assertIn("claim=main_commit", output)
+        self.assertIn("command=task check:timed", output)
 
-    def test_short_or_uppercase_sha_is_not_accepted_as_exact_identity(self) -> None:
-        for invalid_sha in ("abc123", "A" * 40):
-            with self.subTest(invalid_sha=invalid_sha), self.assertRaises(IdentityError):
-                verify_identity(
-                    claim="pr_head",
-                    checked_out_sha=invalid_sha,
-                    expected_sha=HEAD_SHA,
-                    context=_pr_context(),
-                    command="identity verification",
+    def test_repository_and_command_fail_closed(self) -> None:
+        for repository, command in (("", "identity fixture"), ("zycxfyh/FinHarness", "")):
+            with self.subTest(repository=repository, command=command):
+                result = self._verify(
+                    claim="merge_ref",
+                    expected_sha=self.merge_sha,
+                    github_sha=self.merge_sha,
+                    repository=repository,
+                    command=command,
                 )
-
-    def test_empty_repository_cannot_pass_identity_proof(self) -> None:
-        context = _pr_context()
-        context = CIContext(
-            repository="  ",
-            event_name=context.event_name,
-            github_ref=context.github_ref,
-            github_sha=context.github_sha,
-            event=context.event,
-        )
-
-        payload = verify_identity(
-            claim="pr_head",
-            checked_out_sha=HEAD_SHA,
-            expected_sha=HEAD_SHA,
-            context=context,
-            command="identity verification",
-        )
-
-        self.assertEqual(payload["result"], "failed")
-        self.assertIn("repository identity is missing", payload["errors"])
-
-    def test_empty_command_cannot_pass_identity_proof(self) -> None:
-        payload = verify_identity(
-            claim="pr_head",
-            checked_out_sha=HEAD_SHA,
-            expected_sha=HEAD_SHA,
-            context=_pr_context(),
-            command="  ",
-        )
-
-        self.assertEqual(payload["result"], "failed")
-        self.assertIn("identity evidence command is missing", payload["errors"])
+                self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

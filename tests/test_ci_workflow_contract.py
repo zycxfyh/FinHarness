@@ -23,37 +23,16 @@ PR_HEAD_REF = "${{ github.event.pull_request.head.sha }}"
 EVENT_SHA = "${{ github.sha }}"
 PR_EVENT_CONDITION = "github.event_name == 'pull_request'"
 RELEVANT_MERGE_REF_JOBS = (
-    ("security.yml", "dependency-review", "dependency-review-merge-ref-commit-identity", None),
-    ("security.yml", "codeql", "codeql-merge-ref-commit-identity", None),
-    ("security.yml", "gitleaks", "gitleaks-merge-ref-commit-identity", None),
-    ("security.yml", "trivy", "trivy-merge-ref-commit-identity", None),
-    ("fuzz.yml", "deterministic-fuzz-baseline", "fuzz-merge-ref-commit-identity", None),
-    (
-        "dependency-profiles.yml",
-        "isolated-profile",
-        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
-        "data",
-    ),
-    (
-        "dependency-profiles.yml",
-        "isolated-profile",
-        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
-        "research",
-    ),
-    (
-        "dependency-profiles.yml",
-        "isolated-profile",
-        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
-        "agent",
-    ),
-    (
-        "dependency-profiles.yml",
-        "isolated-profile",
-        "dependency-profile-${{ matrix.profile }}-merge-ref-commit-identity",
-        "eval",
-    ),
-    ("browser.yml", "browser-smoke", "browser-merge-ref-commit-identity", None),
+    ("security.yml", "dependency-review"),
+    ("security.yml", "codeql"),
+    ("security.yml", "gitleaks"),
+    ("security.yml", "trivy"),
+    ("fuzz.yml", "deterministic-fuzz-baseline"),
+    ("dependency-profiles.yml", "isolated-profile"),
+    ("browser.yml", "browser-smoke"),
 )
+IDENTITY_ACTION = "./.github/actions/verify-commit-identity"
+IDENTITY_MANIFEST = ".artifacts/commit-identity-manifest.json"
 
 
 def load_workflow(path: Path) -> dict[str, Any]:
@@ -115,29 +94,45 @@ class CIWorkflowContractTest(unittest.TestCase):
         workflow = load_workflow(WORKFLOW_ROOT / "commit-identity.yml")
         jobs = workflow["jobs"]
 
-        head = jobs["pr-head-identity"]
-        merge = jobs["merge-ref-identity"]
-        main = jobs["main-commit-identity"]
-        self.assertEqual(head["steps"][0]["with"]["ref"], PR_HEAD_REF)
-        self.assertEqual(merge["steps"][0]["with"]["ref"], EVENT_SHA)
-        self.assertEqual(main["steps"][0]["with"]["ref"], EVENT_SHA)
-        self.assertIn("--claim pr_head", head["steps"][1]["run"])
-        self.assertIn("--claim merge_ref", merge["steps"][1]["run"])
-        self.assertIn("--claim main_commit", main["steps"][1]["run"])
-        for job in (head, merge, main):
-            upload = job["steps"][2]
-            self.assertEqual(upload["if"], "always()")
-            self.assertEqual(
-                upload["with"]["path"],
-                ".artifacts/ci-commit-identity.json",
-            )
+        pull_request_steps = jobs["pull-request-identities"]["steps"]
+        main_steps = jobs["final-main-identity"]["steps"]
+        identities = (
+            (pull_request_steps[0], pull_request_steps[1], "pr_head", PR_HEAD_REF),
+            (pull_request_steps[2], pull_request_steps[3], "merge_ref", EVENT_SHA),
+            (main_steps[0], main_steps[1], "main_commit", EVENT_SHA),
+        )
+        for checkout, identity, claim, expected in identities:
+            self.assertEqual(checkout["with"]["ref"], expected)
+            self.assertEqual(identity["uses"], IDENTITY_ACTION)
+            self.assertEqual(identity["with"]["claim"], claim)
+            self.assertEqual(identity["with"]["expected_sha"], expected)
+
+    def test_identity_workflow_uploads_one_manifest_per_event(self) -> None:
+        workflow = load_workflow(WORKFLOW_ROOT / "commit-identity.yml")
+        pr_job = workflow["jobs"]["pull-request-identities"]
+        main_job = workflow["jobs"]["final-main-identity"]
+
+        for job in (pr_job, main_job):
+            uploads = [step for step in job["steps"] if "upload-artifact" in step.get("uses", "")]
+            self.assertEqual(len(uploads), 1)
+            self.assertEqual(uploads[0]["with"]["name"], "commit-identity-manifest")
+            self.assertEqual(uploads[0]["with"]["path"], IDENTITY_MANIFEST)
+
+        self.assertNotEqual(pr_job["if"], main_job["if"])
+
+        for path in WORKFLOW_ROOT.glob("*.yml"):
+            if path.name == "commit-identity.yml":
+                continue
+            self.assertNotIn(IDENTITY_MANIFEST, path.read_text(encoding="utf-8"))
 
     def test_required_local_verification_checks_pr_head_and_final_main(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
         steps = workflow["jobs"]["local-checks"]["steps"]
         checkout = steps[0]
         identity = next(
-            step for step in steps if step.get("name") == "Verify local-check commit identity"
+            step
+            for step in steps
+            if step.get("name") == "Verify Local verification checkout identity"
         )
 
         self.assertEqual(
@@ -145,43 +140,53 @@ class CIWorkflowContractTest(unittest.TestCase):
             "${{ github.event_name == 'pull_request' && "
             "github.event.pull_request.head.sha || github.sha }}",
         )
-        self.assertIn('--claim "$IDENTITY_CLAIM"', identity["run"])
+        self.assertEqual(identity["uses"], IDENTITY_ACTION)
         self.assertEqual(
-            identity["env"]["EXPECTED_SHA"],
+            identity["with"]["claim"],
+            "${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}",
+        )
+        self.assertEqual(
+            identity["with"]["expected_sha"],
             "${{ github.event_name == 'pull_request' && "
             "github.event.pull_request.head.sha || github.sha }}",
         )
 
     def test_every_relevant_pr_job_proves_its_own_merge_ref_identity(self) -> None:
-        rendered_artifacts: set[str] = set()
-
-        for workflow_name, job_name, artifact_template, profile in RELEVANT_MERGE_REF_JOBS:
-            with self.subTest(workflow=workflow_name, job=job_name, profile=profile):
+        for workflow_name, job_name in RELEVANT_MERGE_REF_JOBS:
+            with self.subTest(workflow=workflow_name, job=job_name):
                 job = load_workflow(WORKFLOW_ROOT / workflow_name)["jobs"][job_name]
                 steps = job["steps"]
-                checkout, identity, upload = steps[:3]
+                checkout, identity = steps[:2]
 
                 self.assertEqual(checkout["with"]["ref"], EVENT_SHA)
                 self.assertEqual(identity["if"], PR_EVENT_CONDITION)
-                self.assertIn("verify_ci_commit_identity.py", identity["run"])
-                self.assertIn("--claim merge_ref", identity["run"])
-                self.assertIn('--expected-sha "${{ github.sha }}"', identity["run"])
-                self.assertIn("--command", identity["run"])
-                self.assertEqual(upload["if"], f"always() && {PR_EVENT_CONDITION}")
-                self.assertEqual(upload["with"]["name"], artifact_template)
-                self.assertEqual(upload["with"]["path"], ".artifacts/ci-commit-identity.json")
-                self.assertEqual(upload["with"]["if-no-files-found"], "error")
+                self.assertEqual(identity["uses"], IDENTITY_ACTION)
+                self.assertEqual(identity["with"]["claim"], "merge_ref")
+                self.assertEqual(identity["with"]["expected_sha"], EVENT_SHA)
+                self.assertTrue(identity["with"]["command"])
 
-                if profile is not None:
-                    profiles = job["strategy"]["matrix"]["profile"]
-                    self.assertIn(profile, profiles)
-                    rendered = artifact_template.replace("${{ matrix.profile }}", profile)
-                else:
-                    rendered = artifact_template
-                self.assertNotIn(rendered, rendered_artifacts)
-                rendered_artifacts.add(rendered)
+                identity_uploads = [
+                    step
+                    for step in steps
+                    if "upload-artifact" in step.get("uses", "")
+                    and "identity" in str(step.get("with", {}).get("name", ""))
+                ]
+                self.assertEqual(identity_uploads, [])
 
-        self.assertEqual(len(rendered_artifacts), 10)
+        profiles = load_workflow(WORKFLOW_ROOT / "dependency-profiles.yml")["jobs"][
+            "isolated-profile"
+        ]["strategy"]["matrix"]["profile"]
+        self.assertEqual(len(RELEVANT_MERGE_REF_JOBS) - 1 + len(profiles), 10)
+
+    def test_identity_action_owns_sha_check_outputs_and_job_summary(self) -> None:
+        action = (
+            REPO_ROOT / ".github" / "actions" / "verify-commit-identity" / "action.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('actual_sha="$(git rev-parse HEAD)"', action)
+        self.assertIn('test "$actual_sha" = "$EXPECTED_SHA"', action)
+        self.assertIn('>> "$GITHUB_OUTPUT"', action)
+        self.assertIn('>> "$GITHUB_STEP_SUMMARY"', action)
 
     def test_base_profile_has_one_pr_owner(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "dependency-profiles.yml")

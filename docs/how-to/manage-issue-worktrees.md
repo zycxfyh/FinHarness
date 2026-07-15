@@ -72,9 +72,11 @@ main commit: the final squash/rebase/merge commit delivered to main
 ```
 
 `Local verification` explicitly checks out the PR head on pull requests and the
-final main commit on main pushes. A separate identity workflow records the PR
-head, merge ref, and final main identities as machine-readable artifacts. Do
-not call a synthetic merge-ref run "exact head"; name the identity and full SHA.
+final main commit on main pushes. Every relevant job checks `git rev-parse HEAD`
+against its explicit checkout target and writes the claim and full SHA to the
+native job summary. The separate identity workflow publishes one manifest per
+run only when cross-job consumption is required; it does not create an artifact
+for every job. Name PR-head, merge-ref, and final-main evidence precisely.
 
 Pushes to `main`, schedules, and manual dispatches use unique groups instead:
 post-merge `main` runs remain intentional evidence for the canonical branch and

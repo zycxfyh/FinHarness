@@ -1,0 +1,89 @@
+name: Verify commit identity
+description: Verify the checked-out commit and expose its identity to the current job.
+
+inputs:
+  claim:
+    description: One of pr_head, merge_ref, or main_commit.
+    required: true
+  expected_sha:
+    description: Full commit SHA selected by the workflow checkout.
+    required: true
+  command:
+    description: Command or check whose checkout identity is being verified.
+    required: true
+
+outputs:
+  claim:
+    value: ${{ steps.verify.outputs.claim }}
+  repository:
+    value: ${{ steps.verify.outputs.repository }}
+  commit_sha:
+    value: ${{ steps.verify.outputs.commit_sha }}
+  expected_sha:
+    value: ${{ steps.verify.outputs.expected_sha }}
+  ref_type:
+    value: ${{ steps.verify.outputs.ref_type }}
+  command:
+    value: ${{ steps.verify.outputs.command }}
+  result:
+    value: ${{ steps.verify.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: verify
+      shell: bash
+      env:
+        IDENTITY_CLAIM: ${{ inputs.claim }}
+        EXPECTED_SHA: ${{ inputs.expected_sha }}
+        IDENTITY_COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+
+        actual_sha="$(git rev-parse HEAD)"
+        [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$actual_sha" = "$EXPECTED_SHA"
+        test -n "$GITHUB_REPOSITORY"
+        test -n "$IDENTITY_COMMAND"
+
+        case "$IDENTITY_CLAIM" in
+          pr_head)
+            test "$GITHUB_EVENT_NAME" = "pull_request"
+            test "$actual_sha" != "$GITHUB_SHA"
+            ;;
+          merge_ref)
+            test "$GITHUB_EVENT_NAME" = "pull_request"
+            [[ "$GITHUB_REF" =~ ^refs/pull/[1-9][0-9]*/merge$ ]]
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+            ;;
+          main_commit)
+            test "$GITHUB_EVENT_NAME" = "push"
+            test "$GITHUB_REF" = "refs/heads/main"
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+            ;;
+          *)
+            echo "unsupported commit identity claim: $IDENTITY_CLAIM" >&2
+            exit 1
+            ;;
+        esac
+
+        {
+          echo "claim=$IDENTITY_CLAIM"
+          echo "repository=$GITHUB_REPOSITORY"
+          echo "commit_sha=$actual_sha"
+          echo "expected_sha=$EXPECTED_SHA"
+          echo "ref_type=$IDENTITY_CLAIM"
+          echo "command=$IDENTITY_COMMAND"
+          echo "result=passed"
+        } >> "$GITHUB_OUTPUT"
+
+        {
+          echo "### Commit identity"
+          echo
+          echo "- Claim: \`$IDENTITY_CLAIM\`"
+          echo "- Repository: \`$GITHUB_REPOSITORY\`"
+          echo "- Commit: \`$actual_sha\`"
+          echo "- GitHub ref: \`$GITHUB_REF\`"
+          echo "- Command: \`$IDENTITY_COMMAND\`"
+          echo "- Result: passed"
+        } >> "$GITHUB_STEP_SUMMARY"
