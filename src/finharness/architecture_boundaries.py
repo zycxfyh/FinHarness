@@ -28,6 +28,17 @@ REQUIRED_IDENTITY_NAMESPACES = frozenset(
         "git-commit",
     }
 )
+EXPECTED_IDENTITY_AUTHORITIES = {
+    "principal": "authenticated principal context",
+    "agent-runtime": "bounded runtime invocation only",
+    "request": "correlation and idempotency only",
+    "external-source": "qualified external source key",
+    "domain-logical": "owning domain logical-identity boundary",
+    "domain-version": (
+        "owning domain version-creation boundary; encoded as RFC 9562 UUIDv7"
+    ),
+    "git-commit": "repository object and workflow identity only",
+}
 REQUIRED_VERSION_NODES = frozenset(
     {
         "CapitalStateVersion",
@@ -40,6 +51,69 @@ REQUIRED_VERSION_NODES = frozenset(
         "DecisionRecord",
     }
 )
+EXPECTED_VERSION_NODE_CONTRACT = {
+    "CapitalStateVersion": {
+        "owner_plane": "truth",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": (),
+        "may_cite": (),
+    },
+    "EvidenceSetVersion": {
+        "owner_plane": "knowledge",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": (),
+        "may_cite": (),
+    },
+    "PolicyVersion": {
+        "owner_plane": "control",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": (),
+        "may_cite": (),
+    },
+    "ProposalVersion": {
+        "owner_plane": "judgment",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": (),
+        "may_cite": (),
+    },
+    "DecisionCaseVersion": {
+        "owner_plane": "judgment",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": (
+            "CapitalStateVersion",
+            "EvidenceSetVersion",
+            "PolicyVersion",
+            "ProposalVersion",
+        ),
+        "may_cite": (),
+    },
+    "ScenarioVersion": {
+        "owner_plane": "judgment",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": ("DecisionCaseVersion",),
+        "may_cite": (),
+    },
+    "ReviewStateVersion": {
+        "owner_plane": "judgment",
+        "identity_namespace": "domain-version",
+        "history": "immutable",
+        "depends_on": ("DecisionCaseVersion",),
+        "may_cite": (),
+    },
+    "DecisionRecord": {
+        "owner_plane": "judgment",
+        "identity_namespace": "domain-logical",
+        "history": "append-only",
+        "depends_on": ("DecisionCaseVersion",),
+        "may_cite": ("ScenarioVersion",),
+    },
+}
 REQUIRED_SUBSTITUTION_BARRIERS = {
     "agent-runtime": frozenset({"principal"}),
     "request": frozenset(
@@ -57,15 +131,30 @@ REQUIRED_SUBSTITUTION_BARRIERS = {
         {"principal", "external-source", "domain-logical", "domain-version"}
     ),
 }
-EXPECTED_FRESHNESS_OWNERS = {
-    "capital_state_admission": "truth",
-    "evidence_admission_or_withdrawal": "knowledge",
-    "policy_activation": "control",
-    "proposal_revision": "judgment",
-    "case_basis_change": "judgment",
-    "scenario_recalculation": "judgment",
-    "review_event": "judgment",
-    "decision_recorded": "judgment",
+EXPECTED_FRESHNESS_CONTRACT = {
+    "capital_state_admission": (
+        "truth",
+        frozenset({"CapitalStateVersion", "DecisionCaseVersion", "ScenarioVersion"}),
+    ),
+    "evidence_admission_or_withdrawal": (
+        "knowledge",
+        frozenset({"EvidenceSetVersion", "DecisionCaseVersion", "ScenarioVersion"}),
+    ),
+    "policy_activation": (
+        "control",
+        frozenset({"PolicyVersion", "DecisionCaseVersion", "ScenarioVersion"}),
+    ),
+    "proposal_revision": (
+        "judgment",
+        frozenset({"ProposalVersion", "DecisionCaseVersion", "ScenarioVersion"}),
+    ),
+    "case_basis_change": (
+        "judgment",
+        frozenset({"DecisionCaseVersion", "ScenarioVersion"}),
+    ),
+    "scenario_recalculation": ("judgment", frozenset({"ScenarioVersion"})),
+    "review_event": ("judgment", frozenset({"ReviewStateVersion"})),
+    "decision_recorded": ("judgment", frozenset({"DecisionRecord"})),
 }
 
 
@@ -404,8 +493,11 @@ def _validate_identity_namespaces(model: dict[str, Any]) -> None:
         authority = namespace.get("authority")
         if not isinstance(name, str) or not name:
             raise ValueError("identity namespace requires a name")
-        if not isinstance(authority, str) or not authority:
-            raise ValueError(f"identity namespace {name} requires authority semantics")
+        expected_authority = EXPECTED_IDENTITY_AUTHORITIES.get(str(name))
+        if authority != expected_authority:
+            raise ValueError(
+                f"identity namespace {name} requires authority {expected_authority}"
+            )
         names.append(name)
     if len(names) != len(set(names)):
         raise ValueError("identity namespace names must be unique")
@@ -414,6 +506,14 @@ def _validate_identity_namespaces(model: dict[str, Any]) -> None:
 
 
 def _validate_substitution_barriers(model: dict[str, Any]) -> None:
+    if (
+        model.get("namespace_substitution_policy")
+        != "forbidden_unless_explicitly_allowed"
+        or model.get("allowed_namespace_substitutions") != []
+    ):
+        raise ValueError(
+            "declared identity namespaces must be mutually non-substitutable"
+        )
     barriers = model.get("substitution_barriers")
     if not isinstance(barriers, list) or not barriers:
         raise ValueError("identity model requires substitution barriers")
@@ -501,19 +601,18 @@ def _validate_version_node(
     return dependencies
 
 
-def _validate_case_scenario_direction(nodes: dict[str, dict[str, Any]]) -> None:
-    case_dependencies = set(nodes["DecisionCaseVersion"]["depends_on"])
-    if case_dependencies != {
-        "CapitalStateVersion",
-        "EvidenceSetVersion",
-        "PolicyVersion",
-        "ProposalVersion",
-    }:
-        raise ValueError("DecisionCaseVersion requires the canonical pre-scenario basis")
-    if nodes["ScenarioVersion"]["depends_on"] != ["DecisionCaseVersion"]:
-        raise ValueError("ScenarioVersion must depend on one DecisionCaseVersion")
-    if nodes["DecisionRecord"].get("may_cite") != ["ScenarioVersion"]:
-        raise ValueError("DecisionRecord may cite ScenarioVersion without changing Case")
+def _validate_version_node_contract(nodes: dict[str, dict[str, Any]]) -> None:
+    for name, expected in EXPECTED_VERSION_NODE_CONTRACT.items():
+        node = nodes[name]
+        actual = {
+            "owner_plane": node.get("owner_plane"),
+            "identity_namespace": node.get("identity_namespace"),
+            "history": node.get("history"),
+            "depends_on": tuple(node.get("depends_on", [])),
+            "may_cite": tuple(node.get("may_cite", [])),
+        }
+        if actual != expected:
+            raise ValueError(f"version graph node {name} violates canonical contract")
 
 
 def _validate_acyclic_version_edges(
@@ -542,38 +641,42 @@ def _validate_acyclic_version_edges(
 def _validate_freshness_rules(
     graph: dict[str, Any],
     *,
-    node_names: set[str],
+    nodes: dict[str, dict[str, Any]],
 ) -> None:
+    if graph.get("currentness_owner_semantics") != "affected_node.owner_plane":
+        raise ValueError("currentness ownership must derive from affected node ownership")
     rules = graph.get("freshness_rules")
     if not isinstance(rules, list) or not rules:
         raise ValueError("version graph requires freshness rules")
     seen_triggers: set[str] = set()
-    affected_nodes: set[str] = set()
     for rule in rules:
         if not isinstance(rule, dict):
             raise ValueError("freshness rules must be mappings")
         trigger = rule.get("trigger")
-        owner = rule.get("owner_plane")
+        owner = rule.get("trigger_owner_plane")
         if not isinstance(trigger, str) or not trigger:
             raise ValueError("freshness rule requires trigger")
         if trigger in seen_triggers:
             raise ValueError(f"freshness trigger {trigger} has multiple owners")
         seen_triggers.add(trigger)
-        expected_owner = EXPECTED_FRESHNESS_OWNERS.get(trigger)
+        expected_contract = EXPECTED_FRESHNESS_CONTRACT.get(trigger)
+        expected_owner = expected_contract[0] if expected_contract else None
         if owner != expected_owner:
-            raise ValueError(f"freshness trigger {trigger} requires owner {expected_owner}")
+            raise ValueError(
+                f"freshness trigger {trigger} requires trigger owner {expected_owner}"
+            )
         affected = _identity_string_list(
             rule,
             "affects",
             label=f"freshness trigger {trigger}",
         )
-        if not set(affected) <= node_names:
+        if not set(affected) <= set(nodes):
             raise ValueError(f"freshness trigger {trigger} affects unknown node")
-        affected_nodes.update(affected)
-    if seen_triggers != set(EXPECTED_FRESHNESS_OWNERS):
+        expected_affected = expected_contract[1] if expected_contract else frozenset()
+        if frozenset(affected) != expected_affected:
+            raise ValueError(f"freshness trigger {trigger} has non-canonical effects")
+    if seen_triggers != set(EXPECTED_FRESHNESS_CONTRACT):
         raise ValueError("freshness trigger vocabulary is incomplete or unknown")
-    if affected_nodes != node_names:
-        raise ValueError("every version graph node requires a freshness owner")
 
 
 def _validate_version_graph(
@@ -591,9 +694,9 @@ def _validate_version_graph(
         name: _validate_version_node(name, node, nodes=nodes, planes=planes)
         for name, node in nodes.items()
     }
-    _validate_case_scenario_direction(nodes)
     _validate_acyclic_version_edges(nodes, dependencies)
-    _validate_freshness_rules(graph, node_names=set(nodes))
+    _validate_version_node_contract(nodes)
+    _validate_freshness_rules(graph, nodes=nodes)
 
 
 def validate_identity_model(

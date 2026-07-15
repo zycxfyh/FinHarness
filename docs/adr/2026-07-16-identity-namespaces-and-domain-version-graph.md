@@ -57,14 +57,21 @@ database, resolver, or SHA classifier.
 | `agent-runtime` | One bounded runtime invocation | principal authority or a human DecisionRecord |
 | `request` | Correlation and idempotency only | principal, external source, or domain identity |
 | `external-source` | Qualified external source key | path, filename, display label, or local alias equality |
-| `domain-logical` | Stable object identity assigned by its domain owner | an immutable version or repository revision |
-| `domain-version` | Newly minted immutable RFC 9562 UUIDv7 | content equality, currentness, or Git identity |
+| `domain-logical` | Assigned by the owning domain at its logical-identity boundary | an immutable version or repository revision |
+| `domain-version` | Issued by the owning domain at its legal version-creation boundary; encoded as an RFC 9562 UUIDv7 | content equality, currentness, or Git identity |
 | `git-commit` | Repository object and workflow identity owned by #386 | capital, evidence, policy, proposal, case, or decision identity |
 
 `display_id`, `local_alias`, and path are provenance or presentation tokens,
 not identity authorities. `content_digest` is integrity/deduplication evidence,
 not version identity. Reverting to identical content may repeat a digest but
 must mint a distinct later domain version.
+
+All seven declared namespaces are mutually non-substitutable. They may be
+related by an explicit reference or mapping, but no namespace identity may
+stand in for another. The UUIDv7 format is only the representation and
+generation mechanism for a domain version identifier; authority comes from the
+owning domain's legal version-creation boundary, never from the UUID itself or
+from its caller.
 
 ### One external source identity authority
 
@@ -120,8 +127,11 @@ being rewritten.
 ### Currentness, invalidation, and history
 
 Identity and currentness are separate. Every immutable version remains
-addressable after it becomes non-current. Freshness triggers have exactly one
-owner:
+addressable after it becomes non-current. `Trigger owner` means authority over
+the triggering fact. Currentness evaluation remains with each affected node's
+owning plane; a Truth-owned admission trigger does not grant Truth authority
+over Judgment objects. Each trigger has one exact owner and one exact effect
+set:
 
 | Trigger | Owner | Re-evaluated/currentness effects |
 | --- | --- | --- |
@@ -145,11 +155,14 @@ substitution, node, edge, and trigger contract. The existing architecture
 checker rejects:
 
 - split Truth/Knowledge source authority or a changed qualified source key;
-- request/display/alias/path/digest/Git substitution across protected
+- substitution between any two declared namespaces, plus
+  request/display/alias/path/digest/Git substitution across protected
   namespaces;
+- drift in the exact authority semantics for any namespace;
 - missing, duplicate, unknown, or multiply owned graph nodes and triggers;
-- a node owned by a plane that does not own the object;
-- Scenario entering the Case basis or losing its exact Case dependency;
+- drift in any node's exact owner, namespace, history, dependencies, or
+  citations;
+- drift in any trigger's fact owner or exact currentness effect set;
 - backward edges and cycles;
 - mutable version history or a mutable DecisionRecord.
 
@@ -191,6 +204,7 @@ task docs:current-check
 task check:ci
 ```
 
-Destructive fixtures cover split source authority, every forbidden
-substitution class, Scenario-in-Case circularity, a synthetic version cycle,
-and missing or duplicate freshness ownership.
+Destructive fixtures cover split source authority, cross-namespace and token
+substitution, namespace authority drift, every canonical node field, a
+synthetic version cycle, missing or duplicate trigger authority, and an effect
+redistribution whose union deceptively remains unchanged.

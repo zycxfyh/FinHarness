@@ -191,17 +191,10 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             {"display_id", "request_id", "local_alias", "path"},
         )
         self.assertEqual(
-            {namespace["name"] for namespace in model["namespaces"]},
-            {
-                "principal",
-                "agent-runtime",
-                "request",
-                "external-source",
-                "domain-logical",
-                "domain-version",
-                "git-commit",
-            },
+            model["namespace_substitution_policy"],
+            "forbidden_unless_explicitly_allowed",
         )
+        self.assertEqual(model["allowed_namespace_substitutions"], [])
         nodes = {
             node["name"]: node for node in model["version_graph"]["nodes"]
         }
@@ -257,12 +250,61 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 ):
                     validate_identity_model(model, planes=planes)
 
+    def test_identity_namespaces_are_mutually_non_substitutable(self) -> None:
+        for source, target in (
+            ("domain-logical", "domain-version"),
+            ("domain-version", "domain-logical"),
+            ("agent-runtime", "domain-logical"),
+            ("agent-runtime", "domain-version"),
+            ("external-source", "domain-logical"),
+        ):
+            with self.subTest(source=source, target=target):
+                model, planes = self._identity_model()
+                model["allowed_namespace_substitutions"] = [
+                    {"source": source, "target": target}
+                ]
+                with self.assertRaisesRegex(ValueError, "mutually non-substitutable"):
+                    validate_identity_model(model, planes=planes)
+
+    def test_identity_namespace_authority_drift_is_rejected(self) -> None:
+        for name, authority in (
+            ("principal", "request_id"),
+            ("domain-logical", "caller supplied string"),
+            ("domain-version", "caller supplied UUID"),
+        ):
+            with self.subTest(name=name):
+                model, planes = self._identity_model()
+                namespaces = {
+                    namespace["name"]: namespace for namespace in model["namespaces"]
+                }
+                namespaces[name]["authority"] = authority
+                with self.assertRaisesRegex(ValueError, f"namespace {name} requires"):
+                    validate_identity_model(model, planes=planes)
+
     def test_scenario_cannot_enter_case_identity(self) -> None:
         model, planes = self._identity_model()
         nodes = {node["name"]: node for node in model["version_graph"]["nodes"]}
         nodes["DecisionCaseVersion"]["depends_on"].append("ScenarioVersion")
-        with self.assertRaisesRegex(ValueError, "canonical pre-scenario basis"):
+        with self.assertRaisesRegex(ValueError, "version graph contains a cycle"):
             validate_identity_model(model, planes=planes)
+
+    def test_complete_version_node_contract_is_exact(self) -> None:
+        for node_name, field, value in (
+            ("ReviewStateVersion", "depends_on", ["ScenarioVersion"]),
+            ("DecisionRecord", "depends_on", ["ScenarioVersion"]),
+            ("PolicyVersion", "depends_on", ["ProposalVersion"]),
+            ("CapitalStateVersion", "identity_namespace", "domain-logical"),
+        ):
+            with self.subTest(node=node_name, field=field):
+                model, planes = self._identity_model()
+                nodes = {
+                    node["name"]: node for node in model["version_graph"]["nodes"]
+                }
+                nodes[node_name][field] = value
+                with self.assertRaisesRegex(
+                    ValueError, f"node {node_name} violates canonical contract"
+                ):
+                    validate_identity_model(model, planes=planes)
 
     def test_version_graph_cycle_is_rejected(self) -> None:
         model, planes = self._identity_model()
@@ -277,13 +319,34 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 model, planes = self._identity_model()
                 rules = model["version_graph"]["freshness_rules"]
                 if mutation == "missing":
-                    rules[0].pop("owner_plane")
-                    message = "capital_state_admission requires owner truth"
+                    rules[0].pop("trigger_owner_plane")
+                    message = "capital_state_admission requires trigger owner truth"
                 else:
                     rules.append(copy.deepcopy(rules[0]))
                     message = "capital_state_admission has multiple owners"
                 with self.assertRaisesRegex(ValueError, message):
                     validate_identity_model(model, planes=planes)
+
+    def test_freshness_effect_redistribution_is_rejected(self) -> None:
+        model, planes = self._identity_model()
+        rules = {
+            rule["trigger"]: rule
+            for rule in model["version_graph"]["freshness_rules"]
+        }
+        rules["capital_state_admission"]["affects"] = ["CapitalStateVersion"]
+        rules["review_event"]["affects"] = [
+            "ReviewStateVersion",
+            "DecisionCaseVersion",
+            "ScenarioVersion",
+        ]
+        with self.assertRaisesRegex(ValueError, "non-canonical effects"):
+            validate_identity_model(model, planes=planes)
+
+    def test_currentness_owner_derives_from_affected_node_owner(self) -> None:
+        model, planes = self._identity_model()
+        model["version_graph"]["currentness_owner_semantics"] = "trigger_owner_plane"
+        with self.assertRaisesRegex(ValueError, "affected node ownership"):
+            validate_identity_model(model, planes=planes)
 
     def test_reverse_plane_dependency_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])

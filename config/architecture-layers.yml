@@ -103,11 +103,13 @@ plane_model:
       - name: external-source
         authority: qualified external source key
       - name: domain-logical
-        authority: domain owner
+        authority: owning domain logical-identity boundary
       - name: domain-version
-        authority: immutable RFC 9562 UUIDv7
+        authority: owning domain version-creation boundary; encoded as RFC 9562 UUIDv7
       - name: git-commit
         authority: repository object and workflow identity only
+    namespace_substitution_policy: forbidden_unless_explicitly_allowed
+    allowed_namespace_substitutions: []
     substitution_barriers:
       - source: agent-runtime
         cannot_replace: [principal]
@@ -131,66 +133,74 @@ plane_model:
           identity_namespace: domain-version
           history: immutable
           depends_on: []
+          may_cite: []
         - name: EvidenceSetVersion
           owner_plane: knowledge
           identity_namespace: domain-version
           history: immutable
           depends_on: []
+          may_cite: []
         - name: PolicyVersion
           owner_plane: control
           identity_namespace: domain-version
           history: immutable
           depends_on: []
+          may_cite: []
         - name: ProposalVersion
           owner_plane: judgment
           identity_namespace: domain-version
           history: immutable
           depends_on: []
+          may_cite: []
         - name: DecisionCaseVersion
           owner_plane: judgment
           identity_namespace: domain-version
           history: immutable
           depends_on: [CapitalStateVersion, EvidenceSetVersion, PolicyVersion, ProposalVersion]
+          may_cite: []
         - name: ScenarioVersion
           owner_plane: judgment
           identity_namespace: domain-version
           history: immutable
           depends_on: [DecisionCaseVersion]
+          may_cite: []
         - name: ReviewStateVersion
           owner_plane: judgment
           identity_namespace: domain-version
           history: immutable
           depends_on: [DecisionCaseVersion]
+          may_cite: []
         - name: DecisionRecord
           owner_plane: judgment
           identity_namespace: domain-logical
           history: append-only
           depends_on: [DecisionCaseVersion]
           may_cite: [ScenarioVersion]
+      currentness_owner_semantics: affected_node.owner_plane
       freshness_rules:
         - trigger: capital_state_admission
-          owner_plane: truth
+          trigger_owner_plane: truth
           affects: [CapitalStateVersion, DecisionCaseVersion, ScenarioVersion]
         - trigger: evidence_admission_or_withdrawal
-          owner_plane: knowledge
+          trigger_owner_plane: knowledge
           affects: [EvidenceSetVersion, DecisionCaseVersion, ScenarioVersion]
         - trigger: policy_activation
-          owner_plane: control
+          trigger_owner_plane: control
           affects: [PolicyVersion, DecisionCaseVersion, ScenarioVersion]
         - trigger: proposal_revision
-          owner_plane: judgment
+          trigger_owner_plane: judgment
           affects: [ProposalVersion, DecisionCaseVersion, ScenarioVersion]
         - trigger: case_basis_change
-          owner_plane: judgment
+          trigger_owner_plane: judgment
           affects: [DecisionCaseVersion, ScenarioVersion]
         - trigger: scenario_recalculation
-          owner_plane: judgment
+          trigger_owner_plane: judgment
           affects: [ScenarioVersion]
         - trigger: review_event
-          owner_plane: judgment
+          trigger_owner_plane: judgment
           affects: [ReviewStateVersion]
         - trigger: decision_recorded
-          owner_plane: judgment
+          trigger_owner_plane: judgment
           affects: [DecisionRecord]
 
 # First match wins. Keep narrow ownership rules before the core fallback.
