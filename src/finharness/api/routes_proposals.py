@@ -21,6 +21,7 @@ from finharness.identity import (
     IdentityMutationClaim,
     IdentityMutationError,
     load_identity_mutation_receipt,
+    load_identity_mutation_receipt_by_id,
     record_verified_identity_mutation_reconciliation,
     replay_identity_mutation,
 )
@@ -815,6 +816,8 @@ def _require_verifiable_foreign_mutation_claim(
     candidate_proposal: Proposal,
     candidate_ref: str,
     receipt_root: Path,
+    previous_receipt_ref: str | None,
+    changed_fields: list[str],
 ) -> None:
     """Verify that a foreign mutation claim is a proven, terminal domain effect.
 
@@ -822,7 +825,7 @@ def _require_verifiable_foreign_mutation_claim(
     is only a legitimate inherited reference if **all** of the following hold:
 
     1. The foreign identity receipt exists, has valid integrity, and its
-       internal ``receipt_id`` matches the filename.
+       internal ``receipt_id`` matches the canonical ID.
     2. The foreign receipt is in a terminal state (committed or
        reconciled_applied).
     3. The foreign request is a PATCH to the **same proposal's**
@@ -848,21 +851,19 @@ def _require_verifiable_foreign_mutation_claim(
             "but snapshot does not contain its mutation ref"
         )
 
-    # ── 2.  Load foreign identity receipt ─────────────────────────
-    foreign_path = receipt_root / "identity" / f"{claim_id}.json"
+    # ── 2.  Load foreign identity receipt via typed loader ─────────
     try:
-        foreign_receipt = load_identity_mutation_receipt(foreign_path)
-    except IdentityMutationError as err:
+        foreign_receipt = load_identity_mutation_receipt_by_id(
+            receipt_root / "identity",
+            claim_id,
+        )
+    except IdentityMutationError:
+        raise
+    except (OSError, ValueError) as exc:
         raise IdentityMutationError(
             "scaffold candidate claims foreign receipt_id "
             "but the identity receipt is missing or invalid"
-        ) from err
-
-    if foreign_receipt.get("receipt_id") != claim_id:
-        raise IdentityMutationError(
-            "scaffold candidate foreign receipt internal identity "
-            "does not match the filename-based claim id"
-        )
+        ) from exc
 
     # ── 3.  Terminal state ────────────────────────────────────────
     foreign_state = foreign_receipt.get("state")
@@ -906,7 +907,8 @@ def _require_verifiable_foreign_mutation_claim(
         foreign_receipt,
         candidate_proposal=candidate_proposal,
         candidate_ref=candidate_ref,
-        context=context,
+        previous_receipt_ref=previous_receipt_ref,
+        changed_fields=changed_fields,
     )
 
 
@@ -915,9 +917,15 @@ def _require_foreign_response_ownership(
     *,
     candidate_proposal: Proposal,
     candidate_ref: str,
-    context: dict[str, Any],
+    previous_receipt_ref: str | None,
+    changed_fields: list[str],
 ) -> None:
-    """Verify the foreign terminal response points to this candidate receipt."""
+    """Verify the foreign terminal response points to this candidate receipt.
+
+    The previous_receipt_ref and changed_fields must already have been
+    validated by the common scaffold candidate integrity helper — this
+    function only proves the foreign terminal response agrees with them.
+    """
     try:
         status_code, body, content_type = replay_identity_mutation(foreign_receipt)
     except IdentityMutationError as err:
@@ -962,19 +970,64 @@ def _require_foreign_response_ownership(
             "scaffold candidate foreign terminal response execution_allowed is not False"
         )
 
-    ctx_previous = context.get("previous_receipt_ref")
-    if foreign_response.previous_receipt_ref != ctx_previous:
+    if foreign_response.previous_receipt_ref != previous_receipt_ref:
         raise IdentityMutationError(
             "scaffold candidate foreign terminal response"
             " previous_receipt_ref does not match context"
         )
 
-    ctx_changed = context.get("changed_scaffold_fields", [])
-    if tuple(ctx_changed) != foreign_response.changed_scaffold_fields:
+    if tuple(changed_fields) != foreign_response.changed_scaffold_fields:
         raise IdentityMutationError(
             "scaffold candidate foreign terminal response changed_scaffold_fields "
             "does not match context"
         )
+
+
+def _require_common_scaffold_candidate_integrity(
+    *,
+    candidate_proposal: Proposal,
+    candidate_receipt: dict[str, Any],
+    context: dict[str, Any],
+    proposal_id: str,
+) -> tuple[str | None, list[str]]:
+    """Validate scaffold candidate integrity before claim classification.
+
+    Every scaffold candidate — whether unkeyed inherited, foreign keyed,
+    or exact keyed — must pass these checks.  No candidate may skip
+    common verification and jump directly to claim disposition.
+    """
+
+    # 4.1  Proposal ownership
+    if candidate_proposal.proposal_id != proposal_id:
+        raise IdentityMutationError(
+            "scaffold candidate proposal id does not match the reconciliation route"
+        )
+
+    # 4.2  previous_receipt_ref
+    previous_receipt_ref = context.get("previous_receipt_ref")
+
+    if previous_receipt_ref is not None and not isinstance(previous_receipt_ref, str):
+        raise IdentityMutationError("scaffold previous receipt ref is invalid")
+
+    if isinstance(previous_receipt_ref, str) and not previous_receipt_ref:
+        raise IdentityMutationError("scaffold previous receipt ref is an empty string")
+
+    # 4.3  changed_scaffold_fields
+    changed_fields = context.get("changed_scaffold_fields")
+
+    if (
+        not isinstance(changed_fields, list)
+        or not changed_fields
+        or not all(isinstance(field, str) and field for field in changed_fields)
+        or len(changed_fields) != len(set(changed_fields))
+    ):
+        raise IdentityMutationError("scaffold changed-field evidence is invalid")
+
+    # 4.4  supersedes
+    if candidate_receipt.get("supersedes") != previous_receipt_ref:
+        raise IdentityMutationError("scaffold supersedes link does not match revision context")
+
+    return previous_receipt_ref, changed_fields
 
 
 def _validate_scaffold_candidate_revision(
@@ -1018,7 +1071,16 @@ def _validate_scaffold_candidate_revision(
     if context.get("kind") != "decision_scaffold_revision":
         raise IdentityMutationError("scaffold candidate is not a decision scaffold revision")
 
-    # 4. Determine claim disposition.
+    # 4. Common scaffold candidate integrity — runs BEFORE classification.
+    #    Every candidate, including foreign, must pass these checks.
+    previous_receipt_ref, changed_fields = _require_common_scaffold_candidate_integrity(
+        candidate_proposal=candidate_proposal,
+        candidate_receipt=candidate_receipt,
+        context=context,
+        proposal_id=proposal_id,
+    )
+
+    # 5. Claim disposition classification.
     claim_id = context.get("identity_mutation_receipt_id")
 
     if not claim_id:
@@ -1037,42 +1099,20 @@ def _validate_scaffold_candidate_revision(
             candidate_proposal=candidate_proposal,
             candidate_ref=candidate_ref,
             receipt_root=receipt_root,
+            previous_receipt_ref=previous_receipt_ref,
+            changed_fields=changed_fields,
         )
         return None
 
-    # 5. Candidate **claims** this exact receipt_id.
+    # 6. Candidate **claims** this exact receipt_id.
     #    Full binding validation is mandatory; any mismatch
     #    is evidence of a tampered or inconsistent receipt.
-    try:
-        _require_exact_domain_binding(
-            context,
-            receipt_id=receipt_id,
-            request_binding=request_binding,
-            effect_kind="api_proposal_decision_scaffold_revision",
-        )
-    except IdentityMutationError as err:
-        raise IdentityMutationError(
-            "scaffold revision receipt claims target receipt_id "
-            "but its exact mutation binding is invalid"
-        ) from err
-
-    previous_receipt_ref = context.get("previous_receipt_ref")
-    if previous_receipt_ref is not None and not isinstance(previous_receipt_ref, str):
-        raise IdentityMutationError("scaffold previous receipt ref is invalid")
-
-    changed_fields = context.get("changed_scaffold_fields")
-    if (
-        not isinstance(changed_fields, list)
-        or not changed_fields
-        or not all(isinstance(field, str) and field for field in changed_fields)
-    ):
-        raise IdentityMutationError("scaffold changed-field evidence is invalid")
-
-    if candidate_receipt.get("supersedes") != previous_receipt_ref:
-        raise IdentityMutationError("scaffold supersedes link does not match revision context")
-
-    if candidate_proposal.proposal_id != proposal_id:
-        raise IdentityMutationError("scaffold revision proposal id does not match the route")
+    _require_exact_domain_binding(
+        context,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        effect_kind="api_proposal_decision_scaffold_revision",
+    )
 
     return (candidate_ref, candidate_proposal, candidate_receipt)
 

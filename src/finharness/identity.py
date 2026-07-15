@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ IDENTITY_RECEIPT_HEADER = "X-FinHarness-Identity-Receipt"
 IDEMPOTENT_REPLAY_HEADER = "X-FinHarness-Idempotent-Replay"
 IDEMPOTENCY_SEMANTIC_HEADERS = ("content-type", "if-match")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+_IDENTITY_MUTATION_RECEIPT_ID = re.compile(r"^identity_mutation_[0-9a-f]{32}$")
 
 
 class PrincipalIdentity(BaseModel):
@@ -228,6 +230,72 @@ def load_identity_mutation_receipt(
     """Load an integrity-checked mutation receipt for typed reconciliation."""
 
     return _load_identity_mutation_receipt(Path(receipt_path))
+
+
+def require_identity_mutation_receipt_id(
+    receipt_id: object,
+) -> str:
+    """Validate and return a canonical mutation receipt ID."""
+
+    if not isinstance(receipt_id, str) or not _IDENTITY_MUTATION_RECEIPT_ID.fullmatch(receipt_id):
+        raise IdentityMutationError("invalid mutation identity receipt id")
+    return receipt_id
+
+
+def load_identity_mutation_receipt_by_id(
+    identity_root: str | Path,
+    receipt_id: object,
+) -> dict[str, Any]:
+    """Load an identity mutation receipt by its canonical ID.
+
+    This is the safe boundary for untrusted claim IDs — it validates
+    the ID format, restricts resolution to the identity directory,
+    rejects symlinks, checks the schema, and proves the internal
+    ``receipt_id`` matches the canonical ID.
+    """
+
+    canonical_id = require_identity_mutation_receipt_id(receipt_id)
+
+    root = Path(identity_root)
+
+    try:
+        path = resolve_under(root, f"{canonical_id}.json")
+    except (ValueError, OSError) as exc:
+        raise IdentityMutationError("mutation identity receipt path is invalid") from exc
+
+    # Check for symlinks BEFORE resolving — resolve_under already
+    # follows symlinks, so we must check the raw path object.
+    try:
+        raw = Path(os.path.realpath(root)) / f"{canonical_id}.json"
+        if raw.is_symlink():
+            raise IdentityMutationError("mutation identity receipt cannot be a symlink")
+    except OSError:
+        pass  # will be caught by the resolve below
+
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise IdentityMutationError("mutation identity receipt is missing or unreadable") from exc
+
+    allowed_root = root.resolve()
+
+    if not resolved.is_relative_to(allowed_root):
+        raise IdentityMutationError(
+            "mutation identity receipt is outside the identity receipt directory"
+        )
+
+    if not resolved.is_file():
+        raise IdentityMutationError("mutation identity receipt is not a regular file")
+
+    payload = _load_identity_mutation_receipt(resolved)
+
+    if payload.get("schema") != "finharness.api_mutation_identity_receipt.v1":
+        raise IdentityMutationError("invalid mutation identity receipt schema")
+
+    if payload.get("receipt_id") != canonical_id:
+        raise IdentityMutationError("mutation identity receipt id mismatch")
+
+    return payload
 
 
 def _transition_identity_mutation(

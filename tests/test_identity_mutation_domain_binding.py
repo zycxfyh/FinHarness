@@ -2054,7 +2054,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             before = receipt_path_a.read_bytes()
             with self.assertRaisesRegex(
                 IdentityMutationError,
-                "foreign receipt internal identity",
+                "mutation identity receipt id mismatch",
             ):
                 reconcile_identity_mutation_from_domain_truth(
                     receipt_path_a,
@@ -2064,6 +2064,581 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     reason="Receipt identity mismatch must fail.",
                 )
             self.assertEqual(receipt_path_a.read_bytes(), before)
+
+    def test_scaffold_reconciliation_rejects_foreign_candidate_for_other_proposal(
+        self,
+    ) -> None:
+        """Foreign candidate belonging to a different Proposal must fail closed.
+
+        Even when the foreign identity receipt, terminal response, and
+        mutation binding are all valid, the common scaffold candidate
+        integrity check must reject a candidate whose proposal_id does
+        not match the reconciliation route.
+
+        Creates:
+          1. Target Proposal P1 with keyed Revision A (terminal loss).
+          2. Another Proposal P2 with keyed Revision B (committed).
+          3. Fabricates B into A's candidate set by adding A's
+             mutation ref and recomputing Proposal content hash.
+          4. Reconciles A → expects IdentityMutationError about
+             proposal id mismatch.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            # -- Target Proposal P1 --
+            p1 = self._create_unkeyed_proposal(client)
+            p1_id = p1["proposal_id"]
+            endpoint1 = f"/proposals/{p1_id}/decision-scaffold"
+            key_a = "foreign-other-proposal-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A for P1",
+                "decision_scaffold": {"counter_evidence": "P1 counter-evidence."},
+                "source_refs": ["test:foreign-other-prop-a"],
+            }
+            receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint1, key=key_a, body=body_a
+            )
+            mutation_ref_a = identity_mutation_source_ref(receipt_id_a)
+
+            # -- Another Proposal P2 with committed Revision B --
+            p2_body = dict(self.proposal_body)
+            p2_body["source_refs"] = ["test:foreign-other-prop-p2"]
+            p2_response = client.post(
+                "/proposals",
+                headers=self._headers("foreign-other-prop-p2-create-0001"),
+                json=p2_body,
+            )
+            self.assertEqual(p2_response.status_code, 200, p2_response.text)
+            p2 = p2_response.json()["proposal"]
+            p2_id = p2["proposal_id"]
+            endpoint2 = f"/proposals/{p2_id}/decision-scaffold"
+            key_b = "foreign-other-prop-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B for P2",
+                "decision_scaffold": {"alternatives": "P2 alternatives."},
+                "source_refs": [f"test:foreign-other-prop-b/{receipt_id_a}"],
+            }
+            rev_b = client.patch(endpoint2, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            rev_b_body = rev_b.json()
+            b_receipt_ref = rev_b_body["receipt_ref"]
+
+            # -- Fabricate B into A's candidate set --
+            b_path = self._resolve_receipt_path(b_receipt_ref)
+            b_receipt = json.loads(b_path.read_text(encoding="utf-8"))
+
+            # Add A's mutation ref to B's proposal snapshot
+            b_snapshot = b_receipt["proposal"]
+            b_snapshot["source_refs"].append(mutation_ref_a)
+            dup_proposal = Proposal.model_validate(b_snapshot)
+            b_receipt["content_hash"] = proposal_content_hash(dup_proposal)
+
+            b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            # Register B in P1's ReceiptIndex
+            with Session(self.engine) as session:
+                dup_index = ReceiptIndex(
+                    receipt_id="receipt:foreign-other-prop-0001",
+                    refs=[mutation_ref_a],
+                    kind="state_core_proposal",
+                    path=b_receipt_ref,
+                )
+                session.add(dup_index)
+                session.commit()
+
+            # Verify candidates >= 2
+            with Session(self.engine) as session:
+                indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+            self.assertGreaterEqual(
+                len([i for i in indexes if mutation_ref_a in list(i.refs or [])]),
+                2,
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "scaffold candidate proposal id does not match the reconciliation route",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Foreign candidate for other proposal must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            self.assertEqual(json.loads(after)["state"], "pending")
+
+            # P1 and P2 states unchanged
+            with Session(self.engine) as session:
+                final_p1 = session.get(Proposal, p1_id)
+                final_p2 = session.get(Proposal, p2_id)
+            self.assertIsNotNone(final_p1)
+            self.assertIsNotNone(final_p2)
+            assert final_p1 is not None and final_p2 is not None
+            # P1 was the latest revision from the terminal-lost write
+            self.assertIsNotNone(final_p1.receipt_ref)
+
+            # No new ReceiptIndex
+            with Session(self.engine) as session:
+                final_indexes = list(
+                    session.exec(
+                        select(ReceiptIndex).where(ReceiptIndex.kind == "state_core_proposal")
+                    ).all()
+                )
+            # The count should be the same as before (we only added one, and reconcile didn't add)
+            self.assertEqual(len(final_indexes), len(indexes))
+
+            # Clean up the manufactured ReceiptIndex
+            with Session(self.engine) as session:
+                dup_row = session.exec(
+                    select(ReceiptIndex).where(ReceiptIndex.path == b_receipt_ref)
+                ).first()
+                if dup_row is not None:
+                    session.delete(dup_row)
+                    session.commit()
+
+    def test_scaffold_reconciliation_rejects_foreign_candidate_with_supersedes_mismatch(
+        self,
+    ) -> None:
+        """Foreign candidate supersedes must match revision_context.previous_receipt_ref.
+
+        Even when the foreign identity receipt and terminal response are valid,
+        a mismatch between the domain receipt's ``supersedes`` and the
+        revision_context's ``previous_receipt_ref`` must fail closed.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            # Keyed Revision A — terminal loss
+            key_a = "supersedes-mismatch-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Supersedes mismatch test."},
+                "source_refs": ["test:supersedes-mismatch-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Keyed Revision B — committed normally
+            key_b = "supersedes-mismatch-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:supersedes-mismatch-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            rev_b_body = rev_b.json()
+            b_receipt_ref = rev_b_body["receipt_ref"]
+
+            # Tamper B's domain receipt: change supersedes but leave
+            # revision_context.previous_receipt_ref and terminal
+            # response intact.
+            b_path = self._resolve_receipt_path(b_receipt_ref)
+            b_receipt = json.loads(b_path.read_text(encoding="utf-8"))
+            b_receipt["supersedes"] = "some-other-receipt-ref"
+            b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "scaffold supersedes link does not match revision context",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Supersedes mismatch must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_rejects_foreign_candidate_with_invalid_changed_fields(
+        self,
+    ) -> None:
+        """Duplicate changed_scaffold_fields must be rejected by the common integrity check.
+
+        A candidate with duplicate field names in changed_scaffold_fields
+        is corrupt evidence and must fail closed before claim classification.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "dup-changed-fields-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Dup fields test."},
+                "source_refs": ["test:dup-changed-fields-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Keyed Revision B — committed normally
+            key_b = "dup-changed-fields-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:dup-changed-fields-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            b_receipt_ref = rev_b.json()["receipt_ref"]
+
+            # Tamper B: inject duplicate changed_scaffold_fields
+            b_path = self._resolve_receipt_path(b_receipt_ref)
+            b_receipt = json.loads(b_path.read_text(encoding="utf-8"))
+            b_receipt["revision_context"]["changed_scaffold_fields"] = [
+                "counter_evidence",
+                "counter_evidence",
+            ]
+            b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "scaffold changed-field evidence is invalid",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Duplicate changed fields must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_rejects_foreign_claim_path_traversal(
+        self,
+    ) -> None:
+        """A foreign claim_id that attempts path traversal must be rejected by the ID validator."""
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "path-traversal-claim-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Path traversal test."},
+                "source_refs": ["test:path-traversal-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # -- Keyed Revision B — committed normally --
+            key_b = "path-traversal-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:path-traversal-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            b_receipt_ref = rev_b.json()["receipt_ref"]
+
+            # Tamper B's context: replace claim_id with path traversal
+            b_path = self._resolve_receipt_path(b_receipt_ref)
+            b_receipt = json.loads(b_path.read_text(encoding="utf-8"))
+            traversal_id = "../proposals/some_receipt"
+            b_receipt["revision_context"]["identity_mutation_receipt_id"] = traversal_id
+
+            # Add corresponding pseudo foreign source ref and recompute hash
+            b_snapshot = b_receipt["proposal"]
+            b_snapshot["source_refs"].append(identity_mutation_source_ref(traversal_id))
+            dup_proposal = Proposal.model_validate(b_snapshot)
+            b_receipt["content_hash"] = proposal_content_hash(dup_proposal)
+
+            b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "invalid mutation identity receipt id",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Path traversal claim must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_rejects_foreign_claim_invalid_id_format(
+        self,
+    ) -> None:
+        """Foreign claims with invalid receipt ID formats must fail closed.
+
+        Tests: identity_mutation_NOT_HEX, identity_mutation_123,
+        identity_receipt_xxx — none of which match the canonical format.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "invalid-id-format-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Invalid ID format test."},
+                "source_refs": ["test:invalid-id-format-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Keyed Revision B — committed normally
+            key_b = "invalid-id-format-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:invalid-id-format-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            b_receipt_ref = rev_b.json()["receipt_ref"]
+
+            fake_id = "identity_mutation_NOT_HEX"
+            fake_ref = identity_mutation_source_ref(fake_id)
+
+            # Tamper B: replace claim_id with invalid format
+            b_path = self._resolve_receipt_path(b_receipt_ref)
+            b_receipt = json.loads(b_path.read_text(encoding="utf-8"))
+            b_receipt["revision_context"]["identity_mutation_receipt_id"] = fake_id
+            b_snapshot = b_receipt["proposal"]
+            b_snapshot["source_refs"].append(fake_ref)
+            dup_proposal = Proposal.model_validate(b_snapshot)
+            b_receipt["content_hash"] = proposal_content_hash(dup_proposal)
+            b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "invalid mutation identity receipt id",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Invalid ID format must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_rejects_foreign_receipt_wrong_schema(
+        self,
+    ) -> None:
+        """A foreign identity receipt with the wrong schema must fail closed.
+
+        The identity receipt must carry schema
+        ``finharness.api_mutation_identity_receipt.v1`` — any other
+        schema value is rejected by the typed loader, even when the
+        content hash is valid.
+        """
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "wrong-schema-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Wrong schema test."},
+                "source_refs": ["test:wrong-schema-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Keyed Revision B — committed normally
+            key_b = "wrong-schema-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:wrong-schema-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            receipt_id_b = rev_b.headers[IDENTITY_RECEIPT_HEADER]
+
+            # Tamper B's identity receipt: wrong schema, recompute content_sha256
+            identity_b_path = self.root / "receipts" / "identity" / f"{receipt_id_b}.json"
+            self.assertTrue(identity_b_path.is_file())
+            b_receipt = json.loads(identity_b_path.read_text(encoding="utf-8"))
+            b_receipt["schema"] = "finharness.some_other_receipt.v1"
+            recompute = copy.deepcopy(b_receipt)
+            recompute.pop("content_sha256", None)
+            content = json.dumps(
+                recompute, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")
+            )
+            b_receipt["content_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+            identity_b_path.write_text(
+                json.dumps(b_receipt, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "invalid mutation identity receipt schema",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Wrong schema must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
+
+    def test_scaffold_reconciliation_rejects_foreign_receipt_symlink(
+        self,
+    ) -> None:
+        """A symlink identity receipt must fail closed.
+
+        The typed loader rejects symlinks; if the platform does not
+        support symlinks the test is skipped.
+        """
+        import os
+
+        if not hasattr(os, "symlink"):
+            self.skipTest("platform does not support symlinks")
+
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            key_a = "symlink-receipt-a-0001"
+            body_a = {
+                "attester": "operator:alice",
+                "reason": "Revision A",
+                "decision_scaffold": {"counter_evidence": "Symlink test."},
+                "source_refs": ["test:symlink-a"],
+            }
+            _receipt_id_a, receipt_path_a = self._lose_terminal_write(
+                client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
+            )
+
+            # Keyed Revision B — committed normally
+            key_b = "symlink-b-0001"
+            body_b = {
+                "attester": "operator:alice",
+                "reason": "Revision B: alternatives",
+                "decision_scaffold": {"alternatives": "Later revision."},
+                "source_refs": ["test:symlink-b"],
+            }
+            rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
+            self.assertEqual(rev_b.status_code, 200, rev_b.text)
+            receipt_id_b = rev_b.headers[IDENTITY_RECEIPT_HEADER]
+
+            # Replace the real identity receipt with a symlink
+            identity_b_path = self.root / "receipts" / "identity" / f"{receipt_id_b}.json"
+            self.assertTrue(identity_b_path.is_file())
+
+            # Move real JSON to another file
+            real_path = self.root / "receipts" / "identity" / f"{receipt_id_b}_real.json"
+            identity_b_path.rename(real_path)
+
+            # Create symlink at canonical path pointing to real file
+            identity_b_path.symlink_to(real_path)
+
+            before = receipt_path_a.read_bytes()
+
+            with self.assertRaisesRegex(
+                IdentityMutationError,
+                "mutation identity receipt cannot be a symlink",
+            ):
+                reconcile_identity_mutation_from_domain_truth(
+                    receipt_path_a,
+                    engine=self.engine,
+                    receipt_root=(self.root / "receipts"),
+                    reconciled_by="operator:alice",
+                    reason="Symlink identity receipt must fail closed.",
+                )
+
+            after = receipt_path_a.read_bytes()
+            self.assertEqual(after, before)
+            pending = json.loads(after)
+            self.assertEqual(pending["state"], "pending")
+            self.assertNotIn("reconciliation", pending)
+            self.assertNotIn("response", pending)
 
 
 if __name__ == "__main__":
