@@ -13,7 +13,6 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI
 from scripts.verify_debt_register import (
-    EVIDENCE_LEVEL_RANK,
     EVIDENCE_LEVELS,
     IDENTITY_CLAIMS,
     VERIFIERS,
@@ -180,10 +179,7 @@ class DebtRegisterTest(unittest.TestCase):
                 for path in spec.production_path:
                     self.assertTrue((ROOT / path).exists(), path)
 
-                has_evidence_gap = (
-                    EVIDENCE_LEVEL_RANK[spec.evidence_level]
-                    < EVIDENCE_LEVEL_RANK[spec.required_evidence_level]
-                )
+                has_evidence_gap = spec.evidence_level != spec.required_evidence_level
                 if has_evidence_gap:
                     self.assertTrue(spec.execution_owner)
                     self.assertTrue(spec.destructive_fixture)
@@ -201,6 +197,26 @@ class DebtRegisterTest(unittest.TestCase):
         for name, expected in expected_levels.items():
             with self.subTest(verifier=name):
                 self.assertEqual(VERIFIERS[name].evidence_level, expected)
+
+    def test_evidence_categories_do_not_imply_each_other(self) -> None:
+        category_mismatches = (
+            ("structural", "runtime"),
+            ("semantic", "runtime"),
+            ("clean-environment", "restart"),
+            ("product", "runtime"),
+            ("restart", "clean-environment"),
+        )
+        baseline = VERIFIERS["api_write_capability_gate"]
+
+        for actual, required in category_mismatches:
+            with self.subTest(actual=actual, required=required):
+                spec = replace(
+                    baseline,
+                    evaluate=lambda _root: True,
+                    evidence_level=actual,
+                    closure_evidence_level=required,
+                )
+                self.assertFalse(verifier_can_close(spec, ROOT))
 
     def test_prior_source_token_false_greens_cannot_close_runtime_debt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

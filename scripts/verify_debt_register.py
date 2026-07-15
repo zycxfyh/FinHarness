@@ -31,12 +31,6 @@ EVIDENCE_LEVELS = {
     "clean-environment",
     "product",
 }
-EVIDENCE_LEVEL_RANK = {
-    level: rank
-    for rank, level in enumerate(
-        ("structural", "semantic", "runtime", "restart", "clean-environment", "product")
-    )
-}
 IDENTITY_CLAIMS = {"pr_head", "merge_ref", "main_commit"}
 
 
@@ -61,14 +55,11 @@ class VerifierSpec:
 
 
 def verifier_can_close(spec: VerifierSpec, root: Path) -> bool:
-    """Return whether executed evidence reaches the claim's closure threshold."""
+    """Return whether executed evidence matches the claim's closure category."""
 
     if not spec.evaluate(root):
         return False
-    return (
-        EVIDENCE_LEVEL_RANK[spec.evidence_level]
-        >= EVIDENCE_LEVEL_RANK[spec.required_evidence_level]
-    )
+    return spec.evidence_level == spec.required_evidence_level
 
 
 def state_changing_routes_have_write_gate(app: Any, gate: Callable[..., Any]) -> bool:
@@ -703,10 +694,7 @@ def verify_register(
         if missing_paths:
             failures.append(f"{debt['id']}: missing production paths {missing_paths}")
             continue
-        evidence_gap = (
-            EVIDENCE_LEVEL_RANK[spec.evidence_level]
-            < EVIDENCE_LEVEL_RANK[spec.required_evidence_level]
-        )
+        evidence_gap = spec.evidence_level != spec.required_evidence_level
         if evidence_gap and not all(
             (
                 spec.execution_owner,
