@@ -14,9 +14,11 @@ import yaml
 from fastapi import FastAPI
 from scripts.verify_debt_register import (
     EVIDENCE_LEVELS,
+    IDENTITY_CLAIMS,
     VERIFIERS,
     VerifierSpec,
     state_changing_routes_have_write_gate,
+    verifier_can_close,
     verify_register,
 )
 
@@ -170,11 +172,95 @@ class DebtRegisterTest(unittest.TestCase):
                 self.assertTrue(spec.claim.strip())
                 self.assertTrue(spec.owner.strip())
                 self.assertIn(spec.evidence_level, EVIDENCE_LEVELS)
+                self.assertIn(spec.required_evidence_level, EVIDENCE_LEVELS)
                 self.assertNotEqual(spec.evidence_level, "test_count")
                 self.assertTrue(spec.production_path)
                 self.assertTrue(spec.sunset.strip())
                 for path in spec.production_path:
                     self.assertTrue((ROOT / path).exists(), path)
+
+                has_evidence_gap = spec.evidence_level != spec.required_evidence_level
+                if has_evidence_gap:
+                    self.assertTrue(spec.execution_owner)
+                    self.assertTrue(spec.destructive_fixture)
+                    self.assertIn(spec.identity_claim, IDENTITY_CLAIMS)
+
+    def test_source_token_verifiers_are_not_runtime_evidence(self) -> None:
+        expected_levels = {
+            "execution_capability_enforcement": "structural",
+            "frontend_module_split": "structural",
+            "paper_validation_legacy_boundary": "semantic",
+            "dependency_grouping": "structural",
+            "execution_abstraction_inventory": "structural",
+        }
+
+        for name, expected in expected_levels.items():
+            with self.subTest(verifier=name):
+                self.assertEqual(VERIFIERS[name].evidence_level, expected)
+
+    def test_evidence_categories_do_not_imply_each_other(self) -> None:
+        category_mismatches = (
+            ("structural", "runtime"),
+            ("semantic", "runtime"),
+            ("clean-environment", "restart"),
+            ("product", "runtime"),
+            ("restart", "clean-environment"),
+        )
+        baseline = VERIFIERS["api_write_capability_gate"]
+
+        for actual, required in category_mismatches:
+            with self.subTest(actual=actual, required=required):
+                spec = replace(
+                    baseline,
+                    evaluate=lambda _root: True,
+                    evidence_level=actual,
+                    closure_evidence_level=required,
+                )
+                self.assertFalse(verifier_can_close(spec, ROOT))
+
+    def test_prior_source_token_false_greens_cannot_close_runtime_debt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frontend_files = {
+                "frontend/state.js": "window.FinHarness.state = Object.seal({});\n",
+                "frontend/actions.js": "window.FinHarness.ReviewActionShell = {};\n",
+                "frontend/app.js": (
+                    "const state = window.FinHarness.state;\n"
+                    "ReviewActionShell.post();\n"
+                    "ReviewActionShell.patch();\n"
+                    "ReviewActionShell.post();\n"
+                ),
+                "frontend/index.html": (
+                    '<script src="./api.js"></script>'
+                    '<script src="./state.js"></script>'
+                    '<script src="./actions.js"></script>'
+                    '<script src="./app.js"></script>'
+                ),
+                "frontend/api.js": "window.FinHarness = {};\n",
+            }
+            execution_guards = (
+                'require_execution_capability(capabilities, "create_order_draft")\n'
+                'require_execution_capability(capabilities, "run_pretrade_check")\n'
+                'require_execution_capability(capabilities, "record_approval")\n'
+                'require_execution_capability(capabilities, "stage_execution_order")\n'
+                'require_execution_capability(capabilities, "submit_simulated_order")\n'
+            )
+            files = frontend_files | {
+                "src/finharness/execution/services.py": execution_guards,
+                "src/finharness/execution/commands.py": (
+                    'require_execution_capability(capabilities, "submit_simulated_order")\n'
+                ),
+            }
+            for relative_path, content in files.items():
+                target = root / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+
+            for name in ("frontend_module_split", "execution_capability_enforcement"):
+                with self.subTest(verifier=name):
+                    spec = VERIFIERS[name]
+                    self.assertTrue(spec.evaluate(root), "fixture must reproduce prior false green")
+                    self.assertFalse(verifier_can_close(spec, root))
 
     def test_adding_valid_debt_has_no_fixed_count_failure(self) -> None:
         register = _register()
@@ -190,8 +276,7 @@ class DebtRegisterTest(unittest.TestCase):
         added.pop("resolution_ref", None)
         register["debts"].append(added)
         fast_verifiers = {
-            name: replace(spec, evaluate=lambda _root: True)
-            for name, spec in VERIFIERS.items()
+            name: replace(spec, evaluate=lambda _root: True) for name, spec in VERIFIERS.items()
         }
         fast_verifiers["synthetic_unresolved"] = VerifierSpec(
             evaluate=lambda _root: False,
@@ -229,8 +314,7 @@ class DebtRegisterTest(unittest.TestCase):
                     "class LocalOperatorContext" in operator,
                     "async def require_write_capability" in operator,
                     "WriteCapabilityDependency" in dependencies,
-                    "test_all_state_changing_routes_have_write_capability_dependency"
-                    in gate_tests,
+                    "test_all_state_changing_routes_have_write_capability_dependency" in gate_tests,
                     all(
                         "WriteCapabilityDependency" in (root / path).read_text()
                         for path in route_files
@@ -242,8 +326,7 @@ class DebtRegisterTest(unittest.TestCase):
             fixture_root = Path(directory)
             files = {
                 "src/finharness/local_operator.py": (
-                    "class LocalOperatorContext: pass\n"
-                    "async def require_write_capability(): pass\n"
+                    "class LocalOperatorContext: pass\nasync def require_write_capability(): pass\n"
                 ),
                 "src/finharness/api/dependencies.py": "WriteCapabilityDependency = object()\n",
                 "tests/test_statecore_api.py": (
@@ -274,8 +357,13 @@ class DebtRegisterTest(unittest.TestCase):
     def test_verifier_does_not_recursively_launch_collected_tests(self) -> None:
         source = (ROOT / "scripts/verify_debt_register.py").read_text(encoding="utf-8")
         self.assertNotIn("subprocess.run", source)
+        self.assertNotIn("subprocess.Popen", source)
+        self.assertNotIn("os.system", source)
         self.assertNotIn("_run_unittest_modules", source)
-        self.assertNotIn("frontend/tests/module_boundaries.test.cjs", source)
+        self.assertEqual(
+            VERIFIERS["frontend_module_split"].execution_owner,
+            "node frontend/tests/module_boundaries.test.cjs",
+        )
 
     def test_resolved_debts_have_resolution_refs(self) -> None:
         for debt in _register()["debts"]:

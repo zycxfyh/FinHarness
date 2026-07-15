@@ -254,17 +254,17 @@
     {
       "id": "ENG-DEBT-0007",
       "title": "Frontend action shell and module split",
-      "status": "resolved",
+      "status": "active",
       "priority": "P2",
       "category": "frontend-structure",
       "surface": "frontend",
       "introduced_by": [
         "Incremental cockpit tab and write-form additions"
       ],
-      "current_state": "api.js owns API helpers, state.js owns sealed runtime state, actions.js owns ReviewActionShell, and all three governed review forms use the shared shell. A semantic jsdom test proves module consumption and fail-closed execution_allowed handling.",
+      "current_state": "The structural verifier confirms file ownership, script order, and named ReviewActionShell call sites. The jsdom runtime fixture exists, but the debt register does not yet consume its exact-main CI result, so structural evidence cannot close the runtime claim.",
       "desired_state": "Governed write forms share one action-shell contract, and API/state/view modules are separated without changing vanilla-JS behavior or jsdom compatibility.",
       "risk_if_ignored": "Future cockpit and Agent-task surfaces will amplify global-state coupling and allow governance UX to drift between forms.",
-      "next_action": "Keep ReviewActionShell as the canonical write pattern; extend to new forms.",
+      "next_action": "Keep ReviewActionShell as the canonical write pattern and bind the named jsdom destructive fixture to its #386 main_commit CI identity before resolving this runtime debt.",
       "non_goals": [
         "framework migration",
         "visual redesign",
@@ -273,7 +273,7 @@
       "blocked_by": [],
       "target_slice": "FRONTEND-01",
       "created_at": "2026-07-06",
-      "last_reviewed_at": "2026-07-10",
+      "last_reviewed_at": "2026-07-15",
       "review_due": "2026-08-31",
       "evidence_refs": [
         "frontend/app.js",
@@ -283,8 +283,7 @@
         "frontend/index.html",
         "frontend/tests/module_boundaries.test.cjs"
       ],
-      "verification": "frontend_module_split",
-      "resolution_ref": "FRONTEND-01 + post-merge semantic correction"
+      "verification": "frontend_module_split"
     },
     {
       "id": "ENG-DEBT-0008",
@@ -355,7 +354,7 @@
     {
       "id": "ENG-DEBT-0010",
       "title": "Execution capability enforcement",
-      "status": "resolved",
+      "status": "active",
       "priority": "P0",
       "category": "execution-control",
       "surface": "execution",
@@ -363,10 +362,10 @@
         "ExecutionCapabilities PR #142",
         "DEBT-CTL-001"
       ],
-      "current_state": "ExecutionCapabilities is enforced at the five public service mutations and the adapter-driven submit command. API construction injects an immutable deployment capability set, and denials return stable HTTP 403 before database, receipt, status, or adapter effects.",
+      "current_state": "The structural verifier confirms default capability values and named guard call sites. Runtime denial/no-effect fixtures exist, but the debt register does not yet consume their exact-main CI result, so source presence cannot close the runtime claim.",
       "desired_state": "Every execution command is fail-closed at the service boundary when its capability is disabled; simulated submission remains enabled by explicit default and live submission/credential management remain impossible.",
       "risk_if_ignored": "Capability documentation can diverge from runtime behavior, and future adapters may bypass the intended control plane through direct service calls.",
-      "next_action": "Keep semantic denial/no-side-effect tests in the execution gate. Any real adapter, credential, or live-submit capability still requires a separate C3 design and threat-model update.",
+      "next_action": "Bind the named denial/no-effect fixture to its #386 main_commit CI identity before resolving this runtime debt. Any real adapter, credential, or live-submit capability still requires a separate C3 design and threat-model update.",
       "non_goals": [
         "user/role permission platform",
         "live adapter enablement",
@@ -376,7 +375,7 @@
       "blocked_by": [],
       "target_slice": "EXEC-01",
       "created_at": "2026-07-08",
-      "last_reviewed_at": "2026-07-10",
+      "last_reviewed_at": "2026-07-15",
       "review_due": "2026-07-24",
       "evidence_refs": [
         "src/finharness/execution/capabilities.py",
@@ -386,8 +385,7 @@
         "tests/test_execution_capabilities.py",
         "tests/test_execution_capability_enforcement.py"
       ],
-      "verification": "execution_capability_enforcement",
-      "resolution_ref": "EXEC-01 / tests.test_execution_capability_enforcement"
+      "verification": "execution_capability_enforcement"
     }
   ]
 }

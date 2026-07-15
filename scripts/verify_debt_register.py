@@ -31,6 +31,7 @@ EVIDENCE_LEVELS = {
     "clean-environment",
     "product",
 }
+IDENTITY_CLAIMS = {"pr_head", "merge_ref", "main_commit"}
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,22 @@ class VerifierSpec:
     evidence_level: str
     production_path: tuple[str, ...]
     sunset: str
+    closure_evidence_level: str | None = None
+    execution_owner: str | None = None
+    destructive_fixture: str | None = None
+    identity_claim: str | None = None
+
+    @property
+    def required_evidence_level(self) -> str:
+        return self.closure_evidence_level or self.evidence_level
+
+
+def verifier_can_close(spec: VerifierSpec, root: Path) -> bool:
+    """Return whether executed evidence matches the claim's closure category."""
+
+    if not spec.evaluate(root):
+        return False
+    return spec.evidence_level == spec.required_evidence_level
 
 
 def state_changing_routes_have_write_gate(app: Any, gate: Callable[..., Any]) -> bool:
@@ -167,9 +184,7 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
 
 
 def _receipt_backed_write_registry(root: Path) -> bool:
-    registry = json.loads(
-        _read(root, "docs/governance/receipt-backed-write-registry.json")
-    )
+    registry = json.loads(_read(root, "docs/governance/receipt-backed-write-registry.json"))
     entries = registry.get("entries", [])
     ids = [entry.get("id") for entry in entries]
     if (
@@ -304,9 +319,7 @@ def _dependency_grouping(root: Path) -> bool:
 def _declared_dependency_groups(
     declared_base: list[str], groups: dict[str, list[str]]
 ) -> dict[str, str] | None:
-    declared_groups = {
-        _distribution_name(requirement): "base" for requirement in declared_base
-    }
+    declared_groups = {_distribution_name(requirement): "base" for requirement in declared_base}
     for group_name, group_deps in groups.items():
         for requirement in group_deps:
             distribution = _distribution_name(requirement)
@@ -347,18 +360,19 @@ def _dependency_probe_contract(root: Path) -> bool:
     }
     if not all(f"  {task_name}:" in taskfile for task_name in required_probe_tasks):
         return False
-    if not all(
-        (root / path).is_file()
-        for path in ("scripts/probe_base_runtime.py", "scripts/probe_dependency_group.py")
-    ) or not workflow_path.is_file():
+    if (
+        not all(
+            (root / path).is_file()
+            for path in ("scripts/probe_base_runtime.py", "scripts/probe_dependency_group.py")
+        )
+        or not workflow_path.is_file()
+    ):
         return False
     workflow = workflow_path.read_text(encoding="utf-8")
     matrix = re.search(r"profile:\s*\[([^]]+)\]", workflow)
     if matrix is None:
         return False
-    matrix_profiles = {
-        profile.strip() for profile in matrix.group(1).split(",") if profile.strip()
-    }
+    matrix_profiles = {profile.strip() for profile in matrix.group(1).split(",") if profile.strip()}
     return all(
         (
             matrix_profiles == {"data", "research", "agent", "eval"},
@@ -525,10 +539,8 @@ def _execution_capability_enforcement(root: Path) -> bool:
             not DEFAULT_EXECUTION_CAPABILITIES.submit_live_order,
             not DEFAULT_EXECUTION_CAPABILITIES.manage_broker_credentials,
             all(guard in services for guard in required_service_guards),
-            'require_execution_capability(capabilities, "submit_simulated_order")'
-            in services,
-            'require_execution_capability(capabilities, "submit_simulated_order")'
-            in commands,
+            'require_execution_capability(capabilities, "submit_simulated_order")' in services,
+            'require_execution_capability(capabilities, "submit_simulated_order")' in commands,
         )
     )
 
@@ -546,7 +558,7 @@ VERIFIERS: dict[str, VerifierSpec] = {
         evaluate=_dependency_grouping,
         claim="Declared dependencies have one evidenced owner and maintained profile probes.",
         owner="Dependency Governance",
-        evidence_level="semantic",
+        evidence_level="structural",
         production_path=("pyproject.toml", "docs/governance/dependency-consumers.json"),
         sunset="Replace when dependency ownership is generated from a canonical build graph.",
     ),
@@ -554,37 +566,51 @@ VERIFIERS: dict[str, VerifierSpec] = {
         evaluate=_execution_abstraction_inventory,
         claim="The execution inventory matches canonical runtime types and rejects stale targets.",
         owner="Execution Architecture",
-        evidence_level="semantic",
+        evidence_level="structural",
         production_path=("docs/engineering/abstraction-inventory.yml",),
         sunset="Merge into generated System Catalog views after DOC-01.",
     ),
     "execution_capability_enforcement": VerifierSpec(
         evaluate=_execution_capability_enforcement,
-        claim=(
-            "Disabled execution capabilities fail closed before state, receipt, "
-            "or adapter effects."
-        ),
+        claim=("Default capability values and named service/command guard call sites are present."),
         owner="Execution Control",
-        evidence_level="runtime",
+        evidence_level="structural",
         production_path=(
             "src/finharness/execution/services.py",
             "src/finharness/execution/commands.py",
         ),
         sunset="Replace only when a successor admission engine proves the same no-effect law.",
+        closure_evidence_level="runtime",
+        execution_owner=("python -m unittest tests.test_execution_capability_enforcement"),
+        destructive_fixture=(
+            "ExecutionCapabilityEnforcementTest compares database rows and receipt files "
+            "before and after every denied production service call."
+        ),
+        identity_claim="main_commit",
     ),
     "frontend_module_split": VerifierSpec(
         evaluate=_frontend_module_split,
-        claim="Governed frontend writes use the shared action shell and fail closed on bad truth.",
+        claim=(
+            "Frontend files, script order, state ownership, and shared action-shell call sites "
+            "match the structural module contract."
+        ),
         owner="Frontend Architecture",
-        evidence_level="runtime",
+        evidence_level="structural",
         production_path=("frontend/actions.js", "frontend/state.js", "frontend/app.js"),
         sunset="Replace when the cockpit migrates to a successor typed UI runtime.",
+        closure_evidence_level="runtime",
+        execution_owner="node frontend/tests/module_boundaries.test.cjs",
+        destructive_fixture=(
+            "The jsdom fixture returns execution_allowed=true, requires rejection, and "
+            "checks that the pending mutation attempt remains recoverable."
+        ),
+        identity_claim="main_commit",
     ),
     "paper_validation_legacy_boundary": VerifierSpec(
         evaluate=_paper_validation_legacy_boundary,
         claim="Legacy paper validation cannot reach live adapters or unregistered consumers.",
         owner="Execution Security",
-        evidence_level="runtime",
+        evidence_level="semantic",
         production_path=(
             "src/finharness/api/routes_paper_validation.py",
             "src/finharness/paper_validation_boundary_audit.py",
@@ -594,8 +620,7 @@ VERIFIERS: dict[str, VerifierSpec] = {
     "receipt_backed_write_registry": VerifierSpec(
         evaluate=_receipt_backed_write_registry,
         claim=(
-            "Every governed write is importable and matches route, receipt, and "
-            "cleanup semantics."
+            "Every governed write is importable and matches route, receipt, and cleanup semantics."
         ),
         owner="State Core Integrity",
         evidence_level="semantic",
@@ -648,8 +673,11 @@ def verify_register(
             failures.append(f"{debt['id']}: unknown verifier {verifier_name!r}")
             continue
         if spec.evidence_level not in EVIDENCE_LEVELS:
+            failures.append(f"{debt['id']}: invalid evidence level {spec.evidence_level!r}")
+            continue
+        if spec.required_evidence_level not in EVIDENCE_LEVELS:
             failures.append(
-                f"{debt['id']}: invalid evidence level {spec.evidence_level!r}"
+                f"{debt['id']}: invalid closure evidence level {spec.required_evidence_level!r}"
             )
             continue
         if not all(
@@ -666,7 +694,20 @@ def verify_register(
         if missing_paths:
             failures.append(f"{debt['id']}: missing production paths {missing_paths}")
             continue
-        desired_state_met = spec.evaluate(root)
+        evidence_gap = spec.evidence_level != spec.required_evidence_level
+        if evidence_gap and not all(
+            (
+                spec.execution_owner,
+                spec.destructive_fixture,
+                spec.identity_claim in IDENTITY_CLAIMS,
+            )
+        ):
+            failures.append(
+                f"{debt['id']}: stronger closure claim lacks execution owner, "
+                "destructive fixture, or #386 identity claim"
+            )
+            continue
+        desired_state_met = verifier_can_close(spec, root)
         claims_resolved = debt["status"] == "resolved"
         if desired_state_met != claims_resolved:
             failures.append(
@@ -687,7 +728,8 @@ def main() -> int:
         spec = VERIFIERS[debt["verification"]]
         print(
             f"PASS {debt['id']} status={debt['status']} "
-            f"verifier={debt['verification']} evidence={spec.evidence_level}"
+            f"verifier={debt['verification']} evidence={spec.evidence_level} "
+            f"closure={spec.required_evidence_level}"
         )
     return 0
 
