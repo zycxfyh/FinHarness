@@ -151,6 +151,28 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             set(planes["assurance"]["supports"]),
             set(planes) - {"assurance"},
         )
+        self.assertEqual(
+            planes["truth"]["canonical_inputs"],
+            [
+                "external SourceArtifact records",
+                "valuation inputs",
+                "reconciliation artifacts and results awaiting truth admission",
+            ],
+        )
+        self.assertIn(
+            "admitted Knowledge output consumption",
+            planes["truth"]["forbidden_responsibilities"],
+        )
+        self.assertIn(
+            "admitted Truth output consumption",
+            planes["knowledge"]["forbidden_responsibilities"],
+        )
+        self.assertIn("ReviewStateVersion", planes["judgment"]["owned_objects"])
+        self.assertIn("DecisionValidity", planes["judgment"]["owned_objects"])
+        self.assertEqual(
+            planes["product"]["canonical_outputs"],
+            ["human commands", "explanations", "presentation and session state", "navigation"],
+        )
 
     def test_reverse_plane_dependency_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])
@@ -158,6 +180,34 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         planes["truth"]["depends_on"] = ["product"]
         with self.assertRaisesRegex(ValueError, "reverse dependency truth -> product"):
             validate_plane_model(model)
+
+    def test_equal_rank_plane_dependency_is_rejected(self) -> None:
+        model = copy.deepcopy(load_layer_matrix()["plane_model"])
+        planes = {plane["name"]: plane for plane in model["planes"]}
+        planes["truth"]["depends_on"] = ["knowledge"]
+        with self.assertRaisesRegex(ValueError, "reverse dependency truth -> knowledge"):
+            validate_plane_model(model)
+
+    def test_assurance_dependency_on_domain_plane_is_rejected(self) -> None:
+        model = copy.deepcopy(load_layer_matrix()["plane_model"])
+        planes = {plane["name"]: plane for plane in model["planes"]}
+        planes["assurance"]["depends_on"] = ["truth"]
+        with self.assertRaisesRegex(ValueError, "horizontal plane assurance cannot join"):
+            validate_plane_model(model)
+
+    def test_assurance_support_must_be_complete_and_unique(self) -> None:
+        for mutation in ("missing", "duplicate"):
+            with self.subTest(mutation=mutation):
+                model = copy.deepcopy(load_layer_matrix()["plane_model"])
+                planes = {plane["name"]: plane for plane in model["planes"]}
+                if mutation == "missing":
+                    planes["assurance"]["supports"].remove("product")
+                else:
+                    planes["assurance"]["supports"].append("truth")
+                with self.assertRaisesRegex(
+                    ValueError, "assurance must support every domain plane exactly once"
+                ):
+                    validate_plane_model(model)
 
     def test_duplicate_plane_ownership_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])

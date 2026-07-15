@@ -20,7 +20,7 @@ truth. It does not create another registry, service diagram, or runtime layer.
 
 ## Reference-First decision
 
-Classification: B/C.
+Classification: B.
 
 - Adopt ADR/MADR decision records, layered/hexagonal dependency direction, and
   the repository's existing executable import graph.
@@ -40,13 +40,13 @@ The seven domain/product planes and horizontal Assurance are canonical:
 
 | Plane | Purpose | Canonical inputs | Canonical outputs | Owned object families | Forbidden responsibilities | May depend on |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Truth** | Admit trustworthy, versioned facts about the person's capital world. | Source observations, immutable source artifacts, valuation/reconciliation evidence. | Admitted CapitalState versions and truth findings. | ImportBatch, ImportManifest, CapitalStateVersion, CapitalTruthAdmission. | Evidence interpretation, decision choice, authority grant, product workflow. | None. |
-| **Knowledge** | Admit observations and claims with provenance, uncertainty, and counter-evidence. | Source artifacts, external observations, research outputs. | Admitted EvidenceSet versions, gaps, and conflicts. | Observation, Claim, EvidenceSetVersion, EvidenceAdmission. | Capital totals, decision choice, authority grant, external effects. | None. |
+| **Truth** | Admit trustworthy, versioned facts about the person's capital world. | External SourceArtifact records, valuation inputs, reconciliation artifacts/results awaiting truth admission. | Admitted CapitalState versions and truth findings. | ImportBatch, ImportManifest, CapitalStateVersion, CapitalTruthAdmission. | Consuming admitted Knowledge outputs, evidence interpretation, decision choice, authority grant, product workflow. | None. |
+| **Knowledge** | Admit observations and claims with provenance, uncertainty, and counter-evidence. | External SourceArtifact records, external observations, research outputs. | Admitted EvidenceSet versions, gaps, and conflicts. | Observation, Claim, EvidenceSetVersion, EvidenceAdmission. | Consuming admitted Truth outputs, capital totals, decision choice, authority grant, external effects. | None. |
 | **Control** | Resolve identity, mandate, authority, capability, and admission limits. | Human constitutional choices, admitted capital truth, authenticated principal context. | Effective mandate/authority views and typed admission decisions. | Principal, CapitalMandateVersion, AgentAuthorityGrant, AdmissionDecision. | Fact creation, evidence interpretation, strategy choice, effect execution. | Truth. |
-| **Judgment** | Compare scenarios and risk to produce a version-bound human capital decision. | Admitted CapitalState and EvidenceSet versions, effective control views. | DecisionCase versions, readiness/validity, recorded decisions. | DecisionCaseVersion, ScenarioVersion, DecisionReadiness, DecisionRecord. | Source ingestion, authority expansion, Agent runtime control, effects. | Truth, Knowledge, Control. |
+| **Judgment** | Compare scenarios and risk to produce a version-bound human capital decision. | Admitted CapitalState and EvidenceSet versions, effective control views. | DecisionCase versions, readiness/validity, recorded decisions. | DecisionCaseVersion, ScenarioVersion, ReviewStateVersion, DecisionReadiness, DecisionValidity, DecisionRecord. | Source ingestion, authority expansion, Agent runtime control, effects. | Truth, Knowledge, Control. |
 | **Agent** | Perform bounded observation, reasoning, tool use, replanning, and handoff. | Admitted truth/evidence, judgment context, effective control views. | Typed work results, candidates, gaps, escalations, handoffs. | AgentWorkRequest, AgentWorkObservation, AgentWorkResult, HumanHandoff. | Canonical fact mutation, human-decision impersonation, self-granted authority, direct effects. | Truth, Knowledge, Judgment, Control. |
 | **Action/Learning** | Execute admitted actions through deterministic engines and review outcomes without automatic policy mutation. | Valid decisions, effective control views, admitted action requests, reconciled outcome facts. | Effect/reconciliation results, OutcomeReview, LessonCandidate. | ActionRequest, EffectResult, OutcomeReview, LessonCandidate. | Decision authorship, authority expansion, automatic policy update, unadmitted fact writeback. | Truth, Knowledge, Judgment, Control, Agent. |
-| **Product** | Let a human discover, compare, decide, return, review, and learn without internal proof vocabulary. | Domain read models, review commands, Agent handoffs, outcome views. | Human commands, explanations, review state, navigation. | DecisionWorkspace, ReviewJourney, RecoverySurface, ProductExplanation. | Canonical domain truth, inferred policy, hidden authority, duplicated domain workflows. | Every domain plane. |
+| **Product** | Let a human discover, compare, decide, return, review, and learn without internal proof vocabulary. | Domain read models, review commands, Agent handoffs, outcome views. | Human commands, explanations, presentation/session state, navigation. | DecisionWorkspace, ReviewJourney, RecoverySurface, ProductExplanation. | Canonical domain truth, inferred policy, hidden authority, duplicated domain workflows. | Every domain plane. |
 | **Assurance** | Supply transactions, recovery, indexes, security, CI, observability, and falsifiable proof. | Domain invariants, failure models, repository/runtime events. | Mechanical guarantees, degraded-state evidence, verification results. | IntegrityReceipt, RecoveryProof, ArchitectureAudit, VerificationManifest. | Product roadmap, capital semantics, decision policy, permanent Program ownership. | Horizontal support; not a domain-DAG node. |
 
 Exact names, ranks, dependencies, and object ownership live in the existing
@@ -66,10 +66,22 @@ Truth ─> Control ────────┘      └────────�
 Assurance supports every plane horizontally; it is not a product step.
 ```
 
+Truth and Knowledge are independent rank-0 roots. They may reference the same
+external `SourceArtifact`, but neither may consume the other's admitted
+canonical output. A cross-domain comparison belongs in Judgment, which consumes
+the admitted outputs of both roots. `Observation`, `Claim`,
+`EvidenceSetVersion`, and `EvidenceAdmission` therefore always mean
+Knowledge-owned objects; Truth inputs use source records, valuation inputs, and
+reconciliation artifacts/results awaiting Truth admission.
+
 Outputs that conceptually feed an earlier plane cross a new admission boundary:
 
 - an execution observation is a Knowledge candidate, not admitted Evidence;
 - a reconciled balance is a Truth input, not a direct CapitalState mutation;
+- an `EffectResult` or execution event remains Action/Learning-owned; a
+  reconciliation adapter turns it into an artifact awaiting Truth admission,
+  Truth admits a new CapitalState or execution-fact projection, and Judgment
+  consumes only that admitted Truth output to recompute `DecisionValidity`;
 - a LessonCandidate is not a policy or mandate update;
 - an Agent result is not a human DecisionRecord.
 
@@ -118,8 +130,9 @@ Truth owns CapitalStateVersion
 Knowledge owns CapitalStateVersion
 ```
 
-Rejected. Knowledge may supply evidence used by Truth admission, but it cannot
-be a second owner of CapitalStateVersion.
+Rejected. Truth and Knowledge may reference the same external SourceArtifact,
+but they do not consume each other's admitted canonical outputs and cannot be
+co-owners of CapitalStateVersion.
 
 ### Assurance product capture
 
@@ -146,9 +159,12 @@ Rejected. Proof supports Product; it does not become the product or roadmap.
 ## Consequences
 
 New Issues and ADRs can name one primary owner while acknowledging downstream
-effects. #403, #404, and #405 may refine identity, record, and Agent object
-semantics, but they must preserve this direction or explicitly supersede this
-ADR. Action and learning remain gated; this decision authorizes no live effect.
+effects. #271 must keep DecisionValidity in Judgment: execution state reaches
+it only after Action/Learning output is readmitted through Truth, never through
+a direct Judgment dependency on Action/Learning. #403, #404, and #405 may
+refine identity, record, and Agent object semantics, but they must preserve this
+direction or explicitly supersede this ADR. Action and learning remain gated;
+this decision authorizes no live effect.
 
 No service, database, runtime framework, dependency, or module move is created
 by this ADR.
@@ -162,5 +178,6 @@ task docs:current-check
 task check:ci
 ```
 
-The destructive fixtures must reject both `Truth -> Product` and duplicate
-`CapitalStateVersion` ownership.
+The destructive fixtures must reject reverse and equal-rank dependencies,
+duplicate `CapitalStateVersion` ownership, Assurance joining the domain DAG,
+and incomplete or duplicate Assurance support.

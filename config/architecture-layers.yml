@@ -14,19 +14,19 @@ plane_model:
       kind: domain
       dependency_rank: 0
       purpose: Admit trustworthy, versioned facts about the person's capital world.
-      canonical_inputs: [source observations, immutable source artifacts, valuation and reconciliation evidence]
+      canonical_inputs: [external SourceArtifact records, valuation inputs, reconciliation artifacts and results awaiting truth admission]
       canonical_outputs: [admitted CapitalState versions, capital-truth findings]
       owned_objects: [ImportBatch, ImportManifest, CapitalStateVersion, CapitalTruthAdmission]
-      forbidden_responsibilities: [evidence interpretation, decision choice, authority grant, user workflow]
+      forbidden_responsibilities: [admitted Knowledge output consumption, evidence interpretation, decision choice, authority grant, user workflow]
       depends_on: []
     - name: knowledge
       kind: domain
       dependency_rank: 0
       purpose: Admit observations and claims with provenance, uncertainty, and counter-evidence.
-      canonical_inputs: [source artifacts, external observations, research outputs]
+      canonical_inputs: [external SourceArtifact records, external observations, research outputs]
       canonical_outputs: [admitted EvidenceSet versions, evidence gaps and conflicts]
       owned_objects: [Observation, Claim, EvidenceSetVersion, EvidenceAdmission]
-      forbidden_responsibilities: [capital-state totals, decision choice, authority grant, external effect]
+      forbidden_responsibilities: [admitted Truth output consumption, capital-state totals, decision choice, authority grant, external effect]
       depends_on: []
     - name: control
       kind: domain
@@ -43,7 +43,7 @@ plane_model:
       purpose: Compare scenarios and risk to produce a version-bound human capital decision.
       canonical_inputs: [admitted CapitalState versions, admitted EvidenceSet versions, effective control views]
       canonical_outputs: [DecisionCase versions, decision readiness and validity, recorded decisions]
-      owned_objects: [DecisionCaseVersion, ScenarioVersion, DecisionReadiness, DecisionRecord]
+      owned_objects: [DecisionCaseVersion, ScenarioVersion, ReviewStateVersion, DecisionReadiness, DecisionValidity, DecisionRecord]
       forbidden_responsibilities: [source ingestion, authority expansion, Agent runtime control, effect execution]
       depends_on: [truth, knowledge, control]
     - name: agent
@@ -69,7 +69,7 @@ plane_model:
       dependency_rank: 5
       purpose: Let a human discover, compare, decide, return, review, and learn without internal proof vocabulary.
       canonical_inputs: [domain read models, review commands, Agent handoffs, outcome views]
-      canonical_outputs: [human commands, explanations, review state and navigation]
+      canonical_outputs: [human commands, explanations, presentation and session state, navigation]
       owned_objects: [DecisionWorkspace, ReviewJourney, RecoverySurface, ProductExplanation]
       forbidden_responsibilities: [canonical domain truth, policy inference, hidden authority, duplicated domain workflow]
       depends_on: [truth, knowledge, judgment, control, agent, action-learning]
