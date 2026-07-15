@@ -15,6 +15,7 @@ import yaml
 from finharness.project_paths import ROOT
 
 DEFAULT_MATRIX_PATH = ROOT / "config" / "architecture-layers.yml"
+PLANE_MODEL_SCHEMA = "finharness.plane_model.v1"
 
 
 @dataclass(frozen=True)
@@ -212,6 +213,142 @@ def _matches(value: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(value, pattern) for pattern in patterns)
 
 
+def _required_string_list(plane: dict[str, Any], field: str) -> list[str]:
+    values = plane.get(field)
+    if (
+        not isinstance(values, list)
+        or not values
+        or any(not isinstance(value, str) or not value.strip() for value in values)
+    ):
+        raise ValueError(f"plane {plane.get('name', '<unknown>')} requires non-empty {field}")
+    return values
+
+
+def _validate_plane_shape(name: str, plane: dict[str, Any]) -> list[str]:
+    purpose = plane.get("purpose")
+    if not isinstance(purpose, str) or not purpose.strip():
+        raise ValueError(f"plane {name} requires a purpose")
+    for field in (
+        "canonical_inputs",
+        "canonical_outputs",
+        "owned_objects",
+        "forbidden_responsibilities",
+    ):
+        _required_string_list(plane, field)
+    dependencies = plane.get("depends_on", [])
+    if not isinstance(dependencies, list) or any(
+        not isinstance(dependency, str) for dependency in dependencies
+    ):
+        raise ValueError(f"plane {name} depends_on must be a string list")
+    if len(dependencies) != len(set(dependencies)):
+        raise ValueError(f"plane {name} has duplicate dependencies")
+    return dependencies
+
+
+def _validate_domain_plane(
+    name: str,
+    plane: dict[str, Any],
+    dependencies: list[str],
+    *,
+    by_name: dict[str, dict[str, Any]],
+    domain_names: set[str],
+) -> None:
+    rank = plane.get("dependency_rank")
+    if not isinstance(rank, int) or isinstance(rank, bool) or rank < 0:
+        raise ValueError(f"domain plane {name} requires a non-negative dependency_rank")
+    for dependency in dependencies:
+        if dependency not in domain_names:
+            raise ValueError(f"domain plane {name} has non-domain dependency {dependency}")
+        target_rank = by_name[dependency].get("dependency_rank")
+        if not isinstance(target_rank, int) or target_rank >= rank:
+            raise ValueError(
+                f"reverse dependency {name} -> {dependency} violates dependency rank"
+            )
+
+
+def _validate_horizontal_plane(
+    name: str,
+    plane: dict[str, Any],
+    dependencies: list[str],
+    *,
+    domain_names: set[str],
+) -> None:
+    if dependencies:
+        raise ValueError(f"horizontal plane {name} cannot join the domain DAG")
+    supports = plane.get("supports")
+    if (
+        not isinstance(supports, list)
+        or len(supports) != len(domain_names)
+        or set(supports) != domain_names
+    ):
+        raise ValueError("assurance must support every domain plane exactly once")
+
+
+def _record_owned_objects(
+    name: str,
+    plane: dict[str, Any],
+    object_owners: dict[str, str],
+) -> None:
+    for owned_object in plane["owned_objects"]:
+        previous = object_owners.get(owned_object)
+        if previous is not None:
+            raise ValueError(
+                f"owned object {owned_object} has multiple planes: {previous}, {name}"
+            )
+        object_owners[owned_object] = name
+
+
+def validate_plane_model(model: dict[str, Any]) -> None:
+    """Validate the canonical conceptual plane DAG in the existing matrix."""
+
+    if not isinstance(model, dict) or model.get("schema") != PLANE_MODEL_SCHEMA:
+        raise ValueError("unsupported architecture plane model")
+    planes = model.get("planes")
+    if not isinstance(planes, list) or not planes:
+        raise ValueError("architecture plane model requires planes")
+
+    names = [plane.get("name") for plane in planes if isinstance(plane, dict)]
+    if len(names) != len(planes) or any(not isinstance(name, str) for name in names):
+        raise ValueError("every architecture plane requires a name")
+    if len(names) != len(set(names)):
+        raise ValueError("architecture plane names must be unique")
+
+    by_name = {str(plane["name"]): plane for plane in planes}
+    domain_names = {
+        name for name, plane in by_name.items() if plane.get("kind") == "domain"
+    }
+    horizontal_names = {
+        name for name, plane in by_name.items() if plane.get("kind") == "horizontal"
+    }
+    if horizontal_names != {"assurance"}:
+        raise ValueError("assurance must be the sole horizontal plane")
+    if not domain_names:
+        raise ValueError("architecture plane model requires domain planes")
+
+    object_owners: dict[str, str] = {}
+    for name, plane in by_name.items():
+        dependencies = _validate_plane_shape(name, plane)
+        _record_owned_objects(name, plane, object_owners)
+
+        if plane.get("kind") == "domain":
+            _validate_domain_plane(
+                name,
+                plane,
+                dependencies,
+                by_name=by_name,
+                domain_names=domain_names,
+            )
+        elif plane.get("kind") == "horizontal":
+            _validate_horizontal_plane(
+                name,
+                plane,
+                dependencies,
+                domain_names=domain_names,
+            )
+        else:
+            raise ValueError(f"plane {name} has unsupported kind {plane.get('kind')}")
+
+
 def classify_modules(modules: set[str], matrix: dict[str, Any]) -> dict[str, str]:
     result: dict[str, str] = {}
     for module in sorted(modules):
@@ -314,6 +451,8 @@ def load_layer_matrix(path: Path = DEFAULT_MATRIX_PATH) -> dict[str, Any]:
         raise ValueError("unsupported architecture layer matrix")
     if not payload.get("layers") or not payload.get("rules"):
         raise ValueError("architecture layer matrix requires layers and rules")
+    if "plane_model" in payload:
+        validate_plane_model(payload["plane_model"])
     return payload
 
 
@@ -327,6 +466,7 @@ def audit_architecture(
     modules, edges = build_canonical_import_graph(root, source_roots)
     cycles = strongly_connected_components(set(modules), edges)
     violations = boundary_violations(set(modules), edges, matrix)
+    plane_model = matrix.get("plane_model")
     return {
         "schema": "finharness.architecture_audit.v1",
         "matrix_schema": matrix["schema"],
@@ -334,6 +474,12 @@ def audit_architecture(
         "edge_count": len(edges),
         "cycles": [list(component) for component in cycles],
         "violations": [violation.as_dict() for violation in violations],
+        "plane_count": len(plane_model["planes"]) if plane_model else 0,
+        "plane_dependency_edges": (
+            sum(len(plane.get("depends_on", [])) for plane in plane_model["planes"])
+            if plane_model
+            else 0
+        ),
         "ok": not cycles and not violations,
     }
 

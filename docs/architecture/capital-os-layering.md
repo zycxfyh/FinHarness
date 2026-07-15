@@ -12,6 +12,20 @@
 >
 > modular monolith,不是微服务。新功能**先选归属层**(见 [system-map](system-map.md) 的 deep modules),再实现。
 
+## Canonical plane model
+
+L0-L8 是产品与实现展示，不再承担规范性 ownership。规范词表由
+[Plane Model ADR](../adr/2026-07-16-finharness-plane-model-and-dependency-direction.md)
+和现有 `config/architecture-layers.yml` 共同定义：**Truth、Knowledge、
+Control、Judgment、Agent、Action/Learning、Product**，以及横向
+**Assurance**。当前模块可以跨多个关注点，但每个对象和 backlog 变更只有一个
+primary plane；Python import layers 仍独立描述当前代码事实。
+
+依赖只消费较低层的 admitted output。Action/Learning 产生的 observation、
+reconciliation 或 LessonCandidate 若要回到 Knowledge、Truth 或 Control，必须重新
+通过对应 admission，而不是形成反向写入。Assurance 提供事务、恢复、索引、CI 和
+proof，不是第八个产品步骤。
+
 ## 为什么换图
 
 旧的 "十层 LangGraph 链"(market data → indicators → events → interpretation →
