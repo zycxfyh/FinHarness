@@ -205,7 +205,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 11
+CURRENT_STATE_CORE_USER_VERSION = 12
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -338,6 +338,24 @@ def _migrate_add_agent_authority_grant_bindings(connection: Connection) -> None:
             f"ix_agent_authority_grants_{name} "
             f"ON agent_authority_grants ({name})"
         )
+
+
+def _migrate_add_agent_authority_currency_bindings(connection: Connection) -> None:
+    """Add nullable currency bindings without guessing currency for legacy authority."""
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    additions = {
+        "agent_authority_grants": {"notional_currency": "VARCHAR"},
+        "agent_authority_grant_consumptions": {"requested_notional_currency": "VARCHAR"},
+    }
+    for table, table_additions in additions.items():
+        if table not in tables:
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        for name, declaration in table_additions.items():
+            if name not in columns:
+                connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
 
 def _migrate_add_import_provenance_tables(connection: Connection) -> None:
@@ -493,6 +511,7 @@ def migrate_state_core(engine: Engine) -> None:
         (9, _migrate_add_canonical_identities),
         (10, _migrate_position_valuation_contract),
         (11, _migrate_add_import_correction_semantics),
+        (12, _migrate_add_agent_authority_currency_bindings),
     )
     try:
         with engine.connect() as connection:

@@ -34,6 +34,7 @@ from finharness.statecore.models import (
     CapitalMandateVersion,
     ReceiptIndex,
 )
+from finharness.statecore.money import MonetaryAmount
 from finharness.statecore.receipt_io import (
     atomic_write_json,
     remove_file_best_effort,
@@ -56,6 +57,8 @@ AgentAuthorityGrantDenyReason = Literal[
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "legacy_currency_unbound_grant",
+    "currency_mismatch",
     "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
@@ -77,6 +80,8 @@ AGENT_AUTHORITY_GRANT_DENY_REASONS: tuple[str, ...] = (
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "legacy_currency_unbound_grant",
+    "currency_mismatch",
     "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
@@ -92,9 +97,21 @@ AGENT_AUTHORITY_GRANT_DENY_REASONS: tuple[str, ...] = (
     "forbidden_preflight_bypass_semantics",
 )
 
-_AUTONOMY_RANK = {
-    level: index for index, level in enumerate(CAPITAL_MANDATE_AUTONOMY_LEVELS)
-}
+_AUTONOMY_RANK = {level: index for index, level in enumerate(CAPITAL_MANDATE_AUTONOMY_LEVELS)}
+_GRANT_SCOPE_FIELDS = frozenset(
+    {
+        "allowed_asset_classes",
+        "allowed_action_types",
+        "autonomy_level",
+        "product_ids",
+        "instrument_ids",
+        "action_types",
+        "directions",
+        "broker_ids",
+        "max_notional",
+    }
+)
+_GRANT_SCOPE_SET_FIELDS = _GRANT_SCOPE_FIELDS - {"autonomy_level", "max_notional"}
 _TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 _FORBIDDEN_SCOPE_TOKENS: dict[str, AgentAuthorityGrantDenyReason] = {
     "execute": "forbidden_execution_semantics",
@@ -144,9 +161,9 @@ class AgentAuthorityGrantConsumptionResult(BaseModel):
 
     consumption: AgentAuthorityGrantConsumption
     usage_count: int
-    used_notional: Decimal
+    used_notional: MonetaryAmount
     remaining_uses: int | None = None
-    remaining_notional: Decimal | None = None
+    remaining_notional: MonetaryAmount | None = None
     execution_allowed: bool = False
     authority_transition: bool = False
 
@@ -169,7 +186,7 @@ def record_agent_authority_grant(  # noqa: C901
     principal_id: str | None = None,
     agent_runtime_id: str | None = None,
     max_uses: int | None = None,
-    max_total_notional: Decimal | str | None = None,
+    max_total_notional: MonetaryAmount | Mapping[str, Any] | None = None,
 ) -> AgentAuthorityGrant:
     """Create a receipt-backed active AgentAuthorityGrant.
 
@@ -185,6 +202,10 @@ def record_agent_authority_grant(  # noqa: C901
     )
     _validate_expiry(expires_at_utc, created_at_utc=created_at)
     scope = dict(grant_scope or {})
+    if not _scope_contract_valid(scope):
+        raise AgentAuthorityGrantValidationError(
+            "grant_scope violates the closed structured scope contract"
+        )
     if _forbidden_scope_reasons(scope):
         raise AgentAuthorityGrantValidationError("grant_scope contains forbidden semantics")
 
@@ -220,18 +241,33 @@ def record_agent_authority_grant(  # noqa: C901
         raise AgentAuthorityGrantValidationError("agent_runtime_id is required")
     if max_uses is not None and max_uses <= 0:
         raise AgentAuthorityGrantValidationError("max_uses must be positive")
-    parsed_max_notional = (
-        Decimal(str(max_total_notional)) if max_total_notional is not None else None
+    parsed_max_notional = _require_money(
+        max_total_notional,
+        field_name="max_total_notional",
+        required=False,
     )
-    if parsed_max_notional is not None and parsed_max_notional <= 0:
-        raise AgentAuthorityGrantValidationError("max_total_notional must be positive")
-    mandate_notional = _money_amount(mandate_version.typed_limits.get("max_notional"))
+    if parsed_max_notional is not None and parsed_max_notional.amount <= 0:
+        raise AgentAuthorityGrantValidationError("max_total_notional amount must be positive")
+    mandate_notional = _money_value(mandate_version.typed_limits.get("max_notional"))
+    if mandate_notional is None:
+        raise AgentAuthorityGrantValidationError(
+            "capital mandate max_notional must carry amount and currency"
+        )
     if parsed_max_notional is not None and (
-        mandate_notional is None or parsed_max_notional > mandate_notional
+        parsed_max_notional.currency != mandate_notional.currency
+        or parsed_max_notional.amount > mandate_notional.amount
     ):
         raise AgentAuthorityGrantValidationError(
-            "max_total_notional exceeds capital mandate limit"
+            "max_total_notional exceeds or crosses capital mandate currency"
         )
+    scope_notional = _money_value(scope.get("max_notional"))
+    notional_currency = (
+        parsed_max_notional.currency
+        if parsed_max_notional is not None
+        else scope_notional.currency
+        if scope_notional is not None
+        else mandate_notional.currency
+    )
 
     resolved_id = (
         _safe_id(agent_authority_grant_id)
@@ -264,7 +300,10 @@ def record_agent_authority_grant(  # noqa: C901
         issued_against_mandate_receipt_ref=mandate_receipt_ref,
         expires_at_utc=expires_at_utc,
         max_uses=max_uses,
-        max_total_notional=parsed_max_notional,
+        max_total_notional=(
+            parsed_max_notional.amount if parsed_max_notional is not None else None
+        ),
+        notional_currency=notional_currency,
         source_refs=list(source_refs or []),
         receipt_refs=resolved_receipt_refs,
         non_claims=list(AGENT_AUTHORITY_GRANT_NON_CLAIMS),
@@ -284,8 +323,7 @@ def record_agent_authority_grant(  # noqa: C901
     )
     if not creation_validation.allowed:
         raise AgentAuthorityGrantValidationError(
-            "grant creation validation failed: "
-            + ", ".join(creation_validation.deny_reasons)
+            "grant creation validation failed: " + ", ".join(creation_validation.deny_reasons)
         )
 
     atomic_write_json(
@@ -330,7 +368,7 @@ def validate_agent_authority_grant(  # noqa: C901
     principal_id: str | None = None,
     agent_runtime_id: str | None = None,
     nonce: str | None = None,
-    requested_notional: Decimal | str | None = None,
+    requested_notional: MonetaryAmount | Mapping[str, Any] | None = None,
     candidate_grant: AgentAuthorityGrant | None = None,
 ) -> AgentAuthorityGrantValidationResult:
     """Dynamically validate a grant against current grant and mandate state."""
@@ -382,30 +420,51 @@ def validate_agent_authority_grant(  # noqa: C901
         or mandate_version.capital_mandate_id != grant.capital_mandate_id
     ):
         deny_reasons.append("mandate_version_changed")
-    if resolution is not None and resolution.version is not None and (
-        resolution.version.principal_id != grant.principal_id
-        or resolution.version.capital_mandate_id != grant.capital_mandate_id
-        or resolution.version.mandate_version_id != grant.mandate_version_id
+    if (
+        resolution is not None
+        and resolution.version is not None
+        and (
+            resolution.version.principal_id != grant.principal_id
+            or resolution.version.capital_mandate_id != grant.capital_mandate_id
+            or resolution.version.mandate_version_id != grant.mandate_version_id
+        )
     ):
         deny_reasons.append("mandate_version_changed")
 
     if candidate_grant is None:
         consumptions = _grant_consumptions(engine, grant.agent_authority_grant_id)
         usage_count = len(consumptions)
+        if grant.notional_currency is None:
+            deny_reasons.append("legacy_currency_unbound_grant")
+        consumption_currency_valid = grant.notional_currency is not None and all(
+            item.requested_notional_currency == grant.notional_currency for item in consumptions
+        )
+        if not consumption_currency_valid and consumptions:
+            deny_reasons.append("currency_mismatch")
         used_notional = sum(
             (item.requested_notional for item in consumptions),
             start=Decimal("0"),
         )
         if grant.max_uses is not None and usage_count >= grant.max_uses:
             deny_reasons.append("grant_exhausted")
-        parsed_requested_notional = (
-            Decimal(str(requested_notional)) if requested_notional is not None else None
-        )
-        if grant.max_total_notional is not None and (
-            used_notional >= grant.max_total_notional
-            or (
-                parsed_requested_notional is not None
-                and used_notional + parsed_requested_notional > grant.max_total_notional
+        parsed_requested_notional = _money_value(requested_notional)
+        if requested_notional is not None and parsed_requested_notional is None:
+            deny_reasons.append("currency_mismatch")
+        if parsed_requested_notional is not None and (
+            grant.notional_currency is None
+            or parsed_requested_notional.currency != grant.notional_currency
+        ):
+            deny_reasons.append("currency_mismatch")
+        if (
+            grant.max_total_notional is not None
+            and consumption_currency_valid
+            and (
+                used_notional >= grant.max_total_notional
+                or (
+                    parsed_requested_notional is not None
+                    and parsed_requested_notional.currency == grant.notional_currency
+                    and used_notional + parsed_requested_notional.amount > grant.max_total_notional
+                )
             )
         ):
             deny_reasons.append("grant_notional_exhausted")
@@ -453,7 +512,7 @@ def consume_agent_authority_grant(  # noqa: C901
     agent_runtime_id: str,
     nonce: str,
     requested_scope: Mapping[str, Any],
-    requested_notional: Decimal | str,
+    requested_notional: MonetaryAmount | Mapping[str, Any],
     engine: Engine,
     receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
     now_utc: str | None = None,
@@ -462,9 +521,13 @@ def consume_agent_authority_grant(  # noqa: C901
 
     if not nonce.strip():
         raise AgentAuthorityGrantValidationError("nonce is required")
-    notional = Decimal(str(requested_notional))
-    if notional < 0:
-        raise AgentAuthorityGrantValidationError("requested_notional must be non-negative")
+    notional = _require_money(
+        requested_notional,
+        field_name="requested_notional",
+        required=True,
+    )
+    if notional is None:  # Defensive: required=True is fail-closed.
+        raise AgentAuthorityGrantValidationError("requested_notional is required")
     validation = validate_agent_authority_grant(
         grant_id,
         engine=engine,
@@ -481,11 +544,13 @@ def consume_agent_authority_grant(  # noqa: C901
         )
     validated_grant = _get_agent_authority_grant(engine, grant_id)
     per_use_notional = (
-        _money_amount(validated_grant.grant_scope.get("max_notional"))
+        _money_value(validated_grant.grant_scope.get("max_notional"))
         if validated_grant is not None
         else None
     )
-    if per_use_notional is not None and notional > per_use_notional:
+    if per_use_notional is not None and (
+        notional.currency != per_use_notional.currency or notional.amount > per_use_notional.amount
+    ):
         raise AgentAuthorityGrantValidationError("requested_scope_exceeds_grant")
     created_at = now_utc or _now_utc()
     receipt_id = f"receipt_agent_authority_grant_consumption_{_stamp()}_{uuid4().hex[:8]}"
@@ -531,6 +596,12 @@ def consume_agent_authority_grant(  # noqa: C901
             )
             if any(item.nonce == nonce for item in existing):
                 raise AgentAuthorityGrantValidationError("nonce_replayed")
+            if grant.notional_currency is None:
+                raise AgentAuthorityGrantValidationError("legacy_currency_unbound_grant")
+            if notional.currency != grant.notional_currency or any(
+                item.requested_notional_currency != grant.notional_currency for item in existing
+            ):
+                raise AgentAuthorityGrantValidationError("currency_mismatch")
             usage_count = len(existing)
             used_notional = sum(
                 (item.requested_notional for item in existing),
@@ -540,7 +611,7 @@ def consume_agent_authority_grant(  # noqa: C901
                 raise AgentAuthorityGrantValidationError("grant_exhausted")
             if (
                 grant.max_total_notional is not None
-                and used_notional + notional > grant.max_total_notional
+                and used_notional + notional.amount > grant.max_total_notional
             ):
                 raise AgentAuthorityGrantValidationError("grant_notional_exhausted")
             consumption = AgentAuthorityGrantConsumption(
@@ -551,13 +622,18 @@ def consume_agent_authority_grant(  # noqa: C901
                 mandate_version_id=grant.mandate_version_id,
                 nonce=nonce.strip(),
                 requested_scope=dict(requested_scope),
-                requested_notional=notional,
+                requested_notional=notional.amount,
+                requested_notional_currency=notional.currency,
                 receipt_ref=_display_path(receipt_path),
                 created_at_utc=created_at,
                 as_of_utc=created_at,
             )
             next_count = usage_count + 1
-            next_notional = used_notional + notional
+            next_notional = used_notional + notional.amount
+            next_money = MonetaryAmount(
+                amount=next_notional,
+                currency=grant.notional_currency,
+            )
             payload = {
                 "receipt_id": receipt_id,
                 "kind": "state_core_agent_authority_grant_consumption",
@@ -566,7 +642,7 @@ def consume_agent_authority_grant(  # noqa: C901
                 "validation": validation.model_dump(mode="json"),
                 "usage_after": {
                     "usage_count": next_count,
-                    "used_notional": str(next_notional),
+                    "used_notional": next_money.model_dump(mode="json"),
                 },
                 "execution_allowed": False,
                 "authority_transition": False,
@@ -587,12 +663,15 @@ def consume_agent_authority_grant(  # noqa: C901
             return AgentAuthorityGrantConsumptionResult(
                 consumption=consumption,
                 usage_count=next_count,
-                used_notional=next_notional,
+                used_notional=next_money,
                 remaining_uses=(
                     grant.max_uses - next_count if grant.max_uses is not None else None
                 ),
                 remaining_notional=(
-                    grant.max_total_notional - next_notional
+                    MonetaryAmount(
+                        amount=grant.max_total_notional - next_notional,
+                        currency=grant.notional_currency,
+                    )
                     if grant.max_total_notional is not None
                     else None
                 ),
@@ -637,9 +716,7 @@ def revoke_agent_authority_grant(
             if grant is None:
                 raise KeyError(grant_id)
             if grant.principal_id != principal_id:
-                raise AgentAuthorityGrantValidationError(
-                    "grant revocation principal mismatch"
-                )
+                raise AgentAuthorityGrantValidationError("grant revocation principal mismatch")
             if grant.status not in {"active", "suspended"}:
                 raise AgentAuthorityGrantValidationError(
                     f"cannot revoke grant in {grant.status} state"
@@ -743,6 +820,16 @@ def _scope_within_mandate(
 ) -> bool:
     typed_limits = mandate_version.typed_limits
     policy = mandate_version.policy_payload
+    direction_scope = typed_limits.get("direction_scope", {})
+    broker_scope = typed_limits.get("broker_scope", {})
+    unbounded_keys = tuple(
+        key
+        for key, configured_scope in (
+            ("directions", direction_scope),
+            ("broker_ids", broker_scope),
+        )
+        if isinstance(configured_scope, Mapping) and configured_scope.get("mode") == "wildcard"
+    )
     return _scope_within_scope(
         scope,
         {
@@ -752,11 +839,17 @@ def _scope_within_mandate(
             "product_ids": typed_limits.get("product_ids", []),
             "instrument_ids": typed_limits.get("instrument_ids", []),
             "action_types": typed_limits.get("action_types", []),
+            "directions": (
+                direction_scope.get("values", []) if isinstance(direction_scope, Mapping) else []
+            ),
+            "broker_ids": (
+                broker_scope.get("values", []) if isinstance(broker_scope, Mapping) else []
+            ),
             "max_notional": typed_limits.get("max_notional"),
         },
         restricted_asset_classes=policy.get("restricted_asset_classes", []),
         restricted_action_types=policy.get("restricted_action_types", []),
-        unbounded_keys=("directions", "broker_ids"),
+        unbounded_keys=unbounded_keys,
     )
 
 
@@ -768,6 +861,8 @@ def _scope_within_scope(  # noqa: C901
     restricted_action_types: Sequence[str] | None = None,
     unbounded_keys: Sequence[str] = (),
 ) -> bool:
+    if not _scope_contract_valid(requested):
+        return False
     requested_assets = _string_set(requested.get("allowed_asset_classes"))
     allowed_assets = _string_set(allowed.get("allowed_asset_classes"))
     restricted_assets = _string_set(restricted_asset_classes)
@@ -798,12 +893,19 @@ def _scope_within_scope(  # noqa: C901
         if requested_values and (not allowed_values or requested_values - allowed_values):
             return False
 
-    requested_notional = _money_amount(requested.get("max_notional"))
-    allowed_notional = _money_amount(allowed.get("max_notional"))
-    if requested_notional is not None and (
-        allowed_notional is None or requested_notional > allowed_notional
-    ):
+    requested_notional_value = requested.get("max_notional")
+    allowed_notional_value = allowed.get("max_notional")
+    requested_notional = _money_value(requested_notional_value)
+    allowed_notional = _money_value(allowed_notional_value)
+    if requested_notional_value is not None and requested_notional is None:
         return False
+    if requested_notional is not None:
+        if allowed_notional is None:
+            return False
+        if requested_notional.currency != allowed_notional.currency:
+            return False
+        if requested_notional.amount > allowed_notional.amount:
+            return False
 
     requested_autonomy = requested.get("autonomy_level")
     if requested_autonomy is not None:
@@ -863,16 +965,61 @@ def _string_set(value: Any) -> set[str]:
     return set()
 
 
-def _money_amount(value: Any) -> Decimal | None:
+def _scope_contract_valid(scope: Mapping[str, Any]) -> bool:
+    if set(scope) - _GRANT_SCOPE_FIELDS:
+        return False
+    for key in _GRANT_SCOPE_SET_FIELDS:
+        value = scope.get(key)
+        if value is None:
+            continue
+        values: Sequence[Any]
+        if isinstance(value, str):
+            values = (value,)
+        elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+            values = value
+        else:
+            return False
+        if any(
+            not isinstance(item, str) or not item.strip() or item != item.strip() or item == "*"
+            for item in values
+        ):
+            return False
+        if len(values) != len(set(values)):
+            return False
+    autonomy = scope.get("autonomy_level")
+    if autonomy is not None and not isinstance(autonomy, str):
+        return False
+    notional = scope.get("max_notional")
+    return notional is None or _money_value(notional) is not None
+
+
+def _money_value(value: Any) -> MonetaryAmount | None:
     if value is None:
         return None
-    if isinstance(value, Mapping):
-        value = value.get("amount")
+    if isinstance(value, MonetaryAmount):
+        return value
     try:
-        amount = Decimal(str(value))
-    except Exception:
+        return MonetaryAmount.model_validate(value)
+    except (TypeError, ValueError):
         return None
-    return amount if amount >= 0 else None
+
+
+def _require_money(
+    value: MonetaryAmount | Mapping[str, Any] | None,
+    *,
+    field_name: str,
+    required: bool,
+) -> MonetaryAmount | None:
+    if value is None:
+        if required:
+            raise AgentAuthorityGrantValidationError(f"{field_name} is required")
+        return None
+    parsed = _money_value(value)
+    if parsed is None:
+        raise AgentAuthorityGrantValidationError(
+            f"{field_name} must contain an exact amount and currency"
+        )
+    return parsed
 
 
 def _dedupe_reasons(

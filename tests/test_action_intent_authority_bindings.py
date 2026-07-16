@@ -67,6 +67,9 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
             allowed_action_types=["rebalance", "raise_cash"],
             restricted_action_types=["open_margin"],
             autonomy_level="L1_candidate_only",
+            typed_limits={
+                "max_notional": {"amount": "1000", "currency": "USD"},
+            },
             human_attester="owner@example.com",
             human_reason="Attest mandate scope for authority binding tests.",
             explicit_confirmation=True,

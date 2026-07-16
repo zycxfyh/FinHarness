@@ -316,6 +316,55 @@ class StateCoreStoreTest(unittest.TestCase):
             )
         migrate_state_core(engine)
 
+    def test_migration_adds_currency_bindings_without_guessing_legacy_currency(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE agent_authority_grants (agent_authority_grant_id VARCHAR PRIMARY KEY)"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE agent_authority_grant_consumptions ("
+                "grant_consumption_id VARCHAR PRIMARY KEY)"
+            )
+            connection.exec_driver_sql("INSERT INTO agent_authority_grants VALUES ('legacy-grant')")
+            connection.exec_driver_sql(
+                "INSERT INTO agent_authority_grant_consumptions VALUES ('legacy-consumption')"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 11")
+
+        migrate_state_core(engine)
+
+        inspector = inspect(engine)
+        self.assertIn(
+            "notional_currency",
+            {column["name"] for column in inspector.get_columns("agent_authority_grants")},
+        )
+        self.assertIn(
+            "requested_notional_currency",
+            {
+                column["name"]
+                for column in inspector.get_columns("agent_authority_grant_consumptions")
+            },
+        )
+        with engine.connect() as connection:
+            self.assertIsNone(
+                connection.execute(
+                    text("SELECT notional_currency FROM agent_authority_grants")
+                ).scalar_one()
+            )
+            self.assertIsNone(
+                connection.execute(
+                    text(
+                        "SELECT requested_notional_currency FROM agent_authority_grant_consumptions"
+                    )
+                ).scalar_one()
+            )
+            self.assertEqual(
+                int(connection.execute(text("PRAGMA user_version")).scalar_one()),
+                CURRENT_STATE_CORE_USER_VERSION,
+            )
+        migrate_state_core(engine)
+
     def test_migration_marks_legacy_import_semantics_unknown(self) -> None:
         engine = open_state_core(self.db_path, create=True)
         with engine.begin() as connection:

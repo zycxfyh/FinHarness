@@ -44,6 +44,9 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
             allowed_action_types=["rebalance", "raise_cash"],
             restricted_action_types=["open_margin"],
             autonomy_level="L3_bounded_delegation_candidate",
+            typed_limits={
+                "max_notional": {"amount": "1000", "currency": "USD"},
+            },
             limit_book={"max_notional_usd": 1000},
             kill_switch_rules=[{"rule": "owner_revokes", "engaged": False}],
             human_attester="owner@example.com",

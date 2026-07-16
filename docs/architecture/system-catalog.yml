@@ -121,7 +121,7 @@ systems:
   - id: ips_policy
     name: IPS / Policy / Authority Credentials
     status: current
-    summary: User-owned Investment Policy Statement, descriptive compliance checks, immutable principal-bound CapitalMandate versions with append-only lifecycle resolution, and mandate-bound AgentAuthorityGrant credentials with dynamic validation and closed deny reasons.
+    summary: User-owned Investment Policy Statement, descriptive compliance checks, immutable principal-bound CapitalMandate versions with append-only lifecycle resolution, and currency-aware mandate-bounded AgentAuthorityGrant credentials with dynamic validation and closed deny reasons.
     docs:
       - docs/architecture/capital-os-layering.md
       - docs/architecture/system-map.md
@@ -136,7 +136,7 @@ systems:
       - src/finharness/api/routes_capital_mandates.py
       - src/finharness/statecore/agent_authority_grants.py
       - src/finharness/api/routes_agent_authority_grants.py
-    mature_posture: CapitalMandate versions and lifecycle events are immutable receipt-backed local authority inputs resolved by authenticated principal and time. AgentAuthorityGrant is bound to principal, runtime, and exact mandate version; nonce-unique consumption and owner-only revocation are atomic and receipt-backed, without granting execution authority.
+    mature_posture: CapitalMandate versions and lifecycle events are immutable receipt-backed local authority inputs resolved by authenticated principal and time. AgentAuthorityGrant is bound to principal, runtime, exact mandate version, and one explicit currency; direction and broker scope are mandate-bounded unless explicitly wildcarded, while nonce-unique consumption and owner-only revocation remain atomic and receipt-backed without granting execution authority.
     checks:
       - task governance:check
       - uv run python -m unittest tests.test_ips

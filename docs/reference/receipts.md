@@ -267,9 +267,9 @@ Location: `data/receipts/state-core/agent-authority-grant-consumptions/`
 | --- | --- | --- |
 | `receipt_id` | `str` | Unique consumption receipt id. |
 | `kind` | `str` | `state_core_agent_authority_grant_consumption`. |
-| `consumption` | `AgentAuthorityGrantConsumption` | Principal, runtime, mandate version, nonce, scope, and notional consumed. |
+| `consumption` | `AgentAuthorityGrantConsumption` | Principal, runtime, mandate version, nonce, scope, exact Decimal notional, and explicit accounting currency consumed. |
 | `validation` | `AgentAuthorityGrantValidationResult` | Pre-transaction structured validation evidence. |
-| `usage_after` | `object` | Usage count and aggregate notional after this atomic use. |
+| `usage_after` | `object` | Usage count and aggregate `{amount, currency}` after this atomic use. |
 | `execution_allowed` | `bool` | Always false. |
 | `authority_transition` | `bool` | Always false. |
 

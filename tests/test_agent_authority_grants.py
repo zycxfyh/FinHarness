@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import text
 from sqlmodel import Session
 
 from finharness.api.app import create_app
@@ -54,6 +56,8 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         allowed_asset_classes: list[str] | None = None,
         allowed_action_types: list[str] | None = None,
         autonomy_level: str = "L1_candidate_only",
+        direction_scope: dict[str, object] | None = None,
+        broker_scope: dict[str, object] | None = None,
     ) -> str:
         mandate = record_capital_mandate(
             capital_mandate_id=mandate_id,
@@ -70,6 +74,8 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 "instrument_ids": ["instrument:SPY"],
                 "action_types": ["rebalance", "raise_cash"],
                 "max_notional": {"amount": "1000", "currency": "USD"},
+                "direction_scope": direction_scope or {"mode": "bounded", "values": ["reduce"]},
+                "broker_scope": broker_scope or {"mode": "bounded", "values": ["paper:primary"]},
             },
             human_attester="owner@example.com",
             human_reason="Attest mandate scope for authority grant tests.",
@@ -96,7 +102,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         principal_id: str | None = None,
         agent_runtime_id: str | None = None,
         max_uses: int | None = None,
-        max_total_notional: str | None = None,
+        max_total_notional: dict[str, object] | None = None,
     ) -> AgentAuthorityGrant:
         resolved_mandate_id = mandate_id or self._record_mandate()
         return record_agent_authority_grant(
@@ -338,11 +344,14 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         grant = self._record_grant(
             mandate_id=mandate_id,
             grant_scope=structured_scope,
-            max_total_notional="500",
+            max_total_notional={"amount": "500", "currency": "USD"},
         )
         allowed = validate_agent_authority_grant(
             grant.agent_authority_grant_id,
-            requested_scope={**structured_scope, "max_notional": "25"},
+            requested_scope={
+                **structured_scope,
+                "max_notional": {"amount": "25", "currency": "USD"},
+            },
             engine=self.engine,
         )
         denied = validate_agent_authority_grant(
@@ -360,8 +369,248 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 grant_id="grant_over_limit",
                 mandate_id=mandate_id,
                 grant_scope=structured_scope,
-                max_total_notional="1001",
+                max_total_notional={"amount": "1001", "currency": "USD"},
             )
+
+    def test_currency_is_exact_and_cross_currency_paths_fail_without_side_effects(self) -> None:
+        mandate_id = self._record_mandate()
+        before_receipts = set(self.receipt_root.rglob("*.json"))
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "crosses capital mandate currency",
+        ):
+            self._record_grant(
+                grant_id="grant_jpy",
+                mandate_id=mandate_id,
+                max_total_notional={"amount": "100", "currency": "JPY"},
+            )
+        with Session(self.engine) as session:
+            self.assertIsNone(session.get(AgentAuthorityGrant, "grant_jpy"))
+        self.assertEqual(set(self.receipt_root.rglob("*.json")), before_receipts)
+
+        grant = self._record_grant(
+            grant_id="grant_usd",
+            mandate_id=mandate_id,
+            principal_id="legacy-unverified:owner@example.com",
+            agent_runtime_id="runtime:currency",
+            max_total_notional={"amount": "0.30", "currency": "USD"},
+        )
+        for nonce, amount in (("exact-1", "0.10"), ("exact-2", "0.20")):
+            result = consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=grant.principal_id or "",
+                agent_runtime_id=grant.agent_runtime_id or "",
+                nonce=nonce,
+                requested_scope=self._scope(),
+                requested_notional={"amount": amount, "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(str(result.used_notional.amount), "0.30")
+        self.assertEqual(result.used_notional.currency, "USD")
+        self.assertEqual(str(result.remaining_notional.amount), "0.00")
+        before_consumptions = len(read_all(AgentAuthorityGrantConsumption, engine=self.engine))
+        with self.assertRaisesRegex(AgentAuthorityGrantValidationError, "currency_mismatch"):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=grant.principal_id or "",
+                agent_runtime_id=grant.agent_runtime_id or "",
+                nonce="wrong-currency",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "0", "currency": "JPY"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(
+            len(read_all(AgentAuthorityGrantConsumption, engine=self.engine)),
+            before_consumptions,
+        )
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE agent_authority_grant_consumptions "
+                    "SET requested_notional_currency = 'JPY' "
+                    "WHERE agent_authority_grant_id = :grant_id"
+                ),
+                {"grant_id": grant.agent_authority_grant_id},
+            )
+        mixed_history = validate_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            principal_id=grant.principal_id,
+            agent_runtime_id=grant.agent_runtime_id,
+            requested_scope=self._scope(),
+            requested_notional={"amount": "0", "currency": "USD"},
+            engine=self.engine,
+        )
+        self.assertIn("currency_mismatch", mixed_history.deny_reasons)
+
+    def test_direction_and_broker_are_bounded_unless_mandate_explicitly_wildcards(self) -> None:
+        bounded = self._record_mandate(mandate_id="mandate_bounded_scope")
+        allowed_scope = {
+            **self._scope(),
+            "directions": ["reduce"],
+            "broker_ids": ["paper:primary"],
+        }
+        self._record_grant(
+            grant_id="grant_bounded_scope",
+            mandate_id=bounded,
+            grant_scope=allowed_scope,
+        )
+        for field, value in (
+            ("directions", "increase"),
+            ("broker_ids", "broker:unlisted"),
+        ):
+            with self.assertRaisesRegex(
+                AgentAuthorityGrantValidationError,
+                "grant_scope exceeds",
+            ):
+                self._record_grant(
+                    grant_id=f"grant_bad_{field}",
+                    mandate_id=bounded,
+                    grant_scope={**allowed_scope, field: [value]},
+                )
+
+        wildcard = self._record_mandate(
+            mandate_id="mandate_wildcard_scope",
+            direction_scope={"mode": "wildcard"},
+            broker_scope={"mode": "wildcard"},
+        )
+        wildcard_grant = self._record_grant(
+            grant_id="grant_wildcard_scope",
+            mandate_id=wildcard,
+            grant_scope={
+                **self._scope(),
+                "directions": ["increase"],
+                "broker_ids": ["broker:any-explicit-id"],
+            },
+        )
+        self.assertEqual(wildcard_grant.notional_currency, "USD")
+        with self.assertRaises(ValueError):
+            self._record_mandate(
+                mandate_id="mandate_ambiguous_wildcard",
+                broker_scope={"mode": "wildcard", "values": ["broker:one"]},
+            )
+
+    def test_legacy_currencyless_grant_fails_closed_after_restart(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="legacy_currencyless",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:legacy",
+        )
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE agent_authority_grants SET notional_currency = NULL "
+                    "WHERE agent_authority_grant_id = :grant_id"
+                ),
+                {"grant_id": grant.agent_authority_grant_id},
+            )
+        self.engine.dispose()
+        validation = validate_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            principal_id=principal_id,
+            agent_runtime_id="runtime:legacy",
+            requested_scope=self._scope(),
+            requested_notional={"amount": "1", "currency": "USD"},
+            engine=self.engine,
+        )
+        self.assertIn("legacy_currency_unbound_grant", validation.deny_reasons)
+        before = len(read_all(ReceiptIndex, engine=self.engine))
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "legacy_currency_unbound_grant",
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=principal_id,
+                agent_runtime_id="runtime:legacy",
+                nonce="legacy-denied",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "1", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(read_all(AgentAuthorityGrantConsumption, engine=self.engine), [])
+        self.assertEqual(len(read_all(ReceiptIndex, engine=self.engine)), before)
+
+    def test_concurrent_consumption_cannot_overspend_remaining_currency_capacity(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="grant_concurrent_limit",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:concurrent",
+            max_total_notional={"amount": "1", "currency": "USD"},
+        )
+
+        def consume(nonce: str) -> str:
+            try:
+                consume_agent_authority_grant(
+                    grant.agent_authority_grant_id,
+                    principal_id=principal_id,
+                    agent_runtime_id="runtime:concurrent",
+                    nonce=nonce,
+                    requested_scope=self._scope(),
+                    requested_notional={"amount": "1", "currency": "USD"},
+                    engine=self.engine,
+                    receipt_root=self.receipt_root,
+                )
+                return "allowed"
+            except AgentAuthorityGrantValidationError as exc:
+                return str(exc)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(consume, ("concurrent-1", "concurrent-2")))
+        self.assertEqual(outcomes.count("allowed"), 1)
+        self.assertEqual(
+            sum("grant_notional_exhausted" in outcome for outcome in outcomes),
+            1,
+        )
+        consumptions = read_all(AgentAuthorityGrantConsumption, engine=self.engine)
+        self.assertEqual(len(consumptions), 1)
+        self.assertEqual(consumptions[0].requested_notional, 1)
+        self.assertEqual(consumptions[0].requested_notional_currency, "USD")
+
+    def test_money_and_wildcard_contracts_reject_unknown_or_ambiguous_fields(self) -> None:
+        mandate_id = self._record_mandate()
+        for malformed in (
+            {"amount": "10"},
+            {"amount": "10", "currency": "USD", "fx_rate": "1"},
+            {"amount": "10", "currency": "US"},
+            {"amount": "-1", "currency": "USD"},
+        ):
+            with (
+                self.subTest(malformed=malformed),
+                self.assertRaises(AgentAuthorityGrantValidationError),
+            ):
+                self._record_grant(
+                    grant_id="grant_malformed_money",
+                    mandate_id=mandate_id,
+                    max_total_notional=malformed,
+                )
+        with self.assertRaises(ValueError):
+            self._record_mandate(
+                mandate_id="mandate_unknown_scope_field",
+                direction_scope={"mode": "bounded", "values": [], "all": True},
+            )
+        for invalid_scope in (
+            {**self._scope(), "currency_policy": "infer"},
+            {**self._scope(), "directions": ["*"]},
+            {**self._scope(), "broker_ids": {"broker": "paper"}},
+            {**self._scope(), "directions": ["reduce", "reduce"]},
+        ):
+            with (
+                self.subTest(invalid_scope=invalid_scope),
+                self.assertRaisesRegex(
+                    AgentAuthorityGrantValidationError,
+                    "closed structured scope contract",
+                ),
+            ):
+                self._record_grant(
+                    grant_id="grant_invalid_scope",
+                    mandate_id=mandate_id,
+                    grant_scope=invalid_scope,
+                )
 
     def test_new_version_of_same_mandate_invalidates_old_grant(self) -> None:
         mandate_id = self._record_mandate()
@@ -382,7 +631,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             principal_id=principal_id,
             agent_runtime_id=runtime_id,
             max_uses=2,
-            max_total_notional="100",
+            max_total_notional={"amount": "100", "currency": "USD"},
         )
 
         first = consume_agent_authority_grant(
@@ -391,12 +640,13 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             agent_runtime_id=runtime_id,
             nonce="nonce-1",
             requested_scope=self._scope(),
-            requested_notional="40",
+            requested_notional={"amount": "40", "currency": "USD"},
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
         self.assertEqual(first.usage_count, 1)
-        self.assertEqual(str(first.remaining_notional), "60")
+        self.assertEqual(first.remaining_notional.amount, 60)
+        self.assertEqual(first.remaining_notional.currency, "USD")
         with self.assertRaisesRegex(AgentAuthorityGrantValidationError, "nonce_replayed"):
             consume_agent_authority_grant(
                 grant.agent_authority_grant_id,
@@ -404,7 +654,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 agent_runtime_id=runtime_id,
                 nonce="nonce-1",
                 requested_scope=self._scope(),
-                requested_notional="1",
+                requested_notional={"amount": "1", "currency": "USD"},
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
@@ -418,7 +668,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 agent_runtime_id=runtime_id,
                 nonce="nonce-too-large",
                 requested_scope=self._scope(),
-                requested_notional="61",
+                requested_notional={"amount": "61", "currency": "USD"},
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
@@ -428,7 +678,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             agent_runtime_id=runtime_id,
             nonce="nonce-2",
             requested_scope=self._scope(),
-            requested_notional="60",
+            requested_notional={"amount": "60", "currency": "USD"},
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
@@ -439,7 +689,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 agent_runtime_id=runtime_id,
                 nonce="nonce-3",
                 requested_scope=self._scope(),
-                requested_notional="0",
+                requested_notional={"amount": "0", "currency": "USD"},
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
@@ -468,11 +718,47 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                     agent_runtime_id=runtime_id,
                     nonce=f"nonce-{reason}",
                     requested_scope=self._scope(),
-                    requested_notional="0",
+                    requested_notional={"amount": "0", "currency": "USD"},
                     engine=self.engine,
                     receipt_root=self.receipt_root,
                 )
         self.assertEqual(read_all(AgentAuthorityGrantConsumption, engine=self.engine), [])
+
+    def test_same_nonce_cannot_cross_the_grant_runtime_binding(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="grant_runtime_nonce",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:alice",
+        )
+        consume_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            principal_id=principal_id,
+            agent_runtime_id="runtime:alice",
+            nonce="shared-nonce",
+            requested_scope=self._scope(),
+            requested_notional={"amount": "0", "currency": "USD"},
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "agent_runtime_mismatch",
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=principal_id,
+                agent_runtime_id="runtime:bob",
+                nonce="shared-nonce",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "0", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(
+            len(read_all(AgentAuthorityGrantConsumption, engine=self.engine)),
+            1,
+        )
 
     def test_revoke_is_owner_only_audited_and_immediately_fail_closed(self) -> None:
         principal_id = "legacy-unverified:owner@example.com"
@@ -524,12 +810,15 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 )
             return result
 
-        with patch(
-            "finharness.statecore.agent_authority_grants.validate_agent_authority_grant",
-            side_effect=validate_then_revoke,
-        ), self.assertRaisesRegex(
-            AgentAuthorityGrantValidationError,
-            "denied under lock: grant_not_active",
+        with (
+            patch(
+                "finharness.statecore.agent_authority_grants.validate_agent_authority_grant",
+                side_effect=validate_then_revoke,
+            ),
+            self.assertRaisesRegex(
+                AgentAuthorityGrantValidationError,
+                "denied under lock: grant_not_active",
+            ),
         ):
             consume_agent_authority_grant(
                 grant.agent_authority_grant_id,
@@ -537,7 +826,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 agent_runtime_id="agent:research",
                 nonce="race-nonce",
                 requested_scope=self._scope(),
-                requested_notional="0",
+                requested_notional={"amount": "0", "currency": "USD"},
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
@@ -590,6 +879,9 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
             allowed_asset_classes=["cash", "equity"],
             allowed_action_types=["rebalance", "raise_cash"],
             autonomy_level="L1_candidate_only",
+            typed_limits={
+                "max_notional": {"amount": "1000", "currency": "USD"},
+            },
             human_attester="owner@example.com",
             human_reason="Human owner attests this policy boundary.",
             explicit_confirmation=True,
@@ -662,6 +954,19 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
         self.assertEqual(payload["deny_reasons"], ["grant_not_found"])
         self.assertFalse(payload["execution_allowed"])
 
+    def test_api_rejects_currencyless_or_open_money_payloads(self) -> None:
+        for max_total_notional in (
+            "100",
+            {"amount": "100"},
+            {"amount": "100", "currency": "USD", "fx_basis": "guessed"},
+        ):
+            with self.subTest(max_total_notional=max_total_notional):
+                response = self.client.post(
+                    "/agent-authority-grants",
+                    json={**self._body(), "max_total_notional": max_total_notional},
+                )
+                self.assertEqual(response.status_code, 422, response.text)
+
     def test_authenticated_agent_consumes_and_owner_revokes_via_api(self) -> None:
         principal = PrincipalIdentity(
             principal_id="principal:alice",
@@ -703,9 +1008,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
         app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
-            identity_provider=DeterministicIdentityProvider(
-                {"human": human, "agent": agent}
-            ),
+            identity_provider=DeterministicIdentityProvider({"human": human, "agent": agent}),
         )
         client = AsgiTestClient(app)
         self.addCleanup(client.close)
@@ -716,7 +1019,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
                 "capital_mandate_id": mandate.capital_mandate_id,
                 "agent_runtime_id": "runtime:alice:research",
                 "max_uses": 1,
-                "max_total_notional": "100",
+                "max_total_notional": {"amount": "100", "currency": "USD"},
             }
         )
         created = client.post(
@@ -731,7 +1034,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
             json={
                 "nonce": "api-nonce-1",
                 "requested_scope": self._body()["grant_scope"],
-                "requested_notional": "25",
+                "requested_notional": {"amount": "25", "currency": "USD"},
             },
         )
         self.assertEqual(consumed.status_code, 200, consumed.text)
@@ -741,7 +1044,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
             json={
                 "nonce": "api-nonce-1",
                 "requested_scope": self._body()["grant_scope"],
-                "requested_notional": "25",
+                "requested_notional": {"amount": "25", "currency": "USD"},
             },
         )
         self.assertEqual(replay.status_code, 409)
