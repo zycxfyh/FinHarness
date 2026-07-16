@@ -107,6 +107,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["freshness_rule_count"], 8)
         self.assertEqual(audit["record_category_count"], 6)
         self.assertEqual(audit["record_surface_migration_count"], 9)
+        self.assertEqual(audit["record_surface_component_count"], 14)
         self.assertTrue(audit["ok"])
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
@@ -635,6 +636,22 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             validate_record_taxonomy(taxonomy)
 
     # --- Unknown field and category guard tests ---
+
+    def test_record_taxonomy_unknown_top_level_field_is_rejected(self) -> None:
+        for field in (
+            "runtime_classifier",
+            "universal_record_base",
+            "second_registry",
+            "retention_engine",
+        ):
+            with self.subTest(field=field):
+                taxonomy = self._record_taxonomy()
+                taxonomy[field] = "forbidden parallel mechanism"
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "top-level fields violate canonical contract",
+                ):
+                    validate_record_taxonomy(taxonomy)
 
     def test_migration_component_unknown_field_rejected(self) -> None:
         component, taxonomy = self._migration_component(

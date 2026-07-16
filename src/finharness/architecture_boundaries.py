@@ -1244,6 +1244,17 @@ def validate_record_taxonomy(taxonomy: Any) -> None:
 
     if not isinstance(taxonomy, dict) or taxonomy.get("schema") != RECORD_TAXONOMY_SCHEMA:
         raise ValueError("unsupported record taxonomy")
+    expected_keys = {
+        "schema",
+        "enforcement",
+        "categories",
+        "agent_trace_observability_export",
+        "surface_migrations",
+    }
+    if set(taxonomy) != expected_keys:
+        raise ValueError(
+            "record taxonomy top-level fields violate canonical contract"
+        )
     if taxonomy.get("enforcement") != {
         "classification": "explicit_contract_only",
         "universal_base_class": "forbidden",
@@ -1460,6 +1471,14 @@ def audit_architecture(
         ),
         "record_surface_migration_count": (
             len(record_taxonomy["surface_migrations"]) if record_taxonomy else 0
+        ),
+        "record_surface_component_count": (
+            sum(
+                len(surface["components"])
+                for surface in record_taxonomy["surface_migrations"]
+            )
+            if record_taxonomy
+            else 0
         ),
         "ok": not cycles and not violations,
     }

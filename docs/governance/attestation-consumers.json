@@ -2363,19 +2363,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 374,
+      "match_line": 375,
       "term": "Attestation",
       "reason": "Structural test for BuildAttestation evidence policy; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 397,
+      "match_line": 398,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 431,
+      "match_line": 432,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
@@ -2465,19 +2465,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 569,
+      "match_line": 570,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation current_conformance; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 660,
+      "match_line": 677,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 661,
+      "match_line": 678,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
