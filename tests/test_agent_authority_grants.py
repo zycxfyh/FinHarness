@@ -197,7 +197,6 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             grant.agent_authority_grant_id,
             engine=self.engine,
             requested_scope=self._scope(),
-            now_utc="2026-07-03T00:00:00+00:00",
         )
 
         self.assertTrue(result.allowed)
@@ -241,7 +240,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("grant_expired", result.deny_reasons)
 
-    def test_validate_grant_denies_when_mandate_superseded_after_creation(self) -> None:
+    def test_validate_grant_denies_when_current_mandate_series_changes(self) -> None:
         grant = self._record_grant()
         self._record_mandate(mandate_id="mandate_replacement")
 
@@ -252,7 +251,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         )
 
         self.assertFalse(result.allowed)
-        self.assertIn("capital_mandate_not_active", result.deny_reasons)
+        self.assertIn("mandate_version_changed", result.deny_reasons)
 
     def test_validate_grant_denies_requested_scope_outside_grant(self) -> None:
         grant = self._record_grant()

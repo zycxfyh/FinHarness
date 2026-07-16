@@ -705,8 +705,8 @@
       "consumer_id": "ATT-CONS-025",
       "path": "docs/architecture/system-map.md",
       "symbol": "system-map attestation claim",
-      "line_start": 83,
-      "line_end": 85,
+      "line_start": 82,
+      "line_end": 97,
       "match_terms": [
         "create_governed_attestation",
         "decision of record"
@@ -723,7 +723,7 @@
       "recommended_change": "Replace with: 'Attestation is historical evidence. DecisionRecord is canonical.'",
       "test_implications": [],
       "evidence": [
-        "system-map.md:79-81"
+        "system-map.md:82-97"
       ]
     },
     {
@@ -808,7 +808,7 @@
       "path": "docs/reference/interfaces.md",
       "symbol": "attestation endpoint documentation",
       "line_start": 18,
-      "line_end": 104,
+      "line_end": 122,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -825,7 +825,7 @@
       "recommended_change": "Keep. Add DecisionRecord endpoint documentation alongside.",
       "test_implications": [],
       "evidence": [
-        "interfaces.md:87-103"
+        "interfaces.md:87-122"
       ]
     },
     {
@@ -1064,7 +1064,7 @@
       "path": "docs/governance/receipt-backed-write-registry.json",
       "symbol": "attestation write registration",
       "line_start": 27,
-      "line_end": 108,
+      "line_end": 145,
       "match_terms": [
         "/proposals/{proposal_id}/attest",
         "Attestation",
@@ -1083,7 +1083,7 @@
       "recommended_change": "Keep. Add DecisionRecord entry when available.",
       "test_implications": [],
       "evidence": [
-        "receipt-backed-write-registry.json:45-55"
+        "receipt-backed-write-registry.json:45-145"
       ]
     },
     {
@@ -1588,9 +1588,9 @@
     },
     {
       "path": "docs/architecture/system-map.md",
-      "match_line": 217,
+      "match_line": 224,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 212."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 224."
     },
     {
       "path": "docs/engineering/abstraction-inventory.yml",

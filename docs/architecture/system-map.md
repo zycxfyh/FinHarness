@@ -56,10 +56,17 @@ domain model / read model / write(command) model / adapters / invariants
   server-authenticated `OperatorContext` 选择(runtime 优先,否则 principal),
   request 只提供 `human_reason`、`explicit_confirmation=true`,且
   `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
-  是 mandate-bound authority credential,没有 active CapitalMandate 时
-  default-deny,grant validation 必须 use-time 重查当前 grant/mandate/scope;
+  是 mandate-bound authority credential。CapitalMandate identity 永久绑定
+  `CapitalMandateVersion.principal_id`,current truth 由 principal-bound resolver
+  从 immutable versions 与 append-only lifecycle evidence 确定;
+  `CapitalMandate.status` 只作为 compatibility mirror。没有 active
+  CapitalMandate 时 default-deny,grant validation 必须 use-time 重查同一
+  principal 的 exact current mandate version/grant/scope;
   cross-principal、cross-runtime、expired、revoked、exhausted 与 replayed nonce
   均 fail closed,且 consumption 不产生 execution authority。
+  Authentication identity 不等于 capital authority;active CapitalMandate
+  不等于 execution authorization;valid AgentAuthorityGrant 也不等于 approval
+  或 broker submission。
 
 ### 4. Decision Workflow
 

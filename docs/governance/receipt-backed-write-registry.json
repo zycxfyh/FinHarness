@@ -63,6 +63,35 @@
       }
     ]
   },
+  "capital_mandate_principal_contract": {
+    "schema": "finharness.capital_mandate_principal_contract.v1",
+    "http_principal": "OperatorContext.principal.principal_id",
+    "durable_series_owner": "CapitalMandateVersion.principal_id",
+    "current_truth": "resolve_capital_mandate(principal_id, at_utc)",
+    "compatibility_mirror": "CapitalMandate.status is non-authoritative",
+    "series_owner_transition": "forbidden",
+    "ownership_conflict_timing": "before receipt, version, lifecycle event, ReceiptIndex, or mirror mutation",
+    "resolution_total_order_desc": [
+      "effective_at_utc",
+      "created_at_utc",
+      "version_number",
+      "capital_mandate_id",
+      "mandate_version_id"
+    ],
+    "lifecycle_total_order_desc": [
+      "effective_at_utc",
+      "created_at_utc",
+      "mandate_lifecycle_event_id"
+    ],
+    "lifecycle_authority": "principal == version owner == event principal == actor principal",
+    "grant_currentness": "principal-bound exact mandate_version_id equality",
+    "legacy_owner_policy": "unowned rows remain readable but unverified labels cannot claim ownership",
+    "non_claims": [
+      "Authentication identity is not capital authority.",
+      "An active CapitalMandate is not execution authorization.",
+      "A valid AgentAuthorityGrant is not approval or broker submission."
+    ]
+  },
   "entries": [
     {
       "id": "RBW-0001",
@@ -261,15 +290,17 @@
       ],
       "db_write_models": [
         "CapitalMandate",
+        "CapitalMandateVersion",
+        "CapitalMandateLifecycleEvent",
         "ReceiptIndex"
       ],
-      "db_write_call": "upsert_records (supersedes prior active mandates + writes new mandate and index)",
+      "db_write_call": "upsert_records (principal-scoped mirror supersession + new mirror, immutable version, activation event, and index)",
       "receipt_kind": "state_core_capital_mandate",
       "receipt_subdir": "state-core/capital-mandates",
       "receipt_payload_builder": "_capital_mandate_receipt_payload",
       "receipt_indexed": true,
       "receipt_index_builder": "ReceiptIndex(...) inline (L144)",
-      "stale_guard": "not applicable: each new mandate supersedes prior active mandates; no stale receipt_ref check",
+      "stale_guard": "durable series owner conflict is rejected before receipt or domain mutation; same-principal currentness is resolved from immutable versions and lifecycle evidence",
       "failure_cleanup": "remove_file_best_effort on StateCoreStoreError when the receipt did not previously exist",
       "execution_allowed": false,
       "behavior_change": false,

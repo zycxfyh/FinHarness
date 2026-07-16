@@ -22,7 +22,7 @@ from finharness.autonomy_control import (
     legacy_autonomy_level,
 )
 from finharness.statecore.agent_authority_grants import validate_agent_authority_grant
-from finharness.statecore.models import AgentAuthorityGrant, CapitalMandate
+from finharness.statecore.models import AgentAuthorityGrant, CapitalMandateVersion
 
 
 class RuntimeAutonomyMandateResolution(BaseModel):
@@ -44,8 +44,10 @@ def resolve_runtime_autonomy_mandate(
 
     with Session(engine) as session:
         grant = session.get(AgentAuthorityGrant, grant_id)
-        mandate = (
-            session.get(CapitalMandate, grant.capital_mandate_id) if grant is not None else None
+        mandate_version = (
+            session.get(CapitalMandateVersion, grant.mandate_version_id)
+            if grant is not None
+            else None
         )
     if grant is None:
         return RuntimeAutonomyMandateResolution(
@@ -58,17 +60,23 @@ def resolve_runtime_autonomy_mandate(
         requested_scope=grant.grant_scope,
         now_utc=now_utc,
     )
-    if not validation.allowed or mandate is None:
+    if not validation.allowed or mandate_version is None:
         reasons = tuple(str(reason) for reason in validation.deny_reasons)
-        if mandate is None and "capital_mandate_not_found" not in reasons:
-            reasons = (*reasons, "capital_mandate_not_found")
+        if mandate_version is None and "mandate_version_changed" not in reasons:
+            reasons = (*reasons, "mandate_version_changed")
         return RuntimeAutonomyMandateResolution(
             resolved=False,
             deny_reasons=reasons,
             warnings=tuple(validation.warnings),
         )
 
-    requested_level = str(grant.grant_scope.get("autonomy_level", mandate.autonomy_level))
+    policy = mandate_version.policy_payload
+    requested_level = str(
+        grant.grant_scope.get(
+            "autonomy_level",
+            policy.get("autonomy_level", "L0_observe_only"),
+        )
+    )
     autonomy = legacy_autonomy_level(requested_level)
     profile_tools = _profile_tools(grant.agent_profile_name)
     scoped_tools = _string_tuple(grant.grant_scope.get("allowed_tools"))
@@ -77,30 +85,32 @@ def resolve_runtime_autonomy_mandate(
         if scoped_tools
         else profile_tools
     )
+    allowed_actions = _string_tuple(policy.get("allowed_action_types"))
+    allowed_assets = _string_tuple(policy.get("allowed_asset_classes"))
     financial_actions = _effective_scope(
         grant.grant_scope.get("allowed_action_types"),
-        mandate.allowed_action_types,
+        allowed_actions,
     )
     asset_classes = _effective_scope(
         grant.grant_scope.get("allowed_asset_classes"),
-        mandate.allowed_asset_classes,
+        allowed_assets,
     )
     refs = tuple(
         dict.fromkeys(
             [
-                *mandate.source_refs,
-                *mandate.receipt_refs,
+                *mandate_version.source_refs,
+                *mandate_version.receipt_refs,
                 *grant.source_refs,
                 *grant.receipt_refs,
-                *([mandate.receipt_ref] if mandate.receipt_ref else []),
+                *([mandate_version.receipt_ref] if mandate_version.receipt_ref else []),
                 *([grant.receipt_ref] if grant.receipt_ref else []),
             ]
         )
     )
     runtime_mandate = AutonomyMandate(
-        mandate_id=mandate.capital_mandate_id,
+        mandate_id=mandate_version.capital_mandate_id,
         authority_grant_id=grant.agent_authority_grant_id,
-        principal_id=grant.issued_by,
+        principal_id=grant.principal_id,
         agent_id=grant.agent_id,
         status="active",
         granted_autonomy=autonomy,
@@ -109,13 +119,13 @@ def resolve_runtime_autonomy_mandate(
         allowed_asset_classes=asset_classes,
         allowed_tools=effective_tools,
         constraints={
-            "limit_book": dict(mandate.limit_book),
+            "limit_book": dict(policy.get("limit_book", {})),
             "grant_scope": dict(grant.grant_scope),
-            "kill_switch_rules": list(mandate.kill_switch_rules),
-            "restricted_action_types": list(mandate.restricted_action_types),
-            "restricted_asset_classes": list(mandate.restricted_asset_classes),
+            "kill_switch_rules": list(policy.get("kill_switch_rules", [])),
+            "restricted_action_types": list(policy.get("restricted_action_types", [])),
+            "restricted_asset_classes": list(policy.get("restricted_asset_classes", [])),
         },
-        kill_switch_engaged=_kill_switch_engaged(mandate.kill_switch_rules),
+        kill_switch_engaged=_kill_switch_engaged(policy.get("kill_switch_rules", [])),
         expires_at_utc=grant.expires_at_utc,
         source_refs=refs,
     )

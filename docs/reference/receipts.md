@@ -233,6 +233,8 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `capital_mandate.human_attester` | `str` | Stable server-authenticated Agent runtime id when present, otherwise the authenticated principal id; never copied from the request body. |
 | `capital_mandate_version.authenticated_actor_receipt_ref` | `str \| None` | Server-issued mutation identity reference for keyed writes. Unkeyed backfill remains part of #352's cross-medium commit work. |
 | `capital_mandate_version.legacy_actor_label` | `str \| None` | Server-context legacy display label retained as unverified provenance, never actor authority. |
+| `capital_mandate_version.principal_id` | `str` | Permanent durable owner of the mandate ID series. A different principal cannot append a version to the series. |
+| `lifecycle_event.principal_id` | `str` | Must equal the version owner and authenticated lifecycle actor principal. |
 | `source_ips` | `InvestmentPolicyStatement \| None` | Source IPS snapshot when one is linked. |
 | `governance_boundary.execution_allowed` | `bool` | Always false. |
 | `governance_boundary.authority_transition` | `bool` | Always false. |
@@ -243,6 +245,15 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `governance_boundary.not_agent_identity_grant` | `bool` | It does not grant Agent identity. |
 | `governance_boundary.not_authority_contract` | `bool` | It is not an AuthorityContract. |
 | `governance_boundary.not_order_ticket` | `bool` | It is not an order ticket. |
+
+The authoritative current mandate is not the mutable `CapitalMandate.status`
+mirror. It is the principal-bound immutable version selected by descending
+`effective_at_utc`, `created_at_utc`, `version_number`,
+`capital_mandate_id`, and `mandate_version_id`, followed by the append-only
+lifecycle event selected by descending `effective_at_utc`, `created_at_utc`,
+and `mandate_lifecycle_event_id`. Identifier comparison is only a durable final
+tie-breaker. Legacy receipts and rows remain parseable; their display labels
+remain unverified and cannot establish ownership.
 | `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
 ### Agent Authority Grant Consumption Receipt
