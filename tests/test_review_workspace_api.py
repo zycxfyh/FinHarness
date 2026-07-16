@@ -56,7 +56,7 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
     def _add_event(self, proposal_id: str, kind: str, **body) -> object:
         return self.client.post(
             f"/proposals/{proposal_id}/review-events",
-            json={"kind": kind, "attester": "operator", "reason": "weekly review", **body},
+            json={"kind": kind, "reason": "weekly review", **body},
         )
 
     # --- default /proposals response unchanged by archive (snapshot lock) -------------
@@ -91,7 +91,7 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         pid = self._create_proposal("review me")
         self.client.post(
             f"/proposals/{pid}/attest",
-            json={"decision": "approved", "attester": "operator", "reason": "looks fine"},
+            json={"decision": "approved", "reason": "looks fine"},
         )
         self._add_event(pid, "annotation", text="watch the rate path")
 
@@ -171,7 +171,6 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
             f"/proposals/{pid}/attest",
             json={
                 "decision": "rejected",
-                "attester": "operator",
                 "reason": "human review recorded",
             },
         )
@@ -213,7 +212,6 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
             f"/proposals/{attested_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "operator",
                 "reason": "human review recorded",
             },
         )

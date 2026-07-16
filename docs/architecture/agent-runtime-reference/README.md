@@ -163,8 +163,9 @@ are explicitly Agent-supplied candidate payload; later system preflight is a
 separate capability layer.
 
 `#74` adds the first real apply path for that Agent labor:
-`POST /scaffold-revision-candidates/{candidate_id}/apply` requires a human
-attester, human reason, expected candidate receipt, expected proposal receipt,
+`POST /scaffold-revision-candidates/{candidate_id}/apply` derives the actor from
+the server-authenticated `OperatorContext` and requires a human reason, expected
+candidate receipt, expected proposal receipt,
 and `explicit_confirmation=true`. The route then calls the existing
 `revise_governed_proposal_scaffold(...)` command, writes a normal proposal
 revision receipt, and links the revision context back to the candidate receipt

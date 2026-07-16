@@ -52,8 +52,9 @@ domain model / read model / write(command) model / adapters / invariants
   当前状态并返回 structured deny reasons;`POST .../consume` 原子记录 nonce、
   usage 与 notional receipt;`POST .../revoke` 由 owner 原子撤销并留痕。
 - **invariants**:IPS 是用户政策;`execution_allowed=false`;
-  compliance check 是描述性检查。CapitalMandate 要求
-  `human_attester`、`human_reason`、`explicit_confirmation=true`,且
+  compliance check 是描述性检查。CapitalMandate 的 `human_attester` 由
+  server-authenticated `OperatorContext` 选择(runtime 优先,否则 principal),
+  request 只提供 `human_reason`、`explicit_confirmation=true`,且
   `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
   是 mandate-bound authority credential,没有 active CapitalMandate 时
   default-deny,grant validation 必须 use-time 重查当前 grant/mandate/scope;
@@ -200,7 +201,8 @@ domain model / read model / write(command) model / adapters / invariants
   markers,返回 pass/warn/block findings 与 deterministic report hash,但不应用
   patch、不授权 apply;
   `/scaffold-revision-candidates/{candidate_id}/apply` 是 human-confirmed apply
-  path,要求 human attester/reason、expected candidate/proposal receipts、
+  path,从 server-authenticated `OperatorContext` 派生 attester,并要求 human
+  reason、expected candidate/proposal receipts、
   expected preflight report hash 和 explicit confirmation;server 会在 apply 时
   重新计算 preflight,hash 不匹配或 status=block 时拒绝,warn 只有在人类显式
   ack 所有 warning codes 后才可继续;通过后调用 existing scaffold revision

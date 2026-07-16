@@ -30,6 +30,7 @@ IDEMPOTENT_REPLAY_HEADER = "X-FinHarness-Idempotent-Replay"
 IDEMPOTENCY_SEMANTIC_HEADERS = ("content-type", "if-match")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 _IDENTITY_MUTATION_RECEIPT_ID = re.compile(r"^identity_mutation_[0-9a-f]{32}$")
+IDENTITY_MUTATION_SOURCE_PREFIX = "identity-mutation:"
 
 
 class PrincipalIdentity(BaseModel):
@@ -94,6 +95,14 @@ class OperatorContext(BaseModel):
     def operator_id(self) -> str:
         """Compatibility alias for callers that only need the stable principal id."""
 
+        return self.principal.principal_id
+
+    @property
+    def authoritative_actor_id(self) -> str:
+        """Return the server-authenticated actor that authored a governed write."""
+
+        if self.agent_runtime is not None:
+            return self.agent_runtime.agent_runtime_id
         return self.principal.principal_id
 
     def reject_identity_substitution(
@@ -190,6 +199,51 @@ class IdentityMutationClaim:
     receipt_id: str
     receipt_path: Path
     payload: dict[str, Any]
+
+
+def identity_mutation_source_ref(receipt_id: str) -> str:
+    """Return the canonical domain reference for a server mutation receipt."""
+
+    return f"{IDENTITY_MUTATION_SOURCE_PREFIX}{receipt_id}"
+
+
+def bind_authenticated_actor_to_mutation(
+    claim: IdentityMutationClaim | None,
+    *,
+    context: OperatorContext,
+) -> tuple[str, dict[str, object]] | None:
+    """Bind a current server actor to an executing #352 mutation claim.
+
+    Unkeyed compatibility writes have no pre-mutation receipt and therefore
+    return ``None``. A present claim must be the executing claim and must carry
+    exactly the actor injected by the current authentication dependency.
+    """
+
+    if claim is None:
+        return None
+    if claim.disposition != "execute" or claim.payload.get("state") != "pending":
+        raise IdentityMutationError("authenticated actor requires an executing mutation claim")
+    actor = claim.payload.get("actor")
+    expected = context.receipt_binding()
+    if actor != expected:
+        raise IdentityMutationError("mutation claim actor differs from OperatorContext")
+    return identity_mutation_source_ref(claim.receipt_id), expected
+
+
+def authoritative_actor_id_from_binding(binding: object) -> str:
+    """Resolve the authoritative actor ID from a validated receipt binding."""
+
+    if not isinstance(binding, dict):
+        raise IdentityMutationError("authenticated actor binding is missing")
+    principal_id = binding.get("principal_id")
+    agent_runtime_id = binding.get("agent_runtime_id")
+    if not isinstance(principal_id, str) or not principal_id.strip():
+        raise IdentityMutationError("authenticated actor principal is missing")
+    if agent_runtime_id is not None and (
+        not isinstance(agent_runtime_id, str) or not agent_runtime_id.strip()
+    ):
+        raise IdentityMutationError("authenticated agent runtime is invalid")
+    return agent_runtime_id or principal_id
 
 
 def request_body_sha256(body: bytes) -> str:

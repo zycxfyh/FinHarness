@@ -142,7 +142,6 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "operator",
                 "reason": "Reviewed; will trim SPY at the next session.",
             },
         )
@@ -198,7 +197,7 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
             self.assertEqual(len(attestations), 1)
             attestation = attestations[0]
             self.assertEqual(attestation.decision, "approved")
-            self.assertEqual(attestation.attester, "operator")
+            self.assertEqual(attestation.attester, "legacy-local:test_harness")
             self.assertTrue(attestation.reason.strip())
 
             # the attestation receipt file, located via the receipt index

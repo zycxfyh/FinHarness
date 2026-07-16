@@ -151,8 +151,6 @@ function settle() {
   const form = parent.querySelector("form");
   form.querySelector('[name="kind"]').value =
     "annotation";
-  form.querySelector('[name="attester"]').value =
-    "operator";
   form.querySelector('[name="reason"]').value =
     "The server write succeeds.";
   form.querySelector('[name="text"]').value =

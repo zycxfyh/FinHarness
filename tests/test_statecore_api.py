@@ -986,7 +986,6 @@ class StateCoreApiTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "Jane Control",
                 "reason": "   ",
             },
         )
@@ -998,7 +997,6 @@ class StateCoreApiTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "Jane Control",
                 "reason": "I reviewed the evidence; this records review only.",
             },
         )
@@ -1053,7 +1051,6 @@ class StateCoreApiTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "Jane Control",
                 "reason": "I reviewed the evidence; this records review only.",
             },
         )
@@ -1148,7 +1145,6 @@ class StateCoreApiTest(unittest.TestCase):
                 f"/proposals/{proposal_id}/attest",
                 json={
                     "decision": "approved",
-                    "attester": "Jane Control",
                     "reason": "Review-only approval.",
                 },
             )

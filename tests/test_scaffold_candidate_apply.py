@@ -106,7 +106,6 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
 
     def _apply(self, **overrides: object):
         body = {
-            "human_attester": "Jane Control",
             "human_reason": "Confirmed the candidate patch addresses the evidence gap.",
             "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
             "expected_proposal_receipt_ref": self.proposal_receipt_ref,
@@ -148,6 +147,7 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         self.assertEqual(receipt["supersedes"], self.proposal_receipt_ref)
         context = receipt["revision_context"]
         self.assertEqual(context["kind"], "decision_scaffold_revision")
+        self.assertEqual(context["attester"], "legacy-local:test_harness")
         self.assertEqual(context["source"], "agent_scaffold_revision_apply_candidate")
         self.assertEqual(context["candidate_id"], self.candidate["candidate_id"])
         self.assertEqual(context["candidate_receipt_ref"], self.candidate["receipt_ref"])
@@ -178,7 +178,6 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         response = self.client.post(
             f"/scaffold-revision-candidates/{self.candidate['candidate_id']}/apply",
             json={
-                "human_attester": "Jane Control",
                 "human_reason": "Missing preflight hash.",
                 "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
                 "expected_proposal_receipt_ref": self.proposal_receipt_ref,
@@ -268,7 +267,6 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         response = self.client.post(
             "/scaffold-revision-candidates/missing/apply",
             json={
-                "human_attester": "Jane Control",
                 "human_reason": "Trying a missing candidate.",
                 "expected_candidate_receipt_ref": "receipt://missing",
                 "expected_proposal_receipt_ref": self.proposal_receipt_ref,

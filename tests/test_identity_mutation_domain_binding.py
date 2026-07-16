@@ -166,6 +166,14 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             context["identity_mutation_path"],
             path,
         )
+        self.assertEqual(
+            context["authenticated_actor"],
+            identity_receipt["actor"],
+        )
+        self.assertEqual(
+            context["authenticated_actor_receipt_ref"],
+            identity_mutation_source_ref(identity_receipt_id),
+        )
         self.assertFalse(context["execution_allowed"])
 
     def test_attestation_receipt_binds_identity_mutation(
@@ -182,7 +190,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 headers=self._headers("binding-attestation-0001"),
                 json={
                     "decision": "rejected",
-                    "attester": "operator:alice",
                     "reason": ("Explicitly bind this review decision to its mutation."),
                     "source_refs": ["test:attestation-binding"],
                 },
@@ -226,7 +233,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 endpoint,
                 headers=self._headers("binding-scaffold-0001"),
                 json={
-                    "attester": "operator:alice",
                     "reason": ("Record an exact mutation-bound scaffold revision."),
                     "decision_scaffold": {
                         "counter_evidence": ("A distinct binding-test counter-evidence condition.")
@@ -274,7 +280,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 headers=self._headers("binding-review-event-0001"),
                 json={
                     "kind": "annotation",
-                    "attester": "operator:alice",
                     "reason": ("Record a mutation-bound review annotation."),
                     "text": ("This effect must be recoverable from domain truth."),
                     "source_refs": ["test:review-event-binding"],
@@ -470,7 +475,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             key = "recover-attestation-terminal-0001"
             body = {
                 "decision": "rejected",
-                "attester": "operator:alice",
                 "reason": ("Reject while proving typed mutation recovery."),
                 "source_refs": ["test:attestation-recovery"],
             }
@@ -551,7 +555,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             endpoint = f"/proposals/{proposal_id}/decision-scaffold"
             key = "recover-scaffold-terminal-0001"
             body = {
-                "attester": "operator:alice",
                 "reason": ("Revise while proving exact historical receipt recovery."),
                 "decision_scaffold": {
                     "counter_evidence": ("A recovery-specific counter-evidence condition.")
@@ -660,7 +663,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             key = "recover-review-event-terminal-0001"
             body = {
                 "kind": "annotation",
-                "attester": "operator:alice",
                 "reason": ("Annotate while proving typed review-event recovery."),
                 "text": ("This event must exist exactly once after replay."),
                 "source_refs": ["test:review-event-recovery"],
@@ -802,7 +804,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             endpoint = f"/proposals/{proposal_id}/attest"
             body = {
                 "decision": "rejected",
-                "attester": "operator:alice",
                 "reason": ("Create an attestation whose binding will be tested."),
                 "source_refs": ["test:tampered-attestation-binding"],
             }
@@ -891,7 +892,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             endpoint = f"/proposals/{proposal_id}/review-events"
             body = {
                 "kind": "annotation",
-                "attester": "operator:alice",
                 "reason": ("Create one legitimate mutation-bound review event."),
                 "text": ("The resolver must reject ambiguous duplicate effects."),
                 "source_refs": ["test:multiple-review-effects"],
@@ -961,7 +961,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             proposal_id = proposal["proposal_id"]
             endpoint = f"/proposals/{proposal_id}/decision-scaffold"
             body = {
-                "attester": "operator:alice",
                 "reason": ("Create a mutation-bound historical revision."),
                 "decision_scaffold": {
                     "counter_evidence": (
@@ -1075,7 +1074,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # -- 7.2 Keyed Revision A with simulated terminal loss --
             key_a = "recover-scaffold-before-later-revision-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A: counter_evidence",
                 "decision_scaffold": {
                     "counter_evidence": "Reconciliation recovery counter-evidence."
@@ -1126,7 +1124,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             # -- 7.3 Create legitimate later Revision B (different field, no key) --
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:scaffold-exact-revision-b"],
@@ -1317,7 +1314,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # -- Keyed Revision A with terminal loss --
             key_a = "exact-ambiguity-scaffold-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Ambiguity: counter_evidence",
                 "decision_scaffold": {"counter_evidence": "Ambiguity counter-evidence."},
                 "source_refs": ["test:exact-ambiguity-a"],
@@ -1466,7 +1462,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # -- Keyed Revision A with terminal loss --
             key_a = "corrupt-candidate-revision-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A: counter_evidence",
                 "decision_scaffold": {
                     "counter_evidence": "Corrupt-candidate test counter-evidence."
@@ -1486,7 +1481,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             # -- Later unkeyed Revision B that inherits A's mutation_ref --
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:corrupt-candidate-b"],
@@ -1579,7 +1573,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "snapshot-without-mutation-ref-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision for snapshot binding test",
                 "decision_scaffold": {
                     "counter_evidence": "Snapshot binding test counter-evidence."
@@ -1673,7 +1666,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "relabel-duplicate-revision-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision for relabel test",
                 "decision_scaffold": {"counter_evidence": "Relabel bypass test counter-evidence."},
                 "source_refs": ["test:relabel-duplicate"],
@@ -1783,7 +1775,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision A with terminal loss.
             key_a = "partial-schema-binding-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A for partial-binding test",
                 "decision_scaffold": {"counter_evidence": "Partial binding test counter-evidence."},
                 "source_refs": ["test:partial-binding"],
@@ -1800,7 +1791,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — normally, with a different key.
             key_b = "partial-binding-revision-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:partial-binding-b"],
@@ -1868,7 +1858,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision A — terminal loss
             key_a = "foreign-positive-revision-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A: counter_evidence",
                 "decision_scaffold": {
                     "counter_evidence": "Foreign positive test counter-evidence."
@@ -1885,7 +1874,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — normal committed
             key_b = "foreign-positive-revision-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:foreign-positive-b"],
@@ -1950,7 +1938,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "pending-foreign-revision-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Pending foreign test."},
                 "source_refs": ["test:pending-foreign-a"],
@@ -1962,7 +1949,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Revision B — also with terminal loss, so foreign receipt stays pending
             key_b = "pending-foreign-revision-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later."},
                 "source_refs": ["test:pending-foreign-b"],
@@ -2013,7 +1999,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "identity-mismatch-revision-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Identity mismatch test."},
                 "source_refs": ["test:identity-mismatch-a"],
@@ -2025,7 +2010,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Revision B — committed normally
             key_b = "identity-mismatch-revision-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later."},
                 "source_refs": ["test:identity-mismatch-b"],
@@ -2090,7 +2074,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             endpoint1 = f"/proposals/{p1_id}/decision-scaffold"
             key_a = "foreign-other-proposal-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A for P1",
                 "decision_scaffold": {"counter_evidence": "P1 counter-evidence."},
                 "source_refs": ["test:foreign-other-prop-a"],
@@ -2114,7 +2097,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             endpoint2 = f"/proposals/{p2_id}/decision-scaffold"
             key_b = "foreign-other-prop-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B for P2",
                 "decision_scaffold": {"alternatives": "P2 alternatives."},
                 "source_refs": [f"test:foreign-other-prop-b/{receipt_id_a}"],
@@ -2226,7 +2208,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision A — terminal loss
             key_a = "supersedes-mismatch-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Supersedes mismatch test."},
                 "source_refs": ["test:supersedes-mismatch-a"],
@@ -2238,7 +2219,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — committed normally
             key_b = "supersedes-mismatch-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:supersedes-mismatch-b"],
@@ -2295,7 +2275,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "dup-changed-fields-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Dup fields test."},
                 "source_refs": ["test:dup-changed-fields-a"],
@@ -2307,7 +2286,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — committed normally
             key_b = "dup-changed-fields-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:dup-changed-fields-b"],
@@ -2360,7 +2338,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "path-traversal-claim-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Path traversal test."},
                 "source_refs": ["test:path-traversal-a"],
@@ -2372,7 +2349,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # -- Keyed Revision B — committed normally --
             key_b = "path-traversal-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:path-traversal-b"],
@@ -2434,7 +2410,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "invalid-id-format-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Invalid ID format test."},
                 "source_refs": ["test:invalid-id-format-a"],
@@ -2446,7 +2421,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — committed normally
             key_b = "invalid-id-format-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:invalid-id-format-b"],
@@ -2509,7 +2483,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "wrong-schema-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Wrong schema test."},
                 "source_refs": ["test:wrong-schema-a"],
@@ -2521,7 +2494,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — committed normally
             key_b = "wrong-schema-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:wrong-schema-b"],
@@ -2587,7 +2559,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
             key_a = "symlink-receipt-a-0001"
             body_a = {
-                "attester": "operator:alice",
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Symlink test."},
                 "source_refs": ["test:symlink-a"],
@@ -2599,7 +2570,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # Keyed Revision B — committed normally
             key_b = "symlink-b-0001"
             body_b = {
-                "attester": "operator:alice",
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:symlink-b"],

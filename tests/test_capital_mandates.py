@@ -225,7 +225,6 @@ class CapitalMandateApiTest(unittest.TestCase):
             "limit_book": {"max_notional_usd": 500},
             "kill_switch_rules": [{"rule": "owner_revokes", "action": "freeze"}],
             "review_cadence": {"cadence": "quarterly"},
-            "human_attester": "owner@example.com",
             "human_reason": "Human owner attests this policy boundary.",
             "explicit_confirmation": True,
         }

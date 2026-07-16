@@ -201,7 +201,6 @@ class AgentProposalDraftTest(unittest.TestCase):
         revised = client.patch(
             f"/proposals/{body['proposal_id']}/decision-scaffold",
             json={
-                "attester": "Jane Control",
                 "reason": "Added human review source after Agent draft.",
                 "decision_scaffold": {
                     "counter_evidence": (

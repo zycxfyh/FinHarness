@@ -2,13 +2,66 @@
   "schema": "finharness.receipt_backed_write_registry.v1",
   "status": "current",
   "debt_ref": "ENG-DEBT-0003",
-  "updated": "2026-07-06",
+  "updated": "2026-07-16",
   "description": "Machine-checkable inventory of receipt-backed write paths. Each entry records a function that combines database state write, receipt JSON file write, and ReceiptIndex creation. This registry records existing behavior; it does not introduce a shared abstraction or runtime behavior change.",
   "field_semantics_notes": {
     "execution_allowed": "DEPRECATED — use execution_substrate + real_external_execution_allowed instead.",
     "execution_substrate": "simulated = canonical execution on simulated broker; none = no execution path (legacy, read-only, or non-execution).",
     "real_external_execution_allowed": "Whether real external broker execution is enabled. Always false.",
     "legacy_surface": "true on legacy route entries; absent on canonical mainline."
+  },
+  "authenticated_actor_contract": {
+    "schema": "finharness.governed_write_actor_routes.v1",
+    "authority_source": "WriteCapabilityDependency.OperatorContext",
+    "authoritative_actor_selection": "agent_runtime_id_when_present_else_principal_id",
+    "request_actor_fields": "forbidden",
+    "identity_receipt_source": "server_identity_mutation_claim_only",
+    "unkeyed_identity_reference": "not_backfilled_pending_issue_352_cross_medium_commit",
+    "historical_actor_labels": "preserved_unverified_not_authoritative",
+    "non_claims": [
+      "Authentication identity is not capital authority.",
+      "Actor binding does not authorize execution."
+    ],
+    "routes": [
+      {
+        "route_ref": "POST /proposals/{proposal_id}/attest",
+        "request_model": "AttestationCreateRequest",
+        "forbidden_request_fields": ["attester"],
+        "domain_actor_field": "Attestation.attester",
+        "domain_receipt_context": "mutation_context"
+      },
+      {
+        "route_ref": "PATCH /proposals/{proposal_id}/decision-scaffold",
+        "request_model": "ProposalScaffoldRevisionRequest",
+        "forbidden_request_fields": ["attester"],
+        "domain_actor_field": "Proposal receipt revision_context.attester",
+        "domain_receipt_context": "revision_context"
+      },
+      {
+        "route_ref": "POST /proposals/{proposal_id}/review-events",
+        "request_model": "ReviewEventCreateRequest",
+        "forbidden_request_fields": ["attester"],
+        "domain_actor_field": "ReviewEvent.attester",
+        "domain_receipt_context": "mutation_context"
+      },
+      {
+        "route_ref": "POST /scaffold-revision-candidates/{candidate_id}/apply",
+        "request_model": "ScaffoldRevisionCandidateApplyRequest",
+        "forbidden_request_fields": ["human_attester"],
+        "domain_actor_field": "Proposal receipt revision_context.attester",
+        "domain_receipt_context": "revision_context"
+      },
+      {
+        "route_ref": "POST /capital-mandates",
+        "request_model": "CapitalMandateRequest",
+        "forbidden_request_fields": [
+          "human_attester",
+          "authenticated_actor_receipt_ref"
+        ],
+        "domain_actor_field": "CapitalMandate.human_attester",
+        "domain_receipt_context": "authenticated_actor_receipt_ref"
+      }
+    ]
   },
   "entries": [
     {

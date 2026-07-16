@@ -56,7 +56,6 @@ class LocalReviewModeTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": decision,
-                "attester": "Test Human",
                 "reason": f"Browser-equivalent {decision} review",
                 "expected_proposal_version_id": version["receipt_id"],
                 "expected_proposal_receipt_ref": version["receipt_ref"],
@@ -103,7 +102,6 @@ class LocalReviewModeTest(unittest.TestCase):
             revised = client.patch(
                 "/proposals/revision/decision-scaffold",
                 json={
-                    "attester": "Test Human",
                     "reason": "Add current counter evidence",
                     "decision_scaffold": {"counter_evidence": "A falsifier appeared"},
                 },
@@ -117,7 +115,6 @@ class LocalReviewModeTest(unittest.TestCase):
                 "/proposals/revision/attest",
                 json={
                     "decision": "rejected",
-                    "attester": "Test Human",
                     "reason": "This tab is stale",
                     "expected_proposal_version_id": before["receipt_id"],
                     "expected_proposal_receipt_ref": before["receipt_ref"],
@@ -137,7 +134,6 @@ class LocalReviewModeTest(unittest.TestCase):
                 "/proposals/denied/attest",
                 json={
                     "decision": "approved",
-                    "attester": "Test Human",
                     "reason": "Must be denied",
                     "expected_proposal_version_id": version["receipt_id"],
                     "expected_proposal_receipt_ref": version["receipt_ref"],

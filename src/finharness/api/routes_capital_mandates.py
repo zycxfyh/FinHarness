@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
@@ -13,6 +13,11 @@ from finharness.api.dependencies import (
     OptionalOperatorDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
+)
+from finharness.identity import (
+    IdentityMutationClaim,
+    IdentityMutationError,
+    bind_authenticated_actor_to_mutation,
 )
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
@@ -67,7 +72,6 @@ class CapitalMandateRequest(BaseModel):
     kill_switch_rules: list[dict[str, Any]] = Field(default_factory=list)
     review_cadence: dict[str, Any] = Field(default_factory=dict)
     source_ips_id: str | None = None
-    human_attester: str
     human_reason: str
     explicit_confirmation: bool = False
     source_refs: list[str] = Field(default_factory=list)
@@ -79,7 +83,6 @@ class CapitalMandateRequest(BaseModel):
     )
     effective_at_utc: str | None = None
     expires_at_utc: str | None = None
-    authenticated_actor_receipt_ref: str | None = None
 
 
 class CapitalMandateLifecycleRequest(BaseModel):
@@ -99,10 +102,22 @@ class CapitalMandateLifecycleResponse(BaseModel):
 @router.post("/capital-mandates", response_model=CapitalMandateWriteResponse)
 async def post_capital_mandate(
     body: CapitalMandateRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     operator: WriteCapabilityDependency,
 ) -> CapitalMandateWriteResponse:
+    raw_claim = getattr(http_request.state, "identity_mutation_claim", None)
+    if raw_claim is not None and not isinstance(raw_claim, IdentityMutationClaim):
+        raise HTTPException(status_code=409, detail="invalid authenticated actor claim")
+    try:
+        actor_binding = bind_authenticated_actor_to_mutation(
+            raw_claim,
+            context=operator,
+        )
+    except IdentityMutationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    actor_receipt_ref = actor_binding[0] if actor_binding is not None else None
     try:
         mandate = record_capital_mandate(
             profile_snapshot=body.profile_snapshot,
@@ -117,7 +132,7 @@ async def post_capital_mandate(
             kill_switch_rules=body.kill_switch_rules,
             review_cadence=body.review_cadence,
             source_ips_id=body.source_ips_id,
-            human_attester=operator.principal.principal_id,
+            human_attester=operator.authoritative_actor_id,
             human_reason=body.human_reason,
             explicit_confirmation=body.explicit_confirmation,
             source_refs=body.source_refs,
@@ -128,8 +143,8 @@ async def post_capital_mandate(
             kill_switch_scope=body.kill_switch_scope,
             effective_at_utc=body.effective_at_utc,
             expires_at_utc=body.expires_at_utc,
-            authenticated_actor_receipt_ref=body.authenticated_actor_receipt_ref,
-            legacy_actor_label=body.human_attester,
+            authenticated_actor_receipt_ref=actor_receipt_ref,
+            legacy_actor_label=operator.principal.legacy_label,
             engine=engine,
             receipt_root=receipt_root,
         )

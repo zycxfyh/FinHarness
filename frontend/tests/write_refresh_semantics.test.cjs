@@ -179,8 +179,6 @@ async function proveSavedRefreshFailure({
     fillForm(form) {
       form.querySelector('[name="kind"]').value =
         "annotation";
-      form.querySelector('[name="attester"]').value =
-        "operator";
       form.querySelector('[name="reason"]').value =
         "Record review evidence.";
       form.querySelector('[name="text"]').value =
@@ -204,8 +202,6 @@ async function proveSavedRefreshFailure({
       form.querySelector(
         '[name="counter_evidence"]',
       ).value = "Counter-evidence condition.";
-      form.querySelector('[name="attester"]').value =
-        "operator";
       form.querySelector('[name="reason"]').value =
         "Record falsification condition.";
     },
@@ -231,8 +227,6 @@ async function proveSavedRefreshFailure({
     fillForm(form) {
       form.querySelector('[name="decision"]').value =
         "approved";
-      form.querySelector('[name="attester"]').value =
-        "operator";
       form.querySelector('[name="reason"]').value =
         "Human decision evidence.";
     },

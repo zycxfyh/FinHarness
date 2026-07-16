@@ -72,7 +72,6 @@ window.fetch = (p, opts = {}) => {
 window.confirm = () => false;
 let form = renderForm();
 form.querySelector('[name="counter_evidence"]').value = "Top holding below 40%.";
-form.querySelector('[name="attester"]').value = "operator";
 form.querySelector('[name="reason"]').value = "Add falsification condition.";
 form.dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
 assert.strictEqual(fetchCalls.length, 0, "cancelled confirm must not PATCH");
@@ -80,7 +79,6 @@ assert.strictEqual(fetchCalls.length, 0, "cancelled confirm must not PATCH");
 window.confirm = () => true;
 form = renderForm();
 form.querySelector('[name="counter_evidence"]').value = "Top holding below 40%.";
-form.querySelector('[name="attester"]').value = "operator";
 form.querySelector('[name="reason"]').value = "Add falsification condition.";
 form.dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
 
@@ -90,7 +88,7 @@ setTimeout(() => {
   );
   assert.strictEqual(patches.length, 1, "confirmed revision PATCHes exactly once");
   const payload = JSON.parse(patches[0][1].body);
-  assert.strictEqual(payload.attester, "operator");
+  assert.strictEqual("attester" in payload, false);
   assert.strictEqual(payload.reason, "Add falsification condition.");
   assert.deepStrictEqual(payload.decision_scaffold, {
     counter_evidence: "Top holding below 40%.",
