@@ -7,6 +7,7 @@ import fnmatch
 import json
 from collections import deque
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -711,13 +712,16 @@ class BoundaryViolation:
     source_layer: str
     target_layer: str
     path: tuple[str, ...]
+    capability_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "rule_id": self.rule_id,
+            "capability_id": self.capability_id,
             "kind": self.kind,
             "source_layer": self.source_layer,
             "target_layer": self.target_layer,
+            "target_module": self.path[-1],
             "path": list(self.path),
         }
 
@@ -1553,6 +1557,354 @@ def validate_plane_model(model: dict[str, Any]) -> None:
     validate_agent_harness_boundary(model.get("agent_harness_boundary"))
 
 
+CAPABILITY_FIELDS = frozenset({"id", "owner_layer", "semantics", "provider_modules"})
+ARCHITECTURE_RULE_FIELDS = frozenset(
+    {
+        "id",
+        "source_layers",
+        "forbidden_target_layers",
+        "forbidden_target_modules",
+        "forbidden_target_capabilities",
+    }
+)
+CAPABILITY_EXCEPTION_FIELDS = frozenset(
+    {
+        "source_module",
+        "rule_id",
+        "capability_id",
+        "path",
+        "reason",
+        "owner_issue",
+        "review_gate",
+    }
+)
+
+
+def _matrix_string_list(
+    record: dict[str, Any],
+    field: str,
+    *,
+    label: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    values = record.get(field, [])
+    if (
+        not isinstance(values, list)
+        or (not allow_empty and not values)
+        or any(not isinstance(value, str) or not value.strip() for value in values)
+    ):
+        qualifier = "a string list" if allow_empty else "a non-empty string list"
+        raise ValueError(f"{label} requires {field} as {qualifier}")
+    if len(values) != len(set(values)):
+        raise ValueError(f"{label} has duplicate {field}")
+    return values
+
+
+def _validate_capability_declarations(
+    matrix: dict[str, Any],
+    *,
+    layer_names: set[str],
+) -> dict[str, dict[str, Any]]:
+    declarations = matrix.get("capabilities", [])
+    if not isinstance(declarations, list):
+        raise ValueError("architecture capabilities must be a list")
+    capabilities: dict[str, dict[str, Any]] = {}
+    provider_owner: dict[str, str] = {}
+    for declaration in declarations:
+        if not isinstance(declaration, dict):
+            raise ValueError("architecture capability declarations must be mappings")
+        if set(declaration) != CAPABILITY_FIELDS:
+            raise ValueError("architecture capability fields violate canonical contract")
+        capability_id = declaration.get("id")
+        if not isinstance(capability_id, str) or not capability_id.strip():
+            raise ValueError("architecture capability requires a stable id")
+        if capability_id in capabilities:
+            raise ValueError(f"duplicate architecture capability id: {capability_id}")
+        owner_layer = declaration.get("owner_layer")
+        if owner_layer not in layer_names:
+            raise ValueError(
+                f"architecture capability {capability_id} has unknown owner layer {owner_layer}"
+            )
+        semantics = declaration.get("semantics")
+        if not isinstance(semantics, str) or not semantics.strip():
+            raise ValueError(f"architecture capability {capability_id} requires semantics")
+        providers = _matrix_string_list(
+            declaration,
+            "provider_modules",
+            label=f"architecture capability {capability_id}",
+        )
+        for provider in providers:
+            if any(marker in provider for marker in "*?["):
+                raise ValueError(
+                    f"architecture capability {capability_id} provider must be "
+                    f"an exact module: {provider}"
+                )
+            previous = provider_owner.get(provider)
+            if previous is not None:
+                raise ValueError(
+                    f"architecture capability provider {provider} has multiple capabilities: "
+                    f"{previous}, {capability_id}"
+                )
+            provider_owner[provider] = capability_id
+        capabilities[capability_id] = declaration
+    return capabilities
+
+
+def _validate_architecture_rules(
+    matrix: dict[str, Any],
+    *,
+    layer_names: set[str],
+    capability_ids: set[str],
+) -> dict[str, dict[str, Any]]:
+    rules = matrix.get("rules")
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("architecture layer matrix requires rules")
+    by_id: dict[str, dict[str, Any]] = {}
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError("architecture rules must be mappings")
+        if not set(rule) <= ARCHITECTURE_RULE_FIELDS:
+            raise ValueError("architecture rule fields violate canonical contract")
+        rule_id = rule.get("id")
+        if not isinstance(rule_id, str) or not rule_id.strip():
+            raise ValueError("architecture rule requires an id")
+        if rule_id in by_id:
+            raise ValueError(f"duplicate architecture rule id: {rule_id}")
+        sources = _matrix_string_list(
+            rule, "source_layers", label=f"architecture rule {rule_id}"
+        )
+        unknown_sources = sorted(set(sources) - layer_names)
+        if unknown_sources:
+            raise ValueError(
+                f"architecture rule {rule_id} has unknown source layers: {unknown_sources}"
+            )
+        target_layers = _matrix_string_list(
+            rule,
+            "forbidden_target_layers",
+            label=f"architecture rule {rule_id}",
+            allow_empty=True,
+        )
+        unknown_targets = sorted(set(target_layers) - layer_names)
+        if unknown_targets:
+            raise ValueError(
+                f"architecture rule {rule_id} has unknown target layers: {unknown_targets}"
+            )
+        target_modules = _matrix_string_list(
+            rule,
+            "forbidden_target_modules",
+            label=f"architecture rule {rule_id}",
+            allow_empty=True,
+        )
+        target_capabilities = _matrix_string_list(
+            rule,
+            "forbidden_target_capabilities",
+            label=f"architecture rule {rule_id}",
+            allow_empty=True,
+        )
+        unknown_capabilities = sorted(set(target_capabilities) - capability_ids)
+        if unknown_capabilities:
+            raise ValueError(
+                f"architecture rule {rule_id} references unknown capabilities: "
+                f"{unknown_capabilities}"
+            )
+        if not target_layers and not target_modules and not target_capabilities:
+            raise ValueError(f"architecture rule {rule_id} has no forbidden target")
+        by_id[rule_id] = rule
+    return by_id
+
+
+def _validate_capability_exception_scope(
+    exception: dict[str, Any],
+    *,
+    rules: dict[str, dict[str, Any]],
+    capabilities: dict[str, dict[str, Any]],
+) -> tuple[str, str, str, tuple[str, ...]]:
+    source = exception.get("source_module")
+    if (
+        not isinstance(source, str)
+        or not source.strip()
+        or any(marker in source for marker in "*?[")
+        or source in {"finharness", "core", "agent", "research"}
+    ):
+        raise ValueError("capability exception source_module must be one exact module")
+    rule_id = exception.get("rule_id")
+    if rule_id not in rules:
+        raise ValueError(f"capability exception references unknown rule: {rule_id}")
+    capability_id = exception.get("capability_id")
+    if capability_id not in capabilities:
+        raise ValueError(
+            f"capability exception references unknown capability: {capability_id}"
+        )
+    if capability_id not in rules[str(rule_id)].get(
+        "forbidden_target_capabilities", []
+    ):
+        raise ValueError(
+            f"capability exception {source} cannot mask capability {capability_id} "
+            f"for rule {rule_id}"
+        )
+    path = _matrix_string_list(
+        exception, "path", label=f"capability exception {source}"
+    )
+    if len(path) < 2 or path[0] != source:
+        raise ValueError("capability exception path must start at its exact source")
+    if path[-1] not in capabilities[str(capability_id)]["provider_modules"]:
+        raise ValueError(
+            "capability exception path must terminate at a provider of its capability"
+        )
+    if any(any(marker in module for marker in "*?[") for module in path):
+        raise ValueError("capability exception path must contain exact modules")
+    return source, str(rule_id), str(capability_id), tuple(path)
+
+
+def _validate_capability_exception_governance(exception: dict[str, Any]) -> None:
+    reason = exception.get("reason")
+    if (
+        not isinstance(reason, str)
+        or len(reason.strip()) < 12
+        or reason.strip().lower() in {"temporary", "legacy", "needed"}
+    ):
+        raise ValueError("capability exception requires a concrete reason")
+    owner_issue = exception.get("owner_issue")
+    if (
+        not isinstance(owner_issue, int)
+        or isinstance(owner_issue, bool)
+        or owner_issue < 1
+    ):
+        raise ValueError("capability exception requires a positive owner_issue")
+    review_gate = exception.get("review_gate")
+    if (
+        not isinstance(review_gate, str)
+        or len(review_gate.strip()) < 12
+        or review_gate.strip().lower() in {"later", "tbd", "none"}
+    ):
+        raise ValueError("capability exception requires a concrete review_gate")
+
+
+def _validate_capability_exceptions(
+    matrix: dict[str, Any],
+    *,
+    rules: dict[str, dict[str, Any]],
+    capabilities: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    exceptions = matrix.get("capability_exceptions", [])
+    if not isinstance(exceptions, list):
+        raise ValueError("capability_exceptions must be a list")
+    seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+    for exception in exceptions:
+        if not isinstance(exception, dict) or set(exception) != CAPABILITY_EXCEPTION_FIELDS:
+            raise ValueError("capability exception fields violate canonical contract")
+        key = _validate_capability_exception_scope(
+            exception, rules=rules, capabilities=capabilities
+        )
+        _validate_capability_exception_governance(exception)
+        if key in seen:
+            raise ValueError(f"duplicate capability exception: {key}")
+        seen.add(key)
+    return exceptions
+
+
+def _architecture_layer_names(matrix: dict[str, Any]) -> set[str]:
+    layers = matrix.get("layers")
+    if not isinstance(layers, list) or not layers:
+        raise ValueError("architecture layer matrix requires layers")
+    names: list[str] = []
+    for layer in layers:
+        if not isinstance(layer, dict):
+            raise ValueError("architecture layers must be mappings")
+        name = layer.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("architecture layer requires a name")
+        _matrix_string_list(layer, "module_globs", label=f"architecture layer {name}")
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise ValueError("architecture layer names must be unique")
+    return set(names)
+
+
+def _validate_capability_module_universe(
+    capabilities: dict[str, dict[str, Any]],
+    rules: dict[str, dict[str, Any]],
+    exceptions: list[dict[str, Any]],
+    *,
+    matrix: dict[str, Any],
+    modules: set[str],
+) -> None:
+    layers_by_module = classify_modules(modules, matrix)
+    for capability_id, declaration in capabilities.items():
+        owner = declaration["owner_layer"]
+        for provider in declaration["provider_modules"]:
+            if provider not in modules:
+                raise ValueError(
+                    f"architecture capability {capability_id} provider is absent: {provider}"
+                )
+            if layers_by_module[provider] != owner:
+                raise ValueError(
+                    f"architecture capability {capability_id} provider {provider} "
+                    f"belongs to layer {layers_by_module[provider]}, not owner {owner}"
+                )
+    for exception in exceptions:
+        absent_path_modules = sorted(set(exception["path"]) - modules)
+        if absent_path_modules:
+            raise ValueError(
+                "capability exception path modules are absent: "
+                f"{absent_path_modules}"
+            )
+        source_layer = layers_by_module[exception["source_module"]]
+        rule = rules[exception["rule_id"]]
+        if source_layer not in rule["source_layers"]:
+            raise ValueError(
+                f"capability exception source layer {source_layer} is outside rule "
+                f"{exception['rule_id']}"
+            )
+
+
+def _validate_exception_paths_against_graph(
+    exceptions: list[dict[str, Any]],
+    edges: tuple[ImportEdge, ...],
+) -> None:
+    edge_pairs = {(edge.source, edge.target) for edge in edges}
+    for exception in exceptions:
+        path = exception["path"]
+        for source, target in pairwise(path):
+            if (source, target) not in edge_pairs:
+                raise ValueError(
+                    "capability exception path contains absent import edge: "
+                    f"{source} -> {target}"
+                )
+
+
+def validate_architecture_matrix(
+    matrix: dict[str, Any],
+    *,
+    modules: set[str] | None = None,
+    edges: tuple[ImportEdge, ...] | None = None,
+) -> None:
+    """Validate capability declarations against the canonical layer matrix."""
+
+    layer_names = _architecture_layer_names(matrix)
+
+    capabilities = _validate_capability_declarations(
+        matrix, layer_names=layer_names
+    )
+    rules = _validate_architecture_rules(
+        matrix,
+        layer_names=layer_names,
+        capability_ids=set(capabilities),
+    )
+    exceptions = _validate_capability_exceptions(
+        matrix,
+        rules=rules,
+        capabilities=capabilities,
+    )
+    if modules is None:
+        return
+    _validate_capability_module_universe(
+        capabilities, rules, exceptions, matrix=matrix, modules=modules
+    )
+    if edges is not None:
+        _validate_exception_paths_against_graph(exceptions, edges)
+
+
 def classify_modules(modules: set[str], matrix: dict[str, Any]) -> dict[str, str]:
     result: dict[str, str] = {}
     for module in sorted(modules):
@@ -1576,24 +1928,30 @@ def _rule_forbidden(
     )
 
 
-def _shortest_forbidden_path(
+def _shortest_path_to_targets(
     source: str,
     *,
-    rule: dict[str, Any],
+    targets: set[str],
     adjacency: dict[str, set[str]],
-    layers: dict[str, str],
+    excluded_paths: set[tuple[str, ...]] | None = None,
 ) -> tuple[str, ...] | None:
     queue: deque[tuple[str, ...]] = deque([(source,)])
     seen = {source}
+    excluded_paths = excluded_paths or set()
     while queue:
         path = queue.popleft()
         for target in sorted(adjacency.get(path[-1], set())):
             if target in path:
                 continue
             candidate = (*path, target)
-            if _rule_forbidden(rule, target, layers[target]):
-                return candidate
-            if target not in seen:
+            if target in targets:
+                if candidate not in excluded_paths:
+                    return candidate
+                continue
+            # Exact path exceptions require considering an alternate route to
+            # the same intermediate module. With no exceptions, retain the
+            # original linear-time canonical BFS behavior.
+            if excluded_paths or target not in seen:
                 seen.add(target)
                 queue.append(candidate)
     return None
@@ -1608,16 +1966,29 @@ def boundary_violations(
     adjacency: dict[str, set[str]] = {module: set() for module in modules}
     for edge in edges:
         adjacency[edge.source].add(edge.target)
+    capabilities = {
+        str(capability["id"]): set(capability["provider_modules"])
+        for capability in matrix.get("capabilities", [])
+    }
+    capability_exceptions = {
+        (
+            str(exception["source_module"]),
+            str(exception["rule_id"]),
+            str(exception["capability_id"]),
+            tuple(exception["path"]),
+        )
+        for exception in matrix.get("capability_exceptions", [])
+    }
     violations: set[BoundaryViolation] = set()
     for rule in matrix["rules"]:
         sources = set(rule["source_layers"])
         for source in sorted(module for module in modules if layers[module] in sources):
-            direct = [
+            forbidden_modules = {
                 target
-                for target in sorted(adjacency[source])
+                for target in modules
                 if _rule_forbidden(rule, target, layers[target])
-            ]
-            for target in direct:
+            }
+            for target in sorted(adjacency[source] & forbidden_modules):
                 violations.add(
                     BoundaryViolation(
                         rule_id=str(rule["id"]),
@@ -1627,11 +1998,10 @@ def boundary_violations(
                         path=(source, target),
                     )
                 )
-            path = _shortest_forbidden_path(
+            path = _shortest_path_to_targets(
                 source,
-                rule=rule,
+                targets=forbidden_modules,
                 adjacency=adjacency,
-                layers=layers,
             )
             if path is not None and len(path) > 2:
                 violations.add(
@@ -1643,7 +2013,74 @@ def boundary_violations(
                         path=path,
                     )
                 )
-    return tuple(sorted(violations, key=lambda item: (item.rule_id, item.kind, item.path)))
+            for capability_id in rule.get("forbidden_target_capabilities", []):
+                providers = capabilities[capability_id]
+                excluded_paths = {
+                    exception_path
+                    for (
+                        exception_source,
+                        exception_rule,
+                        exception_capability,
+                        exception_path,
+                    ) in capability_exceptions
+                    if exception_source == source
+                    and exception_rule == str(rule["id"])
+                    and exception_capability == capability_id
+                }
+                for target in sorted(adjacency[source] & providers):
+                    direct_path = (source, target)
+                    if (
+                        source,
+                        str(rule["id"]),
+                        capability_id,
+                        direct_path,
+                    ) in capability_exceptions:
+                        continue
+                    violations.add(
+                        BoundaryViolation(
+                            rule_id=str(rule["id"]),
+                            capability_id=capability_id,
+                            kind="direct",
+                            source_layer=layers[source],
+                            target_layer=layers[target],
+                            path=direct_path,
+                        )
+                    )
+                path = _shortest_path_to_targets(
+                    source,
+                    targets=providers,
+                    adjacency=adjacency,
+                    excluded_paths=excluded_paths,
+                )
+                if path is not None and len(path) > 2:
+                    if (
+                        source,
+                        str(rule["id"]),
+                        capability_id,
+                        path,
+                    ) in capability_exceptions:
+                        continue
+                    violations.add(
+                        BoundaryViolation(
+                            rule_id=str(rule["id"]),
+                            capability_id=capability_id,
+                            kind="transitive",
+                            source_layer=layers[path[0]],
+                            target_layer=layers[path[-1]],
+                            path=path,
+                        )
+                    )
+    return tuple(
+        sorted(
+            violations,
+            key=lambda item: (
+                item.rule_id,
+                item.capability_id or "",
+                item.kind,
+                item.path,
+            ),
+        )
+    )
 
 
 def load_layer_matrix(path: Path = DEFAULT_MATRIX_PATH) -> dict[str, Any]:
@@ -1657,6 +2094,7 @@ def load_layer_matrix(path: Path = DEFAULT_MATRIX_PATH) -> dict[str, Any]:
         raise ValueError("architecture layer matrix requires layers and rules")
     if "plane_model" in payload:
         validate_plane_model(payload["plane_model"])
+    validate_architecture_matrix(payload)
     return payload
 
 
@@ -1668,6 +2106,7 @@ def audit_architecture(
     matrix = load_layer_matrix(matrix_path or root / "config" / "architecture-layers.yml")
     source_roots = tuple(str(item) for item in matrix["source_roots"])
     modules, edges = build_canonical_import_graph(root, source_roots)
+    validate_architecture_matrix(matrix, modules=set(modules), edges=edges)
     cycles = strongly_connected_components(set(modules), edges)
     violations = boundary_violations(set(modules), edges, matrix)
     plane_model = matrix.get("plane_model")
@@ -1684,6 +2123,12 @@ def audit_architecture(
         "edge_count": len(edges),
         "cycles": [list(component) for component in cycles],
         "violations": [violation.as_dict() for violation in violations],
+        "capability_count": len(matrix.get("capabilities", [])),
+        "capability_provider_count": sum(
+            len(capability["provider_modules"])
+            for capability in matrix.get("capabilities", [])
+        ),
+        "capability_exception_count": len(matrix.get("capability_exceptions", [])),
         "plane_count": len(plane_model["planes"]) if plane_model else 0,
         "plane_dependency_edges": (
             sum(len(plane.get("depends_on", [])) for plane in plane_model["planes"])

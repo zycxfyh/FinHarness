@@ -553,6 +553,44 @@ layers:
   - name: core
     module_globs: ["finharness", "finharness.*", "scripts.*", "experiments.*"]
 
+# Capability identity is declared once here and consumed by rules below. The
+# checker does not infer effects from file names, symbols, or source text.
+capabilities:
+  - id: execution.broker_registry_resolution
+    owner_layer: execution
+    semantics: Register or resolve a broker adapter selected for an execution order.
+    provider_modules:
+      - finharness.execution.broker
+  - id: execution.broker_submission
+    owner_layer: execution
+    semantics: Invoke the canonical broker submission command or an adapter submission implementation.
+    provider_modules:
+      - finharness.execution.commands
+      - finharness.execution.adapters.simulated_broker
+  - id: statecore.canonical_mutation
+    owner_layer: statecore
+    semantics: Execute a canonical StateCore write, upsert, materialization, or mutation lifecycle.
+    provider_modules:
+      - finharness.statecore.action_intent_authority_bindings
+      - finharness.statecore.action_intent_simulations
+      - finharness.statecore.action_intents
+      - finharness.statecore.agent_authority_grants
+      - finharness.statecore.capital_mandates
+      - finharness.statecore.capital_objective_fits
+      - finharness.statecore.paper_accounts
+      - finharness.statecore.paper_executions
+      - finharness.statecore.paper_order_tickets
+      - finharness.statecore.proposals
+      - finharness.statecore.receipt_index
+      - finharness.statecore.snapshot_ingest
+      - finharness.statecore.store
+      - finharness.statecore.trade_plan_candidates
+      - finharness.statecore.trade_plan_review_gates
+
+# No current path requires an exception. Future exceptions must be exact,
+# capability-specific, Issue-owned, and review-gated.
+capability_exceptions: []
+
 rules:
   - id: statecore-is-foundational
     source_layers: [statecore]
@@ -562,15 +600,17 @@ rules:
     forbidden_target_layers: [agent, archive]
   - id: agent-does-not-bypass-execution-commands
     source_layers: [agent]
+    forbidden_target_capabilities:
+      - execution.broker_registry_resolution
+      - execution.broker_submission
     forbidden_target_modules:
-      - "finharness.execution.commands"
       - "finharness.execution.services"
       - "finharness.execution.adapters.*"
   - id: research-does-not-write-state-or-execute
     source_layers: [research]
+    forbidden_target_capabilities:
+      - statecore.canonical_mutation
     forbidden_target_modules:
-      - "finharness.statecore.store"
-      - "finharness.statecore.proposals"
       - "finharness.execution.commands"
       - "finharness.execution.services"
       - "finharness.execution.adapters.*"

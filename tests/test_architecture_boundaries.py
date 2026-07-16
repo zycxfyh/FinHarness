@@ -3,13 +3,18 @@ from __future__ import annotations
 import copy
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, ClassVar
+
+import yaml
 
 from finharness.architecture_boundaries import (
     audit_architecture,
     build_canonical_import_graph,
     load_layer_matrix,
     validate_agent_harness_boundary,
+    validate_architecture_matrix,
     validate_identity_model,
     validate_plane_model,
     validate_record_taxonomy,
@@ -31,8 +36,69 @@ rules:
     forbidden_target_layers: [api_frontend]
 """
 
+CAPABILITY_MATRIX = """\
+schema: finharness.architecture_layers.v1
+source_roots: [src]
+layers:
+  - name: statecore
+    module_globs: [finharness.statecore, finharness.statecore.*]
+  - name: execution
+    module_globs: [finharness.execution, finharness.execution.*]
+  - name: agent
+    module_globs: [finharness.agent_*]
+  - name: research
+    module_globs: [finharness.research_*]
+  - name: core
+    module_globs: [finharness, finharness.*]
+capabilities:
+  - id: execution.broker_registry_resolution
+    owner_layer: execution
+    semantics: Resolve the configured broker adapter.
+    provider_modules: [finharness.execution.broker]
+  - id: execution.broker_submission
+    owner_layer: execution
+    semantics: Submit an order through the canonical command or adapter.
+    provider_modules:
+      - finharness.execution.commands
+      - finharness.execution.adapters.simulated_broker
+  - id: statecore.canonical_mutation
+    owner_layer: statecore
+    semantics: Mutate canonical StateCore state.
+    provider_modules:
+      - finharness.statecore.capital_mandates
+      - finharness.statecore.agent_authority_grants
+      - finharness.statecore.snapshot_ingest
+      - finharness.statecore.proposals
+      - finharness.statecore.receipt_index
+capability_exceptions: []
+rules:
+  - id: agent-does-not-bypass-execution-commands
+    source_layers: [agent]
+    forbidden_target_capabilities:
+      - execution.broker_registry_resolution
+      - execution.broker_submission
+  - id: research-does-not-write-state-or-execute
+    source_layers: [research]
+    forbidden_target_capabilities: [statecore.canonical_mutation]
+"""
+
 
 class ArchitectureBoundaryTest(unittest.TestCase):
+    _CAPABILITY_PROVIDER_FILES: ClassVar[dict[str, str]] = {
+        "src/finharness/__init__.py": "",
+        "src/finharness/execution/broker.py": "",
+        "src/finharness/execution/commands.py": "",
+        "src/finharness/execution/adapters/simulated_broker.py": "",
+        "src/finharness/statecore/capital_mandates.py": "",
+        "src/finharness/statecore/agent_authority_grants.py": "",
+        "src/finharness/statecore/snapshot_ingest.py": "",
+        "src/finharness/statecore/proposals.py": "",
+        "src/finharness/statecore/receipt_index.py": "",
+        "src/finharness/statecore/models.py": "",
+        "src/finharness/statecore/decision_scaffold.py": "",
+        "src/finharness/agent_capabilities.py": "",
+    }
+
     def _repo(self, files: dict[str, str]) -> tuple[tempfile.TemporaryDirectory, Path]:
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
@@ -41,6 +107,26 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
         (root / "matrix.yml").write_text(MATRIX, encoding="utf-8")
+        return temp, root
+
+    def _capability_repo(
+        self,
+        files: dict[str, str],
+        *,
+        mutate: Callable[[dict[str, Any]], None] | None = None,
+    ) -> tuple[tempfile.TemporaryDirectory, Path]:
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        for relative, content in {**self._CAPABILITY_PROVIDER_FILES, **files}.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        matrix = yaml.safe_load(CAPABILITY_MATRIX)
+        if mutate is not None:
+            mutate(matrix)
+        (root / "matrix.yml").write_text(
+            yaml.safe_dump(matrix, sort_keys=False), encoding="utf-8"
+        )
         return temp, root
 
     def test_relative_imports_resolve_to_canonical_modules(self) -> None:
@@ -96,6 +182,350 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             paths,
         )
 
+    def test_agent_broker_capability_rejects_direct_and_hidden_paths(self) -> None:
+        cases = (
+            (
+                "direct registry resolution",
+                {"src/finharness/agent_probe.py": "import finharness.execution.broker\n"},
+                "execution.broker_registry_resolution",
+                "direct",
+                ("finharness.agent_probe", "finharness.execution.broker"),
+            ),
+            (
+                "hidden registry resolution",
+                {
+                    "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                    "src/finharness/neutral_helper.py": "import finharness.execution.broker\n",
+                },
+                "execution.broker_registry_resolution",
+                "transitive",
+                (
+                    "finharness.agent_probe",
+                    "finharness.neutral_helper",
+                    "finharness.execution.broker",
+                ),
+            ),
+            (
+                "actual submission command",
+                {"src/finharness/agent_probe.py": "import finharness.execution.commands\n"},
+                "execution.broker_submission",
+                "direct",
+                ("finharness.agent_probe", "finharness.execution.commands"),
+            ),
+            (
+                "hidden adapter submission",
+                {
+                    "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                    "src/finharness/neutral_helper.py": (
+                        "import finharness.execution.adapters.simulated_broker\n"
+                    ),
+                },
+                "execution.broker_submission",
+                "transitive",
+                (
+                    "finharness.agent_probe",
+                    "finharness.neutral_helper",
+                    "finharness.execution.adapters.simulated_broker",
+                ),
+            ),
+        )
+        for label, files, capability_id, kind, path in cases:
+            with self.subTest(label=label):
+                temp, root = self._capability_repo(files)
+                try:
+                    audit = audit_architecture(
+                        root=root, matrix_path=root / "matrix.yml"
+                    )
+                finally:
+                    temp.cleanup()
+                matches = [
+                    violation
+                    for violation in audit["violations"]
+                    if violation["capability_id"] == capability_id
+                ]
+                self.assertEqual(len(matches), 1)
+                self.assertEqual(matches[0]["kind"], kind)
+                self.assertEqual(tuple(matches[0]["path"]), path)
+                self.assertEqual(
+                    matches[0]["rule_id"],
+                    "agent-does-not-bypass-execution-commands",
+                )
+
+    def test_research_mutation_capability_covers_representative_writers(self) -> None:
+        providers = (
+            "capital_mandates",
+            "agent_authority_grants",
+            "snapshot_ingest",
+            "proposals",
+            "receipt_index",
+        )
+        for provider in providers:
+            target = f"finharness.statecore.{provider}"
+            for hidden in (False, True):
+                with self.subTest(provider=provider, hidden=hidden):
+                    files = {
+                        "src/finharness/research_probe.py": (
+                            "import finharness.neutral_helper\n"
+                            if hidden
+                            else f"import {target}\n"
+                        )
+                    }
+                    expected_path: tuple[str, ...] = (
+                        "finharness.research_probe",
+                        target,
+                    )
+                    if hidden:
+                        files["src/finharness/neutral_helper.py"] = f"import {target}\n"
+                        expected_path = (
+                            "finharness.research_probe",
+                            "finharness.neutral_helper",
+                            target,
+                        )
+                    temp, root = self._capability_repo(files)
+                    try:
+                        audit = audit_architecture(
+                            root=root, matrix_path=root / "matrix.yml"
+                        )
+                    finally:
+                        temp.cleanup()
+                    violation = audit["violations"][0]
+                    self.assertEqual(
+                        violation["capability_id"], "statecore.canonical_mutation"
+                    )
+                    self.assertEqual(
+                        violation["kind"], "transitive" if hidden else "direct"
+                    )
+                    self.assertEqual(tuple(violation["path"]), expected_path)
+
+    def test_new_capability_provider_is_enforced_without_rule_change(self) -> None:
+        def add_provider(matrix: dict[str, Any]) -> None:
+            mutation = next(
+                capability
+                for capability in matrix["capabilities"]
+                if capability["id"] == "statecore.canonical_mutation"
+            )
+            mutation["provider_modules"].append("finharness.statecore.new_writer")
+
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/statecore/new_writer.py": "",
+                "src/finharness/research_probe.py": (
+                    "import finharness.statecore.new_writer\n"
+                ),
+            },
+            mutate=add_provider,
+        )
+        self.addCleanup(temp.cleanup)
+        audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
+        self.assertEqual(len(audit["violations"]), 1)
+        self.assertEqual(
+            audit["violations"][0]["capability_id"],
+            "statecore.canonical_mutation",
+        )
+        self.assertEqual(
+            audit["violations"][0]["target_module"],
+            "finharness.statecore.new_writer",
+        )
+
+    def test_capabilities_preserve_legitimate_read_only_paths(self) -> None:
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/research_projection.py": (
+                    "import finharness.statecore.models\n"
+                    "import finharness.statecore.decision_scaffold\n"
+                ),
+                "src/finharness/agent_probe.py": (
+                    "import finharness.agent_capabilities\n"
+                    "import finharness.statecore.models\n"
+                ),
+            }
+        )
+        self.addCleanup(temp.cleanup)
+        audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
+        self.assertEqual(audit["violations"], [])
+        self.assertTrue(audit["ok"])
+
+    def test_capability_configuration_corruption_fails_closed(self) -> None:
+        base = yaml.safe_load(CAPABILITY_MATRIX)
+
+        def mutation_capability(matrix: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                capability
+                for capability in matrix["capabilities"]
+                if capability["id"] == "statecore.canonical_mutation"
+            )
+
+        corruptions: tuple[tuple[str, Callable[[dict[str, Any]], None], str], ...] = (
+            (
+                "unknown capability reference",
+                lambda matrix: matrix["rules"][0][
+                    "forbidden_target_capabilities"
+                ].append("execution.unknown"),
+                "references unknown capabilities",
+            ),
+            (
+                "duplicate capability id",
+                lambda matrix: matrix["capabilities"].append(
+                    copy.deepcopy(matrix["capabilities"][0])
+                ),
+                "duplicate architecture capability id",
+            ),
+            (
+                "duplicate provider",
+                lambda matrix: mutation_capability(matrix)["provider_modules"].append(
+                    mutation_capability(matrix)["provider_modules"][0]
+                ),
+                "duplicate provider_modules",
+            ),
+            (
+                "empty provider set",
+                lambda matrix: mutation_capability(matrix).__setitem__(
+                    "provider_modules", []
+                ),
+                "provider_modules as a non-empty string list",
+            ),
+            (
+                "unknown owner layer",
+                lambda matrix: mutation_capability(matrix).__setitem__(
+                    "owner_layer", "unknown"
+                ),
+                "unknown owner layer",
+            ),
+            (
+                "missing owner layer",
+                lambda matrix: mutation_capability(matrix).pop("owner_layer"),
+                "fields violate canonical contract",
+            ),
+            (
+                "broad provider pattern",
+                lambda matrix: mutation_capability(matrix).__setitem__(
+                    "provider_modules", ["finharness.statecore.*"]
+                ),
+                "provider must be an exact module",
+            ),
+            (
+                "capability removed while referenced",
+                lambda matrix: matrix["capabilities"].pop(0),
+                "references unknown capabilities",
+            ),
+            (
+                "misspelled parallel rule field",
+                lambda matrix: matrix["rules"][0].__setitem__(
+                    "forbidden_target_capability", "execution.broker_submission"
+                ),
+                "rule fields violate canonical contract",
+            ),
+        )
+        for label, corrupt, message in corruptions:
+            with self.subTest(label=label):
+                matrix = copy.deepcopy(base)
+                corrupt(matrix)
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_architecture_matrix(matrix)
+
+    def test_capability_exceptions_are_exact_and_review_gated(self) -> None:
+        valid_exception = {
+            "source_module": "finharness.agent_probe",
+            "rule_id": "agent-does-not-bypass-execution-commands",
+            "capability_id": "execution.broker_registry_resolution",
+            "path": ["finharness.agent_probe", "finharness.execution.broker"],
+            "reason": "Bounded compatibility path pending removal.",
+            "owner_issue": 369,
+            "review_gate": "Remove after compatibility path migration.",
+        }
+        base = yaml.safe_load(CAPABILITY_MATRIX)
+        corruptions = (
+            (
+                "broad source",
+                {**valid_exception, "source_module": "finharness.*"},
+                "one exact module",
+            ),
+            (
+                "wrong capability",
+                {**valid_exception, "capability_id": "statecore.canonical_mutation"},
+                "cannot mask capability",
+            ),
+            (
+                "unknown owner issue",
+                {**valid_exception, "owner_issue": 0},
+                "positive owner_issue",
+            ),
+            (
+                "missing review gate",
+                {**valid_exception, "review_gate": ""},
+                "concrete review_gate",
+            ),
+            (
+                "vague reason",
+                {**valid_exception, "reason": "temporary"},
+                "concrete reason",
+            ),
+        )
+        for label, exception, message in corruptions:
+            with self.subTest(label=label):
+                matrix = copy.deepcopy(base)
+                matrix["capability_exceptions"] = [exception]
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_architecture_matrix(matrix)
+
+    def test_capability_exception_does_not_mask_another_path(self) -> None:
+        def add_exception(matrix: dict[str, Any]) -> None:
+            matrix["capability_exceptions"] = [
+                {
+                    "source_module": "finharness.agent_probe",
+                    "rule_id": "agent-does-not-bypass-execution-commands",
+                    "capability_id": "execution.broker_registry_resolution",
+                    "path": [
+                        "finharness.agent_probe",
+                        "finharness.neutral_helper",
+                        "finharness.execution.broker",
+                    ],
+                    "reason": "Bounded compatibility path pending removal.",
+                    "owner_issue": 369,
+                    "review_gate": "Remove after compatibility path migration.",
+                }
+            ]
+
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/agent_probe.py": (
+                    "import finharness.neutral_helper\n"
+                    "import finharness.second_helper\n"
+                ),
+                "src/finharness/neutral_helper.py": (
+                    "import finharness.execution.broker\n"
+                ),
+                "src/finharness/second_helper.py": (
+                    "import finharness.execution.broker\n"
+                ),
+            },
+            mutate=add_exception,
+        )
+        self.addCleanup(temp.cleanup)
+        audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
+        paths = [
+            tuple(violation["path"])
+            for violation in audit["violations"]
+            if violation["capability_id"] == "execution.broker_registry_resolution"
+        ]
+        self.assertEqual(
+            paths,
+            [
+                (
+                    "finharness.agent_probe",
+                    "finharness.second_helper",
+                    "finharness.execution.broker",
+                )
+            ],
+        )
+
+    def test_capability_provider_absent_from_module_universe_is_rejected(self) -> None:
+        temp, root = self._capability_repo({})
+        self.addCleanup(temp.cleanup)
+        (root / "src/finharness/statecore/receipt_index.py").unlink()
+        with self.assertRaisesRegex(ValueError, "provider is absent"):
+            audit_architecture(root=root, matrix_path=root / "matrix.yml")
+
     def test_current_repository_passes_the_ci_gate(self) -> None:
         audit = audit_architecture()
         self.assertEqual(audit["cycles"], [])
@@ -109,6 +539,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["record_category_count"], 6)
         self.assertEqual(audit["record_surface_migration_count"], 9)
         self.assertEqual(audit["record_surface_component_count"], 14)
+        self.assertEqual(audit["capability_count"], 3)
+        self.assertEqual(audit["capability_provider_count"], 18)
+        self.assertEqual(audit["capability_exception_count"], 0)
         self.assertEqual(audit["agent_mature_runtime_capability_count"], 6)
         self.assertEqual(audit["agent_delegated_decision_mechanic_count"], 5)
         self.assertEqual(audit["agent_dispatch_crossing_count"], 4)
@@ -120,6 +553,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["agent_first_task_case_basis_count"], 4)
         self.assertEqual(audit["agent_authority_context_binding_count"], 3)
         self.assertTrue(audit["ok"])
+
+    def test_current_architecture_audit_is_deterministic(self) -> None:
+        self.assertEqual(audit_architecture(), audit_architecture())
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
         self,
@@ -1015,6 +1451,143 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 self.assertIn("Action/Learning", text)
                 self.assertIn("Product", text)
                 self.assertIn("Assurance", text)
+
+    def test_capability_exception_source_must_belong_to_the_rule_layer(self) -> None:
+        def add_wrong_layer_exception(matrix: dict[str, Any]) -> None:
+            matrix["capability_exceptions"] = [
+                {
+                    "source_module": "finharness.neutral_helper",
+                    "rule_id": "agent-does-not-bypass-execution-commands",
+                    "capability_id": "execution.broker_registry_resolution",
+                    "path": [
+                        "finharness.neutral_helper",
+                        "finharness.execution.broker",
+                    ],
+                    "reason": "Bounded compatibility path pending removal.",
+                    "owner_issue": 369,
+                    "review_gate": "Remove after compatibility path migration.",
+                }
+            ]
+
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/neutral_helper.py": (
+                    "import finharness.execution.broker\n"
+                )
+            },
+            mutate=add_wrong_layer_exception,
+        )
+        self.addCleanup(temp.cleanup)
+        with self.assertRaisesRegex(ValueError, "outside rule"):
+            audit_architecture(root=root, matrix_path=root / "matrix.yml")
+
+    def test_agent_adapter_fallback_remains_in_the_canonical_rule(self) -> None:
+        matrix = load_layer_matrix()
+        agent_rule = next(
+            rule
+            for rule in matrix["rules"]
+            if rule["id"] == "agent-does-not-bypass-execution-commands"
+        )
+        self.assertIn(
+            "finharness.execution.adapters.*",
+            agent_rule["forbidden_target_modules"],
+        )
+
+    def test_unregistered_future_adapter_is_still_forbidden_to_agent(self) -> None:
+        def retain_adapter_fallback(matrix: dict[str, Any]) -> None:
+            agent_rule = next(
+                rule
+                for rule in matrix["rules"]
+                if rule["id"] == "agent-does-not-bypass-execution-commands"
+            )
+            agent_rule["forbidden_target_modules"] = [
+                "finharness.execution.adapters.*"
+            ]
+
+        cases = (
+            (
+                "direct",
+                {
+                    "src/finharness/agent_probe.py": (
+                        "import finharness.execution.adapters.future_broker\n"
+                    ),
+                    "src/finharness/execution/adapters/future_broker.py": "",
+                },
+                (
+                    "finharness.agent_probe",
+                    "finharness.execution.adapters.future_broker",
+                ),
+            ),
+            (
+                "transitive",
+                {
+                    "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                    "src/finharness/neutral_helper.py": (
+                        "import finharness.execution.adapters.future_broker\n"
+                    ),
+                    "src/finharness/execution/adapters/future_broker.py": "",
+                },
+                (
+                    "finharness.agent_probe",
+                    "finharness.neutral_helper",
+                    "finharness.execution.adapters.future_broker",
+                ),
+            ),
+        )
+        for kind, files, expected_path in cases:
+            with self.subTest(kind=kind):
+                temp, root = self._capability_repo(
+                    files, mutate=retain_adapter_fallback
+                )
+                try:
+                    audit = audit_architecture(
+                        root=root, matrix_path=root / "matrix.yml"
+                    )
+                finally:
+                    temp.cleanup()
+                violations = [
+                    violation
+                    for violation in audit["violations"]
+                    if violation["target_module"]
+                    == "finharness.execution.adapters.future_broker"
+                ]
+                self.assertEqual(len(violations), 1)
+                self.assertIsNone(violations[0]["capability_id"])
+                self.assertEqual(violations[0]["kind"], kind)
+                self.assertEqual(tuple(violations[0]["path"]), expected_path)
+
+    def test_capability_exception_rejects_an_absent_import_edge(self) -> None:
+        def add_dormant_exception(matrix: dict[str, Any]) -> None:
+            matrix["capability_exceptions"] = [
+                {
+                    "source_module": "finharness.agent_probe",
+                    "rule_id": "agent-does-not-bypass-execution-commands",
+                    "capability_id": "execution.broker_registry_resolution",
+                    "path": [
+                        "finharness.agent_probe",
+                        "finharness.neutral_helper",
+                        "finharness.execution.broker",
+                    ],
+                    "reason": "Bounded compatibility path pending removal.",
+                    "owner_issue": 369,
+                    "review_gate": "Remove after compatibility path migration.",
+                }
+            ]
+
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                "src/finharness/neutral_helper.py": "VALUE = 1\n",
+            },
+            mutate=add_dormant_exception,
+        )
+        self.addCleanup(temp.cleanup)
+        with self.assertRaisesRegex(
+            ValueError,
+            "absent import edge: finharness.neutral_helper -> "
+            "finharness.execution.broker",
+        ):
+            audit_architecture(root=root, matrix_path=root / "matrix.yml")
 
 
 if __name__ == "__main__":

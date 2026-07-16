@@ -2363,19 +2363,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 386,
+      "match_line": 822,
       "term": "Attestation",
       "reason": "Structural test for BuildAttestation evidence policy; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 409,
+      "match_line": 845,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 443,
+      "match_line": 879,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
@@ -2435,49 +2435,49 @@
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 223,
+      "match_line": 224,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 230,
+      "match_line": 231,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 247,
+      "match_line": 248,
       "term": "Attestation",
       "reason": "BuildAttestation allowed_references in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 412,
+      "match_line": 413,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 418,
+      "match_line": 419,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 581,
+      "match_line": 1017,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation current_conformance; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 688,
+      "match_line": 1124,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 689,
+      "match_line": 1125,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
