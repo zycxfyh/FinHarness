@@ -167,7 +167,7 @@ class HighRiskApprovalApiTest(unittest.TestCase):
         proposal_id = self._create(VALID_SCAFFOLD)
         resp = self.client.post(
             f"/proposals/{proposal_id}/attest",
-            json={"decision": "approved", "attester": "xzh", "reason": "looks fine"},
+            json={"decision": "approved", "reason": "looks fine"},
         )
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(read_all(Attestation, engine=self.engine), [])
@@ -176,7 +176,7 @@ class HighRiskApprovalApiTest(unittest.TestCase):
         proposal_id = self._create(SCAFFOLD_WITH_COUNTER)
         resp = self.client.post(
             f"/proposals/{proposal_id}/attest",
-            json={"decision": "approved", "attester": "xzh", "reason": "reviewed counter-evidence"},
+            json={"decision": "approved", "reason": "reviewed counter-evidence"},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["attestation"]["decision"], "approved")

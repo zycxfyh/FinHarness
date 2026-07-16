@@ -230,6 +230,9 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `kind` | `str` | `state_core_capital_mandate`. |
 | `created_at_utc` | `str` | Creation timestamp. |
 | `capital_mandate` | `CapitalMandate` | Human-attested policy-domain payload. |
+| `capital_mandate.human_attester` | `str` | Stable server-authenticated Agent runtime id when present, otherwise the authenticated principal id; never copied from the request body. |
+| `capital_mandate_version.authenticated_actor_receipt_ref` | `str \| None` | Server-issued mutation identity reference for keyed writes. Unkeyed backfill remains part of #352's cross-medium commit work. |
+| `capital_mandate_version.legacy_actor_label` | `str \| None` | Server-context legacy display label retained as unverified provenance, never actor authority. |
 | `source_ips` | `InvestmentPolicyStatement \| None` | Source IPS snapshot when one is linked. |
 | `governance_boundary.execution_allowed` | `bool` | Always false. |
 | `governance_boundary.authority_transition` | `bool` | Always false. |

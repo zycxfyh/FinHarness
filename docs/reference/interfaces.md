@@ -15,11 +15,11 @@ Use this as a lookup page. For system ownership, read
 | StateCoreInterface | SQLite / SQLModel | Queryable mirror, DecimalText money, receipt index, atomic writes | `statecore/`, [Receipt Reference](receipts.md) |
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
-| CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; requires human attester/reason/explicit confirmation and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
+| CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; derives its actor from server-authenticated `OperatorContext`, requires a written reason and explicit confirmation, and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
 | AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; structured product/instrument/action/direction/notional/broker scope; closed validation reasons; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
 | ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
-| ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, proposal review queue triage | `/review/queue`, `task review:annual`, `review_read.py` |
+| ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, and proposal review queue triage; governed HTTP writes derive the actor from `OperatorContext`, never request prose | `/review/queue`, `task review:annual`, `review_read.py` |
 | ApiMutationIdentityInterface | FastAPI + authenticated identity provider | Optional `Idempotency-Key` claim bound to actor, canonical target/query, semantic headers, and body hash; 1 MiB request/response limits; durable locked CAS terminal transitions; exact replay; typed domain-truth reconciliation | `identity.py`, `task identity:reconcile`, [Durable write mini-RFC](../proposals/2026-07-13-durable-write-and-api-mutation-semantics.md) |
 | RiskRegisterInterface | Local deterministic read model | Derived risk register view over review queue signals; no risk acceptance, scoring, scenario generation, or writes | `/risk/register`, `risk_register.py` |
 | ResearchEvidenceInterface | yfinance/mature data adapters where enabled | Historical/descriptive evidence, source grades, data gaps, no prediction | `research_evidence.py`, `task decisions:research-smoke` |
@@ -47,7 +47,8 @@ The ADR does not select a provider or add a runtime dependency.
   and `execution_allowed=false`.
 - Human attestation is review evidence, not execution authorization.
 - CapitalMandate is a policy-domain carrier future authority objects may cite.
-  It requires `human_attester`, `human_reason`, and `explicit_confirmation=true`;
+  Its HTTP command derives `human_attester` from the authenticated principal or
+  Agent runtime, and requires `human_reason` and `explicit_confirmation=true`;
   it still has `execution_allowed=false` and `authority_transition=false`, and
   it is not an Agent identity grant, AuthorityContract, order ticket, broker
   instruction, or execution authorization.
@@ -118,8 +119,9 @@ The ADR does not select a provider or add a runtime dependency.
   Agent-supplied candidate payload until a later system preflight recomputes
   them. Applying the patch requires a later human-confirmed flow.
 - Human-confirmed scaffold candidate apply is a review-state transition:
-  `POST /scaffold-revision-candidates/{candidate_id}/apply` requires a human
-  attester/reason, expected candidate receipt, expected proposal receipt,
+  `POST /scaffold-revision-candidates/{candidate_id}/apply` derives its actor
+  from the server-authenticated `OperatorContext` and requires a written reason,
+  expected candidate receipt, expected proposal receipt,
   expected system preflight report hash, and `explicit_confirmation=true`.
   The server recomputes preflight at apply time, rejects mismatched hashes,
   hard-blocks blocking findings, and only allows warning findings when the human

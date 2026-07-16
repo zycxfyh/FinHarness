@@ -215,7 +215,6 @@ class VersionedCapitalMandateApiTest(unittest.TestCase):
                 "profile_snapshot": {},
                 "investment_objectives": {},
                 "risk_profile": {},
-                "human_attester": "historical-alice-label",
                 "human_reason": "Confirm server-bound mandate.",
                 "explicit_confirmation": True,
                 "effective_at_utc": "2026-07-13T00:00:00+00:00",
@@ -234,7 +233,7 @@ class VersionedCapitalMandateApiTest(unittest.TestCase):
             self.assertEqual(resolution["principal_id"], "legacy-local:alice")
             self.assertEqual(
                 resolution["version"]["legacy_actor_label"],
-                "historical-alice-label",
+                "alice",
             )
             self.assertFalse(resolution["version"]["legacy_actor_label_verified"])
             revoked = client.post(

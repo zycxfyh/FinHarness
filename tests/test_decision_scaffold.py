@@ -248,7 +248,6 @@ class ApiForcingTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "Jane Control",
                 "reason": "Approval attempted before counter-evidence.",
             },
         )
@@ -258,7 +257,6 @@ class ApiForcingTest(unittest.TestCase):
         revised = self.client.patch(
             f"/proposals/{proposal_id}/decision-scaffold",
             json={
-                "attester": "Jane Control",
                 "reason": "Added falsification condition before approval.",
                 "decision_scaffold": {
                     "counter_evidence": (
@@ -281,7 +279,10 @@ class ApiForcingTest(unittest.TestCase):
         receipt_payload = json.loads(Path(revised_body["receipt_ref"]).read_text(encoding="utf-8"))
         self.assertEqual(receipt_payload["supersedes"], first_receipt)
         self.assertEqual(receipt_payload["revision_context"]["kind"], "decision_scaffold_revision")
-        self.assertEqual(receipt_payload["revision_context"]["attester"], "Jane Control")
+        self.assertEqual(
+            receipt_payload["revision_context"]["attester"],
+            "legacy-local:test_harness",
+        )
         self.assertFalse(receipt_payload["revision_context"]["execution_allowed"])
 
         revisions = self.client.get(f"/proposals/{proposal_id}/revisions")
@@ -292,7 +293,6 @@ class ApiForcingTest(unittest.TestCase):
             f"/proposals/{proposal_id}/attest",
             json={
                 "decision": "approved",
-                "attester": "Jane Control",
                 "reason": "Counter-evidence is now recorded; approval is review-only.",
             },
         )
@@ -314,7 +314,6 @@ class ApiForcingTest(unittest.TestCase):
         unknown = self.client.patch(
             f"/proposals/{proposal_id}/decision-scaffold",
             json={
-                "attester": "Jane Control",
                 "reason": "Trying an unknown field.",
                 "decision_scaffold": {"broker_order_type": "market"},
             },
@@ -325,7 +324,6 @@ class ApiForcingTest(unittest.TestCase):
         noop = self.client.patch(
             f"/proposals/{proposal_id}/decision-scaffold",
             json={
-                "attester": "Jane Control",
                 "reason": "Trying an empty revision.",
                 "decision_scaffold": {"counter_evidence": "   "},
             },

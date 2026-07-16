@@ -20,10 +20,16 @@ from finharness.api.dependencies import (
 from finharness.identity import (
     IdentityMutationClaim,
     IdentityMutationError,
+    OperatorContext,
+    authoritative_actor_id_from_binding,
+    bind_authenticated_actor_to_mutation,
     load_identity_mutation_receipt,
     load_identity_mutation_receipt_by_id,
     record_verified_identity_mutation_reconciliation,
     replay_identity_mutation,
+)
+from finharness.identity import (
+    identity_mutation_source_ref as canonical_identity_mutation_source_ref,
 )
 from finharness.project_paths import ROOT
 from finharness.proposal_queue_checks import (
@@ -96,9 +102,6 @@ class ProposalCreateResponse(BaseModel):
 
 
 _PROPOSAL_CREATE_RECONCILIATION_RESOLVER = "finharness.api.proposal_create.v1"
-_IDENTITY_MUTATION_SOURCE_PREFIX = "identity-mutation:"
-
-
 def proposal_id_for_identity_mutation(receipt_id: str) -> str:
     """Derive one stable Proposal id from one mutation receipt."""
 
@@ -107,13 +110,14 @@ def proposal_id_for_identity_mutation(receipt_id: str) -> str:
 
 
 def identity_mutation_source_ref(receipt_id: str) -> str:
-    return f"{_IDENTITY_MUTATION_SOURCE_PREFIX}{receipt_id}"
+    return canonical_identity_mutation_source_ref(receipt_id)
 
 
 def _route_identity_mutation_binding(
     http_request: Request,
     *,
     effect_kind: str,
+    operator: OperatorContext | None = None,
 ) -> tuple[str, dict[str, Any]] | None:
     """Bind one route-owned effect to its executing identity claim."""
 
@@ -174,7 +178,31 @@ def _route_identity_mutation_binding(
             },
         )
 
+    actor_binding: tuple[str, dict[str, object]] | None = None
+    if operator is not None:
+        try:
+            actor_binding = bind_authenticated_actor_to_mutation(
+                raw_claim,
+                context=operator,
+            )
+        except IdentityMutationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_authenticated_actor_binding",
+                    "message": str(exc),
+                    "execution_allowed": False,
+                },
+            ) from exc
+
     source_ref = identity_mutation_source_ref(raw_claim.receipt_id)
+    actor_context: dict[str, Any] = {}
+    if actor_binding is not None:
+        actor_ref, actor = actor_binding
+        actor_context = {
+            "authenticated_actor_receipt_ref": actor_ref,
+            "authenticated_actor": actor,
+        }
 
     return (
         source_ref,
@@ -186,6 +214,7 @@ def _route_identity_mutation_binding(
             "identity_mutation_request_target": target,
             "identity_mutation_method": method,
             "identity_mutation_path": path,
+            **actor_context,
             "execution_allowed": False,
         },
     )
@@ -552,6 +581,7 @@ def _require_exact_domain_binding(
     receipt_id: str,
     request_binding: dict[str, Any],
     effect_kind: str,
+    expected_actor: object | None = None,
 ) -> None:
     if not isinstance(context, dict):
         raise IdentityMutationError("domain receipt has no typed mutation binding")
@@ -570,6 +600,13 @@ def _require_exact_domain_binding(
     for key, value in expected.items():
         if context.get(key) != value:
             raise IdentityMutationError(f"domain receipt mutation binding does not match: {key}")
+    if expected_actor is not None:
+        if context.get("authenticated_actor") != expected_actor:
+            raise IdentityMutationError("domain receipt authenticated actor does not match")
+        if context.get("authenticated_actor_receipt_ref") != identity_mutation_source_ref(
+            receipt_id
+        ):
+            raise IdentityMutationError("domain receipt authenticated actor ref does not match")
 
 
 def _require_unqueried_route_target(
@@ -730,7 +767,11 @@ def _reconcile_attestation_identity_mutation(
         receipt_id=receipt_id,
         request_binding=request_binding,
         effect_kind="api_attestation_create",
+        expected_actor=mutation.get("actor"),
     )
+    expected_actor_id = authoritative_actor_id_from_binding(mutation.get("actor"))
+    if attestation.attester != expected_actor_id:
+        raise IdentityMutationError("attestation row actor differs from authenticated actor")
 
     proposal_receipt_ref = receipt.get("proposal_receipt_ref")
     if not isinstance(
@@ -788,6 +829,8 @@ _MUTATION_BINDING_FIELDS = frozenset(
         "identity_mutation_path",
         "schema",
         "effect_kind",
+        "authenticated_actor",
+        "authenticated_actor_receipt_ref",
     }
 )
 
@@ -900,7 +943,14 @@ def _require_verifiable_foreign_mutation_claim(
         receipt_id=claim_id,
         request_binding=foreign_request,
         effect_kind="api_proposal_decision_scaffold_revision",
+        expected_actor=foreign_receipt.get("actor"),
     )
+    if context.get("attester") != authoritative_actor_id_from_binding(
+        foreign_receipt.get("actor")
+    ):
+        raise IdentityMutationError(
+            "scaffold candidate foreign actor differs from authenticated actor"
+        )
 
     # ── 6.  Canonical terminal response → candidate ownership ─────
     _require_foreign_response_ownership(
@@ -1038,6 +1088,7 @@ def _validate_scaffold_candidate_revision(
     proposal_id: str,
     receipt_root: Path,
     mutation_ref: str,
+    expected_actor: object,
 ) -> tuple[str, Proposal, dict[str, Any]] | None:
     """Validate one candidate scaffold revision receipt against an exact identity mutation.
 
@@ -1112,7 +1163,10 @@ def _validate_scaffold_candidate_revision(
         receipt_id=receipt_id,
         request_binding=request_binding,
         effect_kind="api_proposal_decision_scaffold_revision",
+        expected_actor=expected_actor,
     )
+    if context.get("attester") != authoritative_actor_id_from_binding(expected_actor):
+        raise IdentityMutationError("scaffold revision actor differs from authenticated actor")
 
     return (candidate_ref, candidate_proposal, candidate_receipt)
 
@@ -1168,6 +1222,7 @@ def _reconcile_scaffold_revision_identity_mutation(
             proposal_id=proposal_id,
             receipt_root=receipt_root,
             mutation_ref=mutation_ref,
+            expected_actor=mutation.get("actor"),
         )
         if result is not None:
             exact_matches.append(result)
@@ -1313,7 +1368,11 @@ def _reconcile_review_event_identity_mutation(
         receipt_id=receipt_id,
         request_binding=request_binding,
         effect_kind="api_review_event_create",
+        expected_actor=mutation.get("actor"),
     )
+    expected_actor_id = authoritative_actor_id_from_binding(mutation.get("actor"))
+    if event.attester != expected_actor_id:
+        raise IdentityMutationError("review-event row actor differs from authenticated actor")
 
     proposal_receipt_ref = receipt.get("proposal_receipt_ref")
     if not isinstance(
@@ -1442,7 +1501,6 @@ class AttestationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: DecisionInput
-    attester: str
     reason: str
     # Optional only for compatibility with pre-version clients. The Cockpit always
     # supplies both; when either is supplied the pair is mandatory and stale-safe.
@@ -1451,13 +1509,12 @@ class AttestationCreateRequest(BaseModel):
     source_refs: list[str] = Field(default_factory=list)
 
     @field_validator(
-        "attester",
         "reason",
     )
     @classmethod
     def require_human_context(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("attestation requires a named human and written reason")
+            raise ValueError("attestation requires a written reason")
         return value
 
 
@@ -1598,16 +1655,15 @@ class ProposalRevisionResponse(BaseModel):
 class ProposalScaffoldRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    attester: str
     reason: str
     decision_scaffold: dict[str, Any]
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("attester", "reason")
+    @field_validator("reason")
     @classmethod
     def require_human_context(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("proposal scaffold revision requires a named human and written reason")
+            raise ValueError("proposal scaffold revision requires a written reason")
         return value
 
 
@@ -1627,7 +1683,6 @@ class ProposalScaffoldRevisionResponse(BaseModel):
 class ScaffoldRevisionCandidateApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    human_attester: str
     human_reason: str
     expected_candidate_receipt_ref: str
     expected_proposal_receipt_ref: str
@@ -1637,7 +1692,6 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
     acknowledged_preflight_warning_codes: list[str] = Field(default_factory=list)
 
     @field_validator(
-        "human_attester",
         "human_reason",
         "expected_candidate_receipt_ref",
         "expected_proposal_receipt_ref",
@@ -2215,11 +2269,12 @@ async def revise_proposal_decision_scaffold(
     http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    _write_capability: WriteCapabilityDependency,
+    operator: WriteCapabilityDependency,
 ) -> ProposalScaffoldRevisionResponse:
     binding = _route_identity_mutation_binding(
         http_request,
         effect_kind=("api_proposal_decision_scaffold_revision"),
+        operator=operator,
     )
     source_refs = list(request.source_refs)
     mutation_context: dict[str, Any] | None = None
@@ -2233,7 +2288,7 @@ async def revise_proposal_decision_scaffold(
         result = revise_governed_proposal_scaffold(
             proposal_id=proposal_id,
             scaffold_patch=request.decision_scaffold,
-            attester=request.attester.strip(),
+            attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
             source_refs=source_refs,
             revision_context_extra=mutation_context,
@@ -2305,10 +2360,16 @@ async def get_scaffold_revision_candidate_preflight(
 async def apply_scaffold_revision_candidate(
     candidate_id: str,
     request: ScaffoldRevisionCandidateApplyRequest,
+    http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    _write_capability: WriteCapabilityDependency,
+    operator: WriteCapabilityDependency,
 ) -> ScaffoldRevisionCandidateApplyResponse:
+    binding = _route_identity_mutation_binding(
+        http_request,
+        effect_kind="api_scaffold_revision_candidate_apply",
+        operator=operator,
+    )
     candidate = find_scaffold_revision_candidate(candidate_id, engine=engine)
     if candidate is None:
         raise HTTPException(
@@ -2357,9 +2418,10 @@ async def apply_scaffold_revision_candidate(
         result = revise_governed_proposal_scaffold(
             proposal_id=event.proposal_id,
             scaffold_patch=scaffold_patch,
-            attester=request.human_attester.strip(),
+            attester=operator.authoritative_actor_id,
             reason=request.human_reason.strip(),
             source_refs=[
+                *([binding[0]] if binding is not None else []),
                 candidate_receipt_ref,
                 request.expected_proposal_receipt_ref.strip(),
                 *event.source_refs,
@@ -2383,6 +2445,7 @@ async def apply_scaffold_revision_candidate(
                 "explicit_confirmation": True,
                 "explicit_preflight_acknowledgement": (request.explicit_preflight_acknowledgement),
                 "authority_transition": False,
+                **(binding[1] if binding is not None else {}),
             },
             engine=engine,
             receipt_root=receipt_root,
@@ -2472,11 +2535,12 @@ async def attest_proposal(
     http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    _write_capability: WriteCapabilityDependency,
+    operator: WriteCapabilityDependency,
 ) -> AttestationCreateResponse:
     binding = _route_identity_mutation_binding(
         http_request,
         effect_kind="api_attestation_create",
+        operator=operator,
     )
     source_refs = list(request.source_refs)
     mutation_context: dict[str, Any] | None = None
@@ -2505,7 +2569,7 @@ async def attest_proposal(
         result = create_governed_attestation(
             proposal_id=proposal_id,
             decision=request.decision,
-            attester=request.attester.strip(),
+            attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
             source_refs=source_refs,
             mutation_context=mutation_context,
@@ -2562,18 +2626,17 @@ class ReviewEventCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: ReviewEventKind
-    attester: str
     reason: str
     text: str | None = None
     attestation_ref: str | None = None
     compare_with: str | None = None
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("attester", "reason")
+    @field_validator("reason")
     @classmethod
     def require_human_context(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("review event requires a named human and written reason")
+            raise ValueError("review event requires a written reason")
         return value
 
 
@@ -2620,11 +2683,12 @@ async def add_review_event(
     http_request: Request,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
-    _write_capability: WriteCapabilityDependency,
+    operator: WriteCapabilityDependency,
 ) -> ReviewEventCreateResponse:
     binding = _route_identity_mutation_binding(
         http_request,
         effect_kind="api_review_event_create",
+        operator=operator,
     )
     source_refs = list(request.source_refs)
     mutation_context: dict[str, Any] | None = None
@@ -2638,7 +2702,7 @@ async def add_review_event(
         result = create_governed_review_event(
             proposal_id=proposal_id,
             kind=request.kind,
-            attester=request.attester.strip(),
+            attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
             text=request.text,
             attestation_ref=request.attestation_ref,

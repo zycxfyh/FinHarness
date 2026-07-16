@@ -203,7 +203,6 @@ window.fetch = (p, opts) => {
 };
 window.confirm = () => false;
 let form = renderForm();
-form.querySelector('[name="attester"]').value = "operator";
 form.querySelector('[name="reason"]').value = "cleanup";
 form.dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
 assert.strictEqual(fetchCalls.length, 0, "cancelled confirm must not POST");
@@ -212,7 +211,6 @@ assert.strictEqual(fetchCalls.length, 0, "cancelled confirm must not POST");
 fetchCalls = [];
 window.confirm = () => true;
 form = renderForm();
-form.querySelector('[name="attester"]').value = "operator";
 form.querySelector('[name="reason"]').value = "cleanup";
 form.dispatchEvent(new window.Event("submit", { cancelable: true, bubbles: true }));
 // allow the async submit handler microtasks to run

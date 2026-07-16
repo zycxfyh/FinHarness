@@ -43,7 +43,6 @@ class CompareMarksApiTest(unittest.TestCase):
             f"/proposals/{proposal_id}/review-events",
             json={
                 "kind": "compare_mark",
-                "attester": "operator",
                 "reason": "compare these",
                 "compare_with": compare_with,
             },

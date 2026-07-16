@@ -69,7 +69,6 @@ async function recordDecision(page, proposalId, decision) {
   await openProposal(page, proposalId);
   const form = page.locator("#proposal-detail form.attestation-form");
   await form.locator('[name="decision"]').selectOption(decision);
-  await form.locator('[name="attester"]').fill("Browser Human");
   await form.locator('[name="reason"]').fill(`Browser ${decision} review`);
   await form.locator('button[type="submit"]').click();
   await page.waitForFunction(
@@ -77,7 +76,7 @@ async function recordDecision(page, proposalId, decision) {
       const selected = document.querySelector(`#proposal-list button[data-proposal-id="${id}"]`);
       return selected && document.querySelector("#proposal-detail")?.textContent.includes(expected);
     },
-    [proposalId, decision === "approved" ? "confirmed by Browser Human" : `${decision} by Browser Human`],
+    [proposalId, decision === "approved" ? "confirmed by legacy-local:browser-test-human" : `${decision} by legacy-local:browser-test-human`],
   );
 }
 
@@ -109,9 +108,9 @@ async function run() {
     await page.reload({ waitUntil: "networkidle" });
     await page.locator('button.tab[data-view="proposals"]').click();
     for (const [proposalId, label] of [
-      ["browser-confirm", "confirmed by Browser Human"],
-      ["browser-reject", "rejected by Browser Human"],
-      ["browser-defer", "deferred by Browser Human"],
+      ["browser-confirm", "confirmed by legacy-local:browser-test-human"],
+      ["browser-reject", "rejected by legacy-local:browser-test-human"],
+      ["browser-defer", "deferred by legacy-local:browser-test-human"],
     ]) {
       await openProposal(page, proposalId);
       const detail = await page.locator("#proposal-detail").textContent();
@@ -126,11 +125,10 @@ async function run() {
     page.once("dialog", (dialog) => dialog.accept());
     const revision = page.locator("#proposal-detail form.scaffold-revision-form");
     await revision.locator('[name="counter_evidence"]').fill("Browser falsifier");
-    await revision.locator('[name="attester"]').fill("Browser Human");
     await revision.locator('[name="reason"]').fill("Revise after decision");
     await revision.locator('button[type="submit"]').click();
     await page.waitForFunction(() =>
-      document.querySelector("#proposal-detail")?.textContent.includes("confirmed by Browser Human (stale)"),
+      document.querySelector("#proposal-detail")?.textContent.includes("confirmed by legacy-local:browser-test-human (stale)"),
     );
     const staleStatus = await page.evaluate(async (expected) => {
       const response = await fetch("/proposals/browser-confirm/attest", {
@@ -138,7 +136,6 @@ async function run() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           decision: "rejected",
-          attester: "Stale Browser Tab",
           reason: "Must be rejected",
           expected_proposal_version_id: expected.receipt_id,
           expected_proposal_receipt_ref: expected.receipt_ref,
@@ -156,7 +153,6 @@ async function run() {
     await openProposal(page, "browser-defer");
     const deniedForm = page.locator("#proposal-detail form.attestation-form");
     await deniedForm.locator('[name="decision"]').selectOption("approved");
-    await deniedForm.locator('[name="attester"]').fill("Browser Human");
     await deniedForm.locator('[name="reason"]').fill("Read-only must deny this");
     await deniedForm.locator('button[type="submit"]').click();
     await page.waitForSelector("#proposal-detail .error-text");

@@ -42,7 +42,9 @@ is the source of truth; the SQLite row is the query mirror.
 
 `CapitalMandate` is stricter than IPS on authority boundaries:
 
-- `human_attester` is required;
+- `human_attester` is required in the domain record; as amended by #364, the
+  HTTP command derives it from server-authenticated `OperatorContext` rather
+  than accepting it from the request body;
 - `human_reason` is required;
 - `explicit_confirmation=true` is required;
 - `execution_allowed=false` is enforced;

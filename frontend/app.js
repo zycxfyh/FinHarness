@@ -660,10 +660,6 @@ function renderAttestationForm(parent, proposalId, proposalVersion) {
       </select>
     </div>
     <div class="form-row">
-      <label for="attestation-attester">Attester</label>
-      <input id="attestation-attester" name="attester" autocomplete="name" />
-    </div>
-    <div class="form-row">
       <label for="attestation-reason">Reason</label>
       <textarea id="attestation-reason" name="reason"></textarea>
     </div>
@@ -679,7 +675,6 @@ function renderAttestationForm(parent, proposalId, proposalVersion) {
           `/proposals/${proposalId}/attest`,
           {
             decision: data.get("decision"),
-            attester: data.get("attester"),
             reason: data.get("reason"),
             expected_proposal_version_id:
               proposalVersion.proposal_version_id,
@@ -729,10 +724,6 @@ function renderScaffoldRevisionForm(parent, proposalId) {
       <textarea id="scaffold-counter-evidence" name="counter_evidence"></textarea>
     </div>
     <div class="form-row">
-      <label for="scaffold-attester">Reviewer</label>
-      <input id="scaffold-attester" name="attester" autocomplete="name" />
-    </div>
-    <div class="form-row">
       <label for="scaffold-reason">Reason</label>
       <textarea id="scaffold-reason" name="reason"></textarea>
     </div>
@@ -750,7 +741,6 @@ function renderScaffoldRevisionForm(parent, proposalId) {
         ReviewActionShell.patch(
           `/proposals/${proposalId}/decision-scaffold`,
           {
-            attester: data.get("attester"),
             reason: data.get("reason"),
             decision_scaffold: {
               counter_evidence:
@@ -955,10 +945,6 @@ function renderReviewEventForm(parent, proposalId) {
       </select>
     </div>
     <div class="form-row">
-      <label for="review-attester">Reviewer</label>
-      <input id="review-attester" name="attester" autocomplete="name" />
-    </div>
-    <div class="form-row">
       <label for="review-reason">Reason</label>
       <textarea id="review-reason" name="reason"></textarea>
     </div>
@@ -972,7 +958,7 @@ function renderReviewEventForm(parent, proposalId) {
     event.preventDefault();
     const data = new FormData(form);
     const kind = data.get("kind");
-    if (!window.confirm(`Record review action "${kind}"? It is logged with your name and reason.`)) {
+    if (!window.confirm(`Record review action "${kind}"? It is logged with the authenticated actor and reason.`)) {
       return; // explicit confirm required; no write on cancel
     }
     await submitGovernedFormWrite({
@@ -982,7 +968,6 @@ function renderReviewEventForm(parent, proposalId) {
           `/proposals/${proposalId}/review-events`,
           {
             kind,
-            attester: data.get("attester"),
             reason: data.get("reason"),
             text: data.get("text") || null,
           },
