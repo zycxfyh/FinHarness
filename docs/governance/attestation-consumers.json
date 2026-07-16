@@ -2336,6 +2336,198 @@
       "match_line": 107,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Documentation enumerating typed reconciliation surfaces; not a code consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 221,
+      "term": "Attestation",
+      "reason": "Record-taxonomy contract label for BuildAttestation; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 228,
+      "term": "Attestation",
+      "reason": "BuildAttestation reference-direction contract; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 245,
+      "term": "Attestation",
+      "reason": "OperationReceipt reference-direction contract naming BuildAttestation; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 289,
+      "term": "Attestation",
+      "reason": "BuildAttestation exact category contract; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 375,
+      "term": "Attestation",
+      "reason": "Structural test for BuildAttestation evidence policy; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 398,
+      "term": "Attestation",
+      "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 432,
+      "term": "Attestation",
+      "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 23,
+      "term": "Attestation",
+      "reason": "ADR taxonomy definition distinguishing BuildAttestation from legacy decision semantics; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 45,
+      "term": "Attestation",
+      "reason": "ADR standards mapping for build attestations; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 65,
+      "term": "Attestation",
+      "reason": "ADR record-category definition for BuildAttestation; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 79,
+      "term": "Attestation",
+      "reason": "ADR reference-direction rule naming BuildAttestation; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 95,
+      "term": "Attestation",
+      "reason": "ADR migration mapping for the legacy Attestation model; the registered model and consumers remain owned by their migration Issues."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 96,
+      "term": "attestations",
+      "reason": "ADR migration mapping for build identity artifacts; not a runtime legacy Attestation consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 108,
+      "term": "Attestation",
+      "reason": "ADR destructive-test requirement for BuildAttestation policy; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 111,
+      "term": "Attestation",
+      "reason": "ADR scope boundary rejecting a universal Attestation base class; not a runtime consumer."
+    },
+    {
+      "path": "docs/reference/receipts.md",
+      "match_line": 8,
+      "term": "Attestation",
+      "reason": "Reference documentation taxonomy link distinguishing BuildAttestation from historical receipt names; not a runtime consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 222,
+      "term": "Attestation",
+      "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 229,
+      "term": "Attestation",
+      "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 246,
+      "term": "Attestation",
+      "reason": "BuildAttestation allowed_references in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 411,
+      "term": "Attestation",
+      "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
+    },
+    {
+      "path": "src/finharness/architecture_boundaries.py",
+      "match_line": 417,
+      "term": "Attestation",
+      "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 570,
+      "term": "Attestation",
+      "reason": "Destructive test for BuildAttestation current_conformance; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 677,
+      "term": "Attestation",
+      "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
+    },
+    {
+      "path": "tests/test_architecture_boundaries.py",
+      "match_line": 678,
+      "term": "Attestation",
+      "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 116,
+      "term": "Attestation",
+      "reason": "ADR component migration table; not a legacy Attestation runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 120,
+      "term": "Attestation",
+      "reason": "ADR component migration table; not a legacy Attestation runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 162,
+      "term": "Attestation",
+      "reason": "ADR commit identity BuildAttestation conformance documentation; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 166,
+      "term": "Attestation",
+      "reason": "ADR commit identity BuildAttestation conformance documentation; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 173,
+      "term": "Attestation",
+      "reason": "ADR commit identity BuildAttestation conformance documentation; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-record-receipt-provenance-trace-attestation-projection-taxonomy.md",
+      "match_line": 190,
+      "term": "Attestation",
+      "reason": "ADR retenion scope and BuildAttestation clarification; not a runtime consumer."
+    },
+    {
+      "path": "docs/reference/receipts.md",
+      "match_line": 12,
+      "term": "Attestation",
+      "reason": "Receipt reference documentation noting migration targets; not a runtime consumer."
+    },
+    {
+      "path": "docs/reference/receipts.md",
+      "match_line": 15,
+      "term": "Attestation",
+      "reason": "Receipt reference documentation noting commit-identity JSON; not a runtime consumer."
     }
   ],
   "unclassified_hits": []

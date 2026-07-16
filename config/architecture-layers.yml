@@ -203,6 +203,210 @@ plane_model:
           trigger_owner_plane: judgment
           affects: [DecisionRecord]
 
+  # Record roles are explicit authority contracts, not a shared runtime base
+  # class or a classifier inferred from names, paths, tables, or JSON shapes.
+  record_taxonomy:
+    schema: finharness.record_taxonomy.v1
+    enforcement:
+      classification: explicit_contract_only
+      universal_base_class: forbidden
+      inference_from_name_path_or_storage: forbidden
+    categories:
+      - name: DomainRecord
+        purpose: authoritative domain fact, state transition, or decision history
+        truth_owner: owning domain plane
+        authoritative_source: owning domain write or admission boundary
+        mutability: immutable version or append-only domain history
+        retention: domain and legal lifecycle; independent of projection rebuild
+        reconstruction: authoritative domain history or verified source replay only
+        allowed_references: [DomainRecord, ArtifactProvenance, OperationReceipt]
+        domain_authority_effect: owning domain policy only
+        decision_validity_effect: Judgment-owned DomainRecord policy only
+        financial_evidence_admission: owning domain admission boundary only
+      - name: OperationReceipt
+        purpose: integrity-bound operation attempt, outcome, retry, and recovery evidence
+        truth_owner: bounded operation producer
+        authoritative_source: operation boundary and typed reconciliation resolver
+        mutability: append-only or integrity-linked pending-to-terminal transitions
+        retention: retry, recovery, and audit horizon; extended while referenced
+        reconstruction: typed reconciliation may record outcome but cannot fabricate domain effect
+        allowed_references: [DomainRecord, OperationReceipt, ArtifactProvenance, AgentRunTrace]
+        domain_authority_effect: none
+        decision_validity_effect: none
+        financial_evidence_admission: not admissible by receipt presence
+      - name: ArtifactProvenance
+        purpose: immutable artifact origin, derivation, attribution, and integrity binding
+        truth_owner: artifact producer or qualified external source
+        authoritative_source: W3C PROV-aligned generation and derivation boundary
+        mutability: immutable statements with append-only correction or invalidation
+        retention: at least the subject artifact and applicable evidence lifecycle
+        reconstruction: only from verifiable entities, activities, agents, and source bytes
+        allowed_references: [DomainRecord, OperationReceipt, ArtifactProvenance]
+        domain_authority_effect: none
+        decision_validity_effect: none
+        financial_evidence_admission: explicit Knowledge or Truth policy required
+      - name: AgentRunTrace
+        purpose: ordered durable execution history of one bounded Agent runtime invocation
+        truth_owner: Agent runtime
+        authoritative_source: durable unsampled Agent runtime trace and event boundary
+        mutability: append-only canonical trace events with one terminal run outcome
+        retention: Agent recovery and audit lifecycle with policy-governed redaction
+        reconstruction: canonical persisted trace records and referenced immutable artifacts; never sampled telemetry
+        allowed_references: [DomainRecord, OperationReceipt, ArtifactProvenance, AgentRunTrace]
+        domain_authority_effect: none
+        decision_validity_effect: none
+        financial_evidence_admission: explicit domain policy required
+      - name: BuildAttestation
+        purpose: authenticated claim binding a build or verification predicate to subjects
+        truth_owner: authenticated build or verification system
+        authoritative_source: in-toto Statement and SLSA predicate issued by the builder
+        mutability: immutable authenticated statement; supersession creates a new statement
+        retention: subject artifact, release, and verification lifecycle
+        reconstruction: rerun or authenticated reissue; never regenerate from PR prose
+        allowed_references: [ArtifactProvenance, BuildAttestation]
+        domain_authority_effect: none
+        decision_validity_effect: none
+        financial_evidence_admission: explicit domain policy required
+      - name: ProjectionIndex
+        purpose: disposable discovery or query acceleration over authoritative records
+        truth_owner: none; upstream category remains authoritative
+        authoritative_source: declared upstream records at a bound generation or high-water mark
+        mutability: replaceable and directly non-authoritative
+        retention: disposable; delete and rebuild under lifecycle policy
+        reconstruction: deterministic rebuild from authoritative sources at a bound generation
+        allowed_references: [DomainRecord, OperationReceipt, ArtifactProvenance, AgentRunTrace, BuildAttestation]
+        domain_authority_effect: none
+        decision_validity_effect: none
+        financial_evidence_admission: never by index presence
+    agent_trace_observability_export:
+      standard: OpenTelemetry-aligned spans, links, events, and terminal status
+      authority: non-authoritative export of AgentRunTrace
+      sampling: permitted for observability export only
+      redaction: policy governed
+      cannot_satisfy:
+        - canonical trace completeness
+        - restart hydration
+        - domain authority
+        - decision validity
+        - financial evidence admission
+    surface_migrations:
+      - surface: statecore_receipt_backed_domain_writes
+        components:
+          - component: canonical_domain_state
+            current_role: receipt-backed canonical domain payload or state history
+            current_conformance: partial
+            target_category: DomainRecord
+            owner_issues: [258, 267, 268, 269, 270, 271]
+            completed_prerequisites: []
+            disposition: preserve history and move authority to existing domain write and admission boundaries
+          - component: mutation_operation_evidence
+            current_role: mutation attempt, terminal outcome, retry, and reconciliation evidence
+            current_conformance: partial
+            target_category: OperationReceipt
+            owner_issues: [383]
+            completed_prerequisites: []
+            disposition: retain operation identity and reconciliation semantics without granting domain authority
+          - component: receipt_discovery_index
+            current_role: lookup rows over canonical receipt or artifact bytes
+            current_conformance: partial
+            target_category: ProjectionIndex
+            owner_issues: [395]
+            completed_prerequisites: []
+            disposition: rebuild from authoritative inventory and prune stale entries at a bound generation
+      - surface: receipt_index
+        components:
+          - component: generic_receipt_index_rows
+            current_role: replaceable discovery projection over canonical receipt or artifact inventory
+            current_conformance: partial
+            target_category: ProjectionIndex
+            owner_issues: [395]
+            completed_prerequisites: []
+            disposition: preserve as rebuildable projection and reject stale or dangling entries after successful rebuild
+      - surface: agent_receipt_search
+        components:
+          - component: search_generation_index
+            current_role: generated search projection over retained Agent records
+            current_conformance: partial
+            target_category: ProjectionIndex
+            owner_issues: [367]
+            completed_prerequisites: []
+            disposition: keep generation-bound search state rebuildable and non-authoritative
+      - surface: agent_run_receipt_and_trace_sink
+        components:
+          - component: canonical_agent_run_trace
+            current_role: compatibility receipt and trace paths for one Agent work request
+            current_conformance: partial
+            target_category: AgentRunTrace
+            owner_issues: [291]
+            completed_prerequisites: []
+            disposition: consolidate compatibility paths into one durable ordered canonical run trace
+      - surface: legacy_attestation
+        components:
+          - component: historical_review_evidence
+            current_role: retained historical human review and attestation evidence
+            current_conformance: partial
+            target_category: DomainRecord
+            owner_issues: [273]
+            completed_prerequisites: []
+            disposition: preserve historical readability without treating legacy attestation as current decision truth
+          - component: current_decision_truth
+            current_role: legacy consumers treating attestation as current decision or authority truth
+            current_conformance: not_yet_conforming
+            target_category: DomainRecord
+            owner_issues: [271, 272, 273]
+            completed_prerequisites: []
+            disposition: migrate current truth to canonical DecisionRecord and authority provenance while retaining compatibility reads
+      - surface: artifact_descriptor_and_import_provenance
+        components:
+          - component: immutable_artifact_descriptor
+            current_role: immutable artifact identity, source bytes, derivation, and integrity binding
+            current_conformance: partial
+            target_category: ArtifactProvenance
+            owner_issues: [368, 371, 373, 376, 394]
+            completed_prerequisites: []
+            disposition: adopt shared immutable artifact and qualified external-source boundaries
+      - surface: keyed_mutation_identity_receipt
+        components:
+          - component: keyed_mutation_state_machine
+            current_role: request ownership, pending claim, terminal outcome, replay, and typed reconciliation evidence
+            current_conformance: partial
+            target_category: OperationReceipt
+            owner_issues: [383, 385, 387, 388, 389]
+            completed_prerequisites: []
+            disposition: retain the keyed-mutation state machine while preventing receipt presence from proving domain effect
+      - surface: commit_identity_manifest_and_ci_artifacts
+        components:
+          - component: commit_identity_verification_manifest
+            current_role: repository verification JSON artifact binding claim, repository, commit SHA, ref type, command, and result
+            current_conformance: not_yet_conforming
+            target_category: BuildAttestation
+            owner_issues: [379]
+            completed_prerequisites: [386]
+            disposition: preserve existing commit-identity evidence as compatibility input; future owner must add authenticated subject and predicate semantics before claiming BuildAttestation conformance
+      - surface: market_data_and_import_receipts
+        components:
+          - component: admitted_market_or_capital_state
+            current_role: domain state admitted from validated market or import data
+            current_conformance: partial
+            target_category: DomainRecord
+            owner_issues: [258]
+            completed_prerequisites: []
+            disposition: keep admitted financial truth behind the owning Truth admission boundary
+          - component: import_operation_outcome
+            current_role: import attempt, validation result, failure, retry, and recovery evidence
+            current_conformance: partial
+            target_category: OperationReceipt
+            owner_issues: [373, 376]
+            completed_prerequisites: []
+            disposition: separate import outcome evidence from admitted financial truth
+          - component: imported_source_provenance
+            current_role: imported source identity, bytes, manifest, lineage, and derivation
+            current_conformance: partial
+            target_category: ArtifactProvenance
+            owner_issues: [373, 376, 394]
+            completed_prerequisites: []
+            disposition: preserve source provenance under the shared qualified-source identity boundary
+
 # First match wins. Keep narrow ownership rules before the core fallback.
 layers:
   - name: statecore

@@ -11,6 +11,7 @@ from finharness.architecture_boundaries import (
     load_layer_matrix,
     validate_identity_model,
     validate_plane_model,
+    validate_record_taxonomy,
 )
 
 MATRIX = """\
@@ -104,6 +105,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["version_graph_node_count"], 8)
         self.assertEqual(audit["version_graph_edges"], 7)
         self.assertEqual(audit["freshness_rule_count"], 8)
+        self.assertEqual(audit["record_category_count"], 6)
+        self.assertEqual(audit["record_surface_migration_count"], 9)
+        self.assertEqual(audit["record_surface_component_count"], 14)
         self.assertTrue(audit["ok"])
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
@@ -347,6 +351,343 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         model["version_graph"]["currentness_owner_semantics"] = "trigger_owner_plane"
         with self.assertRaisesRegex(ValueError, "affected node ownership"):
             validate_identity_model(model, planes=planes)
+
+    def _record_taxonomy(self) -> dict[str, object]:
+        return copy.deepcopy(load_layer_matrix()["plane_model"]["record_taxonomy"])
+
+    def test_record_taxonomy_has_six_explicit_non_inferred_categories(self) -> None:
+        taxonomy = self._record_taxonomy()
+        self.assertEqual(
+            taxonomy["enforcement"],
+            {
+                "classification": "explicit_contract_only",
+                "universal_base_class": "forbidden",
+                "inference_from_name_path_or_storage": "forbidden",
+            },
+        )
+        self.assertEqual(
+            {category["name"] for category in taxonomy["categories"]},
+            {
+                "DomainRecord",
+                "OperationReceipt",
+                "ArtifactProvenance",
+                "AgentRunTrace",
+                "BuildAttestation",
+                "ProjectionIndex",
+            },
+        )
+
+    def test_every_record_category_field_is_an_exact_contract(self) -> None:
+        fields = (
+            "purpose",
+            "truth_owner",
+            "authoritative_source",
+            "mutability",
+            "retention",
+            "reconstruction",
+            "allowed_references",
+            "domain_authority_effect",
+            "decision_validity_effect",
+            "financial_evidence_admission",
+        )
+        for category_name in (
+            "DomainRecord",
+            "OperationReceipt",
+            "ArtifactProvenance",
+            "AgentRunTrace",
+            "BuildAttestation",
+            "ProjectionIndex",
+        ):
+            for field in fields:
+                with self.subTest(category=category_name, field=field):
+                    taxonomy = self._record_taxonomy()
+                    categories = {
+                        category["name"]: category
+                        for category in taxonomy["categories"]
+                    }
+                    current = categories[category_name][field]
+                    categories[category_name][field] = (
+                        list(reversed(current))
+                        if isinstance(current, list)
+                        else f"{current} drift"
+                    )
+                    with self.assertRaisesRegex(
+                        ValueError, f"record category {category_name} violates"
+                    ):
+                        validate_record_taxonomy(taxonomy)
+
+    def test_operation_receipt_cannot_grant_domain_or_decision_authority(self) -> None:
+        for field in ("domain_authority_effect", "decision_validity_effect"):
+            with self.subTest(field=field):
+                taxonomy = self._record_taxonomy()
+                categories = {
+                    category["name"]: category
+                    for category in taxonomy["categories"]
+                }
+                categories["OperationReceipt"][field] = "granted"
+                with self.assertRaisesRegex(ValueError, "OperationReceipt violates"):
+                    validate_record_taxonomy(taxonomy)
+
+    def test_trace_and_build_attestation_require_domain_evidence_policy(self) -> None:
+        for category_name in ("AgentRunTrace", "BuildAttestation"):
+            with self.subTest(category=category_name):
+                taxonomy = self._record_taxonomy()
+                categories = {
+                    category["name"]: category
+                    for category in taxonomy["categories"]
+                }
+                categories[category_name]["financial_evidence_admission"] = "automatic"
+                with self.assertRaisesRegex(ValueError, f"{category_name} violates"):
+                    validate_record_taxonomy(taxonomy)
+
+    def test_projection_index_must_remain_disposable_and_rebuildable(self) -> None:
+        for field, value in (
+            ("truth_owner", "projection database"),
+            ("retention", "permanent"),
+            ("reconstruction", "not rebuildable"),
+            ("financial_evidence_admission", "index presence proves evidence"),
+        ):
+            with self.subTest(field=field):
+                taxonomy = self._record_taxonomy()
+                categories = {
+                    category["name"]: category
+                    for category in taxonomy["categories"]
+                }
+                categories["ProjectionIndex"][field] = value
+                with self.assertRaisesRegex(ValueError, "ProjectionIndex violates"):
+                    validate_record_taxonomy(taxonomy)
+
+    # --- Migration component tests ---
+
+    def _migration_component(
+        self,
+        surface: str,
+        component_name: str,
+    ) -> dict[str, object]:
+        taxonomy = self._record_taxonomy()
+        migrations = taxonomy["surface_migrations"]
+        for migration in migrations:
+            if migration["surface"] == surface:
+                for component in migration["components"]:
+                    if component["component"] == component_name:
+                        return component, taxonomy  # type: ignore[return-value]
+        raise AssertionError(f"component {surface}/{component_name} not found")
+
+    def test_migration_component_single_target_category(self) -> None:
+        component, taxonomy = self._migration_component(
+            "statecore_receipt_backed_domain_writes", "canonical_domain_state"
+        )
+        component["target_category"] = ["DomainRecord", "OperationReceipt"]
+        with self.assertRaisesRegex(
+            ValueError, "target_category must be a single string"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_migration_component_exact_owner_issues(self) -> None:
+        component, taxonomy = self._migration_component(
+            "statecore_receipt_backed_domain_writes", "canonical_domain_state"
+        )
+        component["owner_issues"].remove(258)
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_migration_component_no_spurious_owner_issue(self) -> None:
+        component, taxonomy = self._migration_component(
+            "statecore_receipt_backed_domain_writes", "canonical_domain_state"
+        )
+        component["owner_issues"].append(395)
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_parent_owner_pool_is_rejected(self) -> None:
+        taxonomy = self._record_taxonomy()
+        migrations = taxonomy["surface_migrations"]
+        # Add owner_issues directly to a surface entry — must fail with unknown field
+        for migration in migrations:
+            if migration["surface"] == "statecore_receipt_backed_domain_writes":
+                migration["owner_issues"] = [999]
+                break
+        with self.assertRaisesRegex(
+            ValueError, "surface migration fields violate canonical contract"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_current_conformance_separate_from_target_conforming_rejected(self) -> None:
+        component, taxonomy = self._migration_component(
+            "commit_identity_manifest_and_ci_artifacts",
+            "commit_identity_verification_manifest",
+        )
+        component["current_conformance"] = "conforming"
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_prerequisite_386_cannot_be_removed(self) -> None:
+        component, taxonomy = self._migration_component(
+            "commit_identity_manifest_and_ci_artifacts",
+            "commit_identity_verification_manifest",
+        )
+        component["completed_prerequisites"] = []
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_386_is_prerequisite_not_remaining_migration_owner(self) -> None:
+        component, taxonomy = self._migration_component(
+            "commit_identity_manifest_and_ci_artifacts",
+            "commit_identity_verification_manifest",
+        )
+        component["completed_prerequisites"] = []
+        component["owner_issues"] = [379, 386]
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_commit_identity_not_domain_record(self) -> None:
+        component, taxonomy = self._migration_component(
+            "commit_identity_manifest_and_ci_artifacts",
+            "commit_identity_verification_manifest",
+        )
+        component["target_category"] = "DomainRecord"
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_disposition_cannot_claim_authenticated_build_attestation(self) -> None:
+        component, taxonomy = self._migration_component(
+            "commit_identity_manifest_and_ci_artifacts",
+            "commit_identity_verification_manifest",
+        )
+        component["disposition"] = (
+            "current manifest is already an authenticated BuildAttestation"
+        )
+        with self.assertRaisesRegex(
+            ValueError, "migrations are incomplete"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    # --- AgentRunTrace canonical trace tests ---
+
+    def test_agent_trace_otel_exporter_not_authoritative(self) -> None:
+        taxonomy = self._record_taxonomy()
+        categories = {c["name"]: c for c in taxonomy["categories"]}
+        categories["AgentRunTrace"]["authoritative_source"] = "OpenTelemetry exporter"
+        with self.assertRaisesRegex(ValueError, "AgentRunTrace violates"):
+            validate_record_taxonomy(taxonomy)
+
+    def test_agent_trace_sampled_telemetry_not_reconstruction(self) -> None:
+        taxonomy = self._record_taxonomy()
+        categories = {c["name"]: c for c in taxonomy["categories"]}
+        categories["AgentRunTrace"]["reconstruction"] = "sampled telemetry"
+        with self.assertRaisesRegex(ValueError, "AgentRunTrace violates"):
+            validate_record_taxonomy(taxonomy)
+
+    def test_agent_trace_domain_authority_not_granted(self) -> None:
+        taxonomy = self._record_taxonomy()
+        categories = {c["name"]: c for c in taxonomy["categories"]}
+        categories["AgentRunTrace"]["domain_authority_effect"] = "granted"
+        with self.assertRaisesRegex(ValueError, "AgentRunTrace violates"):
+            validate_record_taxonomy(taxonomy)
+
+    # --- OTel observability export contract tests ---
+
+    def test_otel_export_authority_not_authoritative(self) -> None:
+        taxonomy = self._record_taxonomy()
+        taxonomy["agent_trace_observability_export"]["authority"] = "authoritative"
+        with self.assertRaisesRegex(
+            ValueError, "agent_trace_observability_export.authority"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_otel_export_sampling_not_canonical_trace(self) -> None:
+        taxonomy = self._record_taxonomy()
+        taxonomy["agent_trace_observability_export"]["sampling"] = (
+            "canonical trace may be sampled"
+        )
+        with self.assertRaisesRegex(
+            ValueError, "agent_trace_observability_export.sampling"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_otel_export_cannot_satisfy_restart_hydration(self) -> None:
+        taxonomy = self._record_taxonomy()
+        cannot = taxonomy["agent_trace_observability_export"]["cannot_satisfy"]
+        cannot.remove("restart hydration")
+        with self.assertRaisesRegex(
+            ValueError, "agent_trace_observability_export.cannot_satisfy"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_otel_export_cannot_satisfy_canonical_trace_completeness(self) -> None:
+        taxonomy = self._record_taxonomy()
+        cannot = taxonomy["agent_trace_observability_export"]["cannot_satisfy"]
+        cannot.remove("canonical trace completeness")
+        with self.assertRaisesRegex(
+            ValueError, "agent_trace_observability_export.cannot_satisfy"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    # --- Unknown field and category guard tests ---
+
+    def test_record_taxonomy_unknown_top_level_field_is_rejected(self) -> None:
+        for field in (
+            "runtime_classifier",
+            "universal_record_base",
+            "second_registry",
+            "retention_engine",
+        ):
+            with self.subTest(field=field):
+                taxonomy = self._record_taxonomy()
+                taxonomy[field] = "forbidden parallel mechanism"
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "top-level fields violate canonical contract",
+                ):
+                    validate_record_taxonomy(taxonomy)
+
+    def test_migration_component_unknown_field_rejected(self) -> None:
+        component, taxonomy = self._migration_component(
+            "statecore_receipt_backed_domain_writes", "canonical_domain_state"
+        )
+        component["runtime_classifier"] = "suffix_based"
+        with self.assertRaisesRegex(
+            ValueError, "component fields violate canonical contract"
+        ):
+            validate_record_taxonomy(taxonomy)
+
+    def test_migration_component_unknown_category_rejected(self) -> None:
+        component, taxonomy = self._migration_component(
+            "statecore_receipt_backed_domain_writes", "canonical_domain_state"
+        )
+        component["target_category"] = "GenericReceipt"
+        with self.assertRaisesRegex(ValueError, "unknown target_category"):
+            validate_record_taxonomy(taxonomy)
+
+    def test_build_attestation_not_automatic_financial_evidence(self) -> None:
+        taxonomy = self._record_taxonomy()
+        categories = {c["name"]: c for c in taxonomy["categories"]}
+        categories["BuildAttestation"]["financial_evidence_admission"] = "automatic"
+        with self.assertRaisesRegex(ValueError, "BuildAttestation violates"):
+            validate_record_taxonomy(taxonomy)
+
+    def test_universal_base_or_inferred_category_enforcement_is_rejected(self) -> None:
+        for field, value in (
+            ("universal_base_class", "required"),
+            ("inference_from_name_path_or_storage", "allowed"),
+        ):
+            with self.subTest(field=field):
+                taxonomy = self._record_taxonomy()
+                taxonomy["enforcement"][field] = value
+                with self.assertRaisesRegex(ValueError, "forbids universal bases"):
+                    validate_record_taxonomy(taxonomy)
 
     def test_reverse_plane_dependency_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])
