@@ -605,6 +605,7 @@ rules:
       - execution.broker_submission
     forbidden_target_modules:
       - "finharness.execution.services"
+      - "finharness.execution.adapters.*"
   - id: research-does-not-write-state-or-execute
     source_layers: [research]
     forbidden_target_capabilities:

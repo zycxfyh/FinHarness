@@ -1481,6 +1481,114 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside rule"):
             audit_architecture(root=root, matrix_path=root / "matrix.yml")
 
+    def test_agent_adapter_fallback_remains_in_the_canonical_rule(self) -> None:
+        matrix = load_layer_matrix()
+        agent_rule = next(
+            rule
+            for rule in matrix["rules"]
+            if rule["id"] == "agent-does-not-bypass-execution-commands"
+        )
+        self.assertIn(
+            "finharness.execution.adapters.*",
+            agent_rule["forbidden_target_modules"],
+        )
+
+    def test_unregistered_future_adapter_is_still_forbidden_to_agent(self) -> None:
+        def retain_adapter_fallback(matrix: dict[str, Any]) -> None:
+            agent_rule = next(
+                rule
+                for rule in matrix["rules"]
+                if rule["id"] == "agent-does-not-bypass-execution-commands"
+            )
+            agent_rule["forbidden_target_modules"] = [
+                "finharness.execution.adapters.*"
+            ]
+
+        cases = (
+            (
+                "direct",
+                {
+                    "src/finharness/agent_probe.py": (
+                        "import finharness.execution.adapters.future_broker\n"
+                    ),
+                    "src/finharness/execution/adapters/future_broker.py": "",
+                },
+                (
+                    "finharness.agent_probe",
+                    "finharness.execution.adapters.future_broker",
+                ),
+            ),
+            (
+                "transitive",
+                {
+                    "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                    "src/finharness/neutral_helper.py": (
+                        "import finharness.execution.adapters.future_broker\n"
+                    ),
+                    "src/finharness/execution/adapters/future_broker.py": "",
+                },
+                (
+                    "finharness.agent_probe",
+                    "finharness.neutral_helper",
+                    "finharness.execution.adapters.future_broker",
+                ),
+            ),
+        )
+        for kind, files, expected_path in cases:
+            with self.subTest(kind=kind):
+                temp, root = self._capability_repo(
+                    files, mutate=retain_adapter_fallback
+                )
+                try:
+                    audit = audit_architecture(
+                        root=root, matrix_path=root / "matrix.yml"
+                    )
+                finally:
+                    temp.cleanup()
+                violations = [
+                    violation
+                    for violation in audit["violations"]
+                    if violation["target_module"]
+                    == "finharness.execution.adapters.future_broker"
+                ]
+                self.assertEqual(len(violations), 1)
+                self.assertIsNone(violations[0]["capability_id"])
+                self.assertEqual(violations[0]["kind"], kind)
+                self.assertEqual(tuple(violations[0]["path"]), expected_path)
+
+    def test_capability_exception_rejects_an_absent_import_edge(self) -> None:
+        def add_dormant_exception(matrix: dict[str, Any]) -> None:
+            matrix["capability_exceptions"] = [
+                {
+                    "source_module": "finharness.agent_probe",
+                    "rule_id": "agent-does-not-bypass-execution-commands",
+                    "capability_id": "execution.broker_registry_resolution",
+                    "path": [
+                        "finharness.agent_probe",
+                        "finharness.neutral_helper",
+                        "finharness.execution.broker",
+                    ],
+                    "reason": "Bounded compatibility path pending removal.",
+                    "owner_issue": 369,
+                    "review_gate": "Remove after compatibility path migration.",
+                }
+            ]
+
+        temp, root = self._capability_repo(
+            {
+                "src/finharness/agent_probe.py": "import finharness.neutral_helper\n",
+                "src/finharness/neutral_helper.py": "VALUE = 1\n",
+            },
+            mutate=add_dormant_exception,
+        )
+        self.addCleanup(temp.cleanup)
+        with self.assertRaisesRegex(
+            ValueError,
+            "absent import edge: finharness.neutral_helper -> "
+            "finharness.execution.broker",
+        ):
+            audit_architecture(root=root, matrix_path=root / "matrix.yml")
+
 
 if __name__ == "__main__":
     unittest.main()

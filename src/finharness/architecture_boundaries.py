@@ -7,6 +7,7 @@ import fnmatch
 import json
 from collections import deque
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -1857,10 +1858,26 @@ def _validate_capability_module_universe(
             )
 
 
+def _validate_exception_paths_against_graph(
+    exceptions: list[dict[str, Any]],
+    edges: tuple[ImportEdge, ...],
+) -> None:
+    edge_pairs = {(edge.source, edge.target) for edge in edges}
+    for exception in exceptions:
+        path = exception["path"]
+        for source, target in pairwise(path):
+            if (source, target) not in edge_pairs:
+                raise ValueError(
+                    "capability exception path contains absent import edge: "
+                    f"{source} -> {target}"
+                )
+
+
 def validate_architecture_matrix(
     matrix: dict[str, Any],
     *,
     modules: set[str] | None = None,
+    edges: tuple[ImportEdge, ...] | None = None,
 ) -> None:
     """Validate capability declarations against the canonical layer matrix."""
 
@@ -1884,6 +1901,8 @@ def validate_architecture_matrix(
     _validate_capability_module_universe(
         capabilities, rules, exceptions, matrix=matrix, modules=modules
     )
+    if edges is not None:
+        _validate_exception_paths_against_graph(exceptions, edges)
 
 
 def classify_modules(modules: set[str], matrix: dict[str, Any]) -> dict[str, str]:
@@ -2087,7 +2106,7 @@ def audit_architecture(
     matrix = load_layer_matrix(matrix_path or root / "config" / "architecture-layers.yml")
     source_roots = tuple(str(item) for item in matrix["source_roots"])
     modules, edges = build_canonical_import_graph(root, source_roots)
-    validate_architecture_matrix(matrix, modules=set(modules))
+    validate_architecture_matrix(matrix, modules=set(modules), edges=edges)
     cycles = strongly_connected_components(set(modules), edges)
     violations = boundary_violations(set(modules), edges, matrix)
     plane_model = matrix.get("plane_model")

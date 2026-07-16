@@ -2435,31 +2435,31 @@
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 223,
+      "match_line": 224,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 230,
+      "match_line": 231,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 247,
+      "match_line": 248,
       "term": "Attestation",
       "reason": "BuildAttestation allowed_references in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 412,
+      "match_line": 413,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 418,
+      "match_line": 419,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
