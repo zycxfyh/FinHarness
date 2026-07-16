@@ -808,7 +808,7 @@
       "path": "docs/reference/interfaces.md",
       "symbol": "attestation endpoint documentation",
       "line_start": 18,
-      "line_end": 122,
+      "line_end": 126,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -825,7 +825,7 @@
       "recommended_change": "Keep. Add DecisionRecord endpoint documentation alongside.",
       "test_implications": [],
       "evidence": [
-        "interfaces.md:87-122"
+        "interfaces.md:87-126"
       ]
     },
     {

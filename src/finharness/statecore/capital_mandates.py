@@ -268,6 +268,11 @@ def record_capital_mandate(
         receipt_ref=_display_path(receipt_path),
         effective_at_utc=effective_at,
     )
+    superseded = _supersede_active_mandates(
+        engine,
+        keep=resolved_id,
+        principal_id=resolved_principal_id,
+    )
     receipt_existed = receipt_path.exists()
     atomic_write_json(
         receipt_path,
@@ -287,11 +292,6 @@ def record_capital_mandate(
         created_at_utc=created_at,
         source_refs=[display, *mandate.source_refs],
         refs=[resolved_id, *_source_ips_refs(mandate), *mandate.receipt_refs],
-    )
-    superseded = _supersede_active_mandates(
-        engine,
-        keep=resolved_id,
-        principal_id=resolved_principal_id,
     )
     try:
         upsert_records([*superseded, mandate, version, activation, index], engine=engine)

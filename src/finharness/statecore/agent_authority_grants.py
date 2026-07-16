@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
+    CapitalMandateValidationError,
     capital_mandate_series_owner,
     resolve_capital_mandate,
 )
@@ -190,7 +191,10 @@ def record_agent_authority_grant(  # noqa: C901
     mandate = _get_capital_mandate(engine, capital_mandate_id)
     if mandate is None:
         raise KeyError(capital_mandate_id)
-    durable_owner = capital_mandate_series_owner(engine, capital_mandate_id)
+    try:
+        durable_owner = capital_mandate_series_owner(engine, capital_mandate_id)
+    except CapitalMandateValidationError as exc:
+        raise AgentAuthorityGrantValidationError("mandate_series_owner_conflict") from exc
     if durable_owner is None:
         raise AgentAuthorityGrantValidationError("capital mandate version is required")
     resolved_principal = principal_id or durable_owner

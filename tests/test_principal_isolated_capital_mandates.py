@@ -8,6 +8,8 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 from finharness.agent_autonomy_adapter import resolve_runtime_autonomy_mandate
 from finharness.api.app import create_app
 from finharness.identity import OperatorContext, PrincipalIdentity, TestIdentityProvider
@@ -53,7 +55,7 @@ EXPECTED_PRINCIPAL_CONTRACT = {
     "compatibility_mirror": "CapitalMandate.status is non-authoritative",
     "series_owner_transition": "forbidden",
     "historical_owner_conflict_policy": (
-        "resolver, grant validation, and lifecycle commands fail closed"
+        "resolver, grant creation and validation, and lifecycle commands fail closed"
     ),
     "ownership_conflict_timing": (
         "before receipt, version, lifecycle event, ReceiptIndex, or mirror mutation"
@@ -94,6 +96,39 @@ def _context(principal_id: str) -> OperatorContext:
         authentication_method="test_bearer",
         authenticated_at_utc=datetime.now(UTC).isoformat(),
     )
+
+
+def _inject_preexisting_shared_id_owner_conflict(*, engine: Engine) -> None:
+    alice_version = next(
+        version
+        for version in read_all(CapitalMandateVersion, engine=engine)
+        if version.capital_mandate_id == "shared-id" and version.principal_id == ALICE
+    )
+    alice_activation = next(
+        event
+        for event in read_all(CapitalMandateLifecycleEvent, engine=engine)
+        if event.mandate_version_id == alice_version.mandate_version_id
+    )
+    bob_version = CapitalMandateVersion(
+        **{
+            **alice_version.model_dump(),
+            "mandate_version_id": "shared-id:v1:legacy-bob",
+            "principal_id": BOB,
+            "mandate_content_hash": "legacy-bob-content-hash",
+            "receipt_ref": "legacy:receipt:bob-version",
+        }
+    )
+    bob_activation = CapitalMandateLifecycleEvent(
+        **{
+            **alice_activation.model_dump(),
+            "mandate_lifecycle_event_id": "mandate-event-legacy-bob-activation",
+            "mandate_version_id": bob_version.mandate_version_id,
+            "principal_id": BOB,
+            "authenticated_actor_principal_id": BOB,
+            "receipt_ref": "legacy:receipt:bob-activation",
+        }
+    )
+    write_records([bob_version, bob_activation], engine=engine)
 
 
 class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
@@ -186,36 +221,7 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
         )
 
     def _inject_preexisting_shared_id_owner_conflict(self) -> None:
-        alice_version = next(
-            version
-            for version in read_all(CapitalMandateVersion, engine=self.engine)
-            if version.capital_mandate_id == "shared-id" and version.principal_id == ALICE
-        )
-        alice_activation = next(
-            event
-            for event in read_all(CapitalMandateLifecycleEvent, engine=self.engine)
-            if event.mandate_version_id == alice_version.mandate_version_id
-        )
-        bob_version = CapitalMandateVersion(
-            **{
-                **alice_version.model_dump(),
-                "mandate_version_id": "shared-id:v1:legacy-bob",
-                "principal_id": BOB,
-                "mandate_content_hash": "legacy-bob-content-hash",
-                "receipt_ref": "legacy:receipt:bob-version",
-            }
-        )
-        bob_activation = CapitalMandateLifecycleEvent(
-            **{
-                **alice_activation.model_dump(),
-                "mandate_lifecycle_event_id": "mandate-event-legacy-bob-activation",
-                "mandate_version_id": bob_version.mandate_version_id,
-                "principal_id": BOB,
-                "authenticated_actor_principal_id": BOB,
-                "receipt_ref": "legacy:receipt:bob-activation",
-            }
-        )
-        write_records([bob_version, bob_activation], engine=self.engine)
+        _inject_preexisting_shared_id_owner_conflict(engine=self.engine)
 
     def test_machine_contract_and_canonical_order_are_exact(self) -> None:
         registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
@@ -401,6 +407,26 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
                 resolution.deny_reasons,
                 ("mandate_series_owner_conflict",),
             )
+
+    def test_unrelated_mandate_creation_preflights_historical_owner_conflict(self) -> None:
+        self._record("shared-id", ALICE)
+        self._inject_preexisting_shared_id_owner_conflict()
+        before = self._side_effect_counts()
+        mirror_before = [
+            row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)
+        ]
+
+        with self.assertRaisesRegex(
+            CapitalMandateValidationError,
+            "multiple durable principal owners",
+        ):
+            self._record("mandate-clean", ALICE)
+
+        self.assertEqual(self._side_effect_counts(), before)
+        self.assertEqual(
+            [row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)],
+            mirror_before,
+        )
 
     def test_resolution_total_order_is_insertion_and_restart_independent(self) -> None:
         def resolve_for(order: tuple[str, str]) -> tuple[str, str]:
@@ -748,6 +774,44 @@ class PrincipalIsolatedCapitalMandateApiTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertEqual(self._counts(), (0, 0, 0, 0))
+
+    def test_grant_creation_translates_historical_owner_conflict_to_422(self) -> None:
+        created = self.client.post(
+            "/capital-mandates",
+            json=self._body("shared-id"),
+            headers=self._headers("alice"),
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        _inject_preexisting_shared_id_owner_conflict(engine=self.engine)
+        receipt_paths_before = set(self.receipts.rglob("*.json"))
+        receipt_indexes_before = len(read_all(ReceiptIndex, engine=self.engine))
+
+        response = self.client.post(
+            "/agent-authority-grants",
+            headers=self._headers("alice"),
+            json={
+                "agent_authority_grant_id": "grant-owner-conflict",
+                "capital_mandate_id": "shared-id",
+                "agent_id": "agent:research",
+                "agent_runtime_id": "runtime:research",
+                "grant_scope": {
+                    "allowed_asset_classes": ["cash"],
+                    "allowed_action_types": ["rebalance"],
+                    "autonomy_level": "L1_candidate_only",
+                },
+                "issued_by": ALICE,
+                "issued_reason": "Conflict must be a typed domain rejection.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["detail"], "mandate_series_owner_conflict")
+        self.assertEqual(read_all(AgentAuthorityGrant, engine=self.engine), [])
+        self.assertEqual(
+            len(read_all(ReceiptIndex, engine=self.engine)),
+            receipt_indexes_before,
+        )
+        self.assertEqual(set(self.receipts.rglob("*.json")), receipt_paths_before)
 
 
 if __name__ == "__main__":

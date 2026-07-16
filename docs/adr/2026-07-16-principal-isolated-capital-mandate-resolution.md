@@ -39,6 +39,10 @@ resolver classifies the entire candidate series as `invalid` with
 `mandate_series_owner_conflict`; it never selects either owner or falls back to
 an older mandate. Grant validation preserves that typed denial, and lifecycle
 commands reject it before writing a receipt, event, index, or mirror mutation.
+Creation of an unrelated mandate also preflights every active series needed for
+same-principal supersession before writing its receipt. Grant creation converts
+the same conflict into `AgentAuthorityGrantValidationError` so the HTTP boundary
+returns a typed 422 without a grant, ReceiptIndex, or grant receipt.
 
 Mirror supersession is restricted to rows whose durable version owner equals
 the new mandate principal. The activation receipt for the new version is the
