@@ -407,6 +407,73 @@ plane_model:
             completed_prerequisites: []
             disposition: preserve source provenance under the shared qualified-source identity boundary
 
+  # Mature runtimes own Agent mechanics; FinHarness retains capital-domain
+  # meaning, admission, authority, canonical evidence, and human review.
+  agent_harness_boundary:
+    schema: finharness.agent_harness_boundary.v1
+    primary_runtime_path:
+      current_harness_owner: finharness.agent_work_loop
+      selection_point: AgentWorkDecisionPort
+      selection_issue: 287
+      selection_state: future_adoption_decision
+      parallel_core_loops: forbidden
+      provider_dependency: separate_adoption_decision_required
+      candidates: [direct Responses API, OpenAI Agents SDK]
+    runtime_owned_mechanics:
+      - model turn loop
+      - typed tool-call transport
+      - streaming events
+      - runtime handoffs
+      - session and conversation mechanics
+      - bounded transport retries
+      - token and request usage accounting
+      - observability trace export
+    finharness_owned_semantics:
+      - server-resolved ContextWorld and exact domain-version binding
+      - CapitalState and DecisionCase meaning
+      - evidence admissibility and claim-source policy
+      - tool visibility, admission, and dispatch policy
+      - authority and autonomy admission
+      - stale-world replan policy
+      - independent budgets and stop or escalation policy
+      - domain evaluation and readiness
+      - canonical durable AgentRunTrace and operation receipts
+      - human review, correction, and handoff
+    provider_state:
+      classification: runtime state or disposable cache
+      must_bind: [ContextWorld version, provider and agent definition version]
+      cannot_replace: [CapitalStateVersion, DecisionCaseVersion, EvidenceSetVersion, PolicyVersion, AgentRunTrace, DomainRecord]
+    model_output:
+      classification: candidate only until deterministic owning-domain admission
+      allowed_outputs: [candidate evidence, data gaps, Scenario request, proposal draft, human handoff]
+      prohibited_effects: [domain truth mutation, evidence self-admission, authority grant, decision-of-record write, execution authorization, external effect]
+      execution_allowed: false
+    mcp_boundary:
+      owner_issue: 300
+      lifecycle: deferred
+      may_own: [capability negotiation, tools and resources discovery, prompts transport, protocol lifecycle, transport errors]
+      cannot_own: [context trust, evidence admission, tool admission, domain truth, decision validity, authority, canonical receipts, execution permission]
+    workflow_engine_boundary:
+      activation: measured long-running resume, retry, interrupt, scheduling, or compensation need plus separate adoption decision
+      may_own: [checkpoint mechanics, resume mechanics, scheduling transport, durable interrupts, compensation orchestration]
+      cannot_own: [CapitalState meaning, DecisionCase meaning, evidence admission, authority policy, stale-world policy, domain evaluation, execution permission]
+      default_core_dependency: forbidden
+    first_evaluation_task:
+      name: concentration decision contribution
+      inputs: [exact CapitalStateVersion, exact DecisionCaseVersion, admitted EvidenceSetVersion, effective PolicyVersion]
+      allowed_outputs: [candidate evidence, data gaps, Scenario request, proposal draft, human handoff]
+      evaluation_criteria:
+        - exact world and domain-version freshness
+        - evidence lineage and admission status
+        - deterministic concentration facts separated from model interpretation
+        - uncertainty, counter-evidence, and data gaps
+        - Scenario request when the current basis is insufficient
+        - policy and mandate constraints treated as deterministic inputs
+        - bounded stop, escalation, and human handoff
+        - candidate-only result with no execution authority
+      direct_domain_mutation: forbidden
+      execution_allowed: false
+
 # First match wins. Keep narrow ownership rules before the core fallback.
 layers:
   - name: statecore

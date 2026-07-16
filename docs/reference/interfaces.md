@@ -30,6 +30,12 @@ Use this as a lookup page. For system ownership, read
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
 
+The [Capital Decision Agent Harness ownership ADR](../adr/2026-07-16-capital-decision-agent-harness-boundary.md)
+defines `AgentWorkDecisionPort` as the single future provider selection point.
+Provider runtimes own turn/tool/session/trace mechanics; FinHarness retains
+domain-version binding, admission, authority, canonical evidence, evaluation,
+and human handoff. It does not select a provider or add a runtime dependency.
+
 ## Common Interface Rules
 
 - Mature wheels can compute or retrieve evidence; they do not grant authority.

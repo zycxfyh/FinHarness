@@ -18,6 +18,7 @@ DEFAULT_MATRIX_PATH = ROOT / "config" / "architecture-layers.yml"
 PLANE_MODEL_SCHEMA = "finharness.plane_model.v1"
 IDENTITY_MODEL_SCHEMA = "finharness.identity_version_graph.v1"
 RECORD_TAXONOMY_SCHEMA = "finharness.record_taxonomy.v1"
+AGENT_HARNESS_BOUNDARY_SCHEMA = "finharness.agent_harness_boundary.v1"
 REQUIRED_IDENTITY_NAMESPACES = frozenset(
     {
         "principal",
@@ -476,6 +477,148 @@ EXPECTED_AGENT_TRACE_OBSERVABILITY_EXPORT = {
         "decision validity",
         "financial evidence admission",
     ),
+}
+EXPECTED_AGENT_HARNESS_BOUNDARY = {
+    "schema": AGENT_HARNESS_BOUNDARY_SCHEMA,
+    "primary_runtime_path": {
+        "current_harness_owner": "finharness.agent_work_loop",
+        "selection_point": "AgentWorkDecisionPort",
+        "selection_issue": 287,
+        "selection_state": "future_adoption_decision",
+        "parallel_core_loops": "forbidden",
+        "provider_dependency": "separate_adoption_decision_required",
+        "candidates": ["direct Responses API", "OpenAI Agents SDK"],
+    },
+    "runtime_owned_mechanics": [
+        "model turn loop",
+        "typed tool-call transport",
+        "streaming events",
+        "runtime handoffs",
+        "session and conversation mechanics",
+        "bounded transport retries",
+        "token and request usage accounting",
+        "observability trace export",
+    ],
+    "finharness_owned_semantics": [
+        "server-resolved ContextWorld and exact domain-version binding",
+        "CapitalState and DecisionCase meaning",
+        "evidence admissibility and claim-source policy",
+        "tool visibility, admission, and dispatch policy",
+        "authority and autonomy admission",
+        "stale-world replan policy",
+        "independent budgets and stop or escalation policy",
+        "domain evaluation and readiness",
+        "canonical durable AgentRunTrace and operation receipts",
+        "human review, correction, and handoff",
+    ],
+    "provider_state": {
+        "classification": "runtime state or disposable cache",
+        "must_bind": [
+            "ContextWorld version",
+            "provider and agent definition version",
+        ],
+        "cannot_replace": [
+            "CapitalStateVersion",
+            "DecisionCaseVersion",
+            "EvidenceSetVersion",
+            "PolicyVersion",
+            "AgentRunTrace",
+            "DomainRecord",
+        ],
+    },
+    "model_output": {
+        "classification": (
+            "candidate only until deterministic owning-domain admission"
+        ),
+        "allowed_outputs": [
+            "candidate evidence",
+            "data gaps",
+            "Scenario request",
+            "proposal draft",
+            "human handoff",
+        ],
+        "prohibited_effects": [
+            "domain truth mutation",
+            "evidence self-admission",
+            "authority grant",
+            "decision-of-record write",
+            "execution authorization",
+            "external effect",
+        ],
+        "execution_allowed": False,
+    },
+    "mcp_boundary": {
+        "owner_issue": 300,
+        "lifecycle": "deferred",
+        "may_own": [
+            "capability negotiation",
+            "tools and resources discovery",
+            "prompts transport",
+            "protocol lifecycle",
+            "transport errors",
+        ],
+        "cannot_own": [
+            "context trust",
+            "evidence admission",
+            "tool admission",
+            "domain truth",
+            "decision validity",
+            "authority",
+            "canonical receipts",
+            "execution permission",
+        ],
+    },
+    "workflow_engine_boundary": {
+        "activation": (
+            "measured long-running resume, retry, interrupt, scheduling, or"
+            " compensation need plus separate adoption decision"
+        ),
+        "may_own": [
+            "checkpoint mechanics",
+            "resume mechanics",
+            "scheduling transport",
+            "durable interrupts",
+            "compensation orchestration",
+        ],
+        "cannot_own": [
+            "CapitalState meaning",
+            "DecisionCase meaning",
+            "evidence admission",
+            "authority policy",
+            "stale-world policy",
+            "domain evaluation",
+            "execution permission",
+        ],
+        "default_core_dependency": "forbidden",
+    },
+    "first_evaluation_task": {
+        "name": "concentration decision contribution",
+        "inputs": [
+            "exact CapitalStateVersion",
+            "exact DecisionCaseVersion",
+            "admitted EvidenceSetVersion",
+            "effective PolicyVersion",
+        ],
+        "allowed_outputs": [
+            "candidate evidence",
+            "data gaps",
+            "Scenario request",
+            "proposal draft",
+            "human handoff",
+        ],
+        "evaluation_criteria": [
+            "exact world and domain-version freshness",
+            "evidence lineage and admission status",
+            "deterministic concentration facts separated from model interpretation",
+            "uncertainty, counter-evidence, and data gaps",
+            "Scenario request when the current basis is insufficient",
+            "policy and mandate constraints treated as deterministic inputs",
+            "bounded stop, escalation, and human handoff",
+            "candidate-only result with no execution authority",
+        ],
+        "direct_domain_mutation": "forbidden",
+        "execution_allowed": False,
+    },
 }
 
 
@@ -1267,6 +1410,22 @@ def validate_record_taxonomy(taxonomy: Any) -> None:
     _validate_agent_trace_observability_export(taxonomy)
 
 
+def validate_agent_harness_boundary(boundary: Any) -> None:
+    """Validate the one runtime-selection point and retained domain ownership."""
+
+    if (
+        not isinstance(boundary, dict)
+        or boundary.get("schema") != AGENT_HARNESS_BOUNDARY_SCHEMA
+    ):
+        raise ValueError("unsupported Agent Harness boundary")
+    if set(boundary) != set(EXPECTED_AGENT_HARNESS_BOUNDARY):
+        raise ValueError(
+            "Agent Harness boundary top-level fields violate canonical contract"
+        )
+    if boundary != EXPECTED_AGENT_HARNESS_BOUNDARY:
+        raise ValueError("Agent Harness boundary violates canonical contract")
+
+
 def validate_plane_model(model: dict[str, Any]) -> None:
     """Validate the canonical conceptual plane DAG in the existing matrix."""
 
@@ -1318,6 +1477,7 @@ def validate_plane_model(model: dict[str, Any]) -> None:
             raise ValueError(f"plane {name} has unsupported kind {plane.get('kind')}")
     validate_identity_model(model.get("identity_model"), planes=by_name)
     validate_record_taxonomy(model.get("record_taxonomy"))
+    validate_agent_harness_boundary(model.get("agent_harness_boundary"))
 
 
 def classify_modules(modules: set[str], matrix: dict[str, Any]) -> dict[str, str]:
@@ -1441,6 +1601,9 @@ def audit_architecture(
     identity_model = plane_model.get("identity_model") if plane_model else None
     version_graph = identity_model.get("version_graph") if identity_model else None
     record_taxonomy = plane_model.get("record_taxonomy") if plane_model else None
+    agent_harness = (
+        plane_model.get("agent_harness_boundary") if plane_model else None
+    )
     return {
         "schema": "finharness.architecture_audit.v1",
         "matrix_schema": matrix["schema"],
@@ -1478,6 +1641,24 @@ def audit_architecture(
                 for surface in record_taxonomy["surface_migrations"]
             )
             if record_taxonomy
+            else 0
+        ),
+        "agent_runtime_mechanic_count": (
+            len(agent_harness["runtime_owned_mechanics"]) if agent_harness else 0
+        ),
+        "agent_harness_semantic_count": (
+            len(agent_harness["finharness_owned_semantics"])
+            if agent_harness
+            else 0
+        ),
+        "agent_first_task_output_count": (
+            len(agent_harness["first_evaluation_task"]["allowed_outputs"])
+            if agent_harness
+            else 0
+        ),
+        "agent_first_task_evaluation_criterion_count": (
+            len(agent_harness["first_evaluation_task"]["evaluation_criteria"])
+            if agent_harness
             else 0
         ),
         "ok": not cycles and not violations,

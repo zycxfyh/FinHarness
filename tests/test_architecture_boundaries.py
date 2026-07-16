@@ -9,6 +9,7 @@ from finharness.architecture_boundaries import (
     audit_architecture,
     build_canonical_import_graph,
     load_layer_matrix,
+    validate_agent_harness_boundary,
     validate_identity_model,
     validate_plane_model,
     validate_record_taxonomy,
@@ -108,6 +109,12 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["record_category_count"], 6)
         self.assertEqual(audit["record_surface_migration_count"], 9)
         self.assertEqual(audit["record_surface_component_count"], 14)
+        self.assertEqual(audit["agent_runtime_mechanic_count"], 8)
+        self.assertEqual(audit["agent_harness_semantic_count"], 10)
+        self.assertEqual(audit["agent_first_task_output_count"], 5)
+        self.assertEqual(
+            audit["agent_first_task_evaluation_criterion_count"], 8
+        )
         self.assertTrue(audit["ok"])
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
@@ -688,6 +695,110 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 taxonomy["enforcement"][field] = value
                 with self.assertRaisesRegex(ValueError, "forbids universal bases"):
                     validate_record_taxonomy(taxonomy)
+
+    def _agent_harness_boundary(self) -> dict[str, object]:
+        return copy.deepcopy(
+            load_layer_matrix()["plane_model"]["agent_harness_boundary"]
+        )
+
+    def test_agent_harness_unknown_top_level_fields_are_rejected(self) -> None:
+        for field in ("runtime_registry", "second_loop", "memory_platform"):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary[field] = "parallel mechanism"
+                with self.assertRaisesRegex(ValueError, "top-level fields"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_agent_harness_primary_selection_point_is_exact(self) -> None:
+        for field, value in (
+            ("selection_point", "ProviderRunner"),
+            ("selection_issue", 405),
+            ("parallel_core_loops", "allowed"),
+            ("provider_dependency", "frozen_now"),
+        ):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary["primary_runtime_path"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_provider_runtime_cannot_own_domain_semantics(self) -> None:
+        for responsibility in (
+            "CapitalState meaning",
+            "evidence admission",
+            "authority policy",
+            "canonical AgentRunTrace",
+        ):
+            with self.subTest(responsibility=responsibility):
+                boundary = self._agent_harness_boundary()
+                boundary["runtime_owned_mechanics"].append(responsibility)
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_provider_state_cannot_replace_domain_versions_or_trace(self) -> None:
+        for protected in (
+            "CapitalStateVersion",
+            "DecisionCaseVersion",
+            "EvidenceSetVersion",
+            "PolicyVersion",
+            "AgentRunTrace",
+            "DomainRecord",
+        ):
+            with self.subTest(protected=protected):
+                boundary = self._agent_harness_boundary()
+                boundary["provider_state"]["cannot_replace"].remove(protected)
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_mcp_cannot_own_admission_authority_or_domain_state(self) -> None:
+        boundary = self._agent_harness_boundary()
+        boundary["mcp_boundary"]["may_own"].append("tool admission")
+        with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+            validate_agent_harness_boundary(boundary)
+
+    def test_workflow_engine_cannot_own_domain_policy_or_default_core(self) -> None:
+        for field, value in (
+            ("cannot_own", ["execution permission"]),
+            ("default_core_dependency", "required"),
+            ("activation", "future flexibility"),
+        ):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary["workflow_engine_boundary"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_model_output_remains_candidate_and_non_executing(self) -> None:
+        for field, value in (
+            ("classification", "authoritative decision"),
+            ("execution_allowed", True),
+            ("allowed_outputs", ["execution order"]),
+        ):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary["model_output"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_cannot_mutate_or_authorize_execution(self) -> None:
+        for field, value in (
+            ("direct_domain_mutation", "allowed"),
+            ("execution_allowed", True),
+            ("allowed_outputs", ["broker order"]),
+        ):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary["first_evaluation_task"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_requires_complete_evaluation_contract(self) -> None:
+        boundary = self._agent_harness_boundary()
+        boundary["first_evaluation_task"]["evaluation_criteria"].remove(
+            "exact world and domain-version freshness"
+        )
+        with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+            validate_agent_harness_boundary(boundary)
 
     def test_reverse_plane_dependency_is_rejected(self) -> None:
         model = copy.deepcopy(load_layer_matrix()["plane_model"])
