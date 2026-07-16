@@ -253,7 +253,10 @@ mirror. It is the principal-bound immutable version selected by descending
 lifecycle event selected by descending `effective_at_utc`, `created_at_utc`,
 and `mandate_lifecycle_event_id`. Identifier comparison is only a durable final
 tie-breaker. Legacy receipts and rows remain parseable; their display labels
-remain unverified and cannot establish ownership.
+remain unverified and cannot establish ownership. If legacy version history
+contains multiple principals for one mandate ID, the series is classified as
+`mandate_series_owner_conflict`; neither version nor its lifecycle receipts may
+be consumed as active authority truth.
 | `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
 ### Agent Authority Grant Consumption Receipt

@@ -33,6 +33,13 @@ version creation, activation evidence, ReceiptIndex, or mirror upsert. A legacy
 row without a version remains readable but cannot be claimed from
 `human_attester`, `legacy_actor_label`, or any other unverified prose.
 
+Historical databases may already contain versions for multiple principals under
+one mandate ID because the prior command allowed that state. The canonical
+resolver classifies the entire candidate series as `invalid` with
+`mandate_series_owner_conflict`; it never selects either owner or falls back to
+an older mandate. Grant validation preserves that typed denial, and lifecycle
+commands reject it before writing a receipt, event, index, or mirror mutation.
+
 Mirror supersession is restricted to rows whose durable version owner equals
 the new mandate principal. The activation receipt for the new version is the
 evidence for a same-principal current-series change; mirror status does not
@@ -61,9 +68,10 @@ Create-time and use-time checks resolve the grant principal at the validation
 time. They require an active result and exact equality of principal, mandate ID,
 and mandate version ID. A same-principal new version or different current
 mandate ID yields `mandate_version_changed`. Another principal mandate cannot
-change the result. Scope validation consumes the immutable bound version policy,
-not mutable mirror fields. Locked consumption and downstream ActionIntent and
-autonomy consumers reuse the same validator.
+change the result. A pre-existing multi-owner mandate ID yields the distinct
+`mandate_series_owner_conflict` denial. Scope validation consumes the immutable
+bound version policy, not mutable mirror fields. Locked consumption and
+downstream ActionIntent and autonomy consumers reuse the same validator.
 
 ## Reference-First classification
 

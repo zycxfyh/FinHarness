@@ -63,7 +63,10 @@ The ADR does not select a provider or add a runtime dependency.
 - `CapitalMandate.status` and the legacy global `current_capital_mandate()`
   helper are non-authoritative compatibility views. Historical unowned rows
   remain readable, but free-text labels cannot be promoted into verified owner
-  identity.
+  identity. A historical mandate ID with multiple durable version owners is
+  invalid for every principal: resolution returns no version, grant validation
+  returns `mandate_series_owner_conflict`, and lifecycle writes fail before
+  evidence or domain mutation.
 - AgentAuthorityGrant is a mandate-bound authority credential, not authentication
   or execution permission. It must reference an active CapitalMandate at creation
   time, bind the authenticated principal and agent runtime to an exact mandate

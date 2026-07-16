@@ -443,6 +443,25 @@ def resolve_capital_mandate(
         effective_versions = [
             candidate for candidate in versions if _parse_utc(candidate.effective_at_utc) <= at_dt
         ]
+        for candidate in effective_versions:
+            try:
+                owner = capital_mandate_series_owner(engine, candidate.capital_mandate_id)
+            except CapitalMandateValidationError:
+                return ResolvedCapitalMandate(
+                    principal_id=principal_id,
+                    at_utc=resolved_at,
+                    status="invalid",
+                    version=None,
+                    deny_reasons=("mandate_series_owner_conflict",),
+                )
+            if owner != principal_id:
+                return ResolvedCapitalMandate(
+                    principal_id=principal_id,
+                    at_utc=resolved_at,
+                    status="invalid",
+                    version=None,
+                    deny_reasons=("mandate_series_owner_conflict",),
+                )
         version = max(
             effective_versions,
             key=_mandate_resolution_order_key,
@@ -575,6 +594,8 @@ def _record_lifecycle_command(
         engine=engine,
         at_utc=resolved_at,
     )
+    if "mandate_series_owner_conflict" in resolved.deny_reasons:
+        raise CapitalMandateValidationError("mandate_series_owner_conflict")
     version = resolved.version
     if version is None or version.capital_mandate_id != capital_mandate_id:
         raise CapitalMandateValidationError("current principal mandate does not match command")

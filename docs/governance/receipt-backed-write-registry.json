@@ -70,6 +70,7 @@
     "current_truth": "resolve_capital_mandate(principal_id, at_utc)",
     "compatibility_mirror": "CapitalMandate.status is non-authoritative",
     "series_owner_transition": "forbidden",
+    "historical_owner_conflict_policy": "resolver, grant validation, and lifecycle commands fail closed",
     "ownership_conflict_timing": "before receipt, version, lifecycle event, ReceiptIndex, or mirror mutation",
     "resolution_total_order_desc": [
       "effective_at_utc",

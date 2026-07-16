@@ -55,6 +55,7 @@ AgentAuthorityGrantDenyReason = Literal[
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
     "grant_notional_exhausted",
@@ -75,6 +76,7 @@ AGENT_AUTHORITY_GRANT_DENY_REASONS: tuple[str, ...] = (
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
     "grant_notional_exhausted",
@@ -365,7 +367,9 @@ def validate_agent_authority_grant(  # noqa: C901
     )
     if grant.principal_id is None:
         deny_reasons.append("principal_mismatch")
-    if resolution is None or resolution.version is None:
+    if resolution is not None and "mandate_series_owner_conflict" in resolution.deny_reasons:
+        deny_reasons.append("mandate_series_owner_conflict")
+    elif resolution is None or resolution.version is None:
         deny_reasons.append("capital_mandate_not_found")
     elif resolution.status != "active":
         deny_reasons.append("capital_mandate_not_active")

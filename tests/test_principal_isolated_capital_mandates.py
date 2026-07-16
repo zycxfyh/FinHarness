@@ -52,6 +52,9 @@ EXPECTED_PRINCIPAL_CONTRACT = {
     "current_truth": "resolve_capital_mandate(principal_id, at_utc)",
     "compatibility_mirror": "CapitalMandate.status is non-authoritative",
     "series_owner_transition": "forbidden",
+    "historical_owner_conflict_policy": (
+        "resolver, grant validation, and lifecycle commands fail closed"
+    ),
     "ownership_conflict_timing": (
         "before receipt, version, lifecycle event, ReceiptIndex, or mirror mutation"
     ),
@@ -182,6 +185,38 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
             len(list(self.receipts.rglob("*.json"))) if self.receipts.exists() else 0,
         )
 
+    def _inject_preexisting_shared_id_owner_conflict(self) -> None:
+        alice_version = next(
+            version
+            for version in read_all(CapitalMandateVersion, engine=self.engine)
+            if version.capital_mandate_id == "shared-id" and version.principal_id == ALICE
+        )
+        alice_activation = next(
+            event
+            for event in read_all(CapitalMandateLifecycleEvent, engine=self.engine)
+            if event.mandate_version_id == alice_version.mandate_version_id
+        )
+        bob_version = CapitalMandateVersion(
+            **{
+                **alice_version.model_dump(),
+                "mandate_version_id": "shared-id:v1:legacy-bob",
+                "principal_id": BOB,
+                "mandate_content_hash": "legacy-bob-content-hash",
+                "receipt_ref": "legacy:receipt:bob-version",
+            }
+        )
+        bob_activation = CapitalMandateLifecycleEvent(
+            **{
+                **alice_activation.model_dump(),
+                "mandate_lifecycle_event_id": "mandate-event-legacy-bob-activation",
+                "mandate_version_id": bob_version.mandate_version_id,
+                "principal_id": BOB,
+                "authenticated_actor_principal_id": BOB,
+                "receipt_ref": "legacy:receipt:bob-activation",
+            }
+        )
+        write_records([bob_version, bob_activation], engine=self.engine)
+
     def test_machine_contract_and_canonical_order_are_exact(self) -> None:
         registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
         self.assertEqual(
@@ -273,6 +308,99 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
         self.assertEqual({version.principal_id for version in versions}, {ALICE})
         mirror = read_all(CapitalMandate, engine=self.engine)[0]
         self.assertEqual(mirror.human_attester, ALICE)
+
+    def test_preexisting_shared_id_multi_owner_fails_resolution_closed(self) -> None:
+        self._record(
+            "mandate-safe",
+            ALICE,
+            effective_at="2026-01-01T00:00:00+00:00",
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        self._record("shared-id", ALICE)
+        self._inject_preexisting_shared_id_owner_conflict()
+
+        for principal_id in (ALICE, BOB):
+            with self.subTest(principal_id=principal_id):
+                resolution = resolve_capital_mandate(
+                    principal_id=principal_id,
+                    at_utc=VALIDATION_TIME,
+                    engine=self.engine,
+                )
+                self.assertEqual(resolution.status, "invalid")
+                self.assertIsNone(resolution.version)
+                self.assertEqual(
+                    resolution.deny_reasons,
+                    ("mandate_series_owner_conflict",),
+                )
+
+    def test_preexisting_shared_id_multi_owner_invalidates_existing_grant(self) -> None:
+        self._record("shared-id", ALICE)
+        grant = self._grant("shared-id")
+        self._inject_preexisting_shared_id_owner_conflict()
+
+        validation = self._validate(grant)
+
+        self.assertFalse(validation.allowed)
+        self.assertEqual(validation.deny_reasons, ["mandate_series_owner_conflict"])
+
+    def test_preexisting_shared_id_multi_owner_rejects_lifecycle_without_side_effects(
+        self,
+    ) -> None:
+        self._record("shared-id", ALICE)
+        self._inject_preexisting_shared_id_owner_conflict()
+        mirror_before = [
+            row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)
+        ]
+        before = self._side_effect_counts()
+        commands = {
+            "suspend": suspend_capital_mandate,
+            "resume": resume_capital_mandate,
+            "revoke": revoke_capital_mandate,
+        }
+
+        for principal_id in (ALICE, BOB):
+            for command_name, command in commands.items():
+                with self.subTest(principal_id=principal_id, command=command_name):
+                    with self.assertRaisesRegex(
+                        CapitalMandateValidationError,
+                        "mandate_series_owner_conflict",
+                    ):
+                        command(
+                            "shared-id",
+                            principal_id=principal_id,
+                            actor_principal_id=principal_id,
+                            reason="Historical owner conflict must fail closed.",
+                            effective_at_utc=LATER_TIME,
+                            engine=self.engine,
+                            receipt_root=self.receipts,
+                        )
+                    self.assertEqual(self._side_effect_counts(), before)
+                    self.assertEqual(
+                        [
+                            row.model_dump()
+                            for row in read_all(CapitalMandate, engine=self.engine)
+                        ],
+                        mirror_before,
+                    )
+
+    def test_owner_conflict_remains_failed_after_restart(self) -> None:
+        self._record("shared-id", ALICE)
+        self._inject_preexisting_shared_id_owner_conflict()
+        self.engine.dispose()
+        self.engine = init_state_core(self.database)
+
+        for principal_id in (ALICE, BOB):
+            resolution = resolve_capital_mandate(
+                principal_id=principal_id,
+                at_utc=VALIDATION_TIME,
+                engine=self.engine,
+            )
+            self.assertEqual(resolution.status, "invalid")
+            self.assertIsNone(resolution.version)
+            self.assertEqual(
+                resolution.deny_reasons,
+                ("mandate_series_owner_conflict",),
+            )
 
     def test_resolution_total_order_is_insertion_and_restart_independent(self) -> None:
         def resolve_for(order: tuple[str, str]) -> tuple[str, str]:
