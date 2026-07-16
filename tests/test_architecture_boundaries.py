@@ -109,12 +109,16 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["record_category_count"], 6)
         self.assertEqual(audit["record_surface_migration_count"], 9)
         self.assertEqual(audit["record_surface_component_count"], 14)
-        self.assertEqual(audit["agent_runtime_mechanic_count"], 8)
+        self.assertEqual(audit["agent_mature_runtime_capability_count"], 6)
+        self.assertEqual(audit["agent_delegated_decision_mechanic_count"], 5)
+        self.assertEqual(audit["agent_dispatch_crossing_count"], 4)
         self.assertEqual(audit["agent_harness_semantic_count"], 10)
         self.assertEqual(audit["agent_first_task_output_count"], 5)
         self.assertEqual(
             audit["agent_first_task_evaluation_criterion_count"], 8
         )
+        self.assertEqual(audit["agent_first_task_case_basis_count"], 4)
+        self.assertEqual(audit["agent_authority_context_binding_count"], 3)
         self.assertTrue(audit["ok"])
 
     def test_canonical_plane_model_is_complete_and_horizontal_assurance_is_separate(
@@ -713,12 +717,34 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         for field, value in (
             ("selection_point", "ProviderRunner"),
             ("selection_issue", 405),
+            ("adapter_mode", "full_agent_runner"),
+            ("decision_cardinality", "many actions until final output"),
+            ("harness_loop_owner", "OpenAI Agents SDK Runner"),
             ("parallel_core_loops", "allowed"),
+            ("sdk_runner_loop_on_primary_path", "allowed"),
+            ("runtime_internal_tool_execution", "allowed"),
+            ("runtime_internal_handoffs", "allowed terminal transition"),
             ("provider_dependency", "frozen_now"),
+            ("tool_calls_return_as", "provider FunctionTool result"),
         ):
             with self.subTest(field=field):
                 boundary = self._agent_harness_boundary()
                 boundary["primary_runtime_path"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_every_tool_dispatch_must_cross_the_complete_harness_boundary(self) -> None:
+        for crossing in (
+            "Harness autonomy admission",
+            "Harness tool and capability admission",
+            "Harness work budgets",
+            "canonical Observation reduction",
+        ):
+            with self.subTest(crossing=crossing):
+                boundary = self._agent_harness_boundary()
+                boundary["primary_runtime_path"][
+                    "all_tool_dispatch_must_cross"
+                ].remove(crossing)
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
@@ -731,12 +757,38 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(responsibility=responsibility):
                 boundary = self._agent_harness_boundary()
-                boundary["runtime_owned_mechanics"].append(responsibility)
+                boundary["delegated_behind_current_decision_port"].append(
+                    responsibility
+                )
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
-    def test_provider_state_cannot_replace_domain_versions_or_trace(self) -> None:
+    def test_mature_capability_does_not_imply_current_port_delegation(self) -> None:
+        for capability in ("model turn loop", "tool execution", "handoffs"):
+            with self.subTest(capability=capability):
+                boundary = self._agent_harness_boundary()
+                boundary["delegated_behind_current_decision_port"].append(capability)
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_provider_state_is_non_authoritative_but_resume_aware(self) -> None:
+        for path, value in (
+            (("authority",), "domain authority"),
+            (("durability",), ["always disposable cache"]),
+            (("retention", "may_prune_after"), ["at any time"]),
+        ):
+            with self.subTest(path=path):
+                boundary = self._agent_harness_boundary()
+                target = boundary["provider_state"]
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_provider_state_cannot_replace_world_versions_or_trace(self) -> None:
         for protected in (
+            "ContextWorld",
             "CapitalStateVersion",
             "DecisionCaseVersion",
             "EvidenceSetVersion",
@@ -750,9 +802,42 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
-    def test_mcp_cannot_own_admission_authority_or_domain_state(self) -> None:
+    def test_mcp_transport_authentication_and_oauth_remain_protocol_mechanics(
+        self,
+    ) -> None:
+        for mechanic in (
+            "transport authentication",
+            "OAuth token and scope mechanics",
+            "resource-server access decision",
+        ):
+            with self.subTest(mechanic=mechanic):
+                boundary = self._agent_harness_boundary()
+                boundary["mcp_boundary"]["may_own"].remove(mechanic)
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_mcp_transport_authorization_cannot_replace_finharness_authority(
+        self,
+    ) -> None:
+        for protected in (
+            "principal identity",
+            "mandate",
+            "grant",
+            "tool admission",
+            "evidence admission",
+            "execution authority",
+        ):
+            with self.subTest(protected=protected):
+                boundary = self._agent_harness_boundary()
+                boundary["mcp_boundary"][
+                    "transport_authorization_cannot_substitute_for"
+                ].remove(protected)
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_mcp_cannot_own_finharness_admission_or_domain_state(self) -> None:
         boundary = self._agent_harness_boundary()
-        boundary["mcp_boundary"]["may_own"].append("tool admission")
+        boundary["mcp_boundary"]["may_own"].append("tool visibility and admission")
         with self.assertRaisesRegex(ValueError, "violates canonical contract"):
             validate_agent_harness_boundary(boundary)
 
@@ -777,6 +862,70 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             with self.subTest(field=field):
                 boundary = self._agent_harness_boundary()
                 boundary["model_output"][field] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_requires_server_resolved_world_and_exact_case_basis(
+        self,
+    ) -> None:
+        for path, value in (
+            (("input_root", "caller_supplied_world_refs"), "allowed"),
+            (("exact_case", "basis_match"), "optional"),
+            (("mixed_basis",), "allowed"),
+            (("freshness_without_basis_match",), "sufficient"),
+            (
+                ("basis_resolution", "independent_latest_or_current_selection"),
+                "allowed",
+            ),
+        ):
+            with self.subTest(path=path):
+                boundary = self._agent_harness_boundary()
+                task = boundary["first_evaluation_task"]
+                target = task
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = value
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_requires_complete_decision_case_basis(self) -> None:
+        for version in (
+            "CapitalStateVersion",
+            "EvidenceSetVersion",
+            "PolicyVersion",
+            "ProposalVersion",
+        ):
+            with self.subTest(version=version):
+                boundary = self._agent_harness_boundary()
+                boundary["first_evaluation_task"]["required_case_basis"].remove(
+                    version
+                )
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_authority_context_comes_from_exact_world(self) -> None:
+        for mutation in ("wrong_source", "missing_mandate", "missing_grant"):
+            with self.subTest(mutation=mutation):
+                boundary = self._agent_harness_boundary()
+                authority = boundary["first_evaluation_task"]["authority_context"]
+                if mutation == "wrong_source":
+                    authority["source"] = "MCP OAuth token"
+                elif mutation == "missing_mandate":
+                    authority["includes"].remove("CapitalMandateVersion")
+                else:
+                    authority["includes"].remove("AgentAuthorityGrantVersion")
+                with self.assertRaisesRegex(ValueError, "violates canonical contract"):
+                    validate_agent_harness_boundary(boundary)
+
+    def test_first_task_maturity_and_owners_are_explicit(self) -> None:
+        for field, value in (
+            ("implementation_state", "conforming"),
+            ("implementation_owner_issue", 405),
+            ("prerequisite_issues", [284]),
+        ):
+            with self.subTest(field=field):
+                boundary = self._agent_harness_boundary()
+                boundary["first_evaluation_task"][field] = value
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 

@@ -485,19 +485,39 @@ EXPECTED_AGENT_HARNESS_BOUNDARY = {
         "selection_point": "AgentWorkDecisionPort",
         "selection_issue": 287,
         "selection_state": "future_adoption_decision",
+        "adapter_mode": "single_next_action_decision",
+        "decision_cardinality": "one dispatch or complete per invocation",
+        "harness_loop_owner": (
+            "finharness.agent_work_loop.run_bounded_tool_dispatch_loop"
+        ),
         "parallel_core_loops": "forbidden",
+        "sdk_runner_loop_on_primary_path": "forbidden",
+        "runtime_internal_tool_execution": "forbidden",
+        "runtime_internal_handoffs": "forbidden",
         "provider_dependency": "separate_adoption_decision_required",
         "candidates": ["direct Responses API", "OpenAI Agents SDK"],
+        "tool_calls_return_as": "AgentWorkToolRequest",
+        "all_tool_dispatch_must_cross": [
+            "Harness autonomy admission",
+            "Harness tool and capability admission",
+            "Harness work budgets",
+            "canonical Observation reduction",
+        ],
     },
-    "runtime_owned_mechanics": [
+    "mature_runtime_capabilities": [
         "model turn loop",
-        "typed tool-call transport",
+        "tool execution",
+        "handoffs",
+        "sessions",
         "streaming events",
-        "runtime handoffs",
-        "session and conversation mechanics",
-        "bounded transport retries",
+        "tracing",
+    ],
+    "delegated_behind_current_decision_port": [
+        "one model inference or decision turn",
+        "typed candidate tool-call decoding",
+        "provider transport retry",
         "token and request usage accounting",
-        "observability trace export",
+        "non-authoritative observability export",
     ],
     "finharness_owned_semantics": [
         "server-resolved ContextWorld and exact domain-version binding",
@@ -512,12 +532,24 @@ EXPECTED_AGENT_HARNESS_BOUNDARY = {
         "human review, correction, and handoff",
     ],
     "provider_state": {
-        "classification": "runtime state or disposable cache",
+        "authority": "non-authoritative runtime state",
+        "durability": [
+            "ephemeral when no resume obligation exists",
+            "durable while active pause, resume, or recovery obligation exists",
+        ],
+        "retention": {
+            "may_prune_after": [
+                "terminal outcome persisted",
+                "canonical trace reconciliation complete",
+                "pending human approval resolved or expired",
+            ],
+        },
         "must_bind": [
             "ContextWorld version",
             "provider and agent definition version",
         ],
         "cannot_replace": [
+            "ContextWorld",
             "CapitalStateVersion",
             "DecisionCaseVersion",
             "EvidenceSetVersion",
@@ -551,21 +583,35 @@ EXPECTED_AGENT_HARNESS_BOUNDARY = {
         "owner_issue": 300,
         "lifecycle": "deferred",
         "may_own": [
-            "capability negotiation",
-            "tools and resources discovery",
-            "prompts transport",
+            "protocol capability negotiation",
+            "tools/resources/prompts discovery",
             "protocol lifecycle",
             "transport errors",
+            "transport authentication",
+            "OAuth token and scope mechanics",
+            "resource-server access decision",
         ],
-        "cannot_own": [
+        "finharness_must_own": [
+            "approved MCP server allowlist",
+            "accepted scope policy",
+            "Principal binding",
             "context trust",
+            "tool visibility and admission",
             "evidence admission",
-            "tool admission",
+            "CapitalMandate",
+            "AgentAuthorityGrant",
             "domain truth",
             "decision validity",
-            "authority",
-            "canonical receipts",
             "execution permission",
+            "canonical receipts",
+        ],
+        "transport_authorization_cannot_substitute_for": [
+            "principal identity",
+            "mandate",
+            "grant",
+            "tool admission",
+            "evidence admission",
+            "execution authority",
         ],
     },
     "workflow_engine_boundary": {
@@ -593,12 +639,36 @@ EXPECTED_AGENT_HARNESS_BOUNDARY = {
     },
     "first_evaluation_task": {
         "name": "concentration decision contribution",
-        "inputs": [
-            "exact CapitalStateVersion",
-            "exact DecisionCaseVersion",
-            "admitted EvidenceSetVersion",
-            "effective PolicyVersion",
+        "input_root": {
+            "type": "server-resolved ContextWorld",
+            "owner_issue": 284,
+            "caller_supplied_world_refs": "forbidden",
+        },
+        "exact_case": {
+            "type": "DecisionCaseVersion",
+            "basis_match": "required",
+        },
+        "required_case_basis": [
+            "CapitalStateVersion",
+            "EvidenceSetVersion",
+            "PolicyVersion",
+            "ProposalVersion",
         ],
+        "basis_resolution": {
+            "source": "exact DecisionCaseVersion depends_on",
+            "match": "required for every required_case_basis member",
+            "independent_latest_or_current_selection": "forbidden",
+        },
+        "authority_context": {
+            "source": "exact ContextWorld",
+            "includes": [
+                "Principal",
+                "CapitalMandateVersion",
+                "AgentAuthorityGrantVersion",
+            ],
+        },
+        "mixed_basis": "forbidden",
+        "freshness_without_basis_match": "insufficient",
         "allowed_outputs": [
             "candidate evidence",
             "data gaps",
@@ -618,6 +688,9 @@ EXPECTED_AGENT_HARNESS_BOUNDARY = {
         ],
         "direct_domain_mutation": "forbidden",
         "execution_allowed": False,
+        "implementation_state": "not_yet_conforming",
+        "implementation_owner_issue": 279,
+        "prerequisite_issues": [284, 291],
     },
 }
 
@@ -1643,8 +1716,20 @@ def audit_architecture(
             if record_taxonomy
             else 0
         ),
-        "agent_runtime_mechanic_count": (
-            len(agent_harness["runtime_owned_mechanics"]) if agent_harness else 0
+        "agent_mature_runtime_capability_count": (
+            len(agent_harness["mature_runtime_capabilities"])
+            if agent_harness
+            else 0
+        ),
+        "agent_delegated_decision_mechanic_count": (
+            len(agent_harness["delegated_behind_current_decision_port"])
+            if agent_harness
+            else 0
+        ),
+        "agent_dispatch_crossing_count": (
+            len(agent_harness["primary_runtime_path"]["all_tool_dispatch_must_cross"])
+            if agent_harness
+            else 0
         ),
         "agent_harness_semantic_count": (
             len(agent_harness["finharness_owned_semantics"])
@@ -1658,6 +1743,16 @@ def audit_architecture(
         ),
         "agent_first_task_evaluation_criterion_count": (
             len(agent_harness["first_evaluation_task"]["evaluation_criteria"])
+            if agent_harness
+            else 0
+        ),
+        "agent_first_task_case_basis_count": (
+            len(agent_harness["first_evaluation_task"]["required_case_basis"])
+            if agent_harness
+            else 0
+        ),
+        "agent_authority_context_binding_count": (
+            len(agent_harness["first_evaluation_task"]["authority_context"]["includes"])
             if agent_harness
             else 0
         ),

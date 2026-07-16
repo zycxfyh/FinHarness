@@ -2363,19 +2363,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 382,
+      "match_line": 386,
       "term": "Attestation",
       "reason": "Structural test for BuildAttestation evidence policy; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 405,
+      "match_line": 409,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 439,
+      "match_line": 443,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
@@ -2465,19 +2465,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 577,
+      "match_line": 581,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation current_conformance; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 684,
+      "match_line": 688,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 685,
+      "match_line": 689,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
@@ -2531,7 +2531,7 @@
     },
     {
       "path": "docs/adr/2026-07-16-capital-decision-agent-harness-boundary.md",
-      "match_line": 110,
+      "match_line": 121,
       "term": "decision of record",
       "reason": "Agent Harness ADR prohibition on model-authored decisions of record; not an Attestation consumer."
     }

@@ -32,9 +32,12 @@ Use this as a lookup page. For system ownership, read
 
 The [Capital Decision Agent Harness ownership ADR](../adr/2026-07-16-capital-decision-agent-harness-boundary.md)
 defines `AgentWorkDecisionPort` as the single future provider selection point.
-Provider runtimes own turn/tool/session/trace mechanics; FinHarness retains
-domain-version binding, admission, authority, canonical evidence, evaluation,
-and human handoff. It does not select a provider or add a runtime dependency.
+It accepts one next-action decision, not a nested SDK Runner: every candidate
+tool call returns to the Harness reducer for autonomy/tool admission, budgets,
+and Observation reduction. Provider state is non-authoritative but remains
+durable while pause/resume obligations exist. MCP transport OAuth is distinct
+from FinHarness Principal, mandate, grant, admission, and execution authority.
+The ADR does not select a provider or add a runtime dependency.
 
 ## Common Interface Rules
 

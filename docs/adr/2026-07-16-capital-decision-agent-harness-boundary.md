@@ -22,10 +22,12 @@ could acquire domain-policy ownership merely because it stores checkpoints.
 
 ## Reference-First basis
 
-The OpenAI Agents SDK already owns a model turn loop, tool-call execution,
-streaming, handoffs, sessions, usage accounting, human-in-the-loop run state,
-and observability tracing. Its run state and trace remain runtime mechanics;
-they do not define FinHarness capital truth or evidence policy.
+The OpenAI Agents SDK already supplies a complete Runner loop, tool execution,
+streaming, handoffs, sessions, usage accounting, serializable human-in-the-loop
+run state, and observability tracing. Those are mature capabilities, but a
+complete Runner cannot be nested behind FinHarness's single-next-action port.
+Its run state and trace also remain runtime mechanics; they do not define
+FinHarness capital truth or evidence policy.
 
 MCP defines a client-host-server protocol for negotiated tools, resources,
 prompts, lifecycle, and transport. Its own architecture explicitly does not
@@ -53,27 +55,31 @@ Primary references:
 ### One runtime selection point
 
 `finharness.agent_work_loop.AgentWorkDecisionPort` remains the single future
-provider selection point. Issue #287 owns the separate adoption decision
-between a direct Responses API adapter and the OpenAI Agents SDK. Until that
-decision is accepted, neither candidate is frozen as a product dependency.
+provider selection point. It is a **single-next-action decision port**: each
+invocation returns exactly one `AgentWorkToolRequest` dispatch or `complete`.
+`run_bounded_tool_dispatch_loop()` remains the outer Harness reducer and owns
+work budgets, autonomy admission, tool/capability admission, dispatch,
+canonical Observation reduction, stop reasons, and terminal reduction.
 
-A selected runtime must enter behind this port and translate its tool calls,
-interruptions, failures, and results into the existing Harness lifecycle. It
-must not create a parallel core loop, terminal chain, admission path, or trace
-authority.
+Issue #287 owns the separate adoption decision between a direct Responses API
+adapter and the OpenAI Agents SDK. Until that decision is accepted, neither
+candidate is frozen as a product dependency. A complete SDK Runner loop,
+runtime-internal tool execution, or runtime-internal handoff/terminal chain is
+forbidden on this primary path: nesting one behind the DecisionPort would create
+a second loop and could bypass the Harness boundary.
 
-### Runtime-owned mechanics
+Every candidate tool call must return as `AgentWorkToolRequest` and cross all
+four local boundaries: autonomy admission, tool/capability admission, work
+budgets, and canonical Observation reduction.
 
-Mature provider/runtime implementations may own:
+### Mature capabilities versus delegated mechanics
 
-- model turns and typed tool-call transport;
-- streaming events and runtime handoffs;
-- session and conversation mechanics;
-- bounded transport retry behavior;
-- token/request usage accounting;
-- observability trace export.
-
-These are adopted mechanics, not capital authority.
+Provider runtimes may maturely implement model turn loops, tool execution,
+handoffs, sessions, streaming, and tracing. The current DecisionPort delegates
+only one model inference/decision turn, typed candidate tool-call decoding,
+provider transport retry, token/request usage accounting, and non-authoritative
+observability export. Mature capability does not imply delegation through the
+current abstraction.
 
 ### FinHarness-owned semantics
 
@@ -90,10 +96,15 @@ FinHarness remains the only owner of:
 - canonical durable AgentRunTrace and operation receipts;
 - human review, correction, and handoff.
 
-Provider sessions and checkpoints are runtime state or disposable cache. They
-must bind their provider/agent definition and ContextWorld version, and cannot
-replace CapitalStateVersion, DecisionCaseVersion, EvidenceSetVersion,
-PolicyVersion, AgentRunTrace, or another DomainRecord.
+Provider sessions, suspended runs, and checkpoints are non-authoritative
+runtime state. They may be ephemeral when no resume obligation exists, but must
+remain durable while an active pause, resume, recovery, or human-approval
+obligation exists. They may be pruned only after the terminal outcome is
+persisted, canonical trace reconciliation completes, and pending approval is
+resolved or expires. They must bind their provider/agent definition and
+ContextWorld version, and cannot replace ContextWorld, CapitalStateVersion,
+DecisionCaseVersion, EvidenceSetVersion, PolicyVersion, AgentRunTrace, or
+another DomainRecord.
 
 ### Candidate-only output
 
@@ -112,10 +123,17 @@ write a decision of record, authorize execution, or cause an external effect.
 ### MCP boundary
 
 Issue #300 remains the deferred owner of a vetted external MCP read-tool
-boundary. MCP may own capability negotiation, discovery, prompts transport,
-protocol lifecycle, and transport errors. It may not own context trust,
-evidence/tool admission, domain truth, decision validity, authority, canonical
-receipts, or execution permission.
+boundary. MCP may own protocol capability negotiation, tools/resources/prompts
+discovery, lifecycle and transport errors, transport authentication, OAuth
+token/scope mechanics, and the resource-server access decision.
+
+FinHarness still owns the approved-server allowlist, accepted-scope policy,
+Principal binding, context trust, tool visibility/admission, evidence admission,
+CapitalMandate, AgentAuthorityGrant, domain truth, decision validity, execution
+permission, and canonical receipts. MCP transport authorization cannot
+substitute for principal identity, mandate, grant, tool admission, evidence
+admission, or execution authority. This distinction permits standard MCP OAuth
+without translating transport access into capital-domain authority.
 
 ### Optional workflow-engine boundary
 
@@ -130,9 +148,15 @@ permission. A workflow engine is not a default core dependency.
 The first real contribution benchmark is a **concentration decision
 contribution**, not a recommendation or execution task.
 
-It consumes exact CapitalStateVersion and DecisionCaseVersion identities,
-admitted EvidenceSetVersion, and effective PolicyVersion. Its output is limited
-to the five candidate types above. Evaluation must cover:
+Its input root is one server-resolved ContextWorld owned by #284; callers cannot
+supply or override independent world references. One exact DecisionCaseVersion
+must match its bound CapitalStateVersion, EvidenceSetVersion, PolicyVersion, and
+ProposalVersion. Selecting independently latest/current versions is forbidden:
+freshness without Case-basis equality is insufficient.
+
+Principal, CapitalMandateVersion, and AgentAuthorityGrantVersion also come from
+that exact ContextWorld. Its output is limited to the five candidate types
+above. Evaluation must cover:
 
 1. exact world and domain-version freshness;
 2. evidence lineage and admission status;
@@ -143,8 +167,9 @@ to the five candidate types above. Evaluation must cover:
 7. bounded stop, escalation, and human handoff;
 8. a candidate-only result with no execution authority.
 
-The task has `execution_allowed=false` and cannot directly mutate a domain.
-Issue #279 owns the later real-task benchmark implementation.
+The task has `execution_allowed=false` and cannot directly mutate a domain. The
+current implementation is explicitly `not_yet_conforming`; Issue #279 owns the
+later real-task benchmark implementation, with #284 and #291 as prerequisites.
 
 ## Migration and ownership
 
@@ -186,9 +211,16 @@ checker rejects:
 
 - unknown top-level fields or parallel loops;
 - a selection point or owner other than `AgentWorkDecisionPort` / #287;
+- a full SDK Runner, internal tool execution/handoff, multi-action decision, or
+  tool call that bypasses Harness admission, budgets, or Observation reduction;
+- treating a mature runtime capability as delegated through the current port;
 - provider ownership of domain semantics;
-- provider-state substitution for domain versions or canonical trace;
-- MCP ownership of admission, authority, or domain state;
+- provider-state authority, premature pruning, or substitution for ContextWorld,
+  domain versions, or canonical trace;
+- mixed Case-basis inputs, caller-supplied world refs, missing ProposalVersion,
+  or mandate/grant bindings outside the exact ContextWorld;
+- MCP transport OAuth being removed or being treated as Principal, mandate,
+  grant, admission, or execution authority;
 - workflow-engine ownership of domain policy or default activation;
 - authoritative, mutating, or execution-capable model/task outputs;
 - incomplete concentration-task evaluation criteria.
