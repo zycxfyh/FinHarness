@@ -222,7 +222,7 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
             [write.binding],
         )
 
-    def test_authority_binding_denies_when_mandate_superseded_after_intent_created(self) -> None:
+    def test_authority_binding_denies_when_current_mandate_version_changes(self) -> None:
         intent = self._create_intent(created_by="agent")
         grant = self._record_grant()
         self._record_mandate(mandate_id="mandate_replacement")
@@ -230,10 +230,10 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
         write = self._bind(intent.action_intent_id, grant_id=grant.agent_authority_grant_id)
 
         self.assertFalse(write.result.allowed)
-        self.assertIn("capital_mandate_not_active", write.result.deny_reasons)
+        self.assertIn("mandate_version_changed", write.result.deny_reasons)
         self.assertEqual(
             write.result.source["grant_validation"],
-            ["capital_mandate_not_active"],
+            ["mandate_version_changed"],
         )
 
     def test_authority_binding_preserves_grant_deny_reasons(self) -> None:

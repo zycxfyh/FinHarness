@@ -46,6 +46,22 @@ CAPITAL_MANDATE_NON_CLAIMS = (
     "CapitalMandate does not authorize execution or live capital movement.",
 )
 
+# Canonical principal-bound resolution order. The first three fields express
+# domain/record chronology; the identifiers are stable lexical tie-breakers,
+# not economic or authority priority.
+CAPITAL_MANDATE_RESOLUTION_ORDER = (
+    "effective_at_utc",
+    "created_at_utc",
+    "version_number",
+    "capital_mandate_id",
+    "mandate_version_id",
+)
+CAPITAL_MANDATE_LIFECYCLE_ORDER = (
+    "effective_at_utc",
+    "created_at_utc",
+    "mandate_lifecycle_event_id",
+)
+
 
 class CapitalMandateValidationError(ValueError):
     """Raised when a capital mandate write would cross its policy boundary."""
@@ -111,7 +127,12 @@ class ResolvedCapitalMandate(BaseModel):
 
 
 def current_capital_mandate(engine: Engine) -> CapitalMandate | None:
-    """Return the latest active CapitalMandate, or ``None`` when none exists."""
+    """Return a legacy global mirror row.
+
+    This compatibility helper is non-authoritative and unsuitable for identity,
+    mandate-currentness, lifecycle, or grant decisions. Authority consumers must
+    call :func:`resolve_capital_mandate` with an authenticated principal.
+    """
     with Session(engine) as session:
         statement = (
             select(CapitalMandate)
@@ -163,7 +184,7 @@ def record_capital_mandate(
         human_reason=human_reason,
         explicit_confirmation=explicit_confirmation,
     )
-    created_at = created_at_utc or _now_utc()
+    created_at = _parse_utc(created_at_utc).isoformat() if created_at_utc else _now_utc()
     effective_at = _parse_utc(effective_at_utc or created_at).isoformat()
     expires_at = _parse_utc(expires_at_utc).isoformat() if expires_at_utc else None
     _require_ordered_time(effective_at, expires_at)
@@ -184,6 +205,11 @@ def record_capital_mandate(
         _safe_id(capital_mandate_id)
         if capital_mandate_id
         else f"capital_mandate_{_stamp()}_{uuid4().hex[:8]}"
+    )
+    _require_mandate_series_owner(
+        engine,
+        capital_mandate_id=resolved_id,
+        principal_id=resolved_principal_id,
     )
     source_ips = _resolve_source_ips(engine, source_ips_id=source_ips_id)
     resolved_receipt_refs = list(receipt_refs or [])
@@ -242,6 +268,11 @@ def record_capital_mandate(
         receipt_ref=_display_path(receipt_path),
         effective_at_utc=effective_at,
     )
+    superseded = _supersede_active_mandates(
+        engine,
+        keep=resolved_id,
+        principal_id=resolved_principal_id,
+    )
     receipt_existed = receipt_path.exists()
     atomic_write_json(
         receipt_path,
@@ -262,7 +293,6 @@ def record_capital_mandate(
         source_refs=[display, *mandate.source_refs],
         refs=[resolved_id, *_source_ips_refs(mandate), *mandate.receipt_refs],
     )
-    superseded = _supersede_active_mandates(engine, keep=resolved_id)
     try:
         upsert_records([*superseded, mandate, version, activation, index], engine=engine)
     except StateCoreStoreError:
@@ -335,12 +365,59 @@ def _source_ips_refs(mandate: CapitalMandate) -> list[str]:
     return [mandate.source_ips_id] if mandate.source_ips_id else []
 
 
-def _supersede_active_mandates(engine: Engine, *, keep: str) -> list[CapitalMandate]:
+def capital_mandate_series_owner(
+    engine: Engine,
+    capital_mandate_id: str,
+) -> str | None:
+    """Return the one durable version owner, rejecting corrupted shared series."""
+
+    with Session(engine) as session:
+        owners = set(
+            session.exec(
+                select(CapitalMandateVersion.principal_id).where(
+                    CapitalMandateVersion.capital_mandate_id == capital_mandate_id
+                )
+            ).all()
+        )
+    if len(owners) > 1:
+        raise CapitalMandateValidationError(
+            "capital mandate series has multiple durable principal owners"
+        )
+    return next(iter(owners), None)
+
+
+def _require_mandate_series_owner(
+    engine: Engine,
+    *,
+    capital_mandate_id: str,
+    principal_id: str,
+) -> None:
+    owner = capital_mandate_series_owner(engine, capital_mandate_id)
+    if owner is not None:
+        if owner != principal_id:
+            raise CapitalMandateValidationError("capital mandate ID is owned by another principal")
+        return
+    with Session(engine) as session:
+        legacy_row = session.get(CapitalMandate, capital_mandate_id)
+    if legacy_row is not None:
+        raise CapitalMandateValidationError(
+            "legacy capital mandate durable owner unavailable; unverified labels cannot claim it"
+        )
+
+
+def _supersede_active_mandates(
+    engine: Engine,
+    *,
+    keep: str,
+    principal_id: str,
+) -> list[CapitalMandate]:
     with Session(engine) as session:
         rows = session.exec(select(CapitalMandate).where(CapitalMandate.status == "active")).all()
     superseded: list[CapitalMandate] = []
     for row in rows:
         if row.capital_mandate_id == keep:
+            continue
+        if capital_mandate_series_owner(engine, row.capital_mandate_id) != principal_id:
             continue
         row.status = "superseded"
         superseded.append(row)
@@ -361,20 +438,34 @@ def resolve_capital_mandate(
     at_dt = _parse_utc(resolved_at)
     with Session(engine) as session:
         versions = session.exec(
-            select(CapitalMandateVersion)
-            .where(CapitalMandateVersion.principal_id == principal_id)
-            .order_by(
-                col(CapitalMandateVersion.effective_at_utc).desc(),
-                col(CapitalMandateVersion.version_number).desc(),
-            )
+            select(CapitalMandateVersion).where(CapitalMandateVersion.principal_id == principal_id)
         ).all()
-        version = next(
-            (
-                candidate
-                for candidate in versions
-                if _parse_utc(candidate.effective_at_utc) <= at_dt
-            ),
-            None,
+        effective_versions = [
+            candidate for candidate in versions if _parse_utc(candidate.effective_at_utc) <= at_dt
+        ]
+        for candidate in effective_versions:
+            try:
+                owner = capital_mandate_series_owner(engine, candidate.capital_mandate_id)
+            except CapitalMandateValidationError:
+                return ResolvedCapitalMandate(
+                    principal_id=principal_id,
+                    at_utc=resolved_at,
+                    status="invalid",
+                    version=None,
+                    deny_reasons=("mandate_series_owner_conflict",),
+                )
+            if owner != principal_id:
+                return ResolvedCapitalMandate(
+                    principal_id=principal_id,
+                    at_utc=resolved_at,
+                    status="invalid",
+                    version=None,
+                    deny_reasons=("mandate_series_owner_conflict",),
+                )
+        version = max(
+            effective_versions,
+            key=_mandate_resolution_order_key,
+            default=None,
         )
         if version is None:
             return ResolvedCapitalMandate(
@@ -385,13 +476,15 @@ def resolve_capital_mandate(
                 deny_reasons=("no_effective_mandate",),
             )
         events = session.exec(
-            select(CapitalMandateLifecycleEvent)
-            .where(CapitalMandateLifecycleEvent.mandate_version_id == version.mandate_version_id)
-            .order_by(col(CapitalMandateLifecycleEvent.effective_at_utc).desc())
+            select(CapitalMandateLifecycleEvent).where(
+                CapitalMandateLifecycleEvent.mandate_version_id == version.mandate_version_id
+            )
         ).all()
-    latest_event = next(
-        (event for event in events if _parse_utc(event.effective_at_utc) <= at_dt),
-        None,
+    effective_events = [event for event in events if _parse_utc(event.effective_at_utc) <= at_dt]
+    latest_event = max(
+        effective_events,
+        key=_mandate_lifecycle_order_key,
+        default=None,
     )
     if version.expires_at_utc and _parse_utc(version.expires_at_utc) <= at_dt:
         status = "expired"
@@ -501,6 +594,8 @@ def _record_lifecycle_command(
         engine=engine,
         at_utc=resolved_at,
     )
+    if "mandate_series_owner_conflict" in resolved.deny_reasons:
+        raise CapitalMandateValidationError("mandate_series_owner_conflict")
     version = resolved.version
     if version is None or version.capital_mandate_id != capital_mandate_id:
         raise CapitalMandateValidationError("current principal mandate does not match command")
@@ -589,6 +684,8 @@ def _build_mandate_version(
         "allowed_action_types": mandate.allowed_action_types,
         "restricted_action_types": mandate.restricted_action_types,
         "autonomy_level": mandate.autonomy_level,
+        "limit_book": mandate.limit_book,
+        "kill_switch_rules": mandate.kill_switch_rules,
         "review_cadence": mandate.review_cadence,
     }
     typed_payload = typed_limits.model_dump(mode="json")
@@ -627,6 +724,30 @@ def _build_mandate_version(
         created_at_utc=mandate.created_at_utc,
         as_of_utc=mandate.as_of_utc,
     )
+
+
+def _mandate_resolution_order_key(
+    version: CapitalMandateVersion,
+) -> tuple[Any, ...]:
+    values: dict[str, Any] = {
+        "effective_at_utc": _parse_utc(version.effective_at_utc),
+        "created_at_utc": _parse_utc(version.created_at_utc),
+        "version_number": version.version_number,
+        "capital_mandate_id": version.capital_mandate_id,
+        "mandate_version_id": version.mandate_version_id,
+    }
+    return tuple(values[field] for field in CAPITAL_MANDATE_RESOLUTION_ORDER)
+
+
+def _mandate_lifecycle_order_key(
+    event: CapitalMandateLifecycleEvent,
+) -> tuple[Any, ...]:
+    values: dict[str, Any] = {
+        "effective_at_utc": _parse_utc(event.effective_at_utc),
+        "created_at_utc": _parse_utc(event.created_at_utc),
+        "mandate_lifecycle_event_id": event.mandate_lifecycle_event_id,
+    }
+    return tuple(values[field] for field in CAPITAL_MANDATE_LIFECYCLE_ORDER)
 
 
 def _lifecycle_event(

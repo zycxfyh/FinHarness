@@ -17,11 +17,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
+    CapitalMandateValidationError,
+    capital_mandate_series_owner,
     resolve_capital_mandate,
 )
 from finharness.statecore.models import (
@@ -54,6 +56,7 @@ AgentAuthorityGrantDenyReason = Literal[
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
     "grant_notional_exhausted",
@@ -74,6 +77,7 @@ AGENT_AUTHORITY_GRANT_DENY_REASONS: tuple[str, ...] = (
     "grant_expired",
     "principal_mismatch",
     "agent_runtime_mismatch",
+    "mandate_series_owner_conflict",
     "mandate_version_changed",
     "grant_exhausted",
     "grant_notional_exhausted",
@@ -187,13 +191,17 @@ def record_agent_authority_grant(  # noqa: C901
     mandate = _get_capital_mandate(engine, capital_mandate_id)
     if mandate is None:
         raise KeyError(capital_mandate_id)
-    if mandate.status != "active":
-        raise AgentAuthorityGrantValidationError("capital mandate must be active")
-    latest_version = _latest_mandate_version(engine, mandate.capital_mandate_id)
-    if latest_version is None:
+    try:
+        durable_owner = capital_mandate_series_owner(engine, capital_mandate_id)
+    except CapitalMandateValidationError as exc:
+        raise AgentAuthorityGrantValidationError("mandate_series_owner_conflict") from exc
+    if durable_owner is None:
         raise AgentAuthorityGrantValidationError("capital mandate version is required")
+    resolved_principal = principal_id or durable_owner
+    if resolved_principal != durable_owner:
+        raise AgentAuthorityGrantValidationError("grant principal must own mandate series")
     current_resolution = resolve_capital_mandate(
-        principal_id=latest_version.principal_id,
+        principal_id=resolved_principal,
         engine=engine,
         at_utc=created_at,
     )
@@ -201,14 +209,12 @@ def record_agent_authority_grant(  # noqa: C901
     if (
         current_resolution.status != "active"
         or mandate_version is None
-        or mandate_version.capital_mandate_id != mandate.capital_mandate_id
+        or mandate_version.principal_id != resolved_principal
+        or mandate_version.capital_mandate_id != capital_mandate_id
     ):
         raise AgentAuthorityGrantValidationError("capital mandate must resolve active")
-    if not _scope_within_mandate(scope, mandate, mandate_version=mandate_version):
+    if not _scope_within_mandate(scope, mandate_version=mandate_version):
         raise AgentAuthorityGrantValidationError("grant_scope exceeds capital mandate scope")
-    resolved_principal = principal_id or mandate_version.principal_id
-    if resolved_principal != mandate_version.principal_id:
-        raise AgentAuthorityGrantValidationError("grant principal must own mandate version")
     resolved_runtime = (agent_runtime_id or agent_id).strip()
     if not resolved_runtime:
         raise AgentAuthorityGrantValidationError("agent_runtime_id is required")
@@ -233,8 +239,9 @@ def record_agent_authority_grant(  # noqa: C901
         else f"agent_authority_grant_{_stamp()}_{uuid4().hex[:8]}"
     )
     resolved_receipt_refs = list(receipt_refs or [])
-    if mandate.receipt_ref and mandate.receipt_ref not in resolved_receipt_refs:
-        resolved_receipt_refs.append(mandate.receipt_ref)
+    mandate_receipt_ref = mandate_version.receipt_ref or mandate.receipt_ref
+    if mandate_receipt_ref and mandate_receipt_ref not in resolved_receipt_refs:
+        resolved_receipt_refs.append(mandate_receipt_ref)
 
     receipt_id = f"receipt_agent_authority_grant_{_stamp()}_{uuid4().hex[:8]}"
     receipt_path = resolve_under(
@@ -254,7 +261,7 @@ def record_agent_authority_grant(  # noqa: C901
         grant_scope=scope,
         issued_by=issued_by.strip(),
         issued_reason=issued_reason.strip(),
-        issued_against_mandate_receipt_ref=mandate.receipt_ref,
+        issued_against_mandate_receipt_ref=mandate_receipt_ref,
         expires_at_utc=expires_at_utc,
         max_uses=max_uses,
         max_total_notional=parsed_max_notional,
@@ -274,7 +281,6 @@ def record_agent_authority_grant(  # noqa: C901
         requested_scope=scope,
         now_utc=created_at,
         candidate_grant=grant,
-        candidate_mandate=mandate,
     )
     if not creation_validation.allowed:
         raise AgentAuthorityGrantValidationError(
@@ -326,7 +332,6 @@ def validate_agent_authority_grant(  # noqa: C901
     nonce: str | None = None,
     requested_notional: Decimal | str | None = None,
     candidate_grant: AgentAuthorityGrant | None = None,
-    candidate_mandate: CapitalMandate | None = None,
 ) -> AgentAuthorityGrantValidationResult:
     """Dynamically validate a grant against current grant and mandate state."""
     requested = dict(requested_scope or {})
@@ -354,26 +359,35 @@ def validate_agent_authority_grant(  # noqa: C901
     if agent_runtime_id is not None and grant.agent_runtime_id != agent_runtime_id:
         deny_reasons.append("agent_runtime_mismatch")
 
-    mandate = candidate_mandate or _get_capital_mandate(engine, grant.capital_mandate_id)
-    if mandate is None:
-        deny_reasons.append("capital_mandate_not_found")
-    elif mandate.status != "active":
-        deny_reasons.append("capital_mandate_not_active")
-
     mandate_version = _get_mandate_version(engine, grant.mandate_version_id)
-    if grant.principal_id:
-        resolution = resolve_capital_mandate(
+    resolution = (
+        resolve_capital_mandate(
             principal_id=grant.principal_id,
             engine=engine,
+            at_utc=now_utc,
         )
-        if resolution.status != "active" and "capital_mandate_not_active" not in deny_reasons:
-            deny_reasons.append("capital_mandate_not_active")
-        if (
-            resolution.version is not None
-            and resolution.version.capital_mandate_id == grant.capital_mandate_id
-            and resolution.version.mandate_version_id != grant.mandate_version_id
-        ):
-            deny_reasons.append("mandate_version_changed")
+        if grant.principal_id is not None
+        else None
+    )
+    if grant.principal_id is None:
+        deny_reasons.append("principal_mismatch")
+    if resolution is not None and "mandate_series_owner_conflict" in resolution.deny_reasons:
+        deny_reasons.append("mandate_series_owner_conflict")
+    elif resolution is None or resolution.version is None:
+        deny_reasons.append("capital_mandate_not_found")
+    elif resolution.status != "active":
+        deny_reasons.append("capital_mandate_not_active")
+    if mandate_version is None or (
+        mandate_version.principal_id != grant.principal_id
+        or mandate_version.capital_mandate_id != grant.capital_mandate_id
+    ):
+        deny_reasons.append("mandate_version_changed")
+    if resolution is not None and resolution.version is not None and (
+        resolution.version.principal_id != grant.principal_id
+        or resolution.version.capital_mandate_id != grant.capital_mandate_id
+        or resolution.version.mandate_version_id != grant.mandate_version_id
+    ):
+        deny_reasons.append("mandate_version_changed")
 
     if candidate_grant is None:
         consumptions = _grant_consumptions(engine, grant.agent_authority_grant_id)
@@ -404,10 +418,9 @@ def validate_agent_authority_grant(  # noqa: C901
         if reason not in deny_reasons:
             deny_reasons.append(reason)
 
-    if mandate is not None:
+    if mandate_version is not None:
         scope_result["grant_scope_within_mandate"] = _scope_within_mandate(
             grant.grant_scope,
-            mandate,
             mandate_version=mandate_version,
         )
         if not scope_result["grant_scope_within_mandate"]:
@@ -723,38 +736,26 @@ def _grant_consumptions(
         )
 
 
-def _latest_mandate_version(
-    engine: Engine,
-    capital_mandate_id: str,
-) -> CapitalMandateVersion | None:
-    with Session(engine) as session:
-        return session.exec(
-            select(CapitalMandateVersion)
-            .where(CapitalMandateVersion.capital_mandate_id == capital_mandate_id)
-            .order_by(col(CapitalMandateVersion.version_number).desc())
-        ).first()
-
-
 def _scope_within_mandate(
     scope: Mapping[str, Any],
-    mandate: CapitalMandate,
     *,
-    mandate_version: CapitalMandateVersion | None = None,
+    mandate_version: CapitalMandateVersion,
 ) -> bool:
-    typed_limits = mandate_version.typed_limits if mandate_version is not None else {}
+    typed_limits = mandate_version.typed_limits
+    policy = mandate_version.policy_payload
     return _scope_within_scope(
         scope,
         {
-            "allowed_asset_classes": mandate.allowed_asset_classes,
-            "allowed_action_types": mandate.allowed_action_types,
-            "autonomy_level": mandate.autonomy_level,
+            "allowed_asset_classes": policy.get("allowed_asset_classes", []),
+            "allowed_action_types": policy.get("allowed_action_types", []),
+            "autonomy_level": policy.get("autonomy_level", "L0_observe_only"),
             "product_ids": typed_limits.get("product_ids", []),
             "instrument_ids": typed_limits.get("instrument_ids", []),
             "action_types": typed_limits.get("action_types", []),
             "max_notional": typed_limits.get("max_notional"),
         },
-        restricted_asset_classes=mandate.restricted_asset_classes,
-        restricted_action_types=mandate.restricted_action_types,
+        restricted_asset_classes=policy.get("restricted_asset_classes", []),
+        restricted_action_types=policy.get("restricted_action_types", []),
         unbounded_keys=("directions", "broker_ids"),
     )
 

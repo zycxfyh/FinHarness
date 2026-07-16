@@ -15,7 +15,7 @@ Use this as a lookup page. For system ownership, read
 | StateCoreInterface | SQLite / SQLModel | Queryable mirror, DecimalText money, receipt index, atomic writes | `statecore/`, [Receipt Reference](receipts.md) |
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
-| CapitalMandateInterface | Human-attested user policy domain | Receipt-backed active/superseded CapitalMandate for future delegated authority boundaries; derives its actor from server-authenticated `OperatorContext`, requires a written reason and explicit confirmation, and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
+| CapitalMandateInterface | Human-attested user policy domain | Principal-owned immutable versions and append-only lifecycle evidence; deterministic principal-bound current resolution; `CapitalMandate.status` remains a compatibility mirror; derives its actor from server-authenticated `OperatorContext` and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
 | AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; structured product/instrument/action/direction/notional/broker scope; closed validation reasons; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
 | ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
@@ -52,10 +52,29 @@ The ADR does not select a provider or add a runtime dependency.
   it still has `execution_allowed=false` and `authority_transition=false`, and
   it is not an Agent identity grant, AuthorityContract, order ticket, broker
   instruction, or execution authorization.
+- A `capital_mandate_id` is permanently bound to the durable
+  `CapitalMandateVersion.principal_id`. Reuse by another principal is rejected
+  before any receipt or domain mutation. Currentness is resolved only by
+  `resolve_capital_mandate(principal_id, at_utc)` using descending
+  `(effective_at_utc, created_at_utc, version_number, capital_mandate_id,
+  mandate_version_id)`. The final lexical identifiers make ties stable; they do
+  not express economic or permission priority. Lifecycle ties use descending
+  `(effective_at_utc, created_at_utc, mandate_lifecycle_event_id)`.
+- `CapitalMandate.status` and the legacy global `current_capital_mandate()`
+  helper are non-authoritative compatibility views. Historical unowned rows
+  remain readable, but free-text labels cannot be promoted into verified owner
+  identity. A historical mandate ID with multiple durable version owners is
+  invalid for every principal: resolution returns no version, grant validation
+  and creation return `mandate_series_owner_conflict`, and lifecycle writes fail
+  before evidence or domain mutation. HTTP grant creation exposes the conflict
+  as a typed 422 rather than an unhandled CapitalMandate exception.
 - AgentAuthorityGrant is a mandate-bound authority credential, not authentication
   or execution permission. It must reference an active CapitalMandate at creation
   time, bind the authenticated principal and agent runtime to an exact mandate
-  version, and re-check lifecycle, scope, usage, and nonce at use time. Only
+  version, and re-check the same principal exact current version, lifecycle,
+  scope, usage, and nonce at use time. A new current version under either the
+  same or another mandate ID yields `mandate_version_changed`; another
+  principal cannot cause that drift. Only
   atomic consumption spends capacity; validation never does.
   Its validator returns closed deny reasons such as `capital_mandate_not_active`,
   `requested_scope_exceeds_grant`, and forbidden execution/approval/broker/

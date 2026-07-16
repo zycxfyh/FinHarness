@@ -75,7 +75,6 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
         resolution = resolve_runtime_autonomy_mandate(
             grant_id,
             engine=self.engine,
-            now_utc="2026-07-11T00:00:00+00:00",
         )
 
         self.assertTrue(resolution.resolved)
@@ -85,6 +84,10 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
             AgentAutonomyLevel.AUT3_DELEGATED_REVIEW,
         )
         self.assertEqual(resolution.mandate.authority_grant_id, grant_id)
+        self.assertEqual(
+            resolution.mandate.principal_id,
+            "legacy-unverified:owner@example.com",
+        )
         self.assertIn(
             AgentActionClass.MAKE_PLANNING_DECISION,
             resolution.mandate.allowed_action_classes,
