@@ -30,6 +30,15 @@ Use this as a lookup page. For system ownership, read
 | SecurityScanInterface | pip-audit, gitleaks, Trivy, uv | Scanner aggregation, redaction, fail-closed missing/timeout result | `task security:audit`, `task security:scan` |
 | EvidenceInterface | Possible future OpenLineage/MLflow/DVC/Sigstore adapter | Receipt schema, claim boundaries, non-claims, review hooks | [Receipt Reference](receipts.md), [Evidence Inventory](../architecture/evidence-inventory.md) |
 
+The [Capital Decision Agent Harness ownership ADR](../adr/2026-07-16-capital-decision-agent-harness-boundary.md)
+defines `AgentWorkDecisionPort` as the single future provider selection point.
+It accepts one next-action decision, not a nested SDK Runner: every candidate
+tool call returns to the Harness reducer for autonomy/tool admission, budgets,
+and Observation reduction. Provider state is non-authoritative but remains
+durable while pause/resume obligations exist. MCP transport OAuth is distinct
+from FinHarness Principal, mandate, grant, admission, and execution authority.
+The ADR does not select a provider or add a runtime dependency.
+
 ## Common Interface Rules
 
 - Mature wheels can compute or retrieve evidence; they do not grant authority.

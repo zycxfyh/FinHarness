@@ -407,6 +407,117 @@ plane_model:
             completed_prerequisites: []
             disposition: preserve source provenance under the shared qualified-source identity boundary
 
+  # Mature runtimes own Agent mechanics; FinHarness retains capital-domain
+  # meaning, admission, authority, canonical evidence, and human review.
+  agent_harness_boundary:
+    schema: finharness.agent_harness_boundary.v1
+    primary_runtime_path:
+      current_harness_owner: finharness.agent_work_loop
+      selection_point: AgentWorkDecisionPort
+      selection_issue: 287
+      selection_state: future_adoption_decision
+      adapter_mode: single_next_action_decision
+      decision_cardinality: one dispatch or complete per invocation
+      harness_loop_owner: finharness.agent_work_loop.run_bounded_tool_dispatch_loop
+      parallel_core_loops: forbidden
+      sdk_runner_loop_on_primary_path: forbidden
+      runtime_internal_tool_execution: forbidden
+      runtime_internal_handoffs: forbidden
+      provider_dependency: separate_adoption_decision_required
+      candidates: [direct Responses API, OpenAI Agents SDK]
+      tool_calls_return_as: AgentWorkToolRequest
+      all_tool_dispatch_must_cross:
+        - Harness autonomy admission
+        - Harness tool and capability admission
+        - Harness work budgets
+        - canonical Observation reduction
+    mature_runtime_capabilities:
+      - model turn loop
+      - tool execution
+      - handoffs
+      - sessions
+      - streaming events
+      - tracing
+    delegated_behind_current_decision_port:
+      - one model inference or decision turn
+      - typed candidate tool-call decoding
+      - provider transport retry
+      - token and request usage accounting
+      - non-authoritative observability export
+    finharness_owned_semantics:
+      - server-resolved ContextWorld and exact domain-version binding
+      - CapitalState and DecisionCase meaning
+      - evidence admissibility and claim-source policy
+      - tool visibility, admission, and dispatch policy
+      - authority and autonomy admission
+      - stale-world replan policy
+      - independent budgets and stop or escalation policy
+      - domain evaluation and readiness
+      - canonical durable AgentRunTrace and operation receipts
+      - human review, correction, and handoff
+    provider_state:
+      authority: non-authoritative runtime state
+      durability:
+        - ephemeral when no resume obligation exists
+        - durable while active pause, resume, or recovery obligation exists
+      retention:
+        may_prune_after:
+          - terminal outcome persisted
+          - canonical trace reconciliation complete
+          - pending human approval resolved or expired
+      must_bind: [ContextWorld version, provider and agent definition version]
+      cannot_replace: [ContextWorld, CapitalStateVersion, DecisionCaseVersion, EvidenceSetVersion, PolicyVersion, AgentRunTrace, DomainRecord]
+    model_output:
+      classification: candidate only until deterministic owning-domain admission
+      allowed_outputs: [candidate evidence, data gaps, Scenario request, proposal draft, human handoff]
+      prohibited_effects: [domain truth mutation, evidence self-admission, authority grant, decision-of-record write, execution authorization, external effect]
+      execution_allowed: false
+    mcp_boundary:
+      owner_issue: 300
+      lifecycle: deferred
+      may_own: [protocol capability negotiation, tools/resources/prompts discovery, protocol lifecycle, transport errors, transport authentication, OAuth token and scope mechanics, resource-server access decision]
+      finharness_must_own: [approved MCP server allowlist, accepted scope policy, Principal binding, context trust, tool visibility and admission, evidence admission, CapitalMandate, AgentAuthorityGrant, domain truth, decision validity, execution permission, canonical receipts]
+      transport_authorization_cannot_substitute_for: [principal identity, mandate, grant, tool admission, evidence admission, execution authority]
+    workflow_engine_boundary:
+      activation: measured long-running resume, retry, interrupt, scheduling, or compensation need plus separate adoption decision
+      may_own: [checkpoint mechanics, resume mechanics, scheduling transport, durable interrupts, compensation orchestration]
+      cannot_own: [CapitalState meaning, DecisionCase meaning, evidence admission, authority policy, stale-world policy, domain evaluation, execution permission]
+      default_core_dependency: forbidden
+    first_evaluation_task:
+      name: concentration decision contribution
+      input_root:
+        type: server-resolved ContextWorld
+        owner_issue: 284
+        caller_supplied_world_refs: forbidden
+      exact_case:
+        type: DecisionCaseVersion
+        basis_match: required
+      required_case_basis: [CapitalStateVersion, EvidenceSetVersion, PolicyVersion, ProposalVersion]
+      basis_resolution:
+        source: exact DecisionCaseVersion depends_on
+        match: required for every required_case_basis member
+        independent_latest_or_current_selection: forbidden
+      authority_context:
+        source: exact ContextWorld
+        includes: [Principal, CapitalMandateVersion, AgentAuthorityGrantVersion]
+      mixed_basis: forbidden
+      freshness_without_basis_match: insufficient
+      allowed_outputs: [candidate evidence, data gaps, Scenario request, proposal draft, human handoff]
+      evaluation_criteria:
+        - exact world and domain-version freshness
+        - evidence lineage and admission status
+        - deterministic concentration facts separated from model interpretation
+        - uncertainty, counter-evidence, and data gaps
+        - Scenario request when the current basis is insufficient
+        - policy and mandate constraints treated as deterministic inputs
+        - bounded stop, escalation, and human handoff
+        - candidate-only result with no execution authority
+      direct_domain_mutation: forbidden
+      execution_allowed: false
+      implementation_state: not_yet_conforming
+      implementation_owner_issue: 279
+      prerequisite_issues: [284, 291]
+
 # First match wins. Keep narrow ownership rules before the core fallback.
 layers:
   - name: statecore

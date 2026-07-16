@@ -806,8 +806,8 @@
       "consumer_id": "ATT-CONS-029",
       "path": "docs/reference/interfaces.md",
       "symbol": "attestation endpoint documentation",
-      "line_start": 80,
-      "line_end": 95,
+      "line_start": 87,
+      "line_end": 103,
       "match_terms": [
         "attestations"
       ],
@@ -823,7 +823,7 @@
       "recommended_change": "Keep. Add DecisionRecord endpoint documentation alongside.",
       "test_implications": [],
       "evidence": [
-        "interfaces.md:80-95"
+        "interfaces.md:87-103"
       ]
     },
     {
@@ -2363,19 +2363,19 @@
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 375,
+      "match_line": 386,
       "term": "Attestation",
       "reason": "Structural test for BuildAttestation evidence policy; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 398,
+      "match_line": 409,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 432,
+      "match_line": 443,
       "term": "Attestation",
       "reason": "Negative record-taxonomy fixture naming BuildAttestation; not a legacy Attestation consumer."
     },
@@ -2435,49 +2435,49 @@
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 222,
+      "match_line": 223,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 229,
+      "match_line": 230,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 246,
+      "match_line": 247,
       "term": "Attestation",
       "reason": "BuildAttestation allowed_references in EXPECTED_RECORD_CATEGORY_CONTRACT; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 411,
+      "match_line": 412,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
     {
       "path": "src/finharness/architecture_boundaries.py",
-      "match_line": 417,
+      "match_line": 418,
       "term": "Attestation",
       "reason": "BuildAttestation in EXPECTED_RECORD_MIGRATIONS component contract; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 570,
+      "match_line": 581,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation current_conformance; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 677,
+      "match_line": 688,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
     {
       "path": "tests/test_architecture_boundaries.py",
-      "match_line": 678,
+      "match_line": 689,
       "term": "Attestation",
       "reason": "Destructive test for BuildAttestation financial evidence admission; not a legacy Attestation consumer."
     },
@@ -2528,6 +2528,12 @@
       "match_line": 15,
       "term": "Attestation",
       "reason": "Receipt reference documentation noting commit-identity JSON; not a runtime consumer."
+    },
+    {
+      "path": "docs/adr/2026-07-16-capital-decision-agent-harness-boundary.md",
+      "match_line": 121,
+      "term": "decision of record",
+      "reason": "Agent Harness ADR prohibition on model-authored decisions of record; not an Attestation consumer."
     }
   ],
   "unclassified_hits": []
