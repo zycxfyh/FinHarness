@@ -11,6 +11,12 @@ const { JSDOM } = require("jsdom");
 const {
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
@@ -194,10 +200,21 @@ function renderForm() {
 
 // 4a. confirm() returns false -> no fetch.
 let fetchCalls = [];
+const aliceBinding = mutationBinding();
 window.fetch = (p, opts) => {
+  if (String(p) === BINDING_ENDPOINT) {
+    return Promise.resolve(
+      bindingResponse(aliceBinding),
+    );
+  }
   fetchCalls.push([p, opts]);
   return Promise.resolve({
     ok: true,
+    status: 200,
+    headers: responseHeaders({
+      bindingId: aliceBinding.binding_id,
+      receipt: "identity_review_workspace",
+    }),
     json: () => Promise.resolve({ execution_allowed: false }),
   });
 };

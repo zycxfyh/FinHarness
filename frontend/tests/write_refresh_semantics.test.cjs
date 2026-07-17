@@ -7,19 +7,24 @@ const { JSDOM } = require("jsdom");
 const {
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
-function successfulWriteResponse() {
+function successfulWriteResponse(bindingId) {
   return {
     ok: true,
     status: 200,
     statusText: "OK",
-    headers: {
-      get() {
-        return null;
-      },
-    },
+    headers: responseHeaders({
+      bindingId,
+      receipt: "identity_write_refresh",
+    }),
     json: async () => ({
       execution_allowed: false,
     }),
@@ -81,6 +86,7 @@ async function proveSavedRefreshFailure({
 
   let writeCalls = 0;
   let refreshCalls = 0;
+  const aliceBinding = mutationBinding();
 
   window.confirm = () => confirm;
 
@@ -89,12 +95,18 @@ async function proveSavedRefreshFailure({
       String(options.method || "GET").toUpperCase();
     const normalizedPath = String(requestPath);
 
+    if (normalizedPath === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
+
     if (
       normalizedMethod === method &&
       normalizedPath === endpoint
     ) {
       writeCalls += 1;
-      return successfulWriteResponse();
+      return successfulWriteResponse(
+        aliceBinding.binding_id,
+      );
     }
 
     refreshCalls += 1;

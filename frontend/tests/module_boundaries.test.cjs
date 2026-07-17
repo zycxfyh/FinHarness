@@ -7,6 +7,12 @@ const { JSDOM } = require("jsdom");
 const {
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(frontendDir, "index.html"), "utf-8");
@@ -48,18 +54,21 @@ assert.doesNotThrow(
 );
 
 const requests = [];
+const aliceBinding = mutationBinding();
 dom.window.fetch = (endpoint, options) => {
+  if (endpoint === BINDING_ENDPOINT) {
+    return Promise.resolve(
+      bindingResponse(aliceBinding),
+    );
+  }
   requests.push([endpoint, options]);
   return Promise.resolve({
     ok: true,
     status: 200,
-    headers: {
-      get: (name) =>
-        String(name).toLowerCase() ===
-        "x-finharness-identity-receipt"
-          ? "identity_mutation_test"
-          : null,
-    },
+    headers: responseHeaders({
+      bindingId: aliceBinding.binding_id,
+      receipt: "identity_mutation_test",
+    }),
     json: () =>
       Promise.resolve({
         execution_allowed: false,
@@ -84,17 +93,17 @@ dom.window.fetch = (endpoint, options) => {
     "successful governed write clears its attempt",
   );
 
-  dom.window.fetch = () =>
-    Promise.resolve({
+  dom.window.fetch = (endpoint) =>
+    Promise.resolve(
+      endpoint === BINDING_ENDPOINT
+        ? bindingResponse(aliceBinding)
+        : {
       ok: true,
       status: 200,
-      headers: {
-        get: (name) =>
-          String(name).toLowerCase() ===
-          "x-finharness-identity-receipt"
-            ? "identity_mutation_bad_contract"
-            : null,
-      },
+      headers: responseHeaders({
+        bindingId: aliceBinding.binding_id,
+        receipt: "identity_mutation_bad_contract",
+      }),
       json: () =>
         Promise.resolve({
           execution_allowed: true,

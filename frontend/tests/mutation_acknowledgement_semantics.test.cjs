@@ -10,22 +10,24 @@ const {
   installSharedStorage,
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
-function successfulWriteResponse() {
+function successfulWriteResponse(bindingId) {
   return {
     ok: true,
     status: 200,
     statusText: "OK",
-    headers: {
-      get(name) {
-        return String(name).toLowerCase() ===
-          "x-finharness-identity-receipt"
-          ? "identity_cleanup_ui"
-          : null;
-      },
-    },
+    headers: responseHeaders({
+      bindingId,
+      receipt: "identity_cleanup_ui",
+    }),
     json: async () => ({
       execution_allowed: false,
     }),
@@ -90,6 +92,7 @@ function settle() {
   });
 
   let postCalls = 0;
+  const aliceBinding = mutationBinding();
 
   dom.window.confirm = () => true;
   dom.window.fetch = async (
@@ -99,13 +102,18 @@ function settle() {
     const method =
       String(options.method || "GET").toUpperCase();
 
+    if (String(requestPath) === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
     if (
       method === "POST" &&
       String(requestPath) ===
         "/proposals/prop_1/review-events"
     ) {
       postCalls += 1;
-      return successfulWriteResponse();
+      return successfulWriteResponse(
+        aliceBinding.binding_id,
+      );
     }
 
     if (

@@ -158,8 +158,8 @@ async function run() {
     await page.waitForSelector("#proposal-detail .error-text");
     assert.match(
       (await page.locator("#proposal-detail .error-text").first().textContent()) || "",
-      /403.*write_capability_required/,
-      "permission denial must be visible in the browser",
+      /identity-bound recovery/,
+      "missing current browser authentication binding must be visible",
     );
 
     console.log("Local review browser mode: PASS (3 decisions, restart, stale, permission denial).");

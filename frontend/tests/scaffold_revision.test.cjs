@@ -10,6 +10,12 @@ const { JSDOM } = require("jsdom");
 const {
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 
@@ -55,11 +61,22 @@ function renderForm() {
 }
 
 let fetchCalls = [];
+const aliceBinding = mutationBinding();
 window.fetch = (p, opts = {}) => {
+  if (String(p) === BINDING_ENDPOINT) {
+    return Promise.resolve(
+      bindingResponse(aliceBinding),
+    );
+  }
   fetchCalls.push([String(p), opts]);
   if (opts.method === "PATCH") {
     return Promise.resolve({
       ok: true,
+      status: 200,
+      headers: responseHeaders({
+        bindingId: aliceBinding.binding_id,
+        receipt: "identity_scaffold_revision",
+      }),
       json: () => Promise.resolve({ proposal: { proposal_id: "prop_1" }, execution_allowed: false }),
     });
   }

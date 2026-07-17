@@ -15,6 +15,7 @@ from finharness.api.keyed_mutation_capabilities import (
     KeyedMutationCapabilityError,
     KeyedMutationRouteCapability,
     KeyedMutationRouteMode,
+    MatchedApiRoute,
     audit_keyed_mutation_route_capabilities,
     identity_mutation_resolver_contract_maps,
     load_keyed_mutation_route_capabilities,
@@ -27,6 +28,7 @@ from finharness.api.routes_agent_authority_grants import (
 from finharness.api.routes_capital_mandates import router as capital_mandate_router
 from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
+from finharness.api.routes_identity import router as identity_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
 from finharness.api.routes_proposals import (
@@ -44,10 +46,12 @@ from finharness.execution.capabilities import (
     ExecutionCapabilityDeniedError,
 )
 from finharness.identity import (
+    BROWSER_MUTATION_BINDING_HEADER,
     IDEMPOTENCY_HEADER,
     IDEMPOTENCY_SEMANTIC_HEADERS,
     IDEMPOTENT_REPLAY_HEADER,
     IDENTITY_RECEIPT_HEADER,
+    BrowserMutationBindingError,
     IdentityMutationClaim,
     IdentityMutationError,
     IdentityProvider,
@@ -56,6 +60,7 @@ from finharness.identity import (
     complete_identity_mutation,
     replay_identity_mutation,
     request_body_sha256,
+    validate_browser_mutation_binding_header,
     write_identity_receipt,
 )
 from finharness.local_operator import LocalOperatorContext
@@ -235,6 +240,95 @@ def _typed_capability_contract_denial(
     )
 
 
+def _browser_mutation_binding_denial(
+    request: Request,
+    context: OperatorContext,
+    *,
+    trace_id: str,
+) -> JSONResponse | None:
+    claimed_binding_id = request.headers.get(BROWSER_MUTATION_BINDING_HEADER)
+    if claimed_binding_id is None:
+        return None
+    try:
+        binding = validate_browser_mutation_binding_header(
+            context,
+            claimed_binding_id,
+        )
+    except BrowserMutationBindingError as exc:
+        return JSONResponse(
+            status_code=(
+                403
+                if exc.code == "browser_mutation_binding_expired"
+                else 409
+            ),
+            content={
+                "detail": {
+                    "code": exc.code,
+                    "message": (
+                        "The browser mutation binding does not match "
+                        "current server authentication."
+                    ),
+                    "trace_id": trace_id,
+                    "execution_allowed": False,
+                    "capital_authority": None,
+                }
+            },
+        )
+    request.state.browser_mutation_binding_id = binding.binding_id
+    return None
+
+
+def _match_keyed_mutation_route(
+    api: FastAPI,
+    request: Request,
+    *,
+    trace_id: str,
+) -> tuple[MatchedApiRoute | None, JSONResponse | None]:
+    try:
+        return match_api_route(api, request.scope), None
+    except KeyedMutationCapabilityError:
+        logger.exception(
+            "keyed_mutation_route_match_invalid",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            execution_allowed=False,
+        )
+        return None, JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "keyed_mutation_capability_invalid",
+                    "message": "The keyed mutation route could not be resolved safely.",
+                    "trace_id": trace_id,
+                    "method": request.method,
+                    "execution_allowed": False,
+                }
+            },
+        )
+
+
+def _admit_browser_binding_and_route(
+    api: FastAPI,
+    request: Request,
+    context: OperatorContext,
+    *,
+    trace_id: str,
+) -> tuple[MatchedApiRoute | None, JSONResponse | None]:
+    binding_denial = _browser_mutation_binding_denial(
+        request,
+        context,
+        trace_id=trace_id,
+    )
+    if binding_denial is not None:
+        return None, binding_denial
+    return _match_keyed_mutation_route(
+        api,
+        request,
+        trace_id=trace_id,
+    )
+
+
 async def _call_with_identity_protocol(
     api: FastAPI,
     request: Request,
@@ -253,31 +347,14 @@ async def _call_with_identity_protocol(
     if not isinstance(context, OperatorContext):
         return await call_next(request), None
     request.state.operator_context = context
-    try:
-        matched_route = match_api_route(api, request.scope)
-    except KeyedMutationCapabilityError:
-        logger.exception(
-            "keyed_mutation_route_match_invalid",
-            trace_id=trace_id,
-            method=request.method,
-            path=request.url.path,
-            execution_allowed=False,
-        )
-        return (
-            JSONResponse(
-                status_code=409,
-                content={
-                    "detail": {
-                        "code": "keyed_mutation_capability_invalid",
-                        "message": "The keyed mutation route could not be resolved safely.",
-                        "trace_id": trace_id,
-                        "method": request.method,
-                        "execution_allowed": False,
-                    }
-                },
-            ),
-            None,
-        )
+    matched_route, admission_denial = _admit_browser_binding_and_route(
+        api,
+        request,
+        context,
+        trace_id=trace_id,
+    )
+    if admission_denial is not None:
+        return admission_denial, None
     if matched_route is None:
         # Preserve the router's normal 404/405 or mounted-route behavior.
         return await call_next(request), None
@@ -501,6 +578,15 @@ def _bind_identity_receipt_header(
     response.headers[IDENTITY_RECEIPT_HEADER] = receipt_path.stem
 
 
+def _bind_browser_mutation_response_header(
+    request: Request,
+    response: Response,
+) -> None:
+    binding_id = getattr(request.state, "browser_mutation_binding_id", None)
+    if isinstance(binding_id, str):
+        response.headers[BROWSER_MUTATION_BINDING_HEADER] = binding_id
+
+
 def _load_optional_data_routers():
     """Load data routes only when their owned dependency group is installed."""
     try:
@@ -617,6 +703,7 @@ def create_app(
             )
             span.set_attribute("http.response.status_code", response.status_code)
         _bind_identity_receipt_header(api, request, response, mutation_claim, trace_id=trace_id)
+        _bind_browser_mutation_response_header(request, response)
         response.headers[TRACE_HEADER] = trace_id
         logger.info(
             "state_api_request",
@@ -692,6 +779,7 @@ def create_app(
         )
 
     api.include_router(cockpit_router)
+    api.include_router(identity_router)
     api.include_router(state_router)
     api.include_router(proposal_router)
     api.include_router(review_router)

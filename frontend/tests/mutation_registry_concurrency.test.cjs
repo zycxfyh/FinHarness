@@ -10,6 +10,12 @@ const {
   installSharedStorage,
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 const apiSource = fs.readFileSync(
@@ -17,19 +23,15 @@ const apiSource = fs.readFileSync(
   "utf8",
 );
 
-function response(receipt) {
+function response(receipt, bindingId) {
   return {
     ok: true,
     status: 200,
     statusText: "OK",
-    headers: {
-      get(name) {
-        return String(name).toLowerCase() ===
-          "x-finharness-identity-receipt"
-          ? receipt
-          : null;
-      },
-    },
+    headers: responseHeaders({
+      bindingId,
+      receipt,
+    }),
     json: async () => ({
       execution_allowed: false,
     }),
@@ -84,16 +86,41 @@ function registry(dom) {
     storage: sharedStorage,
     lockManager: sharedLocks,
   });
+  const third = apiContext({
+    storage: sharedStorage,
+    lockManager: sharedLocks,
+  });
 
   const sameOperationKeys = [];
+  const aliceBinding = mutationBinding();
+  const bobBinding = mutationBinding({
+    bindingId: "b".repeat(64),
+    principalId: "principal:bob",
+    epochId: "bob-session-1",
+  });
+  const currentBindings = new Map([
+    [first, aliceBinding],
+    [second, aliceBinding],
+    [third, bobBinding],
+  ]);
+  let thirdMutationCalls = 0;
 
-  for (const dom of [first, second]) {
-    dom.window.fetch = async (_path, options) => {
+  for (const dom of [first, second, third]) {
+    dom.window.fetch = async (requestPath, options) => {
+      const currentBinding =
+        currentBindings.get(dom);
+      if (requestPath === BINDING_ENDPOINT) {
+        return bindingResponse(currentBinding);
+      }
+      if (dom === third) {
+        thirdMutationCalls += 1;
+      }
       sameOperationKeys.push(
         options.headers["Idempotency-Key"],
       );
       return response(
         "identity_same_operation",
+        currentBinding.binding_id,
       );
     };
   }
@@ -134,6 +161,37 @@ function registry(dom) {
     "one logical operation has one durable attempt",
   );
 
+  await assert.rejects(
+    third.window.FinHarness.api.apiMutation(
+      "POST",
+      "/proposals/prop_1/attest",
+      {
+        decision: "approved",
+        reason: "same operation",
+      },
+    ),
+    (error) => error.reason === "principal_mismatch",
+  );
+  assert.equal(
+    thirdMutationCalls,
+    0,
+    "cross-identity tab must stop before mutation fetch",
+  );
+
+  currentBindings.set(first, bobBinding);
+  await assert.rejects(
+    firstResult.acknowledge(),
+    (error) =>
+      error.name === "MutationAcknowledgementError" &&
+      error.cause.reason === "cleanup_binding_changed",
+  );
+  assert.equal(
+    registry(first).attempts.length,
+    1,
+    "Bob cannot clear Alice's shared attempt",
+  );
+  currentBindings.set(first, aliceBinding);
+
   await Promise.all([
     firstResult.acknowledge(),
     secondResult.acknowledge(),
@@ -148,12 +206,16 @@ function registry(dom) {
   const differentOperationKeys = [];
 
   for (const dom of [first, second]) {
-    dom.window.fetch = async (_path, options) => {
+    dom.window.fetch = async (requestPath, options) => {
+      if (requestPath === BINDING_ENDPOINT) {
+        return bindingResponse(aliceBinding);
+      }
       differentOperationKeys.push(
         options.headers["Idempotency-Key"],
       );
       return response(
         "identity_different_operation",
+        aliceBinding.binding_id,
       );
     };
   }
@@ -215,9 +277,15 @@ function registry(dom) {
   });
 
   let noLocksFetchCalls = 0;
-  noLocks.window.fetch = async () => {
+  noLocks.window.fetch = async (requestPath) => {
+    if (requestPath === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
     noLocksFetchCalls += 1;
-    return response("must_not_execute");
+    return response(
+      "must_not_execute",
+      aliceBinding.binding_id,
+    );
   };
 
   await assert.rejects(
@@ -254,8 +322,13 @@ function registry(dom) {
     lockManager: cleanupLocks,
   });
 
-  cleanup.window.fetch = async () =>
-    response("identity_cleanup_failure");
+  cleanup.window.fetch = async (requestPath) =>
+    requestPath === BINDING_ENDPOINT
+      ? bindingResponse(aliceBinding)
+      : response(
+          "identity_cleanup_failure",
+          aliceBinding.binding_id,
+        );
 
   const committed =
     await cleanup.window.FinHarness.api.apiMutation(

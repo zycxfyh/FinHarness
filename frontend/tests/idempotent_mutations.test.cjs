@@ -7,6 +7,12 @@ const { JSDOM } = require("jsdom");
 const {
   installWebLocks,
 } = require("./_web_locks.cjs");
+const {
+  BINDING_ENDPOINT,
+  bindingResponse,
+  mutationBinding,
+  responseHeaders,
+} = require("./_mutation_binding.cjs");
 
 const frontendDir = path.resolve(__dirname, "..");
 const apiSource = fs.readFileSync(
@@ -24,36 +30,17 @@ function response({
   body,
   receipt = null,
   replayed = false,
+  bindingId = "a".repeat(64),
 }) {
   return {
     ok,
     status,
     statusText: ok ? "OK" : "Error",
-    headers: {
-      get(name) {
-        const normalized =
-          String(name).toLowerCase();
-        if (
-          normalized ===
-          "x-finharness-identity-receipt"
-        ) {
-          return receipt;
-        }
-        if (
-          normalized ===
-          "x-finharness-idempotent-replay"
-        ) {
-          return replayed ? "true" : null;
-        }
-        if (
-          normalized ===
-          "x-finharness-trace-id"
-        ) {
-          return "trace_frontend_test";
-        }
-        return null;
-      },
-    },
+    headers: responseHeaders({
+      bindingId,
+      receipt,
+      replayed,
+    }),
     json: async () => body,
   };
 }
@@ -87,8 +74,12 @@ function registry(dom) {
   };
   const endpoint = "/proposals/prop_1/review-events";
   const observedKeys = [];
+  const aliceBinding = mutationBinding();
 
-  dom.window.fetch = async (_path, options) => {
+  dom.window.fetch = async (requestPath, options) => {
+    if (requestPath === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
     const stored = registry(dom);
     assert.ok(
       stored,
@@ -130,7 +121,10 @@ function registry(dom) {
   dom.window.eval(apiSource);
   dom.window.eval(actionsSource);
 
-  dom.window.fetch = async (_path, options) => {
+  dom.window.fetch = async (requestPath, options) => {
+    if (requestPath === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
     observedKeys.push(
       options.headers["Idempotency-Key"],
     );
@@ -177,15 +171,17 @@ function registry(dom) {
 
   // A successful HTTP response with an invalid governed
   // response contract is not acknowledged.
-  dom.window.fetch = async () =>
-    response({
+  dom.window.fetch = async (requestPath) =>
+    requestPath === BINDING_ENDPOINT
+      ? bindingResponse(aliceBinding)
+      : response({
       ok: true,
       status: 200,
       receipt: "identity_mutation_bad_contract",
       body: {
         execution_allowed: true,
       },
-    });
+      });
 
   await assert.rejects(
     dom.window.FinHarness.ReviewActionShell.patch(
@@ -203,8 +199,10 @@ function registry(dom) {
   // A typed terminal validation rejection clears its
   // attempt because the protocol receipt proves terminality.
   dom.window.localStorage.clear();
-  dom.window.fetch = async () =>
-    response({
+  dom.window.fetch = async (requestPath) =>
+    requestPath === BINDING_ENDPOINT
+      ? bindingResponse(aliceBinding)
+      : response({
       ok: false,
       status: 422,
       receipt: "identity_mutation_rejected",
@@ -214,7 +212,7 @@ function registry(dom) {
           message: "invalid input",
         },
       },
-    });
+      });
 
   await assert.rejects(
     dom.window.FinHarness.ReviewActionShell.post(
@@ -243,7 +241,10 @@ function registry(dom) {
   noStorageDom.window.eval(actionsSource);
 
   let fetchCalls = 0;
-  noStorageDom.window.fetch = async () => {
+  noStorageDom.window.fetch = async (requestPath) => {
+    if (requestPath === BINDING_ENDPOINT) {
+      return bindingResponse(aliceBinding);
+    }
     fetchCalls += 1;
     throw new Error("must not be called");
   };
