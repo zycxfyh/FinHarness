@@ -334,7 +334,9 @@ class AuthenticatedReviewActorContractTest(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].attester, context.authoritative_actor_id)
 
-    def test_capital_mandate_uses_server_actor_and_server_receipt_reference(self) -> None:
+    def test_capital_mandate_keyed_write_is_prohibited_before_actor_binding(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             engine = init_state_core(root / "state.sqlite")
@@ -350,9 +352,17 @@ class AuthenticatedReviewActorContractTest(unittest.TestCase):
                 IDEMPOTENCY_HEADER: "authenticated-capital-mandate-0001",
             }
             with TestClient(app) as client:
-                response = client.post(
+                keyed = client.post(
                     "/capital-mandates",
                     headers=headers,
+                    json={
+                        "human_reason": "Record policy with server-owned actor provenance.",
+                        "explicit_confirmation": True,
+                    },
+                )
+                response = client.post(
+                    "/capital-mandates",
+                    headers={"Authorization": "Bearer alice"},
                     json={
                         "human_reason": "Record policy with server-owned actor provenance.",
                         "explicit_confirmation": True,
@@ -362,16 +372,20 @@ class AuthenticatedReviewActorContractTest(unittest.TestCase):
                     "/capital-mandates/current",
                     headers={"Authorization": "Bearer alice"},
                 )
+            self.assertEqual(keyed.status_code, 409, keyed.text)
+            self.assertEqual(
+                keyed.json()["detail"]["code"],
+                "keyed_mutation_prohibited",
+            )
+            self.assertNotIn(IDENTITY_RECEIPT_HEADER, keyed.headers)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(
                 response.json()["capital_mandate"]["human_attester"],
                 context.authoritative_actor_id,
             )
-            receipt_id = response.headers[IDENTITY_RECEIPT_HEADER]
             resolution = current.json()["resolution"]
-            self.assertEqual(
+            self.assertIsNone(
                 resolution["version"]["authenticated_actor_receipt_ref"],
-                identity_mutation_source_ref(receipt_id),
             )
             self.assertEqual(
                 resolution["version"]["legacy_actor_label"],

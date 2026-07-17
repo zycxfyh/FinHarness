@@ -34,6 +34,13 @@ The request identity binds:
 - approved semantic headers, currently `Content-Type` and `If-Match`;
 - request-body SHA-256.
 
+As of #387, a keyed request is admitted only after the server matches one
+effective FastAPI route and resolves its method/canonical template in the
+single route-capability registry. Missing or prohibited capabilities fail
+before full body buffering, receipt creation, or handler execution. The initial
+registry has 29 non-safe routes: four typed Proposal routes, zero
+terminal-replay-only routes, and 25 prohibited routes.
+
 Keyed request and response buffering each have a 1 MiB hard limit. An oversized
 request fails before the route and creates no identity receipt. An oversized
 response cannot be journaled as terminal truth; the receipt remains `pending`
@@ -108,6 +115,16 @@ The currently implemented resolvers cover four keyed routes:
 - `PATCH /proposals/{proposal_id}/decision-scaffold`
 - `POST /proposals/{proposal_id}/review-events`
 
+New identity receipts use `finharness.api_mutation_identity_receipt.v2` and
+bind the route capability and canonical digest. New Proposal mutation bindings
+use `finharness.api_domain_mutation_binding.v2`. Reconciliation dispatches from
+that receipt evidence and requires exact registry/domain/dispatcher agreement;
+it does not infer the resolver from a new receipt's actual path.
+
+Historical v1 terminal receipts remain replayable without claiming capability
+evidence. A narrow v1 pending adapter recognizes only these same four exact
+Proposal route shapes and never rewrites the historical receipt.
+
 All resolvers reconstruct canonical responses from typed domain truth
 (immutable receipts, revision contexts, and SQLite domain rows).  No resolver
 re-invokes its route, and no operator-supplied response body, status code, or
@@ -181,3 +198,7 @@ and blocks automatic retry.
 No identity receipt, replay result, reconciliation record, or Cockpit
 idempotency key grants capital authority, decision approval, release approval,
 broker authority, or execution authority.
+
+Authority administration routes are initially keyed-prohibited by #387.
+Their unkeyed #391 authorization and server-owned reduction-time semantics are
+unchanged.

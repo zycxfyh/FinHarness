@@ -93,6 +93,7 @@
         "scripts/verify_debt_register.py",
         "src/finharness/api/app.py",
         "src/finharness/api/dependencies.py",
+        "src/finharness/api/keyed_mutation_capabilities.py",
         "src/finharness/api/legacy_headers.py",
         "src/finharness/api/routes_action_intents.py",
         "src/finharness/api/routes_agent_authority_grants.py",
@@ -114,6 +115,7 @@
         "tests/test_debt_register.py",
         "tests/test_durable_identity_mutations.py",
         "tests/test_identity_mutation_domain_binding.py",
+        "tests/test_keyed_mutation_route_capabilities.py",
         "tests/test_local_review_mode.py"
       ],
       "task_consumers": [

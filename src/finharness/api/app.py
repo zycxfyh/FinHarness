@@ -11,6 +11,15 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
+from finharness.api.keyed_mutation_capabilities import (
+    KeyedMutationCapabilityError,
+    KeyedMutationRouteCapability,
+    KeyedMutationRouteMode,
+    audit_keyed_mutation_route_capabilities,
+    identity_mutation_resolver_contract_maps,
+    load_keyed_mutation_route_capabilities,
+    match_api_route,
+)
 from finharness.api.routes_action_intents import router as action_intent_router
 from finharness.api.routes_agent_authority_grants import (
     router as agent_authority_grant_router,
@@ -20,7 +29,12 @@ from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
-from finharness.api.routes_proposals import router as proposal_router
+from finharness.api.routes_proposals import (
+    identity_mutation_reconciliation_dispatcher_contracts,
+)
+from finharness.api.routes_proposals import (
+    router as proposal_router,
+)
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_risk import router as risk_router
 from finharness.api.routes_state import router as state_router
@@ -71,10 +85,6 @@ _OPTIONAL_DATA_IMPORTS = {
     "yfinance",
 }
 
-_MAX_IDEMPOTENT_REQUEST_BYTES = 1_048_576
-_MAX_IDEMPOTENT_RESPONSE_BYTES = 1_048_576
-
-
 class _IdempotentRequestTooLarge(RuntimeError):
     """Raised before a route when a keyed request exceeds its governed bound."""
 
@@ -83,14 +93,14 @@ class _IdempotentResponseTooLarge(RuntimeError):
     """Raised after a route when its response cannot be journaled safely."""
 
 
-async def _read_bounded_request_body(request: Request) -> bytes:
+async def _read_bounded_request_body(request: Request, *, max_bytes: int) -> bytes:
     """Read and cache a keyed request without exceeding the configured bound."""
 
     declared_length = request.headers.get("content-length")
     if (
         declared_length
         and declared_length.isdecimal()
-        and int(declared_length) > _MAX_IDEMPOTENT_REQUEST_BYTES
+        and int(declared_length) > max_bytes
     ):
         raise _IdempotentRequestTooLarge
 
@@ -99,7 +109,7 @@ async def _read_bounded_request_body(request: Request) -> bytes:
     async for chunk in request.stream():
         chunk_bytes = bytes(chunk)
         total += len(chunk_bytes)
-        if total > _MAX_IDEMPOTENT_REQUEST_BYTES:
+        if total > max_bytes:
             raise _IdempotentRequestTooLarge
         chunks.append(chunk_bytes)
 
@@ -128,13 +138,13 @@ def _semantic_request_headers(request: Request) -> dict[str, str]:
     }
 
 
-async def _buffer_response(response: Response) -> tuple[Response, bytes]:
+async def _buffer_response(response: Response, *, max_bytes: int) -> tuple[Response, bytes]:
     """Materialize a bounded API response so it can be safely replayed."""
 
     body_iterator = getattr(response, "body_iterator", None)
     if body_iterator is None:
         body = bytes(response.body)
-        if len(body) > _MAX_IDEMPOTENT_RESPONSE_BYTES:
+        if len(body) > max_bytes:
             raise _IdempotentResponseTooLarge
     else:
         chunks: list[bytes] = []
@@ -142,7 +152,7 @@ async def _buffer_response(response: Response) -> tuple[Response, bytes]:
         async for chunk in body_iterator:
             chunk_bytes = bytes(chunk)
             total += len(chunk_bytes)
-            if total > _MAX_IDEMPOTENT_RESPONSE_BYTES:
+            if total > max_bytes:
                 raise _IdempotentResponseTooLarge
             chunks.append(chunk_bytes)
         body = b"".join(chunks)
@@ -188,6 +198,43 @@ def _protocol_response(claim: IdentityMutationClaim) -> Response:
     )
 
 
+def _typed_capability_contract_denial(
+    api: FastAPI,
+    capability: KeyedMutationRouteCapability,
+    *,
+    trace_id: str,
+) -> JSONResponse | None:
+    if capability.mode is not KeyedMutationRouteMode.TYPED_DOMAIN_RECONCILIATION:
+        return None
+    contract = api.state.identity_mutation_resolver_contracts_by_route.get(
+        (capability.method, capability.canonical_path_template)
+    )
+    matches = (
+        contract is not None
+        and contract.capability_id == capability.capability_id
+        and contract.resolver_id == capability.resolver_id
+    )
+    if matches:
+        return None
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "code": "keyed_mutation_capability_invalid",
+                "message": (
+                    "The route capability differs from its "
+                    "executable resolver contract."
+                ),
+                "trace_id": trace_id,
+                "method": capability.method,
+                "canonical_path_template": capability.canonical_path_template,
+                "capability_id": capability.capability_id,
+                "execution_allowed": False,
+            }
+        },
+    )
+
+
 async def _call_with_identity_protocol(
     api: FastAPI,
     request: Request,
@@ -207,14 +254,96 @@ async def _call_with_identity_protocol(
         return await call_next(request), None
     request.state.operator_context = context
     try:
-        request_body = await _read_bounded_request_body(request)
+        matched_route = match_api_route(api, request.scope)
+    except KeyedMutationCapabilityError:
+        logger.exception(
+            "keyed_mutation_route_match_invalid",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            execution_allowed=False,
+        )
+        return (
+            JSONResponse(
+                status_code=409,
+                content={
+                    "detail": {
+                        "code": "keyed_mutation_capability_invalid",
+                        "message": "The keyed mutation route could not be resolved safely.",
+                        "trace_id": trace_id,
+                        "method": request.method,
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            None,
+        )
+    if matched_route is None:
+        # Preserve the router's normal 404/405 or mounted-route behavior.
+        return await call_next(request), None
+    registry = api.state.keyed_mutation_route_capabilities
+    capability = registry.by_route(
+        matched_route.method,
+        matched_route.canonical_path_template,
+    )
+    if capability is None:
+        return (
+            JSONResponse(
+                status_code=409,
+                content={
+                    "detail": {
+                        "code": "keyed_mutation_route_unregistered",
+                        "message": "This route has no keyed-mutation recovery capability.",
+                        "trace_id": trace_id,
+                        "method": matched_route.method,
+                        "canonical_path_template": (
+                            matched_route.canonical_path_template
+                        ),
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            None,
+        )
+    capability_denial = _typed_capability_contract_denial(
+        api,
+        capability,
+        trace_id=trace_id,
+    )
+    if capability_denial is not None:
+        return capability_denial, None
+    if capability.mode is KeyedMutationRouteMode.KEYED_MUTATION_PROHIBITED:
+        return (
+            JSONResponse(
+                status_code=409,
+                content={
+                    "detail": {
+                        "code": "keyed_mutation_prohibited",
+                        "message": "This route does not admit keyed mutation.",
+                        "trace_id": trace_id,
+                        "method": matched_route.method,
+                        "canonical_path_template": (
+                            matched_route.canonical_path_template
+                        ),
+                        "capability_id": capability.capability_id,
+                        "execution_allowed": False,
+                    }
+                },
+            ),
+            None,
+        )
+    try:
+        request_body = await _read_bounded_request_body(
+            request,
+            max_bytes=capability.max_request_bytes,
+        )
     except _IdempotentRequestTooLarge:
         logger.warning(
             "idempotent_request_exceeds_limit",
             trace_id=trace_id,
             method=request.method,
             path=request.url.path,
-            limit_bytes=_MAX_IDEMPOTENT_REQUEST_BYTES,
+            limit_bytes=capability.max_request_bytes,
             execution_allowed=False,
         )
         return (
@@ -224,7 +353,7 @@ async def _call_with_identity_protocol(
                     "detail": {
                         "code": "idempotent_request_too_large",
                         "message": ("The keyed mutation request exceeds the supported size."),
-                        "limit_bytes": _MAX_IDEMPOTENT_REQUEST_BYTES,
+                        "limit_bytes": capability.max_request_bytes,
                         "trace_id": trace_id,
                         "execution_allowed": False,
                     }
@@ -254,6 +383,7 @@ async def _call_with_identity_protocol(
             trace_id=trace_id,
             idempotency_key=idempotency_key,
             body_sha256=request_body_sha256(request_body),
+            route_capability=capability.receipt_binding(),
         )
     except IdentityMutationError as exc:
         logger.warning(
@@ -286,7 +416,10 @@ async def _call_with_identity_protocol(
     request.state.identity_mutation_claim = claim
     response = await call_next(request)
     try:
-        response, body = await _buffer_response(response)
+        response, body = await _buffer_response(
+            response,
+            max_bytes=capability.max_response_bytes,
+        )
     except _IdempotentResponseTooLarge:
         logger.error(
             "idempotent_response_exceeds_limit",
@@ -294,7 +427,7 @@ async def _call_with_identity_protocol(
             method=request.method,
             path=request.url.path,
             identity_receipt_id=claim.receipt_id,
-            limit_bytes=_MAX_IDEMPOTENT_RESPONSE_BYTES,
+            limit_bytes=capability.max_response_bytes,
             mutation_outcome_ambiguous=True,
             execution_allowed=False,
         )
@@ -309,7 +442,7 @@ async def _call_with_identity_protocol(
                             "the mutation outcome requires reconciliation."
                         ),
                         "identity_receipt_id": claim.receipt_id,
-                        "limit_bytes": _MAX_IDEMPOTENT_RESPONSE_BYTES,
+                        "limit_bytes": capability.max_response_bytes,
                         "trace_id": trace_id,
                         "execution_allowed": False,
                     }
@@ -449,6 +582,17 @@ def create_app(
         else None
     )
     api.state.execution_capabilities = execution_capabilities
+    api.state.keyed_mutation_route_capabilities = (
+        load_keyed_mutation_route_capabilities()
+    )
+    resolver_contracts = identity_mutation_reconciliation_dispatcher_contracts()
+    resolver_contracts_by_route, _resolver_contracts_by_id = (
+        identity_mutation_resolver_contract_maps(resolver_contracts)
+    )
+    api.state.identity_mutation_resolver_contracts = resolver_contracts
+    api.state.identity_mutation_resolver_contracts_by_route = (
+        resolver_contracts_by_route
+    )
     api.state.data_surface_available = missing_data_dependency is None
     api.state.data_surface_missing_dependency = missing_data_dependency
 
@@ -560,6 +704,13 @@ def create_app(
     for data_router in data_routers:
         api.include_router(data_router)
     api.include_router(execution_router)
+    api.state.keyed_mutation_capability_audit = (
+        audit_keyed_mutation_route_capabilities(
+            api,
+            api.state.keyed_mutation_route_capabilities,
+            dispatcher_contracts=resolver_contracts,
+        )
+    )
     frontend_dir = ROOT / "frontend"
     if frontend_dir.exists():
         api.mount(

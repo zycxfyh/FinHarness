@@ -205,6 +205,12 @@ tasks:
     desc: Fail on Python import SCCs and direct/transitive architecture boundary violations
     cmds:
       - uv run python scripts/check_architecture_boundaries.py
+      - task: mutations:capabilities-check
+
+  mutations:capabilities-check:
+    desc: Audit keyed-mutation APIRoutes, recovery capabilities, and resolver dispatch
+    cmds:
+      - uv run python scripts/check_keyed_mutation_route_capabilities.py
 
   governance:policies:
     desc: List the governance policy registry (id / owner / scope / source)
