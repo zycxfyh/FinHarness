@@ -469,6 +469,7 @@
       ],
       "import_consumers": [
         "scripts/run_browser_identity_binding_smoke_server.py",
+        "scripts/run_browser_mutation_response_loss_smoke_server.py",
         "scripts/run_cockpit_smoke_server.py",
         "scripts/run_local_review_smoke_server.py",
         "scripts/serve_local_cockpit.py"

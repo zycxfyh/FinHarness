@@ -197,6 +197,7 @@ tasks:
       - node frontend/tests/browser/cockpit_smoke.test.cjs
       - node frontend/tests/browser/local_review_mode.test.cjs
       - node frontend/tests/browser/browser_mutation_identity_binding.test.cjs
+      - node frontend/tests/browser/browser_mutation_response_loss.test.cjs
 
   governance:check:
     desc: Run governance inventory drift checks not already owned by the Python/frontend gates
