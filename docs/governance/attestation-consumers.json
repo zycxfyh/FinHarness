@@ -50,8 +50,8 @@
       "consumer_id": "ATT-CONS-001",
       "path": "src/finharness/statecore/models.py",
       "symbol": "Attestation",
-      "line_start": 167,
-      "line_end": 184,
+      "line_start": 182,
+      "line_end": 199,
       "match_terms": [
         "Attestation",
         "attestation_id",
@@ -69,7 +69,7 @@
       "recommended_change": "Keep for historical data. New version-bound writes use DecisionRecord/DecisionValidity.",
       "test_implications": [],
       "evidence": [
-        "src/finharness/statecore/models.py:169-186"
+        "src/finharness/statecore/models.py:182-199"
       ]
     },
     {
@@ -2314,9 +2314,9 @@
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 427,
+      "match_line": 476,
       "term": "attestation_ref",
-      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 418. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 476. Not a direct Attestation consumer."
     },
     {
       "path": "src/finharness/decision_ontology.py",

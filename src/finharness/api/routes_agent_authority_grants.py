@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -27,6 +26,7 @@ from finharness.statecore.agent_authority_grants import (
     validate_agent_authority_grant,
 )
 from finharness.statecore.models import AgentAuthorityGrant
+from finharness.statecore.money import MonetaryAmount
 
 router = APIRouter(tags=["agent-authority-grants"])
 
@@ -46,7 +46,7 @@ class AgentAuthorityGrantRequest(BaseModel):
     agent_authority_grant_id: str | None = None
     agent_runtime_id: str | None = None
     max_uses: int | None = None
-    max_total_notional: Decimal | None = None
+    max_total_notional: MonetaryAmount | None = None
 
 
 class AgentAuthorityGrantWriteResponse(BaseModel):
@@ -73,7 +73,7 @@ class AgentAuthorityGrantValidateRequest(BaseModel):
     requested_scope: dict[str, Any] = Field(default_factory=dict)
     now_utc: str | None = None
     nonce: str | None = None
-    requested_notional: Decimal | None = None
+    requested_notional: MonetaryAmount | None = None
 
 
 class AgentAuthorityGrantConsumeRequest(BaseModel):
@@ -81,7 +81,7 @@ class AgentAuthorityGrantConsumeRequest(BaseModel):
 
     nonce: str
     requested_scope: dict[str, Any] = Field(default_factory=dict)
-    requested_notional: Decimal = Decimal("0")
+    requested_notional: MonetaryAmount
     now_utc: str | None = None
 
 

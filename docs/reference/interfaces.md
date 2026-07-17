@@ -16,7 +16,7 @@ Use this as a lookup page. For system ownership, read
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
 | CapitalMandateInterface | Human-attested user policy domain | Principal-owned immutable versions and append-only lifecycle evidence; deterministic principal-bound current resolution; `CapitalMandate.status` remains a compatibility mirror; derives its actor from server-authenticated `OperatorContext` and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
-| AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; structured product/instrument/action/direction/notional/broker scope; closed validation reasons; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
+| AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; closed exact-money contract; mandate-bounded product/instrument/action/direction/notional/broker scope; explicit typed direction/broker wildcard only; cross-currency and legacy currency-less use fail closed; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
 | ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, and proposal review queue triage; governed HTTP writes derive the actor from `OperatorContext`, never request prose | `/review/queue`, `task review:annual`, `review_read.py` |
@@ -72,7 +72,9 @@ The ADR does not select a provider or add a runtime dependency.
   or execution permission. It must reference an active CapitalMandate at creation
   time, bind the authenticated principal and agent runtime to an exact mandate
   version, and re-check the same principal exact current version, lifecycle,
-  scope, usage, and nonce at use time. A new current version under either the
+  closed typed mandate limit book, effective per-use cap, persisted grant
+  currency/caps, scope, usage, and nonce at use time. A grant that omits a
+  per-use cap inherits the exact mandate cap. A new current version under either the
   same or another mandate ID yields `mandate_version_changed`; another
   principal cannot cause that drift. Only
   atomic consumption spends capacity; validation never does.

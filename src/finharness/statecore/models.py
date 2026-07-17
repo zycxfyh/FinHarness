@@ -30,6 +30,7 @@ from finharness.statecore.model_base import (
     money_column,
     utc_now_iso,
 )
+from finharness.statecore.money import normalize_currency_code
 
 Decision = str
 ACTION_INTENT_TYPES: tuple[str, ...] = (
@@ -607,6 +608,7 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
         default=None,
         sa_column=money_column(nullable=True),
     )
+    notional_currency: str | None = None
     revoked_at_utc: str | None = None
     revoked_reason: str | None = None
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
@@ -633,6 +635,13 @@ class AgentAuthorityGrant(StateCoreBase, table=True):
         if not value.strip():
             raise ValueError("agent authority grant requires agent, issuer, and reason")
         return value
+
+    @field_validator("notional_currency")
+    @classmethod
+    def normalize_optional_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_currency_code(value)
 
     @field_validator("execution_allowed")
     @classmethod
@@ -676,6 +685,7 @@ class AgentAuthorityGrantConsumption(StateCoreBase, table=True):
     nonce: str = Field(index=True)
     requested_scope: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     requested_notional: Decimal = Field(default=Decimal("0"), sa_column=money_column())
+    requested_notional_currency: str | None = None
     receipt_ref: str
     execution_allowed: bool = False
     authority_transition: bool = False
@@ -702,6 +712,13 @@ class AgentAuthorityGrantConsumption(StateCoreBase, table=True):
         if value < 0:
             raise ValueError("requested_notional must be non-negative")
         return value
+
+    @field_validator("requested_notional_currency")
+    @classmethod
+    def normalize_optional_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_currency_code(value)
 
     @field_validator("execution_allowed", "authority_transition")
     @classmethod

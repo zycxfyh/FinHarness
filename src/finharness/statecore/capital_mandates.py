@@ -12,12 +12,11 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
@@ -30,6 +29,7 @@ from finharness.statecore.models import (
     InvestmentPolicyStatement,
     ReceiptIndex,
 )
+from finharness.statecore.money import MonetaryAmount
 from finharness.statecore.receipt_io import (
     atomic_write_json,
     remove_file_best_effort,
@@ -67,19 +67,23 @@ class CapitalMandateValidationError(ValueError):
     """Raised when a capital mandate write would cross its policy boundary."""
 
 
-class MonetaryLimit(BaseModel):
+class MandateStringScope(BaseModel):
+    """Closed bounded set or an explicit wildcard owned by the mandate."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    amount: Decimal = Field(gt=0)
-    currency: str
+    mode: Literal["bounded", "wildcard"] = "bounded"
+    values: tuple[str, ...] = ()
 
-    @field_validator("currency")
-    @classmethod
-    def normalize_currency(cls, value: str) -> str:
-        normalized = value.strip().upper()
-        if len(normalized) != 3 or not normalized.isalpha():
-            raise ValueError("currency must be a three-letter code")
-        return normalized
+    def model_post_init(self, _context: object) -> None:
+        if self.mode == "wildcard" and self.values:
+            raise ValueError("wildcard mandate scope cannot also declare values")
+        if any(
+            not value.strip() or value != value.strip() or value == "*" for value in self.values
+        ):
+            raise ValueError("mandate scope values must be explicit non-wildcard strings")
+        if len(self.values) != len(set(self.values)):
+            raise ValueError("mandate scope values must be unique")
 
 
 class CapitalMandateLimits(BaseModel):
@@ -90,14 +94,20 @@ class CapitalMandateLimits(BaseModel):
     product_ids: tuple[str, ...] = ()
     instrument_ids: tuple[str, ...] = ()
     action_types: tuple[str, ...] = ()
-    max_notional: MonetaryLimit | None = None
+    max_notional: MonetaryAmount | None = None
     max_actions_per_period: int | None = Field(default=None, gt=0)
     period_seconds: int | None = Field(default=None, gt=0)
-    max_loss: MonetaryLimit | None = None
+    max_loss: MonetaryAmount | None = None
+    direction_scope: MandateStringScope = Field(default_factory=MandateStringScope)
+    broker_scope: MandateStringScope = Field(default_factory=MandateStringScope)
 
     def model_post_init(self, _context: object) -> None:
         if (self.max_actions_per_period is None) != (self.period_seconds is None):
             raise ValueError("frequency limit requires count and period_seconds")
+        if self.max_notional is not None:
+            self.max_notional.require_positive(field_name="max_notional")
+        if self.max_loss is not None:
+            self.max_loss.require_positive(field_name="max_loss")
 
 
 class CapitalMandateKillSwitchScope(BaseModel):
