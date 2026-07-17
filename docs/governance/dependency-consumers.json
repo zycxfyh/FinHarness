@@ -102,6 +102,7 @@
         "src/finharness/api/routes_data_catalog.py",
         "src/finharness/api/routes_data_quality.py",
         "src/finharness/api/routes_execution.py",
+        "src/finharness/api/routes_identity.py",
         "src/finharness/api/routes_ips.py",
         "src/finharness/api/routes_paper_validation.py",
         "src/finharness/api/routes_proposals.py",
@@ -112,6 +113,7 @@
         "src/finharness/local_operator.py",
         "tests/test_authenticated_identity.py",
         "tests/test_authenticated_review_actors.py",
+        "tests/test_browser_mutation_identity_binding.py",
         "tests/test_debt_register.py",
         "tests/test_durable_identity_mutations.py",
         "tests/test_identity_mutation_domain_binding.py",
@@ -466,6 +468,7 @@
         "uvicorn"
       ],
       "import_consumers": [
+        "scripts/run_browser_identity_binding_smoke_server.py",
         "scripts/run_cockpit_smoke_server.py",
         "scripts/run_local_review_smoke_server.py",
         "scripts/serve_local_cockpit.py"

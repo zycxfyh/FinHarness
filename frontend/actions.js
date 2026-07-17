@@ -54,8 +54,13 @@ const ReviewActionShell = Object.freeze({
       );
       return body;
     } catch (error) {
+      const recoveryRequired =
+        error.recoveryRequired === true ||
+        error.mutationCommitted === true;
       console.error(
-        "ReviewActionShell: write failed",
+        recoveryRequired
+          ? "ReviewActionShell: write recovery required"
+          : "ReviewActionShell: write failed",
         {
           endpoint,
           method: normalizedMethod,

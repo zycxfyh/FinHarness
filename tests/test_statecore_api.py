@@ -443,7 +443,8 @@ class StateCoreApiTest(unittest.TestCase):
         """The local API is read + governed non-execution write.
 
         Every route must appear in the allowlist with an explicit semantic
-        class: ``read``, ``state_changing``, or ``validation_only``.
+        class: ``read``, ``authenticated_read``, ``state_changing``, or
+        ``validation_only``.
 
         No route may carry live-execution, broker-submission, or
         authorization semantics — those are forbidden at the path level and
@@ -478,6 +479,9 @@ class StateCoreApiTest(unittest.TestCase):
             "/timeline": {"methods": {"get": "read"}},
             "/controls/status": {"methods": {"get": "read"}},
             "/controls/limits": {"methods": {"get": "read"}},
+            "/identity/browser-mutation-binding": {
+                "methods": {"get": "authenticated_read"},
+            },
             "/data/catalog": {"methods": {"get": "read"}},
             "/data/catalog/{dataset_key}": {"methods": {"get": "read"}},
             "/data/gaps": {"methods": {"get": "read"}},
@@ -644,6 +648,7 @@ class StateCoreApiTest(unittest.TestCase):
 
         # Operation-level semantic class assertions.
         read_ops = 0
+        authenticated_read_ops = 0
         state_changing_ops = 0
         validation_only_ops = 0
 
@@ -656,6 +661,18 @@ class StateCoreApiTest(unittest.TestCase):
                         method_upper,
                         "GET",
                         f"read operation at {path} must be GET, got {method_upper}",
+                    )
+                elif semantic == "authenticated_read":
+                    authenticated_read_ops += 1
+                    self.assertEqual(
+                        path,
+                        "/identity/browser-mutation-binding",
+                        "only the browser mutation binding may be authenticated_read",
+                    )
+                    self.assertEqual(
+                        method_upper,
+                        "GET",
+                        f"authenticated_read at {path} must be GET",
                     )
                 elif semantic == "state_changing":
                     state_changing_ops += 1
@@ -678,6 +695,11 @@ class StateCoreApiTest(unittest.TestCase):
                     )
 
         self.assertEqual(read_ops, 62, f"expected 62 read ops, got {read_ops}")
+        self.assertEqual(
+            authenticated_read_ops,
+            1,
+            f"expected 1 authenticated_read op, got {authenticated_read_ops}",
+        )
         self.assertEqual(
             state_changing_ops,
             28,
@@ -1354,7 +1376,7 @@ class WriteCapabilityGateTest(unittest.TestCase):
                 )
 
     def test_read_and_validation_only_routes_never_gated(self) -> None:
-        """Prove GET and validation-only POST routes are never gated."""
+        """Prove public reads are not gated and isolate the authenticated read."""
         state_changing = {
             ("POST", "/proposals"),
             ("PATCH", "/proposals/{proposal_id}/decision-scaffold"),
@@ -1399,6 +1421,9 @@ class WriteCapabilityGateTest(unittest.TestCase):
             ("POST", "/execution/orders/{execution_order_id}/submit"),
         }
         validation_only = {("POST", "/agent-authority-grants/{grant_id}/validate")}
+        authenticated_reads = {
+            ("GET", "/identity/browser-mutation-binding"),
+        }
 
         openapi = self.client.get("/openapi.json")
         self.assertEqual(openapi.status_code, 200)
@@ -1407,7 +1432,11 @@ class WriteCapabilityGateTest(unittest.TestCase):
         for path, methods in paths.items():
             for method in methods:
                 key = (method.upper(), path)
-                if key in state_changing or key in validation_only:
+                if (
+                    key in state_changing
+                    or key in validation_only
+                    or key in authenticated_reads
+                ):
                     continue
                 with self.subTest(method=method.upper(), path=path):
                     if method.upper() == "GET":
@@ -1433,6 +1462,27 @@ class WriteCapabilityGateTest(unittest.TestCase):
                             403,
                             f"GET {path} must not be gated",
                         )
+
+        response = self.client.get("/identity/browser-mutation-binding")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "write_capability_required",
+        )
+
+        authenticated_app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+            local_operator_context=LocalOperatorContext("test_harness"),
+        )
+        authenticated_client = AsgiTestClient(authenticated_app)
+        try:
+            response = authenticated_client.get(
+                "/identity/browser-mutation-binding"
+            )
+        finally:
+            authenticated_client.close()
+        self.assertEqual(response.status_code, 200, response.text)
 
 
 if __name__ == "__main__":

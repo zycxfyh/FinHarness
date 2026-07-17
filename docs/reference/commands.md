@@ -41,7 +41,7 @@ execution authorization.
 | `task test` | Compatibility alias for the complete Python test gate (`task test:all`). | Delegates to `test:all`. |
 | `task test:integration` | Run slower graph/property integration tests. | Included in `task check`. |
 | `task test:frontend` | Run jsdom frontend tests. | Included in `task check`. |
-| `task test:browser` | Optional Playwright cockpit smoke. | Not in `task check`. |
+| `task test:browser` | Optional Playwright cockpit smoke, local review, and browser mutation identity-switch acceptance. | Not in `task check`; #388 fixture proves principal/epoch isolation without implementing #385 response-drop semantics. |
 | `task deps:probe-base` | Rebuild base-only environment and import the real core API. | Included in `task check:ci`. |
 | `task deps:probe-data` | Rebuild base + data and import maintained data consumers. | No provider network calls. |
 | `task deps:probe-research` | Rebuild base + research and import research consumers. | No experiment execution. |

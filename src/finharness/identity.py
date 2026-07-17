@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -14,7 +15,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from finharness.statecore.receipt_io import (
     canonical_json_sha256,
@@ -27,6 +28,12 @@ from finharness.statecore.receipt_io import (
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 IDENTITY_RECEIPT_HEADER = "X-FinHarness-Identity-Receipt"
 IDEMPOTENT_REPLAY_HEADER = "X-FinHarness-Idempotent-Replay"
+BROWSER_MUTATION_BINDING_HEADER = "X-FinHarness-Browser-Mutation-Binding"
+BROWSER_MUTATION_BINDING_SCHEMA: Literal[
+    "finharness.browser_mutation_identity_binding.v1"
+] = (
+    "finharness.browser_mutation_identity_binding.v1"
+)
 IDEMPOTENCY_SEMANTIC_HEADERS = ("content-type", "if-match")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 _IDENTITY_MUTATION_RECEIPT_ID = re.compile(r"^identity_mutation_[0-9a-f]{32}$")
@@ -125,6 +132,14 @@ class IdentitySubstitutionError(ValueError):
     """Raised when request-supplied identity differs from authenticated context."""
 
 
+class BrowserMutationBindingError(ValueError):
+    """Raised when a server authentication epoch cannot bind a browser mutation."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
 class OperatorContext(BaseModel):
     """Server-authenticated actor context, intentionally separate from authority."""
 
@@ -135,6 +150,8 @@ class OperatorContext(BaseModel):
     authority_administration: AuthorityAdministrationAssertion | None = None
     authentication_method: str
     authenticated_at_utc: str
+    authentication_epoch_id: str | None = None
+    authentication_expires_at_utc: str | None = None
 
     def model_post_init(self, _context: object) -> None:
         if (
@@ -148,6 +165,25 @@ class OperatorContext(BaseModel):
                 raise ValueError("authority assertion principal binding mismatch")
             if assertion.provider_id != self.principal.provider_id:
                 raise ValueError("authority assertion provider binding mismatch")
+        epoch_fields = (
+            self.authentication_epoch_id,
+            self.authentication_expires_at_utc,
+        )
+        if (epoch_fields[0] is None) != (epoch_fields[1] is None):
+            raise ValueError("authentication epoch fields must be present together")
+        if epoch_fields[0] is not None:
+            if not epoch_fields[0].strip():
+                raise ValueError("authentication epoch id must be non-empty")
+            authenticated_at = _parse_utc_timestamp(
+                self.authenticated_at_utc,
+                field_name="authenticated_at_utc",
+            )
+            expires_at = _parse_utc_timestamp(
+                epoch_fields[1],
+                field_name="authentication_expires_at_utc",
+            )
+            if expires_at <= authenticated_at:
+                raise ValueError("authentication epoch expiry must follow authentication")
 
     @property
     def operator_id(self) -> str:
@@ -188,6 +224,99 @@ class OperatorContext(BaseModel):
             "legacy_actor_label": self.principal.legacy_label,
             "legacy_actor_label_verified": self.principal.legacy_label_verified,
         }
+
+
+class BrowserMutationIdentityBinding(BaseModel):
+    """Opaque browser retry binding derived only from current server authentication."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_name: Literal["finharness.browser_mutation_identity_binding.v1"] = Field(
+        default=BROWSER_MUTATION_BINDING_SCHEMA,
+        validation_alias="schema",
+        serialization_alias="schema",
+    )
+    binding_id: str
+    principal_id: str
+    identity_provider_id: str
+    principal_kind: PrincipalKind
+    agent_runtime_id: str | None
+    authentication_method: str
+    authentication_epoch_id: str
+    authentication_expires_at_utc: str
+    server_time_utc: str
+    capital_authority: None = None
+    execution_allowed: Literal[False] = False
+
+
+def _parse_utc_timestamp(value: str | None, *, field_name: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be an ISO-8601 UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO-8601 UTC timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
+        raise ValueError(f"{field_name} must be UTC")
+    return parsed.astimezone(UTC)
+
+
+def browser_mutation_identity_binding(
+    context: OperatorContext,
+    *,
+    server_time: datetime | None = None,
+) -> BrowserMutationIdentityBinding:
+    """Derive the current non-secret browser retry binding from server truth."""
+
+    if not context.authentication_method.strip():
+        raise BrowserMutationBindingError("browser_mutation_binding_unavailable")
+    if (
+        context.authentication_epoch_id is None
+        or context.authentication_expires_at_utc is None
+    ):
+        raise BrowserMutationBindingError("browser_mutation_binding_unavailable")
+    now = (server_time or datetime.now(UTC)).astimezone(UTC)
+    expires_at = _parse_utc_timestamp(
+        context.authentication_expires_at_utc,
+        field_name="authentication_expires_at_utc",
+    )
+    if now >= expires_at:
+        raise BrowserMutationBindingError("browser_mutation_binding_expired")
+    identity = {
+        "schema": BROWSER_MUTATION_BINDING_SCHEMA,
+        "principal_id": context.principal.principal_id,
+        "identity_provider_id": context.principal.provider_id,
+        "principal_kind": context.principal.principal_kind,
+        "agent_runtime_id": (
+            context.agent_runtime.agent_runtime_id
+            if context.agent_runtime is not None
+            else None
+        ),
+        "authentication_method": context.authentication_method,
+        "authentication_epoch_id": context.authentication_epoch_id,
+    }
+    return BrowserMutationIdentityBinding(
+        **identity,
+        binding_id=canonical_json_sha256(identity),
+        authentication_expires_at_utc=expires_at.isoformat(),
+        server_time_utc=now.isoformat(),
+    )
+
+
+def validate_browser_mutation_binding_header(
+    context: OperatorContext,
+    claimed_binding_id: str,
+    *,
+    server_time: datetime | None = None,
+) -> BrowserMutationIdentityBinding:
+    """Validate a Cockpit binding claim against current server authentication."""
+
+    binding = browser_mutation_identity_binding(context, server_time=server_time)
+    if not re.fullmatch(r"[0-9a-f]{64}", claimed_binding_id):
+        raise BrowserMutationBindingError("browser_mutation_binding_invalid")
+    if not hmac.compare_digest(binding.binding_id, claimed_binding_id):
+        raise BrowserMutationBindingError("browser_mutation_binding_mismatch")
+    return binding
 
 
 @runtime_checkable

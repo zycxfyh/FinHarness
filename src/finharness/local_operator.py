@@ -48,6 +48,10 @@ class LocalOperatorContext:
                 ),
                 authentication_method="legacy_local_process_context",
                 authenticated_at_utc=datetime.now(UTC).isoformat(),
+                authentication_epoch_id=(
+                    f"legacy-local:{self.operator_id}:browser-epoch-v1"
+                ),
+                authentication_expires_at_utc="2099-12-31T23:59:59+00:00",
             )
         )
 

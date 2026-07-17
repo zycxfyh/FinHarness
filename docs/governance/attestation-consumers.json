@@ -2243,97 +2243,97 @@
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 497,
+      "match_line": 501,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "OpenAPI route allowlist entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 739,
+      "match_line": 761,
       "term": "Attestation",
       "reason": "OpenAPI schema allowlist entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 986,
+      "match_line": 1008,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Attestation endpoint contract covered by its dedicated API test."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 993,
+      "match_line": 1015,
       "term": "Attestation",
       "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 997,
+      "match_line": 1019,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Attestation endpoint contract covered by its dedicated API test."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1013,
+      "match_line": 1035,
       "term": "Attestation",
       "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1013,
+      "match_line": 1035,
       "term": "attestations",
       "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1015,
+      "match_line": 1037,
       "term": "attestations",
       "reason": "Attestation endpoint row-count assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1017,
+      "match_line": 1039,
       "term": "attestations",
       "reason": "Attestation endpoint revision-binding assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1051,
+      "match_line": 1073,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Proposal detail endpoint contract outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1067,
+      "match_line": 1089,
       "term": "attestations",
       "reason": "Proposal detail response assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1145,
+      "match_line": 1167,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "Attestation failure-path endpoint contract outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1154,
+      "match_line": 1176,
       "term": "Attestation",
       "reason": "Attestation failure-path persistence assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1155,
+      "match_line": 1177,
       "term": "attestations",
       "reason": "Attestation failure-path receipt assertion outside the dashboard test consumer."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1258,
+      "match_line": 1280,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "HTTP mutation policy table entry, not attestation decision logic."
     },
     {
       "path": "tests/test_statecore_api.py",
-      "match_line": 1361,
+      "match_line": 1383,
       "term": "/proposals/{proposal_id}/attest",
       "reason": "HTTP write-guard table entry, not attestation decision logic."
     },
