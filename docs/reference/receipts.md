@@ -84,7 +84,7 @@ separately below so they are not mistaken for current authority.
 | Trade plan candidate | direct JSON dictionary | `state_core_trade_plan_candidate` | n/a | `TradePlanCandidate` | n/a |
 | Capital objective fit | direct JSON dictionary | `state_core_capital_objective_fit` | n/a | `CapitalObjectiveFit` | n/a |
 | Trade plan review gate | direct JSON dictionary | `state_core_trade_plan_review_gate` | n/a | `TradePlanReviewGate` | n/a |
-| API mutation identity | direct JSON dictionary | `finharness.api_mutation_identity_receipt.v1` schema | n/a | actor + canonical target/query + semantic-header + body-hash binding; terminal response or typed reconciliation evidence | `pending | committed | rejected | reconciled_applied` |
+| API mutation identity | direct JSON dictionary | current `finharness.api_mutation_identity_receipt.v2`; historical v1 remains readable | n/a | actor + canonical target/query + semantic-header + body-hash + route-capability/digest binding; terminal response or typed reconciliation evidence | `pending | committed | rejected | reconciled_applied` |
 
 ### API mutation identity state semantics
 
@@ -99,12 +99,17 @@ separately below so they are not mistaken for current authority.
 
 Every terminal transition is serialized by the receipt-directory lock, checks
 the expected pending state and content hash, and records prior-hash lineage.
-Mutation identity receipts prove request ownership and retry semantics only;
-they grant no capital, decision, or execution authority.
-For a keyed administration denial, the terminal identity-mutation receipt is
-`rejected` and may replay only that same denial. It is non-authoritative
-transport evidence: no domain receipt, ReceiptIndex, mirror mutation, lifecycle
-event, grant mutation, or domain database effect is created.
+Mutation identity receipts prove request ownership, route recovery mode, and
+retry semantics only; they grant no capital, decision, or execution authority.
+For v2 Proposal effects, the domain receipt uses
+`finharness.api_domain_mutation_binding.v2` and must repeat the capability ID,
+digest, canonical path template, and resolver ID. Historical v1 receipts are
+never backfilled with current capability evidence.
+
+Authority administration routes are keyed-prohibited. A keyed request creates
+no identity receipt, domain receipt, ReceiptIndex row, mirror mutation,
+lifecycle event, grant mutation, or domain database effect. Unkeyed Authority
+administration retains its independent #391 authorization contract.
 
 ## Historical / Archived Receipt Envelope By Surface
 

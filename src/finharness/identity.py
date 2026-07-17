@@ -326,6 +326,42 @@ def _require_valid_content_hash(payload: dict[str, Any]) -> None:
         raise IdentityMutationError("mutation identity receipt content hash mismatch")
 
 
+_ROUTE_CAPABILITY_BINDING_FIELDS = frozenset(
+    {
+        "capability_id",
+        "registry_version",
+        "method",
+        "canonical_path_template",
+        "mode",
+        "owning_domain",
+        "request_identity_policy_id",
+        "max_request_bytes",
+        "max_response_bytes",
+        "resolver_id",
+        "no_ambiguous_effect_contract",
+        "execution_allowed",
+        "capability_sha256",
+    }
+)
+
+
+def _require_valid_route_capability_binding(payload: dict[str, Any]) -> None:
+    schema = payload.get("schema")
+    if schema == "finharness.api_mutation_identity_receipt.v1":
+        if "route_capability" in payload:
+            raise IdentityMutationError("v1 mutation receipt cannot claim route capability")
+        return
+    if schema != "finharness.api_mutation_identity_receipt.v2":
+        raise IdentityMutationError("invalid mutation identity receipt schema")
+    binding = payload.get("route_capability")
+    if not isinstance(binding, dict) or set(binding) != _ROUTE_CAPABILITY_BINDING_FIELDS:
+        raise IdentityMutationError("mutation route capability binding is invalid")
+    claimed = binding.get("capability_sha256")
+    unhashed = {key: value for key, value in binding.items() if key != "capability_sha256"}
+    if not isinstance(claimed, str) or claimed != _canonical_sha256(unhashed):
+        raise IdentityMutationError("mutation route capability hash mismatch")
+
+
 def _load_identity_mutation_receipt(path: Path) -> dict[str, Any]:
     """Read and integrity-check one mutation receipt."""
 
@@ -334,6 +370,7 @@ def _load_identity_mutation_receipt(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise IdentityMutationError(f"existing mutation receipt is unreadable: {path}") from exc
     _require_valid_content_hash(payload)
+    _require_valid_route_capability_binding(payload)
     return payload
 
 
@@ -402,7 +439,10 @@ def load_identity_mutation_receipt_by_id(
 
     payload = _load_identity_mutation_receipt(resolved)
 
-    if payload.get("schema") != "finharness.api_mutation_identity_receipt.v1":
+    if payload.get("schema") not in {
+        "finharness.api_mutation_identity_receipt.v1",
+        "finharness.api_mutation_identity_receipt.v2",
+    }:
         raise IdentityMutationError("invalid mutation identity receipt schema")
 
     if payload.get("receipt_id") != canonical_id:
@@ -454,6 +494,7 @@ def begin_identity_mutation(
     trace_id: str,
     idempotency_key: str,
     body_sha256: str,
+    route_capability: dict[str, Any] | None = None,
 ) -> IdentityMutationClaim:
     """Durably claim a keyed mutation before its domain effect is invoked."""
 
@@ -481,13 +522,25 @@ def begin_identity_mutation(
         "body_sha256": body_sha256,
         "idempotency_key_sha256": hashlib.sha256(idempotency_key.encode()).hexdigest(),
     }
+    schema = "finharness.api_mutation_identity_receipt.v1"
+    capability_fields: dict[str, Any] = {}
+    if route_capability is not None:
+        schema = "finharness.api_mutation_identity_receipt.v2"
+        capability_fields["route_capability"] = route_capability
+        _require_valid_route_capability_binding(
+            {
+                "schema": schema,
+                "route_capability": route_capability,
+            }
+        )
     pending = _with_content_hash(
         {
-            "schema": "finharness.api_mutation_identity_receipt.v1",
+            "schema": schema,
             "receipt_id": receipt_id,
             "state": "pending",
             "created_at_utc": datetime.now(UTC).isoformat(),
             "request": request_binding | {"trace_ids": [trace_id]},
+            **capability_fields,
             "actor": context.receipt_binding(),
             "durability": "power_loss_durable",
             "execution_allowed": False,
@@ -502,7 +555,14 @@ def begin_identity_mutation(
         return IdentityMutationClaim("execute", receipt_id, target, pending)
     existing = _load_identity_mutation_receipt(target)
     existing_request = existing.get("request", {})
-    same_request = all(existing_request.get(key) == value for key, value in request_binding.items())
+    same_request = all(
+        existing_request.get(key) == value for key, value in request_binding.items()
+    )
+    if existing.get("schema") == "finharness.api_mutation_identity_receipt.v2":
+        same_request = (
+            same_request
+            and existing.get("route_capability") == route_capability
+        )
     if not same_request:
         return IdentityMutationClaim("conflict", receipt_id, target, existing)
     state = existing.get("state")

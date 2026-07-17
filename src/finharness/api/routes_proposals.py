@@ -11,11 +11,16 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
+from starlette.routing import compile_path
 
 from finharness.api.dependencies import (
     EngineDependency,
     ReceiptRootDependency,
     WriteCapabilityDependency,
+)
+from finharness.api.keyed_mutation_capabilities import (
+    KeyedMutationRouteMode,
+    load_keyed_mutation_route_capabilities,
 )
 from finharness.identity import (
     IdentityMutationClaim,
@@ -143,8 +148,13 @@ def _route_identity_mutation_binding(
     request_binding = raw_claim.payload.get(
         "request",
     )
+    route_capability = raw_claim.payload.get("route_capability")
+    mutation_schema = raw_claim.payload.get("schema")
 
-    if not isinstance(request_binding, dict):
+    if not isinstance(request_binding, dict) or (
+        mutation_schema == "finharness.api_mutation_identity_receipt.v2"
+        and not isinstance(route_capability, dict)
+    ):
         raise HTTPException(
             status_code=409,
             detail={
@@ -204,16 +214,34 @@ def _route_identity_mutation_binding(
             "authenticated_actor": actor,
         }
 
+    capability_context: dict[str, Any] = {}
+    domain_binding_schema = "finharness.api_domain_mutation_binding.v1"
+    if isinstance(route_capability, dict):
+        domain_binding_schema = "finharness.api_domain_mutation_binding.v2"
+        capability_context = {
+            "identity_mutation_route_capability_id": (
+                route_capability.get("capability_id")
+            ),
+            "identity_mutation_route_capability_sha256": (
+                route_capability.get("capability_sha256")
+            ),
+            "identity_mutation_canonical_path_template": (
+                route_capability.get("canonical_path_template")
+            ),
+            "identity_mutation_resolver_id": route_capability.get("resolver_id"),
+        }
+
     return (
         source_ref,
         {
-            "schema": ("finharness.api_domain_mutation_binding.v1"),
+            "schema": domain_binding_schema,
             "effect_kind": effect_kind,
             "identity_mutation_receipt_id": (raw_claim.receipt_id),
             "identity_mutation_request_body_sha256": (body_sha256),
             "identity_mutation_request_target": target,
             "identity_mutation_method": method,
             "identity_mutation_path": path,
+            **capability_context,
             **actor_context,
             "execution_allowed": False,
         },
@@ -292,6 +320,7 @@ def _require_proposal_domain_receipt_binding(
     domain_receipt: dict[str, Any],
     receipt_id: str,
     request_binding: dict[str, Any],
+    route_capability: object,
 ) -> None:
     if domain_receipt.get("kind") != "state_core_proposal":
         raise IdentityMutationError("domain receipt is not a proposal receipt")
@@ -311,6 +340,7 @@ def _require_proposal_domain_receipt_binding(
         revision_context,
         receipt_id=receipt_id,
         request_binding=request_binding,
+        route_capability=route_capability,
         effect_kind="api_proposal_create",
     )
 
@@ -330,7 +360,14 @@ def reconcile_proposal_create_identity_mutation(
     if mutation.get("state") != "pending":
         raise IdentityMutationError("only a pending mutation can be reconciled")
 
-    receipt_id, request_binding = _require_proposal_create_mutation_binding(mutation)
+    receipt_id, request_binding, resolver_id, proposal_id = (
+        _require_pending_mutation_route(mutation)
+    )
+    if (
+        resolver_id != _PROPOSAL_CREATE_RECONCILIATION_RESOLVER
+        or proposal_id is not None
+    ):
+        raise IdentityMutationError("mutation capability is not Proposal create")
     (
         proposal,
         mutation_ref,
@@ -346,6 +383,7 @@ def reconcile_proposal_create_identity_mutation(
         domain_receipt=domain_receipt,
         receipt_id=receipt_id,
         request_binding=request_binding,
+        route_capability=mutation.get("route_capability"),
     )
 
     response_payload = proposal_create_response_payload(
@@ -389,7 +427,11 @@ _SCAFFOLD_REVISION_RECONCILIATION_RESOLVER = "finharness.api.proposal_scaffold_r
 _REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER = "finharness.api.review_event_create.v1"
 
 
-def _proposal_mutation_route(
+def identity_mutation_reconciliation_dispatcher_ids() -> frozenset[str]:
+    return frozenset(_IDENTITY_MUTATION_RECONCILIATION_DISPATCHER)
+
+
+def _legacy_v1_proposal_mutation_route(
     *,
     method: str,
     path: str,
@@ -443,11 +485,78 @@ def identity_mutation_reconciliation_resolver_id(
     if not isinstance(path, str):
         return None
 
-    resolver_id, _proposal_id = _proposal_mutation_route(
+    try:
+        resolver_id, _proposal_id = _mutation_route_resolution(
+            mutation,
+            method=method,
+            path=path,
+        )
+    except IdentityMutationError:
+        return None
+    return resolver_id
+
+
+def _v2_mutation_route_resolution(
+    mutation: dict[str, Any],
+    *,
+    method: str,
+    path: str,
+) -> tuple[str, str | None]:
+    binding = mutation.get("route_capability")
+    if not isinstance(binding, dict):
+        raise IdentityMutationError("mutation route capability binding is missing")
+    capability_id = binding.get("capability_id")
+    if not isinstance(capability_id, str):
+        raise IdentityMutationError("mutation route capability id is missing")
+    registry = load_keyed_mutation_route_capabilities()
+    capability = registry.by_id(capability_id)
+    if capability is None or binding != capability.receipt_binding():
+        raise IdentityMutationError(
+            "mutation route capability does not match the canonical registry"
+        )
+    if (
+        capability.mode
+        is not KeyedMutationRouteMode.TYPED_DOMAIN_RECONCILIATION
+        or capability.resolver_id is None
+    ):
+        raise IdentityMutationError(
+            "mutation route capability has no typed reconciliation resolver"
+        )
+    if method != capability.method:
+        raise IdentityMutationError("mutation method differs from route capability")
+    route_regex, _path_format, _convertors = compile_path(
+        capability.canonical_path_template
+    )
+    matched = route_regex.fullmatch(path)
+    if matched is None:
+        raise IdentityMutationError("mutation path differs from route capability")
+    return capability.resolver_id, matched.groupdict().get("proposal_id")
+
+
+def _mutation_route_resolution(
+    mutation: dict[str, Any],
+    *,
+    method: str,
+    path: str,
+) -> tuple[str, str | None]:
+    schema = mutation.get("schema")
+    if schema == "finharness.api_mutation_identity_receipt.v2":
+        return _v2_mutation_route_resolution(
+            mutation,
+            method=method,
+            path=path,
+        )
+    if schema != "finharness.api_mutation_identity_receipt.v1":
+        raise IdentityMutationError("unsupported mutation receipt schema")
+    resolver_id, proposal_id = _legacy_v1_proposal_mutation_route(
         method=method,
         path=path,
     )
-    return resolver_id
+    if resolver_id is None:
+        raise IdentityMutationError(
+            "no typed reconciliation resolver for this mutation route"
+        )
+    return resolver_id, proposal_id
 
 
 def _require_pending_mutation_route(
@@ -478,13 +587,11 @@ def _require_pending_mutation_route(
     if not isinstance(path, str):
         raise IdentityMutationError("mutation request path is missing")
 
-    resolver_id, proposal_id = _proposal_mutation_route(
+    resolver_id, proposal_id = _mutation_route_resolution(
+        mutation,
         method=method,
         path=path,
     )
-
-    if resolver_id is None:
-        raise IdentityMutationError("no typed reconciliation resolver for this mutation route")
 
     return (
         receipt_id,
@@ -580,6 +687,7 @@ def _require_exact_domain_binding(
     *,
     receipt_id: str,
     request_binding: dict[str, Any],
+    route_capability: object,
     effect_kind: str,
     expected_actor: object | None = None,
 ) -> None:
@@ -587,7 +695,6 @@ def _require_exact_domain_binding(
         raise IdentityMutationError("domain receipt has no typed mutation binding")
 
     expected = {
-        "schema": ("finharness.api_domain_mutation_binding.v1"),
         "effect_kind": effect_kind,
         "identity_mutation_receipt_id": receipt_id,
         "identity_mutation_request_body_sha256": (request_binding.get("body_sha256")),
@@ -596,6 +703,24 @@ def _require_exact_domain_binding(
         "identity_mutation_path": (request_binding.get("path")),
         "execution_allowed": False,
     }
+    if route_capability is None:
+        expected["schema"] = "finharness.api_domain_mutation_binding.v1"
+    elif isinstance(route_capability, dict):
+        expected |= {
+            "schema": "finharness.api_domain_mutation_binding.v2",
+            "identity_mutation_route_capability_id": (
+                route_capability.get("capability_id")
+            ),
+            "identity_mutation_route_capability_sha256": (
+                route_capability.get("capability_sha256")
+            ),
+            "identity_mutation_canonical_path_template": (
+                route_capability.get("canonical_path_template")
+            ),
+            "identity_mutation_resolver_id": route_capability.get("resolver_id"),
+        }
+    else:
+        raise IdentityMutationError("identity mutation route capability is invalid")
 
     for key, value in expected.items():
         if context.get(key) != value:
@@ -766,6 +891,7 @@ def _reconcile_attestation_identity_mutation(
         receipt.get("mutation_context"),
         receipt_id=receipt_id,
         request_binding=request_binding,
+        route_capability=mutation.get("route_capability"),
         effect_kind="api_attestation_create",
         expected_actor=mutation.get("actor"),
     )
@@ -827,6 +953,10 @@ _MUTATION_BINDING_FIELDS = frozenset(
         "identity_mutation_request_target",
         "identity_mutation_method",
         "identity_mutation_path",
+        "identity_mutation_route_capability_id",
+        "identity_mutation_route_capability_sha256",
+        "identity_mutation_canonical_path_template",
+        "identity_mutation_resolver_id",
         "schema",
         "effect_kind",
         "authenticated_actor",
@@ -942,6 +1072,7 @@ def _require_verifiable_foreign_mutation_claim(
         context,
         receipt_id=claim_id,
         request_binding=foreign_request,
+        route_capability=foreign_receipt.get("route_capability"),
         effect_kind="api_proposal_decision_scaffold_revision",
         expected_actor=foreign_receipt.get("actor"),
     )
@@ -1089,6 +1220,7 @@ def _validate_scaffold_candidate_revision(
     receipt_root: Path,
     mutation_ref: str,
     expected_actor: object,
+    route_capability: object,
 ) -> tuple[str, Proposal, dict[str, Any]] | None:
     """Validate one candidate scaffold revision receipt against an exact identity mutation.
 
@@ -1162,6 +1294,7 @@ def _validate_scaffold_candidate_revision(
         context,
         receipt_id=receipt_id,
         request_binding=request_binding,
+        route_capability=route_capability,
         effect_kind="api_proposal_decision_scaffold_revision",
         expected_actor=expected_actor,
     )
@@ -1223,6 +1356,7 @@ def _reconcile_scaffold_revision_identity_mutation(
             receipt_root=receipt_root,
             mutation_ref=mutation_ref,
             expected_actor=mutation.get("actor"),
+            route_capability=mutation.get("route_capability"),
         )
         if result is not None:
             exact_matches.append(result)
@@ -1367,6 +1501,7 @@ def _reconcile_review_event_identity_mutation(
         receipt.get("mutation_context"),
         receipt_id=receipt_id,
         request_binding=request_binding,
+        route_capability=mutation.get("route_capability"),
         effect_kind="api_review_event_create",
         expected_actor=mutation.get("actor"),
     )
@@ -1421,6 +1556,119 @@ def _reconcile_review_event_identity_mutation(
     )
 
 
+def _dispatch_proposal_create(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str | None,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    del mutation, receipt_id, request_binding
+    if proposal_id is not None:
+        raise IdentityMutationError("Proposal create capability cannot bind a proposal id")
+    return reconcile_proposal_create_identity_mutation(
+        mutation_path,
+        engine=engine,
+        receipt_root=receipt_root,
+        reconciled_by=reconciled_by,
+        reason=reason,
+    )
+
+
+def _dispatch_attestation_create(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str | None,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    if proposal_id is None:
+        raise IdentityMutationError("attestation resolver requires a proposal id")
+    return _reconcile_attestation_identity_mutation(
+        mutation_path,
+        mutation=mutation,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        proposal_id=proposal_id,
+        engine=engine,
+        receipt_root=receipt_root,
+        reconciled_by=reconciled_by,
+        reason=reason,
+    )
+
+
+def _dispatch_scaffold_revision(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str | None,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    if proposal_id is None:
+        raise IdentityMutationError("scaffold resolver requires a proposal id")
+    return _reconcile_scaffold_revision_identity_mutation(
+        mutation_path,
+        mutation=mutation,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        proposal_id=proposal_id,
+        engine=engine,
+        receipt_root=receipt_root,
+        reconciled_by=reconciled_by,
+        reason=reason,
+    )
+
+
+def _dispatch_review_event_create(
+    mutation_path: Path,
+    *,
+    mutation: dict[str, Any],
+    receipt_id: str,
+    request_binding: dict[str, Any],
+    proposal_id: str | None,
+    engine: Engine,
+    receipt_root: Path,
+    reconciled_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    if proposal_id is None:
+        raise IdentityMutationError("review-event resolver requires a proposal id")
+    return _reconcile_review_event_identity_mutation(
+        mutation_path,
+        mutation=mutation,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        proposal_id=proposal_id,
+        engine=engine,
+        receipt_root=receipt_root,
+        reconciled_by=reconciled_by,
+        reason=reason,
+    )
+
+
+_IDENTITY_MUTATION_RECONCILIATION_DISPATCHER = {
+    _PROPOSAL_CREATE_RECONCILIATION_RESOLVER: _dispatch_proposal_create,
+    _ATTESTATION_CREATE_RECONCILIATION_RESOLVER: _dispatch_attestation_create,
+    _SCAFFOLD_REVISION_RECONCILIATION_RESOLVER: _dispatch_scaffold_revision,
+    _REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER: _dispatch_review_event_create,
+}
+
+
 def reconcile_identity_mutation_from_domain_truth(
     receipt_path: str | Path,
     *,
@@ -1441,60 +1689,20 @@ def reconcile_identity_mutation_from_domain_truth(
         proposal_id,
     ) = _require_pending_mutation_route(mutation)
 
-    if resolver_id == (_PROPOSAL_CREATE_RECONCILIATION_RESOLVER):
-        return reconcile_proposal_create_identity_mutation(
-            mutation_path,
-            engine=engine,
-            receipt_root=receipt_root,
-            reconciled_by=reconciled_by,
-            reason=reason,
-        )
-
-    if proposal_id is None:
-        raise IdentityMutationError("typed resolver requires a proposal id")
-
-    root = Path(receipt_root)
-
-    if resolver_id == (_ATTESTATION_CREATE_RECONCILIATION_RESOLVER):
-        return _reconcile_attestation_identity_mutation(
-            mutation_path,
-            mutation=mutation,
-            receipt_id=receipt_id,
-            request_binding=request_binding,
-            proposal_id=proposal_id,
-            engine=engine,
-            receipt_root=root,
-            reconciled_by=reconciled_by,
-            reason=reason,
-        )
-
-    if resolver_id == (_SCAFFOLD_REVISION_RECONCILIATION_RESOLVER):
-        return _reconcile_scaffold_revision_identity_mutation(
-            mutation_path,
-            mutation=mutation,
-            receipt_id=receipt_id,
-            request_binding=request_binding,
-            proposal_id=proposal_id,
-            engine=engine,
-            receipt_root=root,
-            reconciled_by=reconciled_by,
-            reason=reason,
-        )
-
-    if resolver_id == (_REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER):
-        return _reconcile_review_event_identity_mutation(
-            mutation_path,
-            mutation=mutation,
-            receipt_id=receipt_id,
-            request_binding=request_binding,
-            proposal_id=proposal_id,
-            engine=engine,
-            receipt_root=root,
-            reconciled_by=reconciled_by,
-            reason=reason,
-        )
-
-    raise IdentityMutationError("no typed reconciliation resolver for this mutation route")
+    dispatcher = _IDENTITY_MUTATION_RECONCILIATION_DISPATCHER.get(resolver_id)
+    if dispatcher is None:
+        raise IdentityMutationError("no typed reconciliation resolver for this capability")
+    return dispatcher(
+        mutation_path,
+        mutation=mutation,
+        receipt_id=receipt_id,
+        request_binding=request_binding,
+        proposal_id=proposal_id,
+        engine=engine,
+        receipt_root=Path(receipt_root),
+        reconciled_by=reconciled_by,
+        reason=reason,
+    )
 
 
 class AttestationCreateRequest(BaseModel):

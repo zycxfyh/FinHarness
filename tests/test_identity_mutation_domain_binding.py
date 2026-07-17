@@ -140,7 +140,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
 
         self.assertEqual(
             context["schema"],
-            ("finharness.api_domain_mutation_binding.v1"),
+            ("finharness.api_domain_mutation_binding.v2"),
         )
         self.assertEqual(
             context["effect_kind"],
@@ -157,6 +157,23 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
         self.assertEqual(
             context["identity_mutation_request_target"],
             request_binding["target"],
+        )
+        capability = identity_receipt["route_capability"]
+        self.assertEqual(
+            context["identity_mutation_route_capability_id"],
+            capability["capability_id"],
+        )
+        self.assertEqual(
+            context["identity_mutation_route_capability_sha256"],
+            capability["capability_sha256"],
+        )
+        self.assertEqual(
+            context["identity_mutation_canonical_path_template"],
+            capability["canonical_path_template"],
+        )
+        self.assertEqual(
+            context["identity_mutation_resolver_id"],
+            capability["resolver_id"],
         )
         self.assertEqual(
             context["identity_mutation_method"],

@@ -245,7 +245,7 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(self._domain_snapshot(), before)
 
-    def test_keyed_denial_retains_only_rejected_transport_evidence(self) -> None:
+    def test_keyed_authority_command_is_prohibited_before_domain_denial(self) -> None:
         ordinary = authority_admin_context("principal:alice", with_assertion=False)
         client, _mapping = self._client({"ordinary": ordinary})
         headers = {
@@ -257,29 +257,35 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
 
         first = client.post("/capital-mandates", headers=headers, json=body)
 
-        self.assertEqual(first.status_code, 403, first.text)
+        self.assertEqual(first.status_code, 409, first.text)
         self.assertEqual(
-            first.json()["detail"]["reason"],
-            "authority_administrator_required",
+            first.json()["detail"]["code"],
+            "keyed_mutation_prohibited",
         )
-        identity_receipt_id = first.headers[IDENTITY_RECEIPT_HEADER]
-        identity_receipt_path = self.receipts / "identity" / f"{identity_receipt_id}.json"
-        identity_receipt = json.loads(identity_receipt_path.read_text(encoding="utf-8"))
-        self.assertEqual(identity_receipt["state"], "rejected")
-        self.assertFalse(identity_receipt["execution_allowed"])
-        self.assertEqual(identity_receipt["response"]["status_code"], 403)
+        self.assertNotIn(IDENTITY_RECEIPT_HEADER, first.headers)
+        self.assertEqual(
+            list((self.receipts / "identity").glob("*.json")),
+            [],
+        )
         self.assertEqual(self._domain_snapshot(), before)
 
         replay = client.post("/capital-mandates", headers=headers, json=body)
 
-        self.assertEqual(replay.status_code, 403, replay.text)
-        self.assertEqual(replay.json(), first.json())
-        self.assertEqual(replay.headers[IDENTITY_RECEIPT_HEADER], identity_receipt_id)
-        self.assertEqual(replay.headers[IDEMPOTENT_REPLAY_HEADER], "true")
+        self.assertEqual(replay.status_code, 409, replay.text)
         self.assertEqual(
-            json.loads(identity_receipt_path.read_text(encoding="utf-8")),
-            identity_receipt,
+            {
+                key: value
+                for key, value in replay.json()["detail"].items()
+                if key != "trace_id"
+            },
+            {
+                key: value
+                for key, value in first.json()["detail"].items()
+                if key != "trace_id"
+            },
         )
+        self.assertNotIn(IDENTITY_RECEIPT_HEADER, replay.headers)
+        self.assertNotIn(IDEMPOTENT_REPLAY_HEADER, replay.headers)
         self.assertEqual(self._domain_snapshot(), before)
 
     def test_request_fields_and_headers_cannot_mint_administration(self) -> None:
@@ -571,7 +577,7 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
                 receipt_root=self.receipts,
             )
 
-    def test_reduction_idempotent_replay_keeps_original_authoritative_time(
+    def test_keyed_reduction_cannot_create_a_delayed_or_replayable_transition(
         self,
     ) -> None:
         with patch(
@@ -585,19 +591,19 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             IDEMPOTENCY_HEADER: "authority-reduction-replay-0001",
         }
         body = {"reason": "Replay must preserve the committed reduction."}
-        first_time = "2026-07-17T08:32:00+00:00"
+        before = self._domain_snapshot()
         with patch(
             "finharness.statecore.capital_mandates._now_utc",
-            return_value=first_time,
+            return_value="2026-07-17T08:32:00+00:00",
         ):
             first = client.post(
                 f"/capital-mandates/{mandate.capital_mandate_id}/suspend",
                 headers=headers,
                 json=body,
             )
-        self.assertEqual(first.status_code, 200, first.text)
-        after_first = self._domain_snapshot()
-        self.assertEqual(first.json()["resolution"]["at_utc"], first_time)
+        self.assertEqual(first.status_code, 409, first.text)
+        self.assertEqual(first.json()["detail"]["code"], "keyed_mutation_prohibited")
+        self.assertEqual(self._domain_snapshot(), before)
 
         mapping["admin"] = authority_admin_context(
             "principal:alice",
@@ -612,10 +618,21 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
                 headers=headers,
                 json=body,
             )
-        self.assertEqual(replay.status_code, 200, replay.text)
-        self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
-        self.assertEqual(replay.json(), first.json())
-        self.assertEqual(self._domain_snapshot(), after_first)
+        self.assertEqual(replay.status_code, 409, replay.text)
+        self.assertEqual(
+            {
+                key: value
+                for key, value in replay.json()["detail"].items()
+                if key != "trace_id"
+            },
+            {
+                key: value
+                for key, value in first.json()["detail"].items()
+                if key != "trace_id"
+            },
+        )
+        self.assertNotIn(IDENTITY_RECEIPT_HEADER, replay.headers)
+        self.assertEqual(self._domain_snapshot(), before)
 
     def test_committed_mandate_reduction_blocks_grant_consumption(self) -> None:
         mandate = self._record_mandate()
@@ -764,10 +781,7 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
         elevated = authority_admin_context("principal:alice")
         client, _mapping = self._client({"alice": elevated})
         body = self._mandate_body("mandate:replay")
-        headers = {
-            "Authorization": "Bearer alice",
-            IDEMPOTENCY_HEADER: "authority-admin-replay-0001",
-        }
+        headers = {"Authorization": "Bearer alice"}
         first = client.post("/capital-mandates", headers=headers, json=body)
         self.assertEqual(first.status_code, 200, first.text)
         after_first = self._domain_snapshot()
@@ -785,9 +799,11 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             }
         )
         replay = restarted.post("/capital-mandates", headers=headers, json=body)
-        self.assertEqual(replay.status_code, 200, replay.text)
-        self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
-        self.assertEqual(replay.json(), first.json())
+        self.assertEqual(replay.status_code, 403, replay.text)
+        self.assertEqual(
+            replay.json()["detail"]["reason"],
+            "authority_administrator_required",
+        )
         self.assertEqual(self._domain_snapshot(), after_first)
 
         old_receipt_ref = first.json()["receipt_ref"]
@@ -796,7 +812,6 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             "/capital-mandates",
             headers={
                 "Authorization": "Bearer alice",
-                IDEMPOTENCY_HEADER: "authority-admin-new-command-0002",
             },
             json=new_command_body,
         )
@@ -815,7 +830,6 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             "/capital-mandates",
             headers={
                 "Authorization": "Bearer alice",
-                IDEMPOTENCY_HEADER: "authority-admin-new-command-0003",
             },
             json=new_command_body,
         )

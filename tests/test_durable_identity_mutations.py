@@ -182,6 +182,24 @@ class DurableIdentityMutationTest(unittest.TestCase):
     ) -> None:
         domain_receipt = json.loads(domain_receipt_path.read_text(encoding="utf-8"))
         ctx = domain_receipt.setdefault("revision_context", {})
+        capability_tampering = {
+            "mutation_capability_id_mismatch": (
+                "identity_mutation_route_capability_id",
+                "finharness.api.tampered.v1",
+            ),
+            "mutation_capability_hash_mismatch": (
+                "identity_mutation_route_capability_sha256",
+                "0" * 64,
+            ),
+            "mutation_capability_template_mismatch": (
+                "identity_mutation_canonical_path_template",
+                "/tampered",
+            ),
+            "mutation_capability_resolver_mismatch": (
+                "identity_mutation_resolver_id",
+                "finharness.api.tampered.v1",
+            ),
+        }
 
         if scenario == "proposal_payload_mismatch":
             domain_receipt["proposal"]["claim"] = "tampered proposal claim"
@@ -199,6 +217,9 @@ class DurableIdentityMutationTest(unittest.TestCase):
             ctx["identity_mutation_method"] = "DELETE"
         elif scenario == "mutation_path_mismatch":
             ctx["identity_mutation_path"] = "/tampered"
+        elif scenario in capability_tampering:
+            field, value = capability_tampering[scenario]
+            ctx[field] = value
         elif scenario == "mutation_schema_mismatch":
             ctx["schema"] = "tampered.schema"
         elif scenario == "mutation_effect_kind_mismatch":
@@ -367,8 +388,23 @@ class DurableIdentityMutationTest(unittest.TestCase):
             yield b'"}'
 
         headers = self.headers | {"content-type": "application/json"}
+        registry = self.app.state.keyed_mutation_route_capabilities
+        bounded = registry.model_copy(
+            update={
+                "capabilities": tuple(
+                    capability.model_copy(update={"max_request_bytes": 32})
+                    if capability.canonical_path_template == "/proposals"
+                    else capability
+                    for capability in registry.capabilities
+                )
+            }
+        )
         with (
-            patch("finharness.api.app._MAX_IDEMPOTENT_REQUEST_BYTES", 32),
+            patch.object(
+                self.app.state,
+                "keyed_mutation_route_capabilities",
+                bounded,
+            ),
             TestClient(self.app) as client,
         ):
             response = client.post(
@@ -387,16 +423,27 @@ class DurableIdentityMutationTest(unittest.TestCase):
         self.assertNotIn(IDENTITY_RECEIPT_HEADER, response.headers)
 
     def test_oversized_response_leaves_pending_and_blocks_retry(self) -> None:
-        with TestClient(self.app) as client:
-            with patch(
-                "finharness.api.app._MAX_IDEMPOTENT_RESPONSE_BYTES",
-                1,
-            ):
-                response = client.post(
-                    "/proposals",
-                    headers=self.headers,
-                    json=self.body,
+        registry = self.app.state.keyed_mutation_route_capabilities
+        bounded = registry.model_copy(
+            update={
+                "capabilities": tuple(
+                    capability.model_copy(update={"max_response_bytes": 1})
+                    if capability.canonical_path_template == "/proposals"
+                    else capability
+                    for capability in registry.capabilities
                 )
+            }
+        )
+        with TestClient(self.app) as client, patch.object(
+            self.app.state,
+            "keyed_mutation_route_capabilities",
+            bounded,
+        ):
+            response = client.post(
+                "/proposals",
+                headers=self.headers,
+                json=self.body,
+            )
             retry = client.post(
                 "/proposals",
                 headers=self.headers,
@@ -653,6 +700,22 @@ class DurableIdentityMutationTest(unittest.TestCase):
                 "domain receipt mutation binding does not match",
             ),
             (
+                "mutation_capability_id_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_capability_hash_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_capability_template_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
+                "mutation_capability_resolver_mismatch",
+                "domain receipt mutation binding does not match",
+            ),
+            (
                 "mutation_schema_mismatch",
                 "domain receipt mutation binding does not match",
             ),
@@ -711,6 +774,10 @@ class DurableIdentityMutationTest(unittest.TestCase):
                     "mutation_target_mismatch",
                     "mutation_method_mismatch",
                     "mutation_path_mismatch",
+                    "mutation_capability_id_mismatch",
+                    "mutation_capability_hash_mismatch",
+                    "mutation_capability_template_mismatch",
+                    "mutation_capability_resolver_mismatch",
                     "mutation_schema_mismatch",
                     "mutation_effect_kind_mismatch",
                     "mutation_execution_allowed_true",
