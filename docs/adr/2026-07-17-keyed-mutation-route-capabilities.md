@@ -123,8 +123,13 @@ POST  /proposals/{proposal_id}/review-events
   → finharness.api.review_event_create.v1
 ```
 
-The registry's typed resolver IDs must equal the dispatcher's keys. There is no
-unknown-resolver or path-guessing fallback.
+The executable dispatcher contract freezes capability ID, method, canonical
+path template, resolver ID, and handler for each entry. Startup audit compares
+the complete route-to-resolver mapping, rejects duplicate runtime APIRoute
+identities, and cannot false-green when two valid resolver IDs are exchanged.
+Runtime admission and reconciliation repeat the same exact mapping check before
+body consumption or handler dispatch. There is no unknown-resolver or
+path-guessing fallback.
 
 ## Evidence evolution
 

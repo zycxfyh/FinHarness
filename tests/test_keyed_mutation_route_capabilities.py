@@ -19,7 +19,7 @@ from finharness.api.keyed_mutation_capabilities import (
     load_keyed_mutation_route_capabilities,
 )
 from finharness.api.routes_proposals import (
-    identity_mutation_reconciliation_dispatcher_ids,
+    identity_mutation_reconciliation_dispatcher_contracts,
     reconcile_identity_mutation_from_domain_truth,
 )
 from finharness.identity import (
@@ -46,6 +46,28 @@ def _operator() -> OperatorContext:
         authentication_method="test_bearer",
         authenticated_at_utc=datetime.now(UTC).isoformat(),
     )
+
+
+def _swap_attestation_and_review_event_resolvers(
+    registry: KeyedMutationRouteCapabilityRegistry,
+) -> KeyedMutationRouteCapabilityRegistry:
+    attestation_resolver = "finharness.api.attestation_create.v1"
+    review_event_resolver = "finharness.api.review_event_create.v1"
+    capabilities = tuple(
+        capability.model_copy(
+            update={
+                "resolver_id": (
+                    review_event_resolver
+                    if capability.resolver_id == attestation_resolver
+                    else attestation_resolver
+                )
+            }
+        )
+        if capability.resolver_id in {attestation_resolver, review_event_resolver}
+        else capability
+        for capability in registry.capabilities
+    )
+    return registry.model_copy(update={"capabilities": capabilities})
 
 
 class KeyedMutationRouteCapabilityAdmissionTest(unittest.TestCase):
@@ -145,6 +167,36 @@ class KeyedMutationRouteCapabilityAdmissionTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409, response.text)
         self.assertEqual(response.json()["detail"]["code"], "keyed_mutation_prohibited")
+        self.assertEqual(consumed, 0)
+        self.assertEqual(self._identity_receipts(), [])
+
+    def test_swapped_registry_mapping_fails_before_body_handler_and_receipt(
+        self,
+    ) -> None:
+        self.app.state.keyed_mutation_route_capabilities = (
+            _swap_attestation_and_review_event_resolvers(
+                self.app.state.keyed_mutation_route_capabilities
+            )
+        )
+        consumed = 0
+
+        def chunks():
+            nonlocal consumed
+            consumed += 1
+            yield b'{"decision":"approved","reason":"must not run"}'
+
+        with TestClient(self.app) as client:
+            response = client.post(
+                "/proposals/not-created/attest",
+                headers=self.headers,
+                content=chunks(),
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "keyed_mutation_capability_invalid",
+        )
         self.assertEqual(consumed, 0)
         self.assertEqual(self._identity_receipts(), [])
 
@@ -264,6 +316,78 @@ class KeyedMutationRouteCapabilityAdmissionTest(unittest.TestCase):
                 reason="Attempt to prove a recomputed capability cannot redirect dispatch.",
             )
 
+    def test_canonical_registry_swap_still_fails_executable_dispatch_contract(
+        self,
+    ) -> None:
+        with TestClient(self.app) as client:
+            proposal_response = client.post(
+                "/proposals",
+                headers={"Authorization": "Bearer operator"},
+                json={
+                    "kind": "allocation",
+                    "claim": "A canonical registry swap cannot redirect recovery.",
+                    "decision_scaffold": VALID_SCAFFOLD,
+                    "source_refs": ["test:#387:canonical-registry-swap"],
+                },
+            )
+        self.assertEqual(proposal_response.status_code, 200)
+        proposal_id = proposal_response.json()["proposal"]["proposal_id"]
+
+        with (
+            patch(
+                "finharness.api.app.complete_identity_mutation",
+                side_effect=OSError("simulated terminal receipt loss"),
+            ),
+            TestClient(self.app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post(
+                f"/proposals/{proposal_id}/attest",
+                headers=self.headers,
+                json={
+                    "decision": "approved",
+                    "reason": "Commit Attestation truth before terminal loss.",
+                },
+            )
+        self.assertEqual(response.status_code, 500)
+
+        receipt_path = self._identity_receipts()[0]
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        swapped = _swap_attestation_and_review_event_resolvers(
+            self.app.state.keyed_mutation_route_capabilities
+        )
+        attestation_capability = swapped.by_route(
+            "POST", "/proposals/{proposal_id}/attest"
+        )
+        self.assertIsNotNone(attestation_capability)
+        assert attestation_capability is not None
+        receipt["route_capability"] = attestation_capability.receipt_binding()
+        receipt["content_sha256"] = canonical_json_sha256(
+            {
+                key: value
+                for key, value in receipt.items()
+                if key != "content_sha256"
+            }
+        )
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+        with (
+            patch(
+                "finharness.api.routes_proposals.load_keyed_mutation_route_capabilities",
+                return_value=swapped,
+            ),
+            self.assertRaisesRegex(
+                IdentityMutationError,
+                "differs from executable resolver contract",
+            ),
+        ):
+            reconcile_identity_mutation_from_domain_truth(
+                receipt_path,
+                engine=self.engine,
+                receipt_root=self.root / "receipts",
+                reconciled_by="operator:route-capability",
+                reason="Prove registry-owned substitution cannot redirect dispatch.",
+            )
+
     def test_legacy_v1_pending_uses_narrow_adapter_and_remains_v1(self) -> None:
         body = {
             "kind": "allocation",
@@ -340,8 +464,8 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
         audit = audit_keyed_mutation_route_capabilities(
             app,
             registry,
-            dispatcher_resolver_ids=(
-                identity_mutation_reconciliation_dispatcher_ids()
+            dispatcher_contracts=(
+                identity_mutation_reconciliation_dispatcher_contracts()
             ),
         )
 
@@ -425,20 +549,65 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
             audit_keyed_mutation_route_capabilities(
                 app,
                 missing_route,
-                dispatcher_resolver_ids=(
-                    identity_mutation_reconciliation_dispatcher_ids()
+                dispatcher_contracts=(
+                    identity_mutation_reconciliation_dispatcher_contracts()
                 ),
             )
 
         with self.assertRaisesRegex(
             KeyedMutationCapabilityError,
-            "registry/dispatcher resolver drift",
+            "route/resolver mapping drift",
         ):
             audit_keyed_mutation_route_capabilities(
                 app,
                 registry,
-                dispatcher_resolver_ids=frozenset(
-                    {"finharness.api.path_guessing_fallback.v1"}
+                dispatcher_contracts=(
+                    identity_mutation_reconciliation_dispatcher_contracts()[1:]
+                ),
+            )
+
+    def test_valid_resolver_swap_fails_exact_route_mapping_audit(self) -> None:
+        app = create_app()
+        registry = _swap_attestation_and_review_event_resolvers(
+            load_keyed_mutation_route_capabilities()
+        )
+        with self.assertRaisesRegex(
+            KeyedMutationCapabilityError,
+            (
+                "route/resolver mapping drift: "
+                "POST /proposals/\\{proposal_id\\}/attest "
+                "expected finharness.api.attestation_create.v1 "
+                "found finharness.api.review_event_create.v1"
+            ),
+        ):
+            audit_keyed_mutation_route_capabilities(
+                app,
+                registry,
+                dispatcher_contracts=(
+                    identity_mutation_reconciliation_dispatcher_contracts()
+                ),
+            )
+
+    def test_duplicate_runtime_api_route_fails_startup_audit(self) -> None:
+        app = create_app()
+
+        async def duplicate_proposal_route() -> dict[str, bool]:
+            return {"executed": True}
+
+        app.add_api_route(
+            "/proposals",
+            duplicate_proposal_route,
+            methods=["POST"],
+        )
+        with self.assertRaisesRegex(
+            KeyedMutationCapabilityError,
+            "duplicate runtime APIRoute identity: POST /proposals \\(2\\)",
+        ):
+            audit_keyed_mutation_route_capabilities(
+                app,
+                load_keyed_mutation_route_capabilities(),
+                dispatcher_contracts=(
+                    identity_mutation_reconciliation_dispatcher_contracts()
                 ),
             )
 

@@ -10,7 +10,7 @@ from finharness.api.keyed_mutation_capabilities import (
     load_keyed_mutation_route_capabilities,
 )
 from finharness.api.routes_proposals import (
-    identity_mutation_reconciliation_dispatcher_ids,
+    identity_mutation_reconciliation_dispatcher_contracts,
 )
 
 
@@ -18,7 +18,7 @@ def main() -> int:
     audit = audit_keyed_mutation_route_capabilities(
         create_app(),
         load_keyed_mutation_route_capabilities(),
-        dispatcher_resolver_ids=identity_mutation_reconciliation_dispatcher_ids(),
+        dispatcher_contracts=identity_mutation_reconciliation_dispatcher_contracts(),
     )
     print(json.dumps(audit, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

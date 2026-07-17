@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, MutableMapping
+from collections import Counter
+from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -37,6 +38,21 @@ class KeyedMutationRouteMode(StrEnum):
     TYPED_DOMAIN_RECONCILIATION = "typed_domain_reconciliation"
     TERMINAL_REPLAY_ONLY = "terminal_replay_only"
     KEYED_MUTATION_PROHIBITED = "keyed_mutation_prohibited"
+
+
+@dataclass(frozen=True)
+class IdentityMutationResolverContract:
+    """Executable ownership of one typed route resolver."""
+
+    capability_id: str
+    resolver_id: str
+    method: str
+    canonical_path_template: str
+    handler: Callable[..., dict[str, Any]]
+
+    @property
+    def route_identity(self) -> tuple[str, str]:
+        return self.method, self.canonical_path_template
 
 
 class KeyedMutationRouteCapability(BaseModel):
@@ -212,16 +228,41 @@ def _route_contexts(api: FastAPI) -> Iterable[Any]:
             yield from effective()
 
 
-def actual_non_safe_api_routes(api: FastAPI) -> frozenset[tuple[str, str]]:
-    routes: set[tuple[str, str]] = set()
+def actual_non_safe_api_routes(api: FastAPI) -> tuple[tuple[str, str], ...]:
+    routes: list[tuple[str, str]] = []
     for route in _route_contexts(api):
         path_template = getattr(route, "path_format", None) or getattr(route, "path", None)
         if not isinstance(path_template, str):
             continue
         for method in getattr(route, "methods", set()) or set():
             if method not in SAFE_METHODS:
-                routes.add((method, path_template))
-    return frozenset(routes)
+                routes.append((method, path_template))
+    return tuple(routes)
+
+
+def identity_mutation_resolver_contract_maps(
+    contracts: Iterable[IdentityMutationResolverContract],
+) -> tuple[
+    dict[tuple[str, str], IdentityMutationResolverContract],
+    dict[str, IdentityMutationResolverContract],
+]:
+    """Derive fail-closed route and resolver lookups from executable contracts."""
+
+    by_route: dict[tuple[str, str], IdentityMutationResolverContract] = {}
+    by_resolver: dict[str, IdentityMutationResolverContract] = {}
+    for contract in contracts:
+        if contract.route_identity in by_route:
+            method, path = contract.route_identity
+            raise KeyedMutationCapabilityError(
+                f"duplicate dispatcher route contract: {method} {path}"
+            )
+        if contract.resolver_id in by_resolver:
+            raise KeyedMutationCapabilityError(
+                f"duplicate dispatcher resolver contract: {contract.resolver_id}"
+            )
+        by_route[contract.route_identity] = contract
+        by_resolver[contract.resolver_id] = contract
+    return by_route, by_resolver
 
 
 def match_api_route(
@@ -266,9 +307,22 @@ def audit_keyed_mutation_route_capabilities(
     api: FastAPI,
     registry: KeyedMutationRouteCapabilityRegistry,
     *,
-    dispatcher_resolver_ids: frozenset[str],
+    dispatcher_contracts: Iterable[IdentityMutationResolverContract],
 ) -> dict[str, Any]:
-    actual = actual_non_safe_api_routes(api)
+    actual_inventory = actual_non_safe_api_routes(api)
+    route_counts = Counter(actual_inventory)
+    duplicate_routes = sorted(
+        route for route, count in route_counts.items() if count > 1
+    )
+    if duplicate_routes:
+        rendered = ", ".join(
+            f"{method} {path} ({route_counts[(method, path)]})"
+            for method, path in duplicate_routes
+        )
+        raise KeyedMutationCapabilityError(
+            "duplicate runtime APIRoute identity: " + rendered
+        )
+    actual = frozenset(actual_inventory)
     declared = frozenset(
         (capability.method, capability.canonical_path_template)
         for capability in registry.capabilities
@@ -281,12 +335,39 @@ def audit_keyed_mutation_route_capabilities(
             *(f"registry entry has no APIRoute: {method} {path}" for method, path in stale),
         ]
         raise KeyedMutationCapabilityError("; ".join(findings))
-    if registry.typed_resolver_ids != dispatcher_resolver_ids:
-        missing_dispatch = sorted(registry.typed_resolver_ids - dispatcher_resolver_ids)
-        extra_dispatch = sorted(dispatcher_resolver_ids - registry.typed_resolver_ids)
+    dispatcher_by_route, _dispatcher_by_resolver = (
+        identity_mutation_resolver_contract_maps(dispatcher_contracts)
+    )
+    registry_mapping = {
+        (capability.method, capability.canonical_path_template): (
+            capability.capability_id,
+            capability.resolver_id,
+        )
+        for capability in registry.capabilities
+        if capability.mode is KeyedMutationRouteMode.TYPED_DOMAIN_RECONCILIATION
+    }
+    dispatcher_mapping = {
+        route: (contract.capability_id, contract.resolver_id)
+        for route, contract in dispatcher_by_route.items()
+    }
+    if registry_mapping != dispatcher_mapping:
+        mapping_findings: list[str] = []
+        for method, path in sorted(set(registry_mapping) | set(dispatcher_mapping)):
+            found = registry_mapping.get((method, path))
+            expected = dispatcher_mapping.get((method, path))
+            if found == expected:
+                continue
+            mapping_findings.append(
+                "route/resolver mapping drift: "
+                f"{method} {path} expected "
+                f"{expected[1] if expected is not None else 'none'} "
+                f"found {found[1] if found is not None else 'none'} "
+                f"(expected capability "
+                f"{expected[0] if expected is not None else 'none'}, "
+                f"found {found[0] if found is not None else 'none'})"
+            )
         raise KeyedMutationCapabilityError(
-            "registry/dispatcher resolver drift: "
-            f"missing={missing_dispatch}, extra={extra_dispatch}"
+            "; ".join(mapping_findings)
         )
     modes = {
         mode.value: sum(1 for capability in registry.capabilities if capability.mode is mode)

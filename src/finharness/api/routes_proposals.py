@@ -19,7 +19,10 @@ from finharness.api.dependencies import (
     WriteCapabilityDependency,
 )
 from finharness.api.keyed_mutation_capabilities import (
+    IdentityMutationResolverContract,
+    KeyedMutationCapabilityError,
     KeyedMutationRouteMode,
+    identity_mutation_resolver_contract_maps,
     load_keyed_mutation_route_capabilities,
 )
 from finharness.identity import (
@@ -425,10 +428,6 @@ def reconcile_proposal_create_identity_mutation(
 _ATTESTATION_CREATE_RECONCILIATION_RESOLVER = "finharness.api.attestation_create.v1"
 _SCAFFOLD_REVISION_RECONCILIATION_RESOLVER = "finharness.api.proposal_scaffold_revision.v1"
 _REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER = "finharness.api.review_event_create.v1"
-
-
-def identity_mutation_reconciliation_dispatcher_ids() -> frozenset[str]:
-    return frozenset(_IDENTITY_MUTATION_RECONCILIATION_DISPATCHER)
 
 
 def _legacy_v1_proposal_mutation_route(
@@ -1661,12 +1660,91 @@ def _dispatch_review_event_create(
     )
 
 
-_IDENTITY_MUTATION_RECONCILIATION_DISPATCHER = {
-    _PROPOSAL_CREATE_RECONCILIATION_RESOLVER: _dispatch_proposal_create,
-    _ATTESTATION_CREATE_RECONCILIATION_RESOLVER: _dispatch_attestation_create,
-    _SCAFFOLD_REVISION_RECONCILIATION_RESOLVER: _dispatch_scaffold_revision,
-    _REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER: _dispatch_review_event_create,
-}
+_IDENTITY_MUTATION_RECONCILIATION_CONTRACTS = (
+    IdentityMutationResolverContract(
+        capability_id="finharness.api.proposals.create.keyed.v1",
+        resolver_id=_PROPOSAL_CREATE_RECONCILIATION_RESOLVER,
+        method="POST",
+        canonical_path_template="/proposals",
+        handler=_dispatch_proposal_create,
+    ),
+    IdentityMutationResolverContract(
+        capability_id="finharness.api.proposals.attest.keyed.v1",
+        resolver_id=_ATTESTATION_CREATE_RECONCILIATION_RESOLVER,
+        method="POST",
+        canonical_path_template="/proposals/{proposal_id}/attest",
+        handler=_dispatch_attestation_create,
+    ),
+    IdentityMutationResolverContract(
+        capability_id="finharness.api.proposals.scaffold-revision.keyed.v1",
+        resolver_id=_SCAFFOLD_REVISION_RECONCILIATION_RESOLVER,
+        method="PATCH",
+        canonical_path_template="/proposals/{proposal_id}/decision-scaffold",
+        handler=_dispatch_scaffold_revision,
+    ),
+    IdentityMutationResolverContract(
+        capability_id="finharness.api.proposals.review-event.keyed.v1",
+        resolver_id=_REVIEW_EVENT_CREATE_RECONCILIATION_RESOLVER,
+        method="POST",
+        canonical_path_template="/proposals/{proposal_id}/review-events",
+        handler=_dispatch_review_event_create,
+    ),
+)
+
+
+def identity_mutation_reconciliation_dispatcher_contracts(
+) -> tuple[IdentityMutationResolverContract, ...]:
+    return _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS
+
+
+def _require_identity_mutation_resolver_contract(
+    mutation: dict[str, Any],
+    *,
+    resolver_id: str,
+    request_binding: dict[str, Any],
+) -> IdentityMutationResolverContract:
+    try:
+        _by_route, by_resolver = identity_mutation_resolver_contract_maps(
+            _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS
+        )
+    except KeyedMutationCapabilityError as exc:
+        raise IdentityMutationError(str(exc)) from exc
+    contract = by_resolver.get(resolver_id)
+    if contract is None:
+        raise IdentityMutationError(
+            "no typed reconciliation resolver for this capability"
+        )
+
+    method = request_binding.get("method")
+    path = request_binding.get("path")
+    if method != contract.method or not isinstance(path, str):
+        raise IdentityMutationError(
+            "mutation route differs from executable resolver contract"
+        )
+    route_regex, _path_format, _convertors = compile_path(
+        contract.canonical_path_template
+    )
+    if route_regex.fullmatch(path) is None:
+        raise IdentityMutationError(
+            "mutation route differs from executable resolver contract"
+        )
+    if mutation.get("schema") == "finharness.api_mutation_identity_receipt.v2":
+        binding = mutation.get("route_capability")
+        if not isinstance(binding, dict):
+            raise IdentityMutationError(
+                "mutation route capability binding is missing"
+            )
+        if (
+            binding.get("capability_id") != contract.capability_id
+            or binding.get("resolver_id") != contract.resolver_id
+            or binding.get("method") != contract.method
+            or binding.get("canonical_path_template")
+            != contract.canonical_path_template
+        ):
+            raise IdentityMutationError(
+                "mutation route/resolver mapping differs from executable contract"
+            )
+    return contract
 
 
 def reconcile_identity_mutation_from_domain_truth(
@@ -1689,10 +1767,12 @@ def reconcile_identity_mutation_from_domain_truth(
         proposal_id,
     ) = _require_pending_mutation_route(mutation)
 
-    dispatcher = _IDENTITY_MUTATION_RECONCILIATION_DISPATCHER.get(resolver_id)
-    if dispatcher is None:
-        raise IdentityMutationError("no typed reconciliation resolver for this capability")
-    return dispatcher(
+    contract = _require_identity_mutation_resolver_contract(
+        mutation,
+        resolver_id=resolver_id,
+        request_binding=request_binding,
+    )
+    return contract.handler(
         mutation_path,
         mutation=mutation,
         receipt_id=receipt_id,

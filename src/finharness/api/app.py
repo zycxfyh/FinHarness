@@ -13,8 +13,10 @@ from sqlalchemy import Engine
 
 from finharness.api.keyed_mutation_capabilities import (
     KeyedMutationCapabilityError,
+    KeyedMutationRouteCapability,
     KeyedMutationRouteMode,
     audit_keyed_mutation_route_capabilities,
+    identity_mutation_resolver_contract_maps,
     load_keyed_mutation_route_capabilities,
     match_api_route,
 )
@@ -27,7 +29,12 @@ from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
 from finharness.api.routes_ips import router as ips_router
 from finharness.api.routes_paper_validation import router as paper_validation_router
-from finharness.api.routes_proposals import router as proposal_router
+from finharness.api.routes_proposals import (
+    identity_mutation_reconciliation_dispatcher_contracts,
+)
+from finharness.api.routes_proposals import (
+    router as proposal_router,
+)
 from finharness.api.routes_review import router as review_router
 from finharness.api.routes_risk import router as risk_router
 from finharness.api.routes_state import router as state_router
@@ -191,6 +198,43 @@ def _protocol_response(claim: IdentityMutationClaim) -> Response:
     )
 
 
+def _typed_capability_contract_denial(
+    api: FastAPI,
+    capability: KeyedMutationRouteCapability,
+    *,
+    trace_id: str,
+) -> JSONResponse | None:
+    if capability.mode is not KeyedMutationRouteMode.TYPED_DOMAIN_RECONCILIATION:
+        return None
+    contract = api.state.identity_mutation_resolver_contracts_by_route.get(
+        (capability.method, capability.canonical_path_template)
+    )
+    matches = (
+        contract is not None
+        and contract.capability_id == capability.capability_id
+        and contract.resolver_id == capability.resolver_id
+    )
+    if matches:
+        return None
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "code": "keyed_mutation_capability_invalid",
+                "message": (
+                    "The route capability differs from its "
+                    "executable resolver contract."
+                ),
+                "trace_id": trace_id,
+                "method": capability.method,
+                "canonical_path_template": capability.canonical_path_template,
+                "capability_id": capability.capability_id,
+                "execution_allowed": False,
+            }
+        },
+    )
+
+
 async def _call_with_identity_protocol(
     api: FastAPI,
     request: Request,
@@ -261,6 +305,13 @@ async def _call_with_identity_protocol(
             ),
             None,
         )
+    capability_denial = _typed_capability_contract_denial(
+        api,
+        capability,
+        trace_id=trace_id,
+    )
+    if capability_denial is not None:
+        return capability_denial, None
     if capability.mode is KeyedMutationRouteMode.KEYED_MUTATION_PROHIBITED:
         return (
             JSONResponse(
@@ -534,6 +585,14 @@ def create_app(
     api.state.keyed_mutation_route_capabilities = (
         load_keyed_mutation_route_capabilities()
     )
+    resolver_contracts = identity_mutation_reconciliation_dispatcher_contracts()
+    resolver_contracts_by_route, _resolver_contracts_by_id = (
+        identity_mutation_resolver_contract_maps(resolver_contracts)
+    )
+    api.state.identity_mutation_resolver_contracts = resolver_contracts
+    api.state.identity_mutation_resolver_contracts_by_route = (
+        resolver_contracts_by_route
+    )
     api.state.data_surface_available = missing_data_dependency is None
     api.state.data_surface_missing_dependency = missing_data_dependency
 
@@ -645,17 +704,11 @@ def create_app(
     for data_router in data_routers:
         api.include_router(data_router)
     api.include_router(execution_router)
-    from finharness.api.routes_proposals import (
-        identity_mutation_reconciliation_dispatcher_ids,
-    )
-
     api.state.keyed_mutation_capability_audit = (
         audit_keyed_mutation_route_capabilities(
             api,
             api.state.keyed_mutation_route_capabilities,
-            dispatcher_resolver_ids=(
-                identity_mutation_reconciliation_dispatcher_ids()
-            ),
+            dispatcher_contracts=resolver_contracts,
         )
     )
     frontend_dir = ROOT / "frontend"
