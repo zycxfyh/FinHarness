@@ -28,6 +28,8 @@ from finharness.statecore.agent_authority_grants import (
     revoke_agent_authority_grant,
 )
 from finharness.statecore.capital_mandates import (
+    CAPITAL_MANDATE_LIFECYCLE_COMMANDS,
+    _record_lifecycle_command,
     revoke_capital_mandate,
     suspend_capital_mandate,
 )
@@ -98,6 +100,27 @@ class AuthorityAdministrationTests(unittest.TestCase):
                 "grant_create": "elevated",
                 "grant_revoke": "standard",
             },
+        )
+
+    def test_mandate_lifecycle_operation_owns_exact_transition(self) -> None:
+        self.assertEqual(
+            CAPITAL_MANDATE_LIFECYCLE_COMMANDS,
+            {
+                "mandate_suspend": ("suspended", frozenset({"active"})),
+                "mandate_resume": ("resumed", frozenset({"suspended"})),
+                "mandate_revoke": (
+                    "revoked",
+                    frozenset({"active", "suspended"}),
+                ),
+            },
+        )
+        self.assertEqual(
+            set(CAPITAL_MANDATE_LIFECYCLE_COMMANDS),
+            {"mandate_suspend", "mandate_resume", "mandate_revoke"},
+        )
+        self.assertNotIn(
+            "event_type",
+            inspect.signature(_record_lifecycle_command).parameters,
         )
 
     def test_reduction_interfaces_have_no_caller_owned_authority_time(self) -> None:

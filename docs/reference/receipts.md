@@ -101,6 +101,10 @@ Every terminal transition is serialized by the receipt-directory lock, checks
 the expected pending state and content hash, and records prior-hash lineage.
 Mutation identity receipts prove request ownership and retry semantics only;
 they grant no capital, decision, or execution authority.
+For a keyed administration denial, the terminal identity-mutation receipt is
+`rejected` and may replay only that same denial. It is non-authoritative
+transport evidence: no domain receipt, ReceiptIndex, mirror mutation, lifecycle
+event, grant mutation, or domain database effect is created.
 
 ## Historical / Archived Receipt Envelope By Surface
 

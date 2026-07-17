@@ -52,6 +52,10 @@ the exact operation matrix:
 Every public mandate/grant administration function calls the guard itself and
 derives authoritative principal/attester/issuer fields from `OperatorContext`.
 Routes translate the typed denial to HTTP 403; routes are not the sole defense.
+Mandate lifecycle commands accept one canonical operation only. That operation
+owns the assurance requirement, expanding/reducing classification, allowed
+source states, resulting lifecycle event type, and receipt operation. Callers
+cannot independently label an expanding event as a reducing operation.
 
 Authority-reducing commands are immediate, server-timed mutations. Ordinary
 suspend/revoke request models contain a reason but no caller-owned effective or
@@ -75,6 +79,13 @@ response after the current administrator capability changes, because it does
 not execute another domain mutation. A new key always evaluates the current
 server context and policy. Historical identity receipts, domain receipts, and
 assertions never authorize a new command.
+
+A denied keyed attempt may retain one terminal `rejected` API mutation identity
+receipt so that the transport idempotency protocol can replay the same denial.
+That receipt is non-authoritative transport evidence. Denial creates no domain
+receipt, `ReceiptIndex`, mirror mutation, lifecycle event, grant mutation, or
+database effect, and the rejected identity receipt cannot authorize replay as a
+new command.
 
 ## Reference-First classification
 
@@ -123,7 +134,7 @@ needed to make that claim.
 - No SQLite migration or new dependency is required.
 - Historical receipts remain readable but cannot prove #391 conformance.
 - Tests must cover unknown fields, Agent-under-admin, service/ordinary human,
-  direct domain bypass, operation mislabeling, assertion freshness, emergency
-  reduction, server-owned reduction time, future/backdated time injection,
-  revoke-versus-consume behavior, exact target binding, restart, and
-  replay/currentness separation.
+  direct domain bypass, exact operation-to-event binding, assertion freshness,
+  emergency reduction, server-owned reduction time, future/backdated time
+  injection, keyed-denial transport evidence, revoke-versus-consume behavior,
+  exact target binding, restart, and replay/currentness separation.

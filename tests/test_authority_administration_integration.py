@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 from finharness.api.app import create_app
 from finharness.authority_administration import AuthorityAdministrationDeniedError
-from finharness.identity import IDEMPOTENCY_HEADER, TestIdentityProvider
+from finharness.identity import (
+    IDEMPOTENCY_HEADER,
+    IDEMPOTENT_REPLAY_HEADER,
+    IDENTITY_RECEIPT_HEADER,
+    TestIdentityProvider,
+)
 from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.agent_authority_grants import (
     AgentAuthorityGrantValidationError,
@@ -240,6 +245,43 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
                 )
                 self.assertEqual(self._domain_snapshot(), before)
 
+    def test_keyed_denial_retains_only_rejected_transport_evidence(self) -> None:
+        ordinary = authority_admin_context("principal:alice", with_assertion=False)
+        client, _mapping = self._client({"ordinary": ordinary})
+        headers = {
+            "Authorization": "Bearer ordinary",
+            IDEMPOTENCY_HEADER: "authority-admin-denied-0001",
+        }
+        body = self._mandate_body("mandate:keyed-denial")
+        before = self._domain_snapshot()
+
+        first = client.post("/capital-mandates", headers=headers, json=body)
+
+        self.assertEqual(first.status_code, 403, first.text)
+        self.assertEqual(
+            first.json()["detail"]["reason"],
+            "authority_administrator_required",
+        )
+        identity_receipt_id = first.headers[IDENTITY_RECEIPT_HEADER]
+        identity_receipt_path = self.receipts / "identity" / f"{identity_receipt_id}.json"
+        identity_receipt = json.loads(identity_receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(identity_receipt["state"], "rejected")
+        self.assertFalse(identity_receipt["execution_allowed"])
+        self.assertEqual(identity_receipt["response"]["status_code"], 403)
+        self.assertEqual(self._domain_snapshot(), before)
+
+        replay = client.post("/capital-mandates", headers=headers, json=body)
+
+        self.assertEqual(replay.status_code, 403, replay.text)
+        self.assertEqual(replay.json(), first.json())
+        self.assertEqual(replay.headers[IDENTITY_RECEIPT_HEADER], identity_receipt_id)
+        self.assertEqual(replay.headers[IDEMPOTENT_REPLAY_HEADER], "true")
+        self.assertEqual(
+            json.loads(identity_receipt_path.read_text(encoding="utf-8")),
+            identity_receipt,
+        )
+        self.assertEqual(self._domain_snapshot(), before)
+
     def test_request_fields_and_headers_cannot_mint_administration(self) -> None:
         ordinary = authority_admin_context("principal:alice", with_assertion=False)
         client, _mapping = self._client({"ordinary": ordinary})
@@ -429,7 +471,11 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
     def test_reduction_mutation_receipt_response_and_decision_share_server_time(
         self,
     ) -> None:
-        mandate = self._record_mandate()
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value="2026-07-17T08:29:00+00:00",
+        ):
+            mandate = self._record_mandate()
         grant = self._record_grant(mandate.capital_mandate_id)
         client, _mapping = self._client(
             {
@@ -528,7 +574,11 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
     def test_reduction_idempotent_replay_keeps_original_authoritative_time(
         self,
     ) -> None:
-        mandate = self._record_mandate()
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value="2026-07-17T08:31:00+00:00",
+        ):
+            mandate = self._record_mandate()
         client, mapping = self._client({"admin": self.admin})
         headers = {
             "Authorization": "Bearer admin",
@@ -650,6 +700,65 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             lifecycle_receipt["mandate_version"]["mandate_version_id"],
             lifecycle_receipt["lifecycle_event"]["mandate_version_id"],
         )
+
+    def test_lifecycle_receipts_follow_canonical_operation_event_mapping(self) -> None:
+        mandate = self._record_mandate()
+        standard = authority_admin_context("principal:alice", assurance="standard")
+        cases = (
+            (
+                suspend_capital_mandate(
+                    mandate.capital_mandate_id,
+                    operator_context=standard,
+                    reason="Reduce authority.",
+                    engine=self.engine,
+                    receipt_root=self.receipts,
+                ),
+                "mandate_suspend",
+                "reducing",
+                "suspended",
+            ),
+            (
+                resume_capital_mandate(
+                    mandate.capital_mandate_id,
+                    operator_context=self.admin,
+                    reason="Restore authority with elevated assurance.",
+                    engine=self.engine,
+                    receipt_root=self.receipts,
+                ),
+                "mandate_resume",
+                "expanding",
+                "resumed",
+            ),
+            (
+                revoke_capital_mandate(
+                    mandate.capital_mandate_id,
+                    operator_context=standard,
+                    reason="Permanently reduce authority.",
+                    engine=self.engine,
+                    receipt_root=self.receipts,
+                ),
+                "mandate_revoke",
+                "reducing",
+                "revoked",
+            ),
+        )
+
+        for event, operation, operation_effect, event_type in cases:
+            with self.subTest(operation=operation):
+                self.assertEqual(event.event_type, event_type)
+                receipt = json.loads(Path(event.receipt_ref).read_text(encoding="utf-8"))
+                self.assertEqual(
+                    receipt["authority_administration"]["operation"],
+                    operation,
+                )
+                self.assertEqual(
+                    receipt["authority_administration"]["operation_effect"],
+                    operation_effect,
+                )
+                self.assertEqual(
+                    receipt["lifecycle_event"]["event_type"],
+                    event_type,
+                )
 
     def test_historical_replay_is_not_current_authorization(self) -> None:
         elevated = authority_admin_context("principal:alice")

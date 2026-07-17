@@ -68,6 +68,20 @@ CAPITAL_MANDATE_LIFECYCLE_ORDER = (
     "created_at_utc",
     "mandate_lifecycle_event_id",
 )
+type MandateLifecycleOperation = Literal[
+    "mandate_suspend",
+    "mandate_resume",
+    "mandate_revoke",
+]
+type MandateLifecycleEventType = Literal["suspended", "resumed", "revoked"]
+CAPITAL_MANDATE_LIFECYCLE_COMMANDS: dict[
+    MandateLifecycleOperation,
+    tuple[MandateLifecycleEventType, frozenset[str]],
+] = {
+    "mandate_suspend": ("suspended", frozenset({"active"})),
+    "mandate_resume": ("resumed", frozenset({"suspended"})),
+    "mandate_revoke": ("revoked", frozenset({"active", "suspended"})),
+}
 
 
 class CapitalMandateValidationError(ValueError):
@@ -568,7 +582,6 @@ def suspend_capital_mandate(
         capital_mandate_id,
         operator_context=operator_context,
         operation="mandate_suspend",
-        event_type="suspended",
         reason=reason,
         engine=engine,
         receipt_root=receipt_root,
@@ -589,7 +602,6 @@ def resume_capital_mandate(
         capital_mandate_id,
         operator_context=operator_context,
         operation="mandate_resume",
-        event_type="resumed",
         reason=reason,
         engine=engine,
         receipt_root=receipt_root,
@@ -609,7 +621,6 @@ def revoke_capital_mandate(
         capital_mandate_id,
         operator_context=operator_context,
         operation="mandate_revoke",
-        event_type="revoked",
         reason=reason,
         engine=engine,
         receipt_root=receipt_root,
@@ -621,13 +632,16 @@ def _record_lifecycle_command(
     capital_mandate_id: str,
     *,
     operator_context: OperatorContext,
-    operation: Literal["mandate_suspend", "mandate_resume", "mandate_revoke"],
-    event_type: str,
+    operation: MandateLifecycleOperation,
     reason: str,
     engine: Engine,
     receipt_root: str | Path,
     effective_at_utc: str | None,
 ) -> CapitalMandateLifecycleEvent:
+    try:
+        event_type, allowed_from = CAPITAL_MANDATE_LIFECYCLE_COMMANDS[operation]
+    except KeyError as exc:
+        raise CapitalMandateValidationError("unsupported mandate lifecycle operation") from exc
     principal_id = operator_context.principal.principal_id
     actor_principal_id = principal_id
     if not reason.strip():
@@ -660,12 +674,7 @@ def _record_lifecycle_command(
                 raise CapitalMandateValidationError(
                     "current principal mandate does not match command"
                 )
-            allowed_from = {
-                "suspended": {"active"},
-                "resumed": {"suspended"},
-                "revoked": {"active", "suspended"},
-            }
-            if resolved.status not in allowed_from[event_type]:
+            if resolved.status not in allowed_from:
                 raise CapitalMandateValidationError(
                     f"cannot apply {event_type} to mandate in {resolved.status} state"
                 )
