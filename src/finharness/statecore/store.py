@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -549,6 +550,45 @@ def migrate_state_core(engine: Engine) -> None:
                     connection.commit()
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core migration failed: {exc}") from exc
+
+
+@contextmanager
+def immediate_state_core_session(engine: Engine) -> Iterator[Session]:
+    """Yield a Session on a ``BEGIN IMMEDIATE`` SQLite connection.
+
+    The connection is created, ``BEGIN IMMEDIATE`` is executed, then a Session
+    is bound to it with ``expire_on_commit=False``.  The caller does the
+    application-level writes inside the ``with`` block, then:
+
+    * ``session.flush()``
+    * ``connection.commit()``
+
+    On any exception the connection is rolled back.  The session and
+    connection are always closed before leaving the context manager.
+
+    Only the context manager owns commit/rollback — callers must never call
+    ``session.commit()`` or ``connection.commit()`` inside the block.
+    """
+    connection = engine.connect()
+    session: Session | None = None
+    try:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        session = Session(bind=connection, expire_on_commit=False)
+        yield session
+        session.flush()
+        connection.commit()
+    except (SQLAlchemyError, OSError) as exc:
+        connection.rollback()
+        raise StateCoreStoreError(
+            f"state-core immediate transaction failed: {exc}"
+        ) from exc
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if session is not None:
+            session.close()
+        connection.close()
 
 
 def write_records(

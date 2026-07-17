@@ -26,7 +26,7 @@ from finharness.identity import (
     PrincipalIdentity,
     TestIdentityProvider,
 )
-from finharness.statecore.models import Attestation, ReviewEvent
+from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
     resolve_current_proposal_version,
@@ -655,3 +655,77 @@ class ConcurrentVersionRaceTest(unittest.TestCase):
         # Proposal advanced to v2
         v_final = _current_version(pid, self.engine, self.receipt_root)
         self.assertNotEqual(v_final.proposal_version_id, v1.proposal_version_id)
+
+
+# -- Immediate Transaction Tests ---------------------------------------
+
+
+class ImmediateTransactionTest(unittest.TestCase):
+    """Prove the immediate_state_core_session context manager."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.engine = init_state_core(self.root / "state.sqlite")
+        self.addCleanup(self.engine.dispose)
+
+    def test_commit_persists_row(self) -> None:
+        from finharness.statecore.store import immediate_state_core_session
+
+        prop = Proposal(proposal_id="imt-test-1", kind="test", claim="txn commit test")
+        with immediate_state_core_session(self.engine) as session:
+            session.add(prop)
+
+        with Session(self.engine) as s:
+            row = s.get(Proposal, "imt-test-1")
+            self.assertIsNotNone(row)
+
+    def test_exception_rolls_back(self) -> None:
+        from finharness.statecore.store import (
+            StateCoreStoreError,
+            immediate_state_core_session,
+        )
+
+        with (
+            self.assertRaises(StateCoreStoreError),
+            immediate_state_core_session(self.engine) as session,
+        ):
+            session.add(
+                Proposal(proposal_id="imt-rollback", kind="test", claim="rollback")
+            )
+            raise StateCoreStoreError("forced")
+
+        with Session(self.engine) as s:
+            row = s.get(Proposal, "imt-rollback")
+            self.assertIsNone(row)
+
+    def test_flush_failure_wrapped(self) -> None:
+        from finharness.statecore.store import (
+            StateCoreStoreError,
+            immediate_state_core_session,
+        )
+
+        # First: successfully persist a row in its own transaction
+        with immediate_state_core_session(self.engine) as session:
+            session.add(
+                Proposal(proposal_id="imt-pk1", kind="test", claim="first")
+            )
+
+        # Second: try to insert the same PK twice in one transaction
+        with (
+            self.assertRaises(StateCoreStoreError),
+            immediate_state_core_session(self.engine) as session,
+        ):
+            session.add(
+                Proposal(proposal_id="imt-pk2", kind="test", claim="dup")
+            )
+            # Add a second row with the SAME primary key
+            session.add(
+                Proposal(proposal_id="imt-pk2", kind="test", claim="dup2")
+            )
+
+        # Only the first transaction's row survives
+        with Session(self.engine) as s:
+            self.assertIsNotNone(s.get(Proposal, "imt-pk1"))
+            self.assertIsNone(s.get(Proposal, "imt-pk2"))
