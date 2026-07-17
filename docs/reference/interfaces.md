@@ -15,8 +15,8 @@ Use this as a lookup page. For system ownership, read
 | StateCoreInterface | SQLite / SQLModel | Queryable mirror, DecimalText money, receipt index, atomic writes | `statecore/`, [Receipt Reference](receipts.md) |
 | CapitalMapInterface | Local deterministic views | Net worth, cash runway, concentration, liabilities, obligations, data gaps | `exposure.py`, `task brief:daily` |
 | IPSInterface | User policy | Receipt-backed Investment Policy Statement, threshold mapping, compliance check | `ips.py`, `/ips/current`, `/ips/check` |
-| CapitalMandateInterface | Human-attested user policy domain | Principal-owned immutable versions and append-only lifecycle evidence; deterministic principal-bound current resolution; `CapitalMandate.status` remains a compatibility mirror; derives its actor from server-authenticated `OperatorContext` and never authorizes execution | `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
-| AgentAuthorityGrantInterface | Mandate-bound authority credential | Principal/runtime/exact-mandate-version binding; closed exact-money contract; mandate-bounded product/instrument/action/direction/notional/broker scope; explicit typed direction/broker wildcard only; cross-currency and legacy currency-less use fail closed; atomic nonce-unique usage accounting and owner-only revocation; never approves, bypasses preflight, submits orders, or authorizes execution | `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
+| CapitalMandateInterface | Human-attested user policy domain | Principal-owned immutable versions and append-only lifecycle evidence; deterministic principal-bound current resolution; human-only server-asserted administration with elevated create/replace/resume and standard immediate server-timed suspend/revoke; `CapitalMandate.status` remains a compatibility mirror and the mandate never authorizes execution | `authority_administration.py`, `statecore/capital_mandates.py`, `/capital-mandates`, `/capital-mandates/current` |
+| AgentAuthorityGrantInterface | Mandate-bound authority credential | Human-only server-asserted create/revoke administration with server-timed atomic revocation; principal/runtime/exact-mandate-version binding; closed exact-money and mandate-bounded scope; atomic Agent-runtime consumption remains separate from administration; never approves, bypasses preflight, submits orders, or authorizes execution | `authority_administration.py`, `statecore/agent_authority_grants.py`, `/agent-authority-grants`, `/agent-authority-grants/{grant_id}/validate`, `/consume`, `/revoke` |
 | ActionIntentAuthorityBindingInterface | Authority admission control | Receipt-backed admission result for agent/human/system-authored ActionIntentCandidates; agent-authored intents must cite a valid AgentAuthorityGrant and preserve structured deny reasons; allowed means admission to downstream checks only | `statecore/action_intent_authority_bindings.py`, `/action-intents/{action_intent_id}/authority-bindings`, `/action-intent-authority-bindings/{binding_id}` |
 | ProposalInterface | Local governed commands | Proposal creation, decision scaffold revision, high-risk confirmation gate, receipts | `task decisions:scan`, `statecore/proposals.py` |
 | ReviewInterface | Local governed commands + deterministic read models | Attestation, scaffold revision, annotation, archive/reopen, compare marks, annual review, and proposal review queue triage; governed HTTP writes derive the actor from `OperatorContext`, never request prose | `/review/queue`, `task review:annual`, `review_read.py` |
@@ -47,8 +47,10 @@ The ADR does not select a provider or add a runtime dependency.
   and `execution_allowed=false`.
 - Human attestation is review evidence, not execution authorization.
 - CapitalMandate is a policy-domain carrier future authority objects may cite.
-  Its HTTP command derives `human_attester` from the authenticated principal or
-  Agent runtime, and requires `human_reason` and `explicit_confirmation=true`;
+  Its domain command derives `human_attester` from a current server-asserted
+  human authority administrator; Agent runtimes, services, ordinary humans,
+  and legacy local labels cannot administer it. The request supplies
+  `human_reason` and `explicit_confirmation=true`;
   it still has `execution_allowed=false` and `authority_transition=false`, and
   it is not an Agent identity grant, AuthorityContract, order ticket, broker
   instruction, or execution authorization.

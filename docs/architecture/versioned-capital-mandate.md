@@ -25,6 +25,13 @@ not mutate version history:
 - `revoked` is terminal for that version;
 - expiry is derived at the requested as-of time.
 
+Ordinary suspend and revoke commands do not accept a caller-owned effective
+time. The mandate domain acquires its write lock, generates one server UTC
+command time, validates the current administrator assertion at that time, and
+uses the same value for the event, Receipt, ReceiptIndex, and response
+resolution. Scheduled authority reduction is not represented by these
+immediate lifecycle commands.
+
 The resolver takes principal and time explicitly, selects the latest effective
 version, then applies the latest effective lifecycle event. Historical
 resolution therefore remains reconstructable across restart without trusting a

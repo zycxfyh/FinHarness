@@ -19,6 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from finharness.authority_administration import (
+    AuthorityAdministrationDecision,
+    require_authority_administration,
+)
+from finharness.identity import OperatorContext
 from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
@@ -171,9 +176,9 @@ class AgentAuthorityGrantConsumptionResult(BaseModel):
 
 def record_agent_authority_grant(  # noqa: C901
     *,
+    operator_context: OperatorContext,
     capital_mandate_id: str,
     agent_id: str,
-    issued_by: str,
     issued_reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
@@ -184,7 +189,6 @@ def record_agent_authority_grant(  # noqa: C901
     receipt_refs: Sequence[str] | None = None,
     agent_authority_grant_id: str | None = None,
     created_at_utc: str | None = None,
-    principal_id: str | None = None,
     agent_runtime_id: str | None = None,
     max_uses: int | None = None,
     max_total_notional: MonetaryAmount | Mapping[str, Any] | None = None,
@@ -194,11 +198,16 @@ def record_agent_authority_grant(  # noqa: C901
     Creation fails closed unless the linked CapitalMandate exists, is active,
     and the requested grant scope is within the mandate's current scope.
     """
+    administration = require_authority_administration(
+        context=operator_context,
+        operation="grant_create",
+    )
+    resolved_principal = operator_context.principal.principal_id
+    issued_by = resolved_principal
     created_at = created_at_utc or _now_utc()
     _require_written_context(
         capital_mandate_id=capital_mandate_id,
         agent_id=agent_id,
-        issued_by=issued_by,
         issued_reason=issued_reason,
     )
     _validate_expiry(expires_at_utc, created_at_utc=created_at)
@@ -219,7 +228,6 @@ def record_agent_authority_grant(  # noqa: C901
         raise AgentAuthorityGrantValidationError("mandate_series_owner_conflict") from exc
     if durable_owner is None:
         raise AgentAuthorityGrantValidationError("capital mandate version is required")
-    resolved_principal = principal_id or durable_owner
     if resolved_principal != durable_owner:
         raise AgentAuthorityGrantValidationError("grant principal must own mandate series")
     current_resolution = resolve_capital_mandate(
@@ -335,6 +343,7 @@ def record_agent_authority_grant(  # noqa: C901
             mandate_version=mandate_version,
             receipt_id=receipt_id,
             creation_validation=creation_validation,
+            administration=administration,
         ),
     )
     display = _display_path(receipt_path)
@@ -698,17 +707,16 @@ def consume_agent_authority_grant(  # noqa: C901
 def revoke_agent_authority_grant(
     grant_id: str,
     *,
-    principal_id: str,
+    operator_context: OperatorContext,
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
-    revoked_at_utc: str | None = None,
 ) -> AgentAuthorityGrant:
     """Revoke a principal-owned grant and append an audit receipt atomically."""
 
+    principal_id = operator_context.principal.principal_id
     if not reason.strip():
         raise AgentAuthorityGrantValidationError("revocation reason is required")
-    timestamp = revoked_at_utc or _now_utc()
     receipt_id = f"receipt_agent_authority_grant_revoked_{_stamp()}_{uuid4().hex[:8]}"
     receipt_path = resolve_under(
         receipt_root,
@@ -721,6 +729,12 @@ def revoke_agent_authority_grant(
         with Session(engine) as session:
             if engine.dialect.name == "sqlite":
                 session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            timestamp = _now_utc()
+            administration = require_authority_administration(
+                context=operator_context,
+                operation="grant_revoke",
+                checked_at_utc=timestamp,
+            )
             grant = session.exec(
                 select(AgentAuthorityGrant)
                 .where(AgentAuthorityGrant.agent_authority_grant_id == grant_id)
@@ -749,6 +763,10 @@ def revoke_agent_authority_grant(
                     "prior_grant": prior,
                     "grant_after": grant.model_dump(mode="json"),
                     "actor_principal_id": principal_id,
+                    "authority_administration": administration.model_dump(
+                        mode="json",
+                        by_alias=True,
+                    ),
                     "reason": reason.strip(),
                     "execution_allowed": False,
                     "authority_transition": False,
@@ -1122,15 +1140,12 @@ def _require_written_context(
     *,
     capital_mandate_id: str,
     agent_id: str,
-    issued_by: str,
     issued_reason: str,
 ) -> None:
     if not capital_mandate_id.strip():
         raise AgentAuthorityGrantValidationError("capital_mandate_id is required")
     if not agent_id.strip():
         raise AgentAuthorityGrantValidationError("agent_id is required")
-    if not issued_by.strip():
-        raise AgentAuthorityGrantValidationError("issued_by is required")
     if not issued_reason.strip():
         raise AgentAuthorityGrantValidationError("issued_reason is required")
 
@@ -1142,6 +1157,7 @@ def _agent_authority_grant_receipt_payload(
     mandate_version: CapitalMandateVersion,
     receipt_id: str,
     creation_validation: AgentAuthorityGrantValidationResult,
+    administration: AuthorityAdministrationDecision,
 ) -> dict[str, Any]:
     return {
         "receipt_id": receipt_id,
@@ -1151,6 +1167,7 @@ def _agent_authority_grant_receipt_payload(
         "source_capital_mandate": mandate.model_dump(mode="json"),
         "source_capital_mandate_version": mandate_version.model_dump(mode="json"),
         "creation_validation": creation_validation.model_dump(mode="json"),
+        "authority_administration": administration.model_dump(mode="json", by_alias=True),
         "governance_boundary": {
             "execution_allowed": False,
             "authority_transition": False,

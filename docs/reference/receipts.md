@@ -101,6 +101,10 @@ Every terminal transition is serialized by the receipt-directory lock, checks
 the expected pending state and content hash, and records prior-hash lineage.
 Mutation identity receipts prove request ownership and retry semantics only;
 they grant no capital, decision, or execution authority.
+For a keyed administration denial, the terminal identity-mutation receipt is
+`rejected` and may replay only that same denial. It is non-authoritative
+transport evidence: no domain receipt, ReceiptIndex, mirror mutation, lifecycle
+event, grant mutation, or domain database effect is created.
 
 ## Historical / Archived Receipt Envelope By Surface
 
@@ -230,7 +234,8 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `kind` | `str` | `state_core_capital_mandate`. |
 | `created_at_utc` | `str` | Creation timestamp. |
 | `capital_mandate` | `CapitalMandate` | Human-attested policy-domain payload. |
-| `capital_mandate.human_attester` | `str` | Stable server-authenticated Agent runtime id when present, otherwise the authenticated principal id; never copied from the request body. |
+| `capital_mandate.human_attester` | `str` | Stable server-authenticated human administrator principal id; Agent runtimes and request fields cannot supply it. |
+| `authority_administration` | `AuthorityAdministrationDecision` | Current human-admin decision for `mandate_create_or_replace`, including assurance, assertion, policy version, and checked time; evidence for this effect, never a reusable token. |
 | `capital_mandate_version.authenticated_actor_receipt_ref` | `str \| None` | Server-issued mutation identity reference for keyed writes. Unkeyed backfill remains part of #352's cross-medium commit work. |
 | `capital_mandate_version.legacy_actor_label` | `str \| None` | Server-context legacy display label retained as unverified provenance, never actor authority. |
 | `capital_mandate_version.principal_id` | `str` | Permanent durable owner of the mandate ID series. A different principal cannot append a version to the series. |
@@ -257,6 +262,11 @@ remain unverified and cannot establish ownership. If legacy version history
 contains multiple principals for one mandate ID, the series is classified as
 `mandate_series_owner_conflict`; neither version nor its lifecycle receipts may
 be consumed as active authority truth.
+
+Immediate suspend/revoke lifecycle receipts use one server-owned transaction
+time for `created_at_utc`, lifecycle `effective_at_utc`, administration
+`checked_at_utc`, ReceiptIndex time, and response resolution. Their request and
+public domain interfaces do not accept caller-owned reduction time.
 | `non_claims` | `list[str]` | Boundary claims carried with the receipt. |
 
 ### Agent Authority Grant Consumption Receipt
@@ -275,8 +285,11 @@ Location: `data/receipts/state-core/agent-authority-grant-consumptions/`
 
 Grant revocation receipts live under
 `data/receipts/state-core/agent-authority-grants/lifecycle/`. They record the
-prior and resulting grant projections, authenticated owner, reason, and retain
-both authority booleans as false.
+prior and resulting grant projections, exact human-administration decision,
+reason, and retain both authority booleans as false. Revocation is immediate:
+one server-owned time generated after the write lock is acquired becomes the
+decision check time, grant `revoked_at_utc`, Receipt/ReceiptIndex creation time,
+and returned grant time. Callers cannot backdate or defer this fact.
 
 ### Agent Authority Grant Receipt
 
@@ -291,6 +304,7 @@ Location: `data/receipts/state-core/agent-authority-grants/`
 | `source_capital_mandate` | `CapitalMandate` | Linked mandate snapshot at grant creation time. |
 | `source_capital_mandate_version` | `CapitalMandateVersion` | Exact immutable mandate version bound at issuance. |
 | `creation_validation` | `AgentAuthorityGrantValidationResult` | Structured create-time validation result. |
+| `authority_administration` | `AuthorityAdministrationDecision` | Current human-admin `grant_create` decision bound to this exact principal and mandate version; never grant consumption authority. |
 | `governance_boundary.execution_allowed` | `bool` | Always false. |
 | `governance_boundary.authority_transition` | `bool` | Always false. |
 | `governance_boundary.mandate_bound_authority_credential` | `bool` | True; the grant must cite a mandate. |

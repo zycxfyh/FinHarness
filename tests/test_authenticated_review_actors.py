@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -23,11 +22,9 @@ from finharness.identity import (
     IDEMPOTENCY_HEADER,
     IDEMPOTENT_REPLAY_HEADER,
     IDENTITY_RECEIPT_HEADER,
-    AgentRuntimeIdentity,
     IdentityMutationClaim,
     IdentityMutationError,
     OperatorContext,
-    PrincipalIdentity,
     TestIdentityProvider,
     authoritative_actor_id_from_binding,
     bind_authenticated_actor_to_mutation,
@@ -36,6 +33,7 @@ from finharness.identity import (
 from finharness.statecore.models import Attestation
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
+from tests.authority_test_helpers import authority_admin_context
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "docs" / "governance" / "receipt-backed-write-registry.json"
@@ -95,25 +93,11 @@ REQUEST_MODELS = {
 
 
 def _context(*, agent_runtime_id: str | None = None) -> OperatorContext:
-    return OperatorContext(
-        principal=PrincipalIdentity(
-            principal_id="principal:alice",
-            provider_id="test-provider",
-            legacy_label="Alice legacy label",
-            legacy_label_verified=False,
-        ),
-        agent_runtime=(
-            AgentRuntimeIdentity(
-                agent_runtime_id=agent_runtime_id,
-                principal_id="principal:alice",
-                provider_id="test-provider",
-                agent_profile="review",
-            )
-            if agent_runtime_id is not None
-            else None
-        ),
-        authentication_method="test_bearer",
-        authenticated_at_utc=datetime.now(UTC).isoformat(),
+    return authority_admin_context(
+        "principal:alice",
+        provider_id="test-provider",
+        legacy_label="Alice legacy label",
+        agent_runtime_id=agent_runtime_id,
     )
 
 
@@ -355,7 +339,7 @@ class AuthenticatedReviewActorContractTest(unittest.TestCase):
             root = Path(tmp)
             engine = init_state_core(root / "state.sqlite")
             self.addCleanup(engine.dispose)
-            context = _context(agent_runtime_id="agent-runtime:alice:mandate-review")
+            context = _context()
             app = create_app(
                 state_core_engine=engine,
                 receipt_root=str(root / "receipts"),

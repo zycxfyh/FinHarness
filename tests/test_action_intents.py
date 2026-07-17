@@ -36,6 +36,7 @@ from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core, read_all, write_records
 from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
+from tests.authority_test_helpers import authority_admin_context
 
 
 class ActionIntentCandidateApiTest(unittest.TestCase):
@@ -138,6 +139,7 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
 
     def _record_mandate(self, *, mandate_id: str = "mandate_action_preflight") -> str:
         mandate = record_capital_mandate(
+            operator_context=authority_admin_context("owner@example.com"),
             capital_mandate_id=mandate_id,
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "risk_control"},
@@ -150,7 +152,6 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
             typed_limits={
                 "max_notional": {"amount": "1000", "currency": "USD"},
             },
-            human_attester="owner@example.com",
             human_reason="Attest mandate scope for action preflight tests.",
             explicit_confirmation=True,
             engine=self.engine,
@@ -166,12 +167,12 @@ class ActionIntentCandidateApiTest(unittest.TestCase):
         agent_id: str = "agent:research",
     ) -> str:
         grant = record_agent_authority_grant(
+            operator_context=authority_admin_context("owner@example.com"),
             agent_authority_grant_id=grant_id,
             capital_mandate_id=self._record_mandate(),
             agent_id=agent_id,
             agent_profile_name="review-note",
             grant_scope=self._authority_scope(action=action),
-            issued_by="owner@example.com",
             issued_reason="Allow candidate-only action intents for preflight tests.",
             source_refs=["docs/product-north-star.md"],
             engine=self.engine,

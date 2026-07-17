@@ -23,6 +23,7 @@ from finharness.statecore.agent_authority_grants import record_agent_authority_g
 from finharness.statecore.capital_mandates import record_capital_mandate
 from finharness.statecore.models import AgentAuthorityGrant
 from finharness.statecore.store import init_state_core
+from tests.authority_test_helpers import authority_admin_context
 
 
 class AutonomyStateCoreAdapterTest(unittest.TestCase):
@@ -35,6 +36,7 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
 
     def _record_grant(self) -> str:
         mandate = record_capital_mandate(
+            operator_context=authority_admin_context("owner@example.com"),
             capital_mandate_id="mandate_aut3",
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "capital_preservation"},
@@ -49,13 +51,13 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
             },
             limit_book={"max_notional_usd": 1000},
             kill_switch_rules=[{"rule": "owner_revokes", "engaged": False}],
-            human_attester="owner@example.com",
             human_reason="Delegate bounded planning decisions to the capital agent.",
             explicit_confirmation=True,
             engine=self.engine,
             receipt_root=self.root / "receipts",
         )
         grant = record_agent_authority_grant(
+            operator_context=authority_admin_context("owner@example.com"),
             agent_authority_grant_id="grant_aut3",
             capital_mandate_id=mandate.capital_mandate_id,
             agent_id="agent:capital",
@@ -65,7 +67,6 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
                 "allowed_action_types": ["rebalance"],
                 "autonomy_level": "L3_bounded_delegation_candidate",
             },
-            issued_by="owner@example.com",
             issued_reason="Allow mandate-contained planning review.",
             engine=self.engine,
             receipt_root=self.root / "receipts",
@@ -89,7 +90,7 @@ class AutonomyStateCoreAdapterTest(unittest.TestCase):
         self.assertEqual(resolution.mandate.authority_grant_id, grant_id)
         self.assertEqual(
             resolution.mandate.principal_id,
-            "legacy-unverified:owner@example.com",
+            "owner@example.com",
         )
         self.assertIn(
             AgentActionClass.MAKE_PLANNING_DECISION,

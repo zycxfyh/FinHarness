@@ -14,6 +14,7 @@ from finharness.api.dependencies import (
     ReceiptRootDependency,
     WriteCapabilityDependency,
 )
+from finharness.authority_administration import AuthorityAdministrationDeniedError
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
     AgentAuthorityGrantConsumptionResult,
@@ -38,7 +39,6 @@ class AgentAuthorityGrantRequest(BaseModel):
     agent_id: str
     agent_profile_name: str | None = None
     grant_scope: dict[str, Any] = Field(default_factory=dict)
-    issued_by: str
     issued_reason: str
     expires_at_utc: str | None = None
     source_refs: list[str] = Field(default_factory=list)
@@ -89,7 +89,6 @@ class AgentAuthorityGrantRevokeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str
-    revoked_at_utc: str | None = None
 
 
 @router.post("/agent-authority-grants", response_model=AgentAuthorityGrantWriteResponse)
@@ -101,23 +100,24 @@ async def post_agent_authority_grant(
 ) -> AgentAuthorityGrantWriteResponse:
     try:
         grant = record_agent_authority_grant(
+            operator_context=operator,
             capital_mandate_id=body.capital_mandate_id,
             agent_id=body.agent_id,
             agent_profile_name=body.agent_profile_name,
             grant_scope=body.grant_scope,
-            issued_by=operator.principal.principal_id,
             issued_reason=body.issued_reason,
             expires_at_utc=body.expires_at_utc,
             source_refs=body.source_refs,
             receipt_refs=body.receipt_refs,
             agent_authority_grant_id=body.agent_authority_grant_id,
-            principal_id=operator.principal.principal_id,
             agent_runtime_id=body.agent_runtime_id or body.agent_id,
             max_uses=body.max_uses,
             max_total_notional=body.max_total_notional,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except AuthorityAdministrationDeniedError as exc:
+        raise _authority_administration_denied(exc) from exc
     except AgentAuthorityGrantValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except KeyError as exc:
@@ -231,12 +231,13 @@ async def post_agent_authority_grant_revoke(
     try:
         grant = revoke_agent_authority_grant(
             grant_id,
-            principal_id=operator.principal.principal_id,
+            operator_context=operator,
             reason=body.reason,
-            revoked_at_utc=body.revoked_at_utc,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except AuthorityAdministrationDeniedError as exc:
+        raise _authority_administration_denied(exc) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"grant not found: {exc.args[0]}") from exc
     except AgentAuthorityGrantValidationError as exc:
@@ -244,4 +245,20 @@ async def post_agent_authority_grant_revoke(
     return AgentAuthorityGrantWriteResponse(
         agent_authority_grant=grant,
         receipt_ref=grant.receipt_refs[-1],
+    )
+
+
+def _authority_administration_denied(
+    exc: AuthorityAdministrationDeniedError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail={
+            "code": "authority_administration_denied",
+            "reason": exc.reason,
+            "operation": exc.operation,
+            "policy_version": exc.policy_version,
+            "execution_allowed": False,
+            "authority_transition": False,
+        },
     )
