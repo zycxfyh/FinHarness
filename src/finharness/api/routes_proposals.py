@@ -62,6 +62,7 @@ from finharness.statecore.models import (
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
+    ProposalVersionExpectation,
     ProposalVersionResolutionError,
     resolve_current_proposal_version,
 )
@@ -2305,6 +2306,46 @@ def _resolve_proposal_version_for_api(
         ) from exc
 
 
+def _proposal_version_http_exception(
+    exc: ProposalVersionResolutionError,
+) -> HTTPException:
+    """Map a ProposalVersionResolutionError to a typed HTTP response.
+
+    - proposal_not_found / receipt_chain failures → 404
+    - conflict / stale expectation → 409 with structured expected+current pair
+    """
+    if exc.code in (
+        "proposal_not_found",
+        "receipt_chain_invalid",
+        "receipt_payload_invalid",
+        "receipt_content_hash_invalid",
+        "row_receipt_divergence",
+    ):
+        return HTTPException(
+            status_code=404,
+            detail={"code": exc.code, "message": str(exc)},
+        )
+
+    # proposal_version_conflict, stale_expected_*, expectation_proposal_id_mismatch
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "proposal_version_conflict",
+            "message": str(exc),
+            "proposal_id": exc.proposal_id,
+            "expected": {
+                "proposal_version_id": exc.expected_version_id,
+                "receipt_ref": exc.expected_receipt_ref,
+            },
+            "current": {
+                "proposal_version_id": exc.current_version_id,
+                "receipt_ref": exc.current_receipt_ref,
+            },
+            "execution_allowed": False,
+        },
+    )
+
+
 def _attestation_review_views(
     attestations: list[Attestation],
     *,
@@ -2587,8 +2628,6 @@ async def revise_proposal_decision_scaffold(
             source_refs.append(mutation_ref)
 
     try:
-        from finharness.statecore.proposal_version import ProposalVersionExpectation
-
         expectation = ProposalVersionExpectation(
             proposal_id=proposal_id,
             proposal_version_id=request.expected_proposal_version_id.strip(),
@@ -2606,12 +2645,7 @@ async def revise_proposal_decision_scaffold(
             receipt_root=receipt_root,
         )
     except ProposalVersionResolutionError as exc:
-        status = 404 if exc.code == "proposal_not_found" else 409
-        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
-        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
-            detail["proposal_id"] = proposal_id
-            detail["execution_allowed"] = False
-        raise HTTPException(status_code=status, detail=detail) from exc
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -2734,8 +2768,6 @@ async def apply_scaffold_revision_candidate(
             detail="proposal receipt ref does not match expected_proposal_receipt_ref",
         )
     # Also validate version identity
-    from finharness.statecore.proposal_version import ProposalVersionExpectation
-
     expectation = ProposalVersionExpectation(
         proposal_id=event.proposal_id,
         proposal_version_id=request.expected_proposal_version_id.strip(),
@@ -2897,8 +2929,6 @@ async def attest_proposal(
             source_refs.append(mutation_ref)
 
     try:
-        from finharness.statecore.proposal_version import ProposalVersionExpectation
-
         expectation = ProposalVersionExpectation(
             proposal_id=proposal_id,
             proposal_version_id=request.expected_proposal_version_id.strip(),
@@ -2916,15 +2946,7 @@ async def attest_proposal(
             receipt_root=receipt_root,
         )
     except ProposalVersionResolutionError as exc:
-        status = 404 if exc.code == "proposal_not_found" else 409
-        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
-        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
-            detail["proposal_id"] = proposal_id
-            detail["execution_allowed"] = False
-        raise HTTPException(
-            status_code=status,
-            detail=detail,
-        ) from exc
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -3050,8 +3072,6 @@ async def add_review_event(
             source_refs.append(mutation_ref)
 
     try:
-        from finharness.statecore.proposal_version import ProposalVersionExpectation
-
         expectation = ProposalVersionExpectation(
             proposal_id=proposal_id,
             proposal_version_id=request.expected_proposal_version_id.strip(),
@@ -3072,12 +3092,7 @@ async def add_review_event(
             receipt_root=receipt_root,
         )
     except ProposalVersionResolutionError as exc:
-        status = 404 if exc.code == "proposal_not_found" else 409
-        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
-        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
-            detail["proposal_id"] = proposal_id
-            detail["execution_allowed"] = False
-        raise HTTPException(status_code=status, detail=detail) from exc
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}") from exc
     except ValueError as exc:
