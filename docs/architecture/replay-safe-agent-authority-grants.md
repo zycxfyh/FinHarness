@@ -24,6 +24,14 @@ incomparable and fail closed. A grant has one accounting currency derived from
 its exact mandate version; all of its consumption rows must carry that same
 currency.
 
+At every use, the exact persisted mandate limit book is revalidated through
+the closed typed contract. The effective per-use cap is the grant scope's
+explicit narrower `max_notional`, or the exact mandate version's
+`max_notional` when the grant omits one. An optional grant total cap is an
+additional cumulative bound; it never replaces the mandate per-use cap.
+Persisted grant currency, total cap, and scope cap are rechecked against that
+exact mandate before and after the consumption lock.
+
 Legacy grants remain readable after the State Core migrations. Migrations do
 not invent identity, version, or currency bindings. A legacy row with no
 currency is classified `legacy_currency_unbound_grant` and cannot enter the
@@ -41,8 +49,8 @@ authenticated agent runtime and performs the following in one database
 transaction:
 
 1. lock the grant/write path;
-2. re-check nonce uniqueness, maximum uses, currency, and exact aggregate
-   notional;
+2. re-check the exact typed mandate money contract, effective per-use cap,
+   nonce uniqueness, maximum uses, currency, and exact aggregate notional;
 3. append `AgentAuthorityGrantConsumption` and its indexed receipt;
 4. commit both or remove the uncommitted receipt.
 

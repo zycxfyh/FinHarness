@@ -72,7 +72,9 @@ The ADR does not select a provider or add a runtime dependency.
   or execution permission. It must reference an active CapitalMandate at creation
   time, bind the authenticated principal and agent runtime to an exact mandate
   version, and re-check the same principal exact current version, lifecycle,
-  scope, usage, and nonce at use time. A new current version under either the
+  closed typed mandate limit book, effective per-use cap, persisted grant
+  currency/caps, scope, usage, and nonce at use time. A grant that omits a
+  per-use cap inherits the exact mandate cap. A new current version under either the
   same or another mandate ID yields `mandate_version_changed`; another
   principal cannot cause that drift. Only
   atomic consumption spends capacity; validation never does.

@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 from finharness.project_paths import ROOT
 from finharness.statecore.capital_mandates import (
     DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
+    CapitalMandateLimits,
     CapitalMandateValidationError,
     capital_mandate_series_owner,
     resolve_capital_mandate,
@@ -431,6 +432,18 @@ def validate_agent_authority_grant(  # noqa: C901
     ):
         deny_reasons.append("mandate_version_changed")
 
+    parsed_requested_notional = _money_value(requested_notional)
+    if requested_notional is not None and parsed_requested_notional is None:
+        deny_reasons.append("currency_mismatch")
+    if mandate_version is not None:
+        deny_reasons.extend(
+            _mandate_money_contract_reasons(
+                grant,
+                mandate_version=mandate_version,
+                requested_notional=parsed_requested_notional,
+            )
+        )
+
     if candidate_grant is None:
         consumptions = _grant_consumptions(engine, grant.agent_authority_grant_id)
         usage_count = len(consumptions)
@@ -447,9 +460,6 @@ def validate_agent_authority_grant(  # noqa: C901
         )
         if grant.max_uses is not None and usage_count >= grant.max_uses:
             deny_reasons.append("grant_exhausted")
-        parsed_requested_notional = _money_value(requested_notional)
-        if requested_notional is not None and parsed_requested_notional is None:
-            deny_reasons.append("currency_mismatch")
         if parsed_requested_notional is not None and (
             grant.notional_currency is None
             or parsed_requested_notional.currency != grant.notional_currency
@@ -542,16 +552,6 @@ def consume_agent_authority_grant(  # noqa: C901
         raise AgentAuthorityGrantValidationError(
             "grant consumption denied: " + ", ".join(validation.deny_reasons)
         )
-    validated_grant = _get_agent_authority_grant(engine, grant_id)
-    per_use_notional = (
-        _money_value(validated_grant.grant_scope.get("max_notional"))
-        if validated_grant is not None
-        else None
-    )
-    if per_use_notional is not None and (
-        notional.currency != per_use_notional.currency or notional.amount > per_use_notional.amount
-    ):
-        raise AgentAuthorityGrantValidationError("requested_scope_exceeds_grant")
     created_at = now_utc or _now_utc()
     receipt_id = f"receipt_agent_authority_grant_consumption_{_stamp()}_{uuid4().hex[:8]}"
     receipt_path = resolve_under(
@@ -571,6 +571,9 @@ def consume_agent_authority_grant(  # noqa: C901
             ).one_or_none()
             if grant is None or grant.mandate_version_id is None:
                 raise AgentAuthorityGrantValidationError("grant is not AUTH-03 bound")
+            mandate_version = session.get(CapitalMandateVersion, grant.mandate_version_id)
+            if mandate_version is None:
+                raise AgentAuthorityGrantValidationError("mandate_version_changed")
             locked_validation = validate_agent_authority_grant(
                 grant_id,
                 engine=engine,
@@ -585,6 +588,16 @@ def consume_agent_authority_grant(  # noqa: C901
                 raise AgentAuthorityGrantValidationError(
                     "grant consumption denied under lock: "
                     + ", ".join(locked_validation.deny_reasons)
+                )
+            locked_money_reasons = _mandate_money_contract_reasons(
+                grant,
+                mandate_version=mandate_version,
+                requested_notional=notional,
+            )
+            if locked_money_reasons:
+                raise AgentAuthorityGrantValidationError(
+                    "grant money contract denied under lock: "
+                    + ", ".join(_dedupe_reasons(locked_money_reasons))
                 )
             validation = locked_validation
             existing = list(
@@ -818,17 +831,17 @@ def _scope_within_mandate(
     *,
     mandate_version: CapitalMandateVersion,
 ) -> bool:
-    typed_limits = mandate_version.typed_limits
+    typed_limits = _validated_mandate_limits(mandate_version)
+    if typed_limits is None:
+        return False
     policy = mandate_version.policy_payload
-    direction_scope = typed_limits.get("direction_scope", {})
-    broker_scope = typed_limits.get("broker_scope", {})
     unbounded_keys = tuple(
         key
         for key, configured_scope in (
-            ("directions", direction_scope),
-            ("broker_ids", broker_scope),
+            ("directions", typed_limits.direction_scope),
+            ("broker_ids", typed_limits.broker_scope),
         )
-        if isinstance(configured_scope, Mapping) and configured_scope.get("mode") == "wildcard"
+        if configured_scope.mode == "wildcard"
     )
     return _scope_within_scope(
         scope,
@@ -836,21 +849,69 @@ def _scope_within_mandate(
             "allowed_asset_classes": policy.get("allowed_asset_classes", []),
             "allowed_action_types": policy.get("allowed_action_types", []),
             "autonomy_level": policy.get("autonomy_level", "L0_observe_only"),
-            "product_ids": typed_limits.get("product_ids", []),
-            "instrument_ids": typed_limits.get("instrument_ids", []),
-            "action_types": typed_limits.get("action_types", []),
-            "directions": (
-                direction_scope.get("values", []) if isinstance(direction_scope, Mapping) else []
-            ),
-            "broker_ids": (
-                broker_scope.get("values", []) if isinstance(broker_scope, Mapping) else []
-            ),
-            "max_notional": typed_limits.get("max_notional"),
+            "product_ids": typed_limits.product_ids,
+            "instrument_ids": typed_limits.instrument_ids,
+            "action_types": typed_limits.action_types,
+            "directions": typed_limits.direction_scope.values,
+            "broker_ids": typed_limits.broker_scope.values,
+            "max_notional": typed_limits.max_notional,
         },
         restricted_asset_classes=policy.get("restricted_asset_classes", []),
         restricted_action_types=policy.get("restricted_action_types", []),
         unbounded_keys=unbounded_keys,
     )
+
+
+def _validated_mandate_limits(
+    mandate_version: CapitalMandateVersion,
+) -> CapitalMandateLimits | None:
+    """Revalidate persisted mandate JSON before it can authorize grant use."""
+
+    try:
+        return CapitalMandateLimits.model_validate(mandate_version.typed_limits)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mandate_money_contract_reasons(
+    grant: AgentAuthorityGrant,
+    *,
+    mandate_version: CapitalMandateVersion,
+    requested_notional: MonetaryAmount | None,
+) -> list[AgentAuthorityGrantDenyReason]:
+    """Bind persisted grant money and each request to the exact mandate cap."""
+
+    limits = _validated_mandate_limits(mandate_version)
+    if limits is None or limits.max_notional is None:
+        return ["grant_scope_exceeds_mandate"]
+
+    reasons: list[AgentAuthorityGrantDenyReason] = []
+    mandate_cap = limits.max_notional
+    if grant.notional_currency is None:
+        reasons.append("legacy_currency_unbound_grant")
+    elif grant.notional_currency != mandate_cap.currency:
+        reasons.append("currency_mismatch")
+
+    if grant.max_total_notional is not None and (
+        grant.max_total_notional <= 0 or grant.max_total_notional > mandate_cap.amount
+    ):
+        reasons.append("grant_scope_exceeds_mandate")
+
+    scope_notional_value = grant.grant_scope.get("max_notional")
+    scope_cap = _money_value(scope_notional_value)
+    if (scope_notional_value is not None and scope_cap is None) or (
+        scope_cap is not None
+        and (scope_cap.currency != mandate_cap.currency or scope_cap.amount > mandate_cap.amount)
+    ):
+        reasons.append("grant_scope_exceeds_mandate")
+
+    effective_per_use_cap = scope_cap or mandate_cap
+    if requested_notional is not None:
+        if requested_notional.currency != effective_per_use_cap.currency:
+            reasons.append("currency_mismatch")
+        elif requested_notional.amount > effective_per_use_cap.amount:
+            reasons.append("requested_scope_exceeds_grant")
+    return _dedupe_reasons(reasons)
 
 
 def _scope_within_scope(  # noqa: C901

@@ -21,6 +21,10 @@ path. Own only FinHarness authority semantics:
 - one closed `MonetaryAmount` value is used at mandate, grant, API, validation,
   consumption, result, and receipt boundaries;
 - one grant is durably bound to one currency derived from its exact mandate;
+- an omitted grant per-use cap inherits the exact mandate per-use cap, while an
+  optional grant total remains an additional cumulative bound;
+- persisted grant currency and caps are revalidated against the closed exact
+  mandate limit book at every use and again under the consumption lock;
 - cross-currency comparison is denied; authority never guesses an FX rate;
 - direction and broker values are subsets of the mandate version unless that
   dimension has the explicit closed `wildcard` mode;
@@ -38,8 +42,9 @@ non-execution boundary remain unchanged.
 The executable contract rejects a JPY grant or use under a USD mandate, a sell
 direction under a buy-only mandate, an unlisted broker, unknown money fields,
 ambiguous wildcard-plus-values, legacy null currency after restart, mixed
-consumption currencies, replay, and concurrent attempts to spend the same
-remaining capacity.
+consumption currencies, same-currency use above an inherited mandate cap,
+persisted grant currency/total widening, malformed persisted wildcard scope,
+replay, and concurrent attempts to spend the same remaining capacity.
 
 ## Consequences and non-goals
 

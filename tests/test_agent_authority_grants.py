@@ -25,6 +25,7 @@ from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_DENY_REASONS,
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
     AgentAuthorityGrantValidationError,
+    AgentAuthorityGrantValidationResult,
     consume_agent_authority_grant,
     record_agent_authority_grant,
     revoke_agent_authority_grant,
@@ -34,6 +35,7 @@ from finharness.statecore.capital_mandates import record_capital_mandate
 from finharness.statecore.models import (
     AgentAuthorityGrant,
     AgentAuthorityGrantConsumption,
+    CapitalMandateVersion,
     ReceiptIndex,
 )
 from finharness.statecore.store import init_state_core, read_all
@@ -443,6 +445,165 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             engine=self.engine,
         )
         self.assertIn("currency_mismatch", mixed_history.deny_reasons)
+
+    def test_same_currency_use_cannot_exceed_mandate_when_grant_omits_caps(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="grant_inherits_mandate_cap",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:mandate-cap",
+        )
+        before_files = set(self.receipt_root.rglob("*.json"))
+        before_indexes = len(read_all(ReceiptIndex, engine=self.engine))
+
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "requested_scope_exceeds_grant",
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=principal_id,
+                agent_runtime_id="runtime:mandate-cap",
+                nonce="over-exact-mandate-cap",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "1000000", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+
+        self.assertEqual(read_all(AgentAuthorityGrantConsumption, engine=self.engine), [])
+        self.assertEqual(len(read_all(ReceiptIndex, engine=self.engine)), before_indexes)
+        self.assertEqual(set(self.receipt_root.rglob("*.json")), before_files)
+
+    def test_exact_mandate_cap_is_rechecked_under_consumption_lock(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="grant_locked_mandate_cap",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:locked-cap",
+        )
+        forced_allow = AgentAuthorityGrantValidationResult(
+            allowed=True,
+            grant_id=grant.agent_authority_grant_id,
+        )
+        before_files = set(self.receipt_root.rglob("*.json"))
+        before_indexes = len(read_all(ReceiptIndex, engine=self.engine))
+
+        with (
+            patch(
+                "finharness.statecore.agent_authority_grants.validate_agent_authority_grant",
+                return_value=forced_allow,
+            ),
+            self.assertRaisesRegex(
+                AgentAuthorityGrantValidationError,
+                "money contract denied under lock: requested_scope_exceeds_grant",
+            ),
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=principal_id,
+                agent_runtime_id="runtime:locked-cap",
+                nonce="locked-over-cap",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "1001", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+
+        self.assertEqual(read_all(AgentAuthorityGrantConsumption, engine=self.engine), [])
+        self.assertEqual(len(read_all(ReceiptIndex, engine=self.engine)), before_indexes)
+        self.assertEqual(set(self.receipt_root.rglob("*.json")), before_files)
+
+    def test_persisted_grant_currency_drift_fails_closed_after_restart(self) -> None:
+        principal_id = "legacy-unverified:owner@example.com"
+        grant = self._record_grant(
+            grant_id="grant_currency_drift",
+            principal_id=principal_id,
+            agent_runtime_id="runtime:currency-drift",
+        )
+        with Session(self.engine) as session:
+            persisted = session.get(AgentAuthorityGrant, grant.agent_authority_grant_id)
+            assert persisted is not None
+            persisted.notional_currency = "JPY"
+            session.add(persisted)
+            session.commit()
+        self.engine.dispose()
+
+        validation = validate_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            principal_id=principal_id,
+            agent_runtime_id="runtime:currency-drift",
+            requested_scope=self._scope(),
+            requested_notional={"amount": "100", "currency": "JPY"},
+            engine=self.engine,
+        )
+        self.assertIn("currency_mismatch", validation.deny_reasons)
+        before_indexes = len(read_all(ReceiptIndex, engine=self.engine))
+        with self.assertRaisesRegex(AgentAuthorityGrantValidationError, "currency_mismatch"):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id=principal_id,
+                agent_runtime_id="runtime:currency-drift",
+                nonce="currency-drift-denied",
+                requested_scope=self._scope(),
+                requested_notional={"amount": "100", "currency": "JPY"},
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        self.assertEqual(read_all(AgentAuthorityGrantConsumption, engine=self.engine), [])
+        self.assertEqual(len(read_all(ReceiptIndex, engine=self.engine)), before_indexes)
+
+    def test_persisted_grant_total_widening_fails_closed(self) -> None:
+        grant = self._record_grant(
+            grant_id="grant_total_drift",
+            max_total_notional={"amount": "500", "currency": "USD"},
+        )
+        with Session(self.engine) as session:
+            persisted = session.get(AgentAuthorityGrant, grant.agent_authority_grant_id)
+            assert persisted is not None
+            persisted.max_total_notional = 5000
+            session.add(persisted)
+            session.commit()
+
+        validation = validate_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            requested_scope=self._scope(),
+            requested_notional={"amount": "100", "currency": "USD"},
+            engine=self.engine,
+        )
+        self.assertIn("grant_scope_exceeds_mandate", validation.deny_reasons)
+
+    def test_malformed_persisted_mandate_scope_cannot_become_wildcard(self) -> None:
+        grant = self._record_grant(grant_id="grant_malformed_mandate_scope")
+        with Session(self.engine) as session:
+            mandate_version = session.get(CapitalMandateVersion, grant.mandate_version_id)
+            persisted_grant = session.get(
+                AgentAuthorityGrant,
+                grant.agent_authority_grant_id,
+            )
+            assert mandate_version is not None
+            assert persisted_grant is not None
+            typed_limits = dict(mandate_version.typed_limits)
+            typed_limits["direction_scope"] = {
+                "mode": "wildcard",
+                "values": ["reduce"],
+            }
+            mandate_version.typed_limits = typed_limits
+            persisted_grant.grant_scope = {
+                **persisted_grant.grant_scope,
+                "directions": ["increase"],
+            }
+            session.add(mandate_version)
+            session.add(persisted_grant)
+            session.commit()
+
+        validation = validate_agent_authority_grant(
+            grant.agent_authority_grant_id,
+            requested_scope={**self._scope(), "directions": ["increase"]},
+            requested_notional={"amount": "1", "currency": "USD"},
+            engine=self.engine,
+        )
+        self.assertIn("grant_scope_exceeds_mandate", validation.deny_reasons)
 
     def test_direction_and_broker_are_bounded_unless_mandate_explicitly_wildcards(self) -> None:
         bounded = self._record_mandate(mandate_id="mandate_bounded_scope")
