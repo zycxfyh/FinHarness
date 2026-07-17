@@ -1,7 +1,5 @@
 """Shared governed proposal writes for API and runtime loops."""
 
-# ruff: noqa: C901
-
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +23,7 @@ from finharness.statecore.models import (
     ReviewEvent,
 )
 from finharness.statecore.proposal_version import (
+    CurrentProposalVersion,
     ProposalVersionExpectation,
     require_current_proposal_version_in_session,
 )
@@ -34,7 +33,12 @@ from finharness.statecore.receipt_io import (
     resolve_under,
 )
 from finharness.statecore.risk_classification import ensure_confirmable
-from finharness.statecore.store import StateCoreStoreError, upsert_records, write_records
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    immediate_state_core_session,
+    upsert_records,
+    write_records,
+)
 
 DecisionInput = Literal["approved", "rejected", "deferred"]
 
@@ -232,11 +236,85 @@ def _attestation_receipt_payload(
             "not_investment_advice": True,
         },
     }
-
     if mutation_context is not None:
         payload["mutation_context"] = mutation_context
-
     return payload
+
+
+# ── scaffold revision builder (no Session, no commit) ────────────────
+
+
+@dataclass(frozen=True)
+class _BuiltProposalRevision:
+    proposal: Proposal
+    receipt_id: str
+    receipt_ref: str
+    receipt_path: Path
+    receipt_payload: dict[str, Any]
+    receipt_index: ReceiptIndex
+
+
+def _build_proposal_revision(
+    *,
+    existing: Proposal,
+    merged_scaffold: dict[str, Any],
+    content_hash: str,
+    supersedes: str | None,
+    source_refs: list[str],
+    revision_context: dict[str, Any],
+    receipt_root: str | Path,
+) -> _BuiltProposalRevision:
+    """Build a new Proposal revision object, receipt, and index.
+
+    Pure builder — does not open a Session, write to DB, or commit.
+    Callers handle persistence inside their own transaction.
+    """
+    created_at = _now_utc()
+    receipt_id = (
+        f"receipt_{existing.proposal_id}_{_revision_stamp()}_{content_hash[:8]}"
+    )
+    receipt_path = resolve_under(receipt_root, "proposals", f"{receipt_id}.json")
+    receipt_ref = _display_path(receipt_path)
+    proposal = Proposal(
+        proposal_id=existing.proposal_id,
+        kind=existing.kind,
+        claim=existing.claim,
+        evidence=existing.evidence,
+        assumptions=existing.assumptions,
+        limitations=existing.limitations,
+        non_claims=existing.non_claims,
+        source_refs=source_refs,
+        decision_scaffold=merged_scaffold,
+        execution_allowed=False,
+        receipt_ref=receipt_ref,
+        created_at_utc=created_at,
+        as_of_utc=created_at,
+    )
+    receipt_payload = _proposal_receipt_payload(
+        proposal,
+        receipt_id,
+        content_hash=content_hash,
+        supersedes=supersedes,
+        revision_context=revision_context,
+    )
+    receipt_index = _receipt_index(
+        receipt_id=receipt_id,
+        kind="state_core_proposal",
+        path=receipt_path,
+        created_at_utc=created_at,
+        refs=[existing.proposal_id, *source_refs],
+    )
+    return _BuiltProposalRevision(
+        proposal=proposal,
+        receipt_id=receipt_id,
+        receipt_ref=receipt_ref,
+        receipt_path=receipt_path,
+        receipt_payload=receipt_payload,
+        receipt_index=receipt_index,
+    )
+
+
+# ── public entry points ──────────────────────────────────────────────
 
 
 def create_governed_proposal(
@@ -258,7 +336,9 @@ def create_governed_proposal(
 ) -> GovernedProposalWrite:
     """Write a governed proposal without execution authority."""
     created_at = created_at_utc or _now_utc()
-    resolved_proposal_id = _safe_id(proposal_id or f"prop_{_stamp()}_{uuid4().hex[:8]}")
+    resolved_proposal_id = _safe_id(
+        proposal_id or f"prop_{_stamp()}_{uuid4().hex[:8]}"
+    )
     final_non_claims = _dedupe_text(
         [
             *(non_claims or []),
@@ -295,7 +375,9 @@ def create_governed_proposal(
                 )
             supersedes = existing.receipt_ref
 
-    receipt_id = f"receipt_{resolved_proposal_id}_{_revision_stamp()}_{content_hash[:8]}"
+    receipt_id = (
+        f"receipt_{resolved_proposal_id}_{_revision_stamp()}_{content_hash[:8]}"
+    )
     receipt_path = resolve_under(receipt_root, "proposals", f"{receipt_id}.json")
     receipt_ref = _display_path(receipt_path)
     proposal = Proposal(
@@ -356,20 +438,17 @@ def revise_governed_proposal_scaffold(
     revision_context_extra: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
-    session: Session | None = None,
 ) -> GovernedProposalRevisionWrite:
-    """Append a human-authored decision-scaffold revision for an existing proposal.
+    """Append a human-authored decision-scaffold revision in one atomic transaction.
 
-    Version binding: ``expectation`` is validated against the current Proposal
-    row inside the same Session that commits the revision, closing the TOCTOU gap.
-    If ``session`` is provided, the version check and write share one transaction.
-    Otherwise a new Session is opened (backward-compatible path for tests).
+    Version check, scaffold merge, receipt write, and Proposal row update all
+    happen inside a ``BEGIN IMMEDIATE`` transaction — no separate
+    ``create_governed_proposal`` call.
     """
     if not attester.strip() or not reason.strip():
         raise ValueError(
             "proposal scaffold revision requires a named human and written reason"
         )
-
     unknown = sorted(set(scaffold_patch) - set(ALL_FIELDS))
     if unknown:
         raise ValueError(
@@ -377,109 +456,115 @@ def revise_governed_proposal_scaffold(
             + ", ".join(unknown)
             + f". Allowed fields: {', '.join(ALL_FIELDS)}."
         )
-
     patch = normalize(scaffold_patch)
     if not patch:
         raise ValueError(
             "proposal scaffold revision requires at least one non-blank field"
         )
 
-    own_session = session is None
-    active_session = session or Session(engine)
+    receipt_path: Path | None = None
+    receipt_created = False
+
     try:
-        # Version check + read in same transaction
-        admitted = require_current_proposal_version_in_session(
-            expectation,
-            proposal_id=proposal_id,
-            session=active_session,
-            receipt_root=receipt_root,
-        )
-        existing = active_session.get(Proposal, proposal_id)
-        if existing is None:
-            raise KeyError(proposal_id)
-
-        previous_scaffold = normalize(existing.decision_scaffold)
-        merged_scaffold = ensure_forcing({**previous_scaffold, **patch})
-        changed_fields = tuple(
-            field
-            for field in ALL_FIELDS
-            if previous_scaffold.get(field) != merged_scaffold.get(field)
-        )
-        if not changed_fields:
-            raise ValueError(
-                "proposal scaffold revision does not change any stored field"
+        with immediate_state_core_session(engine) as session:
+            admitted = require_current_proposal_version_in_session(
+                expectation,
+                proposal_id=proposal_id,
+                session=session,
+                receipt_root=receipt_root,
             )
+            existing = session.get(Proposal, proposal_id)
+            if existing is None:
+                raise KeyError(proposal_id)
 
-        refs = _dedupe_text(
-            [
-                *existing.source_refs,
-                *([existing.receipt_ref] if existing.receipt_ref else []),
-                *(source_refs or []),
-            ]
-        )
-        revision_context = {
-            "kind": "decision_scaffold_revision",
-            "attester": attester.strip(),
-            "reason": reason.strip(),
-            "previous_receipt_ref": existing.receipt_ref,
-            "changed_scaffold_fields": list(changed_fields),
-            "execution_allowed": False,
-            "admitted_proposal_version_id": admitted.proposal_version_id,
-            "admitted_proposal_receipt_ref": admitted.receipt_ref,
-        }
-        if revision_context_extra:
-            revision_context.update(
-                {
-                    key: value
-                    for key, value in revision_context_extra.items()
-                    if key
-                    not in {
+            previous_receipt_ref = existing.receipt_ref
+            previous_scaffold = normalize(existing.decision_scaffold)
+            merged_scaffold = ensure_forcing({**previous_scaffold, **patch})
+            changed_fields = tuple(
+                field
+                for field in ALL_FIELDS
+                if previous_scaffold.get(field) != merged_scaffold.get(field)
+            )
+            if not changed_fields:
+                raise ValueError(
+                    "proposal scaffold revision does not change any stored field"
+                )
+
+            refs = _dedupe_text(
+                [
+                    *existing.source_refs,
+                    *([existing.receipt_ref] if existing.receipt_ref else []),
+                    *(source_refs or []),
+                ]
+            )
+            revision_context: dict[str, Any] = {
+                "kind": "decision_scaffold_revision",
+                "attester": attester.strip(),
+                "reason": reason.strip(),
+                "previous_receipt_ref": previous_receipt_ref,
+                "changed_scaffold_fields": list(changed_fields),
+                "execution_allowed": False,
+                "admitted_proposal_version_id": admitted.proposal_version_id,
+                "admitted_proposal_receipt_ref": admitted.receipt_ref,
+            }
+            if revision_context_extra:
+                for key, value in revision_context_extra.items():
+                    if key not in {
                         "kind",
                         "attester",
                         "reason",
                         "execution_allowed",
                         "admitted_proposal_version_id",
                         "admitted_proposal_receipt_ref",
-                    }
-                }
+                    }:
+                        revision_context[key] = value
+
+            content_hash = _content_hash(
+                kind=existing.kind,
+                claim=existing.claim,
+                evidence=existing.evidence,
+                assumptions=existing.assumptions,
+                limitations=existing.limitations,
+                non_claims=existing.non_claims,
+                source_refs=refs,
+                decision_scaffold=merged_scaffold,
             )
 
-        # Create the new proposal revision (this opens its own Session for write)
-        # The version check already passed inside the active_session — the subsequent
-        # create_governed_proposal creates a new revision receipt + index.
-        # Since create_governed_proposal uses upsert_records with its own Session,
-        # the admitted version info is carried in the revision_context.
-        if own_session:
-            active_session.commit()
+            built = _build_proposal_revision(
+                existing=existing,
+                merged_scaffold=merged_scaffold,
+                content_hash=content_hash,
+                supersedes=previous_receipt_ref,
+                source_refs=refs,
+                revision_context=revision_context,
+                receipt_root=receipt_root,
+            )
 
-        write = create_governed_proposal(
-            kind=existing.kind,
-            claim=existing.claim,
-            evidence=existing.evidence,
-            assumptions=existing.assumptions,
-            limitations=existing.limitations,
-            non_claims=existing.non_claims,
-            source_refs=refs,
-            decision_scaffold=merged_scaffold,
-            engine=engine,
-            receipt_root=receipt_root,
-            proposal_id=existing.proposal_id,
-            idempotent=True,
-            revision_context=revision_context,
-        )
-    finally:
-        if own_session:
-            active_session.close()
+            receipt_path = built.receipt_path
+            atomic_write_json(receipt_path, built.receipt_payload)
+            receipt_created = True
+
+            session.merge(built.proposal)
+            session.add(built.receipt_index)
+            session.flush()
+
+        resulting_version_id = built.receipt_id
+        resulting_receipt_ref = built.receipt_ref
+
+    except Exception:
+        if receipt_created and receipt_path is not None:
+            remove_file_best_effort(receipt_path)
+        raise
 
     return GovernedProposalRevisionWrite(
-        proposal=write.proposal,
-        receipt_ref=write.receipt_ref,
-        previous_receipt_ref=existing.receipt_ref,
+        proposal=built.proposal,
+        receipt_ref=resulting_receipt_ref,
+        previous_receipt_ref=previous_receipt_ref,
         changed_scaffold_fields=changed_fields,
         admitted_proposal_version_id=admitted.proposal_version_id,
         admitted_proposal_receipt_ref=admitted.receipt_ref,
-        resulting_proposal_version_id=write.receipt_ref.split("/")[-1].replace(".json", ""),
-        resulting_proposal_receipt_ref=write.receipt_ref,
+        resulting_proposal_version_id=resulting_version_id,
+        resulting_proposal_receipt_ref=resulting_receipt_ref,
         execution_allowed=False,
     )
 
@@ -517,7 +602,9 @@ def _review_event_content_hash(
         "created_at_utc": created_at_utc,
     }
     return hashlib.sha256(
-        json.dumps(core, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        json.dumps(core, ensure_ascii=False, sort_keys=True, default=str).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -529,7 +616,7 @@ def _review_event_receipt_payload(
     admitted_receipt_ref: str,
     mutation_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload = {
+    return {
         "receipt_id": f"receipt_{event.review_event_id}",
         "kind": "state_core_review_event",
         "created_at_utc": event.created_at_utc,
@@ -543,12 +630,63 @@ def _review_event_receipt_payload(
             "not_execution_authorization": True,
             "not_investment_advice": True,
         },
+        **({"mutation_context": mutation_context} if mutation_context is not None else {}),
     }
 
-    if mutation_context is not None:
-        payload["mutation_context"] = mutation_context
 
-    return payload
+# ── _make_event helper (shared by create_ and agent_tools) ───────────
+
+
+def _make_review_event(
+    *,
+    proposal_id: str,
+    kind: str,
+    attester: str,
+    reason: str,
+    admitted: CurrentProposalVersion,
+    text: str | None = None,
+    attestation_ref: str | None = None,
+    compare_with: str | None = None,
+    source_refs: list[str] | None = None,
+    created_at_utc: str | None = None,
+) -> tuple[ReviewEvent, str, str]:
+    """Build a ReviewEvent row, content_hash, and receipt_id.
+
+    Pure builder — does not write to DB.
+    """
+    created_at = created_at_utc or _now_utc()
+    review_event_id = _safe_id(
+        f"rev_{kind}_{_revision_stamp()}_{uuid4().hex[:8]}"
+    )
+    content_hash = _review_event_content_hash(
+        proposal_id=proposal_id,
+        kind=kind,
+        attester=attester.strip(),
+        reason=reason.strip(),
+        text=text,
+        attestation_ref=attestation_ref,
+        compare_with=compare_with,
+        source_refs=list(source_refs or []),
+        created_at_utc=created_at,
+    )
+    receipt_id = f"receipt_{review_event_id}"
+    event = ReviewEvent(
+        review_event_id=review_event_id,
+        proposal_id=proposal_id,
+        kind=kind,
+        attester=attester.strip(),
+        reason=reason.strip(),
+        text=text,
+        attestation_ref=attestation_ref,
+        compare_with=compare_with,
+        source_refs=list(source_refs or []),
+        bound_proposal_version_id=admitted.proposal_version_id,
+        bound_proposal_receipt_ref=admitted.receipt_ref,
+        content_hash=content_hash,
+        created_at_utc=created_at,
+        as_of_utc=created_at,
+    )
+    return event, content_hash, receipt_id
 
 
 def create_governed_review_event(
@@ -565,72 +703,63 @@ def create_governed_review_event(
     mutation_context: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
-    session: Session | None = None,
 ) -> GovernedReviewEventWrite:
-    """Append a human review event (annotation/archive/reopen/compare_mark).
+    """Append a human review event in one atomic transaction.
 
-    Version binding: ``expectation`` is validated inside *session* (or a new
-    Session), and the version check + domain write share one transaction.
+    Version check, receipt write, review_event row, and ReceiptIndex all
+    share a ``BEGIN IMMEDIATE`` transaction.
     """
     if kind not in REVIEW_EVENT_KINDS:
         raise ValueError(f"unknown review event kind: {kind}")
     if not attester.strip() or not reason.strip():
         raise ValueError("review event requires a named human and written reason")
 
-    own_session = session is None
-    active_session = session or Session(engine, expire_on_commit=False)
+    receipt_path: Path | None = None
+    receipt_created = False
+
     try:
-        # Version check inside same session
-        admitted = require_current_proposal_version_in_session(
-            expectation,
-            proposal_id=proposal_id,
-            session=active_session,
-            receipt_root=receipt_root,
-        )
-        proposal = active_session.get(Proposal, proposal_id)
-        if proposal is None:
-            raise KeyError(proposal_id)
+        with immediate_state_core_session(engine) as session:
+            admitted = require_current_proposal_version_in_session(
+                expectation,
+                proposal_id=proposal_id,
+                session=session,
+                receipt_root=receipt_root,
+            )
+            proposal = session.get(Proposal, proposal_id)
+            if proposal is None:
+                raise KeyError(proposal_id)
 
-        if kind == "compare_mark":
-            target = (compare_with or "").strip()
-            if not target:
-                raise ValueError("compare_mark requires a compare_with proposal id")
-            if target == proposal.proposal_id:
-                raise ValueError("compare_mark cannot compare a proposal with itself")
-            if active_session.get(Proposal, target) is None:
-                raise KeyError(target)
-            compare_with = target
+            if kind == "compare_mark":
+                target = (compare_with or "").strip()
+                if not target:
+                    raise ValueError(
+                        "compare_mark requires a compare_with proposal id"
+                    )
+                if target == proposal.proposal_id:
+                    raise ValueError(
+                        "compare_mark cannot compare a proposal with itself"
+                    )
+                if session.get(Proposal, target) is None:
+                    raise KeyError(target)
+                compare_with = target
 
-        created_at = _now_utc()
-        review_event_id = _safe_id(
-            f"rev_{kind}_{_revision_stamp()}_{uuid4().hex[:8]}"
-        )
-        content_hash = _review_event_content_hash(
-            proposal_id=proposal.proposal_id,
-            kind=kind,
-            attester=attester.strip(),
-            reason=reason.strip(),
-            text=text,
-            attestation_ref=attestation_ref,
-            compare_with=compare_with,
-            source_refs=list(source_refs or []),
-            created_at_utc=created_at,
-        )
-        receipt_id = f"receipt_{review_event_id}"
-        receipt_path = resolve_under(
-            receipt_root, "review-events", f"{receipt_id}.json"
-        )
-        receipt_ref = _display_path(receipt_path)
-        event = ReviewEvent(
-            review_event_id=review_event_id,
-            proposal_id=proposal.proposal_id,
-            kind=kind,
-            attester=attester.strip(),
-            reason=reason.strip(),
-            text=text,
-            attestation_ref=attestation_ref,
-            compare_with=compare_with,
-            source_refs=[
+            event, _content_hash, receipt_id = _make_review_event(
+                proposal_id=proposal.proposal_id,
+                kind=kind,
+                attester=attester,
+                reason=reason,
+                admitted=admitted,
+                text=text,
+                attestation_ref=attestation_ref,
+                compare_with=compare_with,
+                source_refs=source_refs,
+            )
+
+            receipt_path = resolve_under(
+                receipt_root, "review-events", f"{receipt_id}.json"
+            )
+            receipt_ref = _display_path(receipt_path)
+            event.source_refs = [
                 ref
                 for ref in [
                     proposal.receipt_ref,
@@ -638,58 +767,42 @@ def create_governed_review_event(
                     *(source_refs or []),
                 ]
                 if ref
-            ],
-            bound_proposal_version_id=admitted.proposal_version_id,
-            bound_proposal_receipt_ref=admitted.receipt_ref,
-            content_hash=content_hash,
-            created_at_utc=created_at,
-            as_of_utc=created_at,
-        )
-        receipt_payload = _review_event_receipt_payload(
-            event,
-            proposal,
-            admitted_version_id=admitted.proposal_version_id,
-            admitted_receipt_ref=admitted.receipt_ref,
-            mutation_context=mutation_context,
-        )
-        atomic_write_json(receipt_path, receipt_payload)
-        receipt_index = _receipt_index(
-            receipt_id=receipt_id,
-            kind="state_core_review_event",
-            path=receipt_path,
-            created_at_utc=created_at,
-            refs=[
-                ref
-                for ref in [
-                    proposal.receipt_ref,
-                    proposal.proposal_id,
-                    *event.source_refs,
-                ]
-                if ref
-            ],
-        )
+            ]
 
-        # Write inside the same session
-        active_session.add(event)
-        active_session.add(receipt_index)
-        active_session.flush()
+            receipt_payload = _review_event_receipt_payload(
+                event,
+                proposal,
+                admitted_version_id=admitted.proposal_version_id,
+                admitted_receipt_ref=admitted.receipt_ref,
+                mutation_context=mutation_context,
+            )
+            atomic_write_json(receipt_path, receipt_payload)
+            receipt_created = True
 
-        if own_session:
-            active_session.commit()
-    except (KeyError, ValueError):
-        if own_session:
-            active_session.close()
+            receipt_index = _receipt_index(
+                receipt_id=receipt_id,
+                kind="state_core_review_event",
+                path=receipt_path,
+                created_at_utc=event.created_at_utc,
+                refs=[
+                    ref
+                    for ref in [
+                        proposal.receipt_ref,
+                        proposal.proposal_id,
+                        *event.source_refs,
+                    ]
+                    if ref
+                ],
+            )
+
+            session.add(event)
+            session.add(receipt_index)
+            session.flush()
+
+    except Exception:
+        if receipt_created and receipt_path is not None:
+            remove_file_best_effort(receipt_path)
         raise
-    except StateCoreStoreError:
-        remove_file_best_effort(receipt_path)
-        if own_session:
-            active_session.close()
-        raise
-    finally:
-        if own_session and not active_session.is_active:
-            pass  # already committed or closed
-        elif own_session:
-            active_session.close()
 
     return GovernedReviewEventWrite(
         review_event=event,
@@ -708,17 +821,17 @@ def _latest_archive_event(events: list[ReviewEvent]) -> ReviewEvent | None:
 
 
 def is_archived(proposal_id: str, *, engine: Engine) -> bool:
-    """Derive archived state from the latest archive/reopen event (append-only history)."""
     with Session(engine) as session:
         events = list(
-            session.exec(select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id))
+            session.exec(
+                select(ReviewEvent).where(ReviewEvent.proposal_id == proposal_id)
+            )
         )
     latest = _latest_archive_event(events)
     return latest is not None and latest.kind == "archive"
 
 
 def archived_proposal_ids(engine: Engine) -> set[str]:
-    """Set of proposal ids whose latest archive/reopen toggle is 'archive'."""
     with Session(engine) as session:
         events = list(session.exec(select(ReviewEvent)))
     by_proposal: dict[str, list[ReviewEvent]] = {}
@@ -743,103 +856,90 @@ def create_governed_attestation(
     mutation_context: dict[str, Any] | None = None,
     engine: Engine,
     receipt_root: str | Path,
-    session: Session | None = None,
 ) -> GovernedAttestationWrite:
-    """Write a human attestation; approval remains non-execution authorization.
+    """Write a human attestation in one atomic transaction.
 
-    Version binding: ``expectation`` is validated inside *session* (or a new
-    Session), and the version check + domain write share one transaction.
+    Version check, receipt write, attestation row, and ReceiptIndex all share
+    a ``BEGIN IMMEDIATE`` transaction.
     """
-    own_session = session is None
-    active_session = session or Session(engine, expire_on_commit=False)
-    try:
-        # Version check inside same session
-        admitted = require_current_proposal_version_in_session(
-            expectation,
-            proposal_id=proposal_id,
-            session=active_session,
-            receipt_root=receipt_root,
-        )
-        proposal = active_session.get(Proposal, proposal_id)
-        if proposal is None:
-            raise KeyError(proposal_id)
+    receipt_path: Path | None = None
+    receipt_created = False
 
-        if decision == "approved":
-            ensure_confirmable(
-                kind=proposal.kind,
-                evidence=proposal.evidence,
-                decision_scaffold=proposal.decision_scaffold,
+    try:
+        with immediate_state_core_session(engine) as session:
+            admitted = require_current_proposal_version_in_session(
+                expectation,
+                proposal_id=proposal_id,
+                session=session,
+                receipt_root=receipt_root,
+            )
+            proposal = session.get(Proposal, proposal_id)
+            if proposal is None:
+                raise KeyError(proposal_id)
+
+            if decision == "approved":
+                ensure_confirmable(
+                    kind=proposal.kind,
+                    evidence=proposal.evidence,
+                    decision_scaffold=proposal.decision_scaffold,
+                )
+
+            created_at = _now_utc()
+            attestation_id = _safe_id(f"att_{_stamp()}_{uuid4().hex[:8]}")
+            receipt_id = f"receipt_{attestation_id}"
+            receipt_path = resolve_under(
+                receipt_root, "attestations", f"{receipt_id}.json"
+            )
+            receipt_ref = _display_path(receipt_path)
+            attestation = Attestation(
+                attestation_id=attestation_id,
+                proposal_id=proposal.proposal_id,
+                attester=attester.strip(),
+                reason=reason.strip(),
+                decision=decision,
+                source_refs=[
+                    ref
+                    for ref in [
+                        proposal.receipt_ref,
+                        receipt_ref,
+                        *(source_refs or []),
+                    ]
+                    if ref
+                ],
+                bound_proposal_version_id=admitted.proposal_version_id,
+                bound_proposal_receipt_ref=admitted.receipt_ref,
+                created_at_utc=created_at,
+                as_of_utc=created_at,
+            )
+            receipt_payload = _attestation_receipt_payload(
+                attestation,
+                proposal,
+                receipt_id,
+                admitted_version_id=admitted.proposal_version_id,
+                admitted_receipt_ref=admitted.receipt_ref,
+                mutation_context=mutation_context,
+            )
+            atomic_write_json(receipt_path, receipt_payload)
+            receipt_created = True
+
+            receipt_index = _receipt_index(
+                receipt_id=receipt_id,
+                kind="state_core_attestation",
+                path=receipt_path,
+                created_at_utc=created_at,
+                refs=[
+                    ref for ref in [proposal.receipt_ref, proposal.proposal_id] if ref
+                ],
             )
 
-        created_at = _now_utc()
-        attestation_id = _safe_id(f"att_{_stamp()}_{uuid4().hex[:8]}")
-        receipt_id = f"receipt_{attestation_id}"
-        receipt_path = resolve_under(
-            receipt_root, "attestations", f"{receipt_id}.json"
-        )
-        receipt_ref = _display_path(receipt_path)
-        attestation = Attestation(
-            attestation_id=attestation_id,
-            proposal_id=proposal.proposal_id,
-            attester=attester.strip(),
-            reason=reason.strip(),
-            decision=decision,
-            source_refs=[
-                ref
-                for ref in [
-                    proposal.receipt_ref,
-                    receipt_ref,
-                    *(source_refs or []),
-                ]
-                if ref
-            ],
-            bound_proposal_version_id=admitted.proposal_version_id,
-            bound_proposal_receipt_ref=admitted.receipt_ref,
-            created_at_utc=created_at,
-            as_of_utc=created_at,
-        )
-        receipt_payload = _attestation_receipt_payload(
-            attestation,
-            proposal,
-            receipt_id,
-            admitted_version_id=admitted.proposal_version_id,
-            admitted_receipt_ref=admitted.receipt_ref,
-            mutation_context=mutation_context,
-        )
-        atomic_write_json(receipt_path, receipt_payload)
-        receipt_index = _receipt_index(
-            receipt_id=receipt_id,
-            kind="state_core_attestation",
-            path=receipt_path,
-            created_at_utc=created_at,
-            refs=[
-                ref
-                for ref in [proposal.receipt_ref, proposal.proposal_id]
-                if ref
-            ],
-        )
+            session.add(attestation)
+            session.add(receipt_index)
+            session.flush()
 
-        # Write inside the same session
-        active_session.add(attestation)
-        active_session.add(receipt_index)
-        active_session.flush()
-
-        if own_session:
-            active_session.commit()
-    except (KeyError, ValueError):
-        if own_session:
-            active_session.close()
+    except Exception:
+        if receipt_created and receipt_path is not None:
+            remove_file_best_effort(receipt_path)
         raise
-    except StateCoreStoreError:
-        remove_file_best_effort(receipt_path)
-        if own_session:
-            active_session.close()
-        raise
-    finally:
-        if own_session and not active_session.is_active:
-            pass
-        elif own_session:
-            active_session.close()
 
     return GovernedAttestationWrite(
         attestation=attestation,
