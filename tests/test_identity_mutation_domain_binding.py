@@ -221,6 +221,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "decision": "rejected",
                     "reason": ("Explicitly bind this review decision to its mutation."),
                     "source_refs": ["test:attestation-binding"],
+                    **self._version_fields(proposal["proposal_id"]),
                 },
             )
 
@@ -506,6 +507,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "decision": "rejected",
                 "reason": ("Reject while proving typed mutation recovery."),
                 "source_refs": ["test:attestation-recovery"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, receipt_path = self._lose_terminal_write(
@@ -589,6 +591,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "counter_evidence": ("A recovery-specific counter-evidence condition.")
                 },
                 "source_refs": ["test:scaffold-recovery"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, receipt_path = self._lose_terminal_write(
@@ -695,6 +698,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": ("Annotate while proving typed review-event recovery."),
                 "text": ("This event must exist exactly once after replay."),
                 "source_refs": ["test:review-event-recovery"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, receipt_path = self._lose_terminal_write(
@@ -835,6 +839,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "decision": "rejected",
                 "reason": ("Create an attestation whose binding will be tested."),
                 "source_refs": ["test:tampered-attestation-binding"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, identity_path = self._lose_terminal_write(
@@ -924,6 +929,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": ("Create one legitimate mutation-bound review event."),
                 "text": ("The resolver must reject ambiguous duplicate effects."),
                 "source_refs": ["test:multiple-review-effects"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, identity_path = self._lose_terminal_write(
@@ -997,6 +1003,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     )
                 },
                 "source_refs": ["test:missing-scaffold-receipt"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id, identity_path = self._lose_terminal_write(
