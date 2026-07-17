@@ -389,7 +389,10 @@ def revise_governed_proposal_scaffold(
     try:
         # Version check + read in same transaction
         admitted = require_current_proposal_version_in_session(
-            expectation, session=active_session
+            expectation,
+            proposal_id=proposal_id,
+            session=active_session,
+            receipt_root=receipt_root,
         )
         existing = active_session.get(Proposal, proposal_id)
         if existing is None:
@@ -579,7 +582,10 @@ def create_governed_review_event(
     try:
         # Version check inside same session
         admitted = require_current_proposal_version_in_session(
-            expectation, session=active_session
+            expectation,
+            proposal_id=proposal_id,
+            session=active_session,
+            receipt_root=receipt_root,
         )
         proposal = active_session.get(Proposal, proposal_id)
         if proposal is None:
@@ -749,7 +755,10 @@ def create_governed_attestation(
     try:
         # Version check inside same session
         admitted = require_current_proposal_version_in_session(
-            expectation, session=active_session
+            expectation,
+            proposal_id=proposal_id,
+            session=active_session,
+            receipt_root=receipt_root,
         )
         proposal = active_session.get(Proposal, proposal_id)
         if proposal is None:

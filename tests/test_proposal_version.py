@@ -88,7 +88,7 @@ class ProposalVersionResolverTest(unittest.TestCase):
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
-        self.assertEqual(raised.exception.code, "stale_expected_version")
+        self.assertEqual(raised.exception.code, "proposal_version_conflict")
 
     def test_row_receipt_divergence_blocks_resolution(self) -> None:
         self._write("receipt truth")
