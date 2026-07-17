@@ -121,7 +121,7 @@ systems:
   - id: ips_policy
     name: IPS / Policy / Authority Credentials
     status: current
-    summary: User-owned Investment Policy Statement, descriptive compliance checks, immutable principal-bound CapitalMandate versions with append-only lifecycle resolution, and currency-aware mandate-bounded AgentAuthorityGrant credentials with dynamic validation and closed deny reasons.
+    summary: User-owned Investment Policy Statement, human-admin-only mandate/grant administration, immutable principal-bound CapitalMandate versions with append-only lifecycle resolution, and currency-aware mandate-bounded AgentAuthorityGrant credentials with dynamic validation and closed deny reasons.
     docs:
       - docs/architecture/capital-os-layering.md
       - docs/architecture/system-map.md
@@ -129,20 +129,23 @@ systems:
       - docs/adr/2026-07-03-agent-authority-grants-are-mandate-bound-credentials.md
       - docs/architecture/versioned-capital-mandate.md
       - docs/architecture/replay-safe-agent-authority-grants.md
+      - docs/adr/2026-07-17-human-only-authority-administration.md
     runtime_roots:
       - src/finharness/ips.py
       - src/finharness/api/routes_ips.py
+      - src/finharness/authority_administration.py
       - src/finharness/statecore/capital_mandates.py
       - src/finharness/api/routes_capital_mandates.py
       - src/finharness/statecore/agent_authority_grants.py
       - src/finharness/api/routes_agent_authority_grants.py
-    mature_posture: CapitalMandate versions and lifecycle events are immutable receipt-backed local authority inputs resolved by authenticated principal and time. AgentAuthorityGrant is bound to principal, runtime, exact mandate version, and one explicit currency; direction and broker scope are mandate-bounded unless explicitly wildcarded, while nonce-unique consumption and owner-only revocation remain atomic and receipt-backed without granting execution authority.
+    mature_posture: IdentityProvider assertions feed one closed domain-owned human-administration guard; they do not become capital authority by authentication alone. CapitalMandate versions and lifecycle events remain immutable principal-bound inputs. AgentAuthorityGrant stays exact-version/currency/scope bound, while Agent-runtime consumption remains separate from human administration and never grants execution authority.
     checks:
       - task governance:check
       - uv run python -m unittest tests.test_ips
       - uv run python -m unittest tests.test_capital_mandates
       - uv run python -m unittest tests.test_versioned_capital_mandates
       - uv run python -m unittest tests.test_agent_authority_grants
+      - uv run python -m unittest tests.test_authority_administration tests.test_authority_administration_integration
       - uv run python -m unittest tests.test_statecore_store
     upgrade_trigger: Policy or grant rules become numerous, cross-language, need external audit reports, or future AuthorityContract work needs formal policy evaluation.
 

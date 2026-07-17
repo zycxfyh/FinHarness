@@ -26,6 +26,7 @@ from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core, read_all
 from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
+from tests.authority_test_helpers import authority_admin_context
 
 
 class ActionIntentAuthorityBindingTest(unittest.TestCase):
@@ -58,6 +59,7 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
 
     def _record_mandate(self, *, mandate_id: str = "mandate_binding") -> str:
         mandate = record_capital_mandate(
+            operator_context=authority_admin_context("owner@example.com"),
             capital_mandate_id=mandate_id,
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "risk_control"},
@@ -70,7 +72,6 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
             typed_limits={
                 "max_notional": {"amount": "1000", "currency": "USD"},
             },
-            human_attester="owner@example.com",
             human_reason="Attest mandate scope for authority binding tests.",
             explicit_confirmation=True,
             engine=self.engine,
@@ -94,12 +95,12 @@ class ActionIntentAuthorityBindingTest(unittest.TestCase):
         grant_scope: dict[str, object] | None = None,
     ) -> AgentAuthorityGrant:
         return record_agent_authority_grant(
+            operator_context=authority_admin_context("owner@example.com"),
             agent_authority_grant_id=grant_id,
             capital_mandate_id=mandate_id or self._record_mandate(),
             agent_id=agent_id,
             agent_profile_name="review-note",
             grant_scope=grant_scope or self._scope(),
-            issued_by="owner@example.com",
             issued_reason="Allow the agent to prepare candidate-only capital intents.",
             source_refs=["docs/product-north-star.md"],
             engine=self.engine,

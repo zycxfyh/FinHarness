@@ -808,7 +808,7 @@
       "path": "docs/reference/interfaces.md",
       "symbol": "attestation endpoint documentation",
       "line_start": 18,
-      "line_end": 126,
+      "line_end": 130,
       "match_terms": [
         "Attestation",
         "attestations"
@@ -825,7 +825,7 @@
       "recommended_change": "Keep. Add DecisionRecord endpoint documentation alongside.",
       "test_implications": [],
       "evidence": [
-        "interfaces.md:87-126"
+        "interfaces.md:87-130"
       ]
     },
     {
@@ -1588,9 +1588,9 @@
     },
     {
       "path": "docs/architecture/system-map.md",
-      "match_line": 224,
+      "match_line": 229,
       "term": "attestations",
-      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 224."
+      "reason": "Hit outside consumer range in file with existing consumers. attestations at line 229."
     },
     {
       "path": "docs/engineering/abstraction-inventory.yml",

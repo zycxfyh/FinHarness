@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from finharness.api.app import create_app
-from finharness.local_operator import LocalOperatorContext
+from finharness.identity import StaticIdentityProvider
 from finharness.statecore.capital_mandates import (
     CapitalMandateLimits,
     CapitalMandateValidationError,
@@ -24,6 +24,7 @@ from finharness.statecore.models import (
 )
 from finharness.statecore.store import init_state_core, read_all
 from tests.asgi_test_client import AsgiTestClient
+from tests.authority_test_helpers import authority_admin_context
 
 
 class VersionedCapitalMandateTest(unittest.TestCase):
@@ -43,8 +44,8 @@ class VersionedCapitalMandateTest(unittest.TestCase):
         max_notional: str = "1000.00",
     ):
         return record_capital_mandate(
+            operator_context=authority_admin_context("principal:alice"),
             capital_mandate_id="mandate_primary",
-            principal_id="principal:alice",
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "preserve"},
             risk_profile={"max_loss": "500.00"},
@@ -63,14 +64,12 @@ class VersionedCapitalMandateTest(unittest.TestCase):
                 "product_ids": ["portfolio:main"],
                 "action_types": ["rebalance"],
             },
-            human_attester="principal:alice",
             human_reason="Owner confirms versioned mandate policy.",
             explicit_confirmation=True,
             effective_at_utc=effective,
             expires_at_utc=expires,
             created_at_utc=effective,
             authenticated_actor_receipt_ref="identity:receipt:1",
-            legacy_actor_label="alice@example.com",
             engine=self.engine,
             receipt_root=self.receipts,
         )
@@ -106,8 +105,10 @@ class VersionedCapitalMandateTest(unittest.TestCase):
         self._record()
         suspend = suspend_capital_mandate(
             "mandate_primary",
-            principal_id="principal:alice",
-            actor_principal_id="principal:alice",
+            operator_context=authority_admin_context(
+                "principal:alice",
+                assurance="standard",
+            ),
             reason="Pause delegated work.",
             effective_at_utc="2026-07-13T01:00:00+00:00",
             engine=self.engine,
@@ -123,8 +124,7 @@ class VersionedCapitalMandateTest(unittest.TestCase):
         )
         resume = resume_capital_mandate(
             "mandate_primary",
-            principal_id="principal:alice",
-            actor_principal_id="principal:alice",
+            operator_context=authority_admin_context("principal:alice"),
             reason="Owner reviewed limits.",
             effective_at_utc="2026-07-13T02:00:00+00:00",
             engine=self.engine,
@@ -140,8 +140,10 @@ class VersionedCapitalMandateTest(unittest.TestCase):
         )
         revoke = revoke_capital_mandate(
             "mandate_primary",
-            principal_id="principal:alice",
-            actor_principal_id="principal:alice",
+            operator_context=authority_admin_context(
+                "principal:alice",
+                assurance="standard",
+            ),
             reason="Owner permanently revokes mandate.",
             effective_at_utc="2026-07-13T03:00:00+00:00",
             engine=self.engine,
@@ -172,11 +174,13 @@ class VersionedCapitalMandateTest(unittest.TestCase):
         )
         self.assertEqual(expired.status, "expired")
         self.assertEqual(expired.deny_reasons, ("mandate_expired",))
-        with self.assertRaisesRegex(CapitalMandateValidationError, "substitution"):
+        with self.assertRaisesRegex(CapitalMandateValidationError, "current principal mandate"):
             suspend_capital_mandate(
                 "mandate_primary",
-                principal_id="principal:alice",
-                actor_principal_id="principal:bob",
+                operator_context=authority_admin_context(
+                    "principal:bob",
+                    assurance="standard",
+                ),
                 reason="hostile substitution",
                 engine=self.engine,
                 receipt_root=self.receipts,
@@ -205,7 +209,9 @@ class VersionedCapitalMandateApiTest(unittest.TestCase):
             app = create_app(
                 state_core_engine=engine,
                 receipt_root=str(root / "receipts"),
-                local_operator_context=LocalOperatorContext("alice"),
+                identity_provider=StaticIdentityProvider(
+                    authority_admin_context("principal:alice")
+                ),
             )
             client = AsgiTestClient(app)
             self.addCleanup(client.close)
@@ -230,11 +236,8 @@ class VersionedCapitalMandateApiTest(unittest.TestCase):
             current = client.get("/capital-mandates/current")
             self.assertEqual(current.status_code, 200)
             resolution = current.json()["resolution"]
-            self.assertEqual(resolution["principal_id"], "legacy-local:alice")
-            self.assertEqual(
-                resolution["version"]["legacy_actor_label"],
-                "alice",
-            )
+            self.assertEqual(resolution["principal_id"], "principal:alice")
+            self.assertIsNone(resolution["version"]["legacy_actor_label"])
             self.assertFalse(resolution["version"]["legacy_actor_label_verified"])
             revoked = client.post(
                 "/capital-mandates/mandate_api_v2/revoke",

@@ -230,7 +230,8 @@ Location: `data/receipts/state-core/capital-mandates/`
 | `kind` | `str` | `state_core_capital_mandate`. |
 | `created_at_utc` | `str` | Creation timestamp. |
 | `capital_mandate` | `CapitalMandate` | Human-attested policy-domain payload. |
-| `capital_mandate.human_attester` | `str` | Stable server-authenticated Agent runtime id when present, otherwise the authenticated principal id; never copied from the request body. |
+| `capital_mandate.human_attester` | `str` | Stable server-authenticated human administrator principal id; Agent runtimes and request fields cannot supply it. |
+| `authority_administration` | `AuthorityAdministrationDecision` | Current human-admin decision for `mandate_create_or_replace`, including assurance, assertion, policy version, and checked time; evidence for this effect, never a reusable token. |
 | `capital_mandate_version.authenticated_actor_receipt_ref` | `str \| None` | Server-issued mutation identity reference for keyed writes. Unkeyed backfill remains part of #352's cross-medium commit work. |
 | `capital_mandate_version.legacy_actor_label` | `str \| None` | Server-context legacy display label retained as unverified provenance, never actor authority. |
 | `capital_mandate_version.principal_id` | `str` | Permanent durable owner of the mandate ID series. A different principal cannot append a version to the series. |
@@ -275,8 +276,8 @@ Location: `data/receipts/state-core/agent-authority-grant-consumptions/`
 
 Grant revocation receipts live under
 `data/receipts/state-core/agent-authority-grants/lifecycle/`. They record the
-prior and resulting grant projections, authenticated owner, reason, and retain
-both authority booleans as false.
+prior and resulting grant projections, exact human-administration decision,
+reason, and retain both authority booleans as false.
 
 ### Agent Authority Grant Receipt
 
@@ -291,6 +292,7 @@ Location: `data/receipts/state-core/agent-authority-grants/`
 | `source_capital_mandate` | `CapitalMandate` | Linked mandate snapshot at grant creation time. |
 | `source_capital_mandate_version` | `CapitalMandateVersion` | Exact immutable mandate version bound at issuance. |
 | `creation_validation` | `AgentAuthorityGrantValidationResult` | Structured create-time validation result. |
+| `authority_administration` | `AuthorityAdministrationDecision` | Current human-admin `grant_create` decision bound to this exact principal and mandate version; never grant consumption authority. |
 | `governance_boundary.execution_allowed` | `bool` | Always false. |
 | `governance_boundary.authority_transition` | `bool` | Always false. |
 | `governance_boundary.mandate_bound_authority_credential` | `bool` | True; the grant must cite a mandate. |

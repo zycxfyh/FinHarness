@@ -41,6 +41,7 @@ class LocalOperatorContext:
                 principal=PrincipalIdentity(
                     principal_id=principal_id,
                     provider_id="legacy-local",
+                    principal_kind="legacy_unknown",
                     display_label=self.operator_id,
                     legacy_label=self.operator_id,
                     legacy_label_verified=False,

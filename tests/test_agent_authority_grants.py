@@ -4,7 +4,6 @@ import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,15 +11,10 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from finharness.api.app import create_app
-from finharness.identity import (
-    AgentRuntimeIdentity,
-    OperatorContext,
-    PrincipalIdentity,
-)
+from finharness.identity import StaticIdentityProvider
 from finharness.identity import (
     TestIdentityProvider as DeterministicIdentityProvider,
 )
-from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.agent_authority_grants import (
     AGENT_AUTHORITY_GRANT_DENY_REASONS,
     AGENT_AUTHORITY_GRANT_NON_CLAIMS,
@@ -40,6 +34,7 @@ from finharness.statecore.models import (
 )
 from finharness.statecore.store import init_state_core, read_all
 from tests.asgi_test_client import AsgiTestClient
+from tests.authority_test_helpers import authority_admin_context
 
 
 class AgentAuthorityGrantSliceTest(unittest.TestCase):
@@ -55,6 +50,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         self,
         *,
         mandate_id: str = "mandate_v1",
+        principal_id: str = "owner@example.com",
         allowed_asset_classes: list[str] | None = None,
         allowed_action_types: list[str] | None = None,
         autonomy_level: str = "L1_candidate_only",
@@ -62,6 +58,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         broker_scope: dict[str, object] | None = None,
     ) -> str:
         mandate = record_capital_mandate(
+            operator_context=authority_admin_context(principal_id),
             capital_mandate_id=mandate_id,
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "capital_preservation"},
@@ -79,7 +76,6 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
                 "direction_scope": direction_scope or {"mode": "bounded", "values": ["reduce"]},
                 "broker_scope": broker_scope or {"mode": "bounded", "values": ["paper:primary"]},
             },
-            human_attester="owner@example.com",
             human_reason="Attest mandate scope for authority grant tests.",
             explicit_confirmation=True,
             engine=self.engine,
@@ -106,17 +102,19 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         max_uses: int | None = None,
         max_total_notional: dict[str, object] | None = None,
     ) -> AgentAuthorityGrant:
-        resolved_mandate_id = mandate_id or self._record_mandate()
+        resolved_principal_id = principal_id or "owner@example.com"
+        resolved_mandate_id = mandate_id or self._record_mandate(
+            principal_id=resolved_principal_id
+        )
         return record_agent_authority_grant(
+            operator_context=authority_admin_context(resolved_principal_id),
             agent_authority_grant_id=grant_id,
             capital_mandate_id=resolved_mandate_id,
             agent_id="agent:research",
             agent_profile_name="review-note",
             grant_scope=grant_scope or self._scope(),
-            issued_by="owner@example.com",
             issued_reason="Allow the agent to operate inside this mandate scope.",
             expires_at_utc=expires_at_utc,
-            principal_id=principal_id,
             agent_runtime_id=agent_runtime_id,
             max_uses=max_uses,
             max_total_notional=max_total_notional,
@@ -309,11 +307,11 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
 
     def test_grant_binds_principal_runtime_and_exact_mandate_version(self) -> None:
         grant = self._record_grant(
-            principal_id="legacy-unverified:owner@example.com",
+            principal_id="owner@example.com",
             agent_runtime_id="runtime:research:1",
         )
 
-        self.assertEqual(grant.principal_id, "legacy-unverified:owner@example.com")
+        self.assertEqual(grant.principal_id, "owner@example.com")
         self.assertEqual(grant.agent_runtime_id, "runtime:research:1")
         self.assertIsNotNone(grant.mandate_version_id)
         wrong_principal = validate_agent_authority_grant(
@@ -393,7 +391,7 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         grant = self._record_grant(
             grant_id="grant_usd",
             mandate_id=mandate_id,
-            principal_id="legacy-unverified:owner@example.com",
+            principal_id="owner@example.com",
             agent_runtime_id="runtime:currency",
             max_total_notional={"amount": "0.30", "currency": "USD"},
         )
@@ -927,14 +925,20 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
         with self.assertRaisesRegex(AgentAuthorityGrantValidationError, "principal mismatch"):
             revoke_agent_authority_grant(
                 grant.agent_authority_grant_id,
-                principal_id="principal:bob",
+                operator_context=authority_admin_context(
+                    "principal:bob",
+                    assurance="standard",
+                ),
                 reason="Attempt cross-owner revoke.",
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
         revoked = revoke_agent_authority_grant(
             grant.agent_authority_grant_id,
-            principal_id=principal_id,
+            operator_context=authority_admin_context(
+                principal_id,
+                assurance="standard",
+            ),
             reason="Stop delegated review.",
             engine=self.engine,
             receipt_root=self.receipt_root,
@@ -964,7 +968,10 @@ class AgentAuthorityGrantSliceTest(unittest.TestCase):
             if calls == 1:
                 revoke_agent_authority_grant(
                     grant.agent_authority_grant_id,
-                    principal_id=principal_id,
+                    operator_context=authority_admin_context(
+                        principal_id,
+                        assurance="standard",
+                    ),
                     reason="Race fixture revokes after optimistic validation.",
                     engine=self.engine,
                     receipt_root=self.receipt_root,
@@ -1022,7 +1029,7 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
-            local_operator_context=LocalOperatorContext("test_harness"),
+            identity_provider=StaticIdentityProvider(authority_admin_context()),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)
@@ -1032,8 +1039,8 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
 
     def _record_mandate(self) -> str:
         mandate = record_capital_mandate(
+            operator_context=authority_admin_context(),
             capital_mandate_id="mandate_api",
-            principal_id="legacy-local:test_harness",
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "preserve_capital"},
             risk_profile={"loss_tolerance": "low"},
@@ -1043,7 +1050,6 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
             typed_limits={
                 "max_notional": {"amount": "1000", "currency": "USD"},
             },
-            human_attester="owner@example.com",
             human_reason="Human owner attests this policy boundary.",
             explicit_confirmation=True,
             engine=self.engine,
@@ -1062,7 +1068,6 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
                 "allowed_action_types": ["rebalance"],
                 "autonomy_level": "L1_candidate_only",
             },
-            "issued_by": "owner@example.com",
             "issued_reason": "Allow bounded mandate-scoped review.",
         }
 
@@ -1129,28 +1134,18 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 422, response.text)
 
     def test_authenticated_agent_consumes_and_owner_revokes_via_api(self) -> None:
-        principal = PrincipalIdentity(
-            principal_id="principal:alice",
+        human = authority_admin_context(
+            "principal:alice",
             provider_id="test",
         )
-        human = OperatorContext(
-            principal=principal,
-            authentication_method="test_bearer",
-            authenticated_at_utc=datetime.now(UTC).isoformat(),
-        )
-        agent = OperatorContext(
-            principal=principal,
-            agent_runtime=AgentRuntimeIdentity(
-                agent_runtime_id="runtime:alice:research",
-                principal_id=principal.principal_id,
-                provider_id="test",
-            ),
-            authentication_method="test_bearer",
-            authenticated_at_utc=datetime.now(UTC).isoformat(),
+        agent = authority_admin_context(
+            "principal:alice",
+            provider_id="test",
+            agent_runtime_id="runtime:alice:research",
         )
         mandate = record_capital_mandate(
+            operator_context=human,
             capital_mandate_id="mandate_authenticated_api",
-            principal_id=principal.principal_id,
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "preserve_capital"},
             risk_profile={"loss_tolerance": "low"},
@@ -1160,7 +1155,6 @@ class AgentAuthorityGrantApiTest(unittest.TestCase):
                 "action_types": ["rebalance"],
                 "max_notional": {"amount": "100", "currency": "USD"},
             },
-            human_attester=principal.principal_id,
             human_reason="Authenticated owner mandate.",
             explicit_confirmation=True,
             engine=self.engine,

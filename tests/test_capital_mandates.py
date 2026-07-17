@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from finharness.api.app import create_app
+from finharness.identity import StaticIdentityProvider
 from finharness.ips import record_ips
-from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.capital_mandates import (
     CAPITAL_MANDATE_NON_CLAIMS,
     CapitalMandateValidationError,
@@ -22,6 +22,7 @@ from finharness.statecore.store import (
     write_records,
 )
 from tests.asgi_test_client import AsgiTestClient
+from tests.authority_test_helpers import authority_admin_context
 
 
 class CapitalMandateSliceTest(unittest.TestCase):
@@ -46,6 +47,7 @@ class CapitalMandateSliceTest(unittest.TestCase):
 
     def _record_mandate(self, *, mandate_id: str = "mandate_v1") -> CapitalMandate:
         return record_capital_mandate(
+            operator_context=authority_admin_context("owner@example.com"),
             capital_mandate_id=mandate_id,
             profile_snapshot={"profile": "balanced"},
             investment_objectives={"primary": "capital_preservation"},
@@ -58,7 +60,6 @@ class CapitalMandateSliceTest(unittest.TestCase):
             limit_book={"single_action_notional_cap": {"amount": 1000, "currency": "USD"}},
             kill_switch_rules=[{"rule": "drawdown_gt_10pct", "action": "freeze"}],
             review_cadence={"cadence": "quarterly"},
-            human_attester="owner@example.com",
             human_reason="This records the policy domain for future authority design.",
             explicit_confirmation=True,
             source_refs=["docs/product-north-star.md"],
@@ -107,26 +108,17 @@ class CapitalMandateSliceTest(unittest.TestCase):
         self.assertEqual(status_by_id[first.capital_mandate_id], "superseded")
         self.assertEqual(status_by_id[second.capital_mandate_id], "active")
 
-    def test_record_capital_mandate_requires_human_attester(self) -> None:
-        with self.assertRaises(CapitalMandateValidationError):
-            record_capital_mandate(
-                profile_snapshot={},
-                investment_objectives={},
-                risk_profile={},
-                human_attester=" ",
-                human_reason="policy",
-                explicit_confirmation=True,
-                engine=self.engine,
-                receipt_root=self.receipt_root,
-            )
+    def test_record_capital_mandate_derives_human_attester(self) -> None:
+        mandate = self._record_mandate()
+        self.assertEqual(mandate.human_attester, "owner@example.com")
 
     def test_record_capital_mandate_requires_human_reason(self) -> None:
         with self.assertRaises(CapitalMandateValidationError):
             record_capital_mandate(
+                operator_context=authority_admin_context(),
                 profile_snapshot={},
                 investment_objectives={},
                 risk_profile={},
-                human_attester="owner",
                 human_reason=" ",
                 explicit_confirmation=True,
                 engine=self.engine,
@@ -136,10 +128,10 @@ class CapitalMandateSliceTest(unittest.TestCase):
     def test_record_capital_mandate_requires_explicit_confirmation(self) -> None:
         with self.assertRaises(CapitalMandateValidationError):
             record_capital_mandate(
+                operator_context=authority_admin_context(),
                 profile_snapshot={},
                 investment_objectives={},
                 risk_profile={},
-                human_attester="owner",
                 human_reason="policy",
                 explicit_confirmation=False,
                 engine=self.engine,
@@ -185,11 +177,11 @@ class CapitalMandateSliceTest(unittest.TestCase):
     def test_missing_explicit_source_ips_fails_closed(self) -> None:
         with self.assertRaises(KeyError):
             record_capital_mandate(
+                operator_context=authority_admin_context(),
                 profile_snapshot={},
                 investment_objectives={},
                 risk_profile={},
                 source_ips_id="missing_ips",
-                human_attester="owner",
                 human_reason="policy",
                 explicit_confirmation=True,
                 engine=self.engine,
@@ -206,7 +198,7 @@ class CapitalMandateApiTest(unittest.TestCase):
         self.app = create_app(
             state_core_engine=self.engine,
             receipt_root=str(self.receipt_root),
-            local_operator_context=LocalOperatorContext("test_harness"),
+            identity_provider=StaticIdentityProvider(authority_admin_context()),
         )
         self.client = AsgiTestClient(self.app)
         self.addCleanup(self.client.close)

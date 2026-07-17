@@ -14,9 +14,11 @@ from finharness.api.dependencies import (
     ReceiptRootDependency,
     WriteCapabilityDependency,
 )
+from finharness.authority_administration import AuthorityAdministrationDeniedError
 from finharness.identity import (
     IdentityMutationClaim,
     IdentityMutationError,
+    OperatorContext,
     bind_authenticated_actor_to_mutation,
 )
 from finharness.statecore.capital_mandates import (
@@ -120,6 +122,7 @@ async def post_capital_mandate(
     actor_receipt_ref = actor_binding[0] if actor_binding is not None else None
     try:
         mandate = record_capital_mandate(
+            operator_context=operator,
             profile_snapshot=body.profile_snapshot,
             investment_objectives=body.investment_objectives,
             risk_profile=body.risk_profile,
@@ -132,22 +135,21 @@ async def post_capital_mandate(
             kill_switch_rules=body.kill_switch_rules,
             review_cadence=body.review_cadence,
             source_ips_id=body.source_ips_id,
-            human_attester=operator.authoritative_actor_id,
             human_reason=body.human_reason,
             explicit_confirmation=body.explicit_confirmation,
             source_refs=body.source_refs,
             receipt_refs=body.receipt_refs,
             capital_mandate_id=body.capital_mandate_id,
-            principal_id=operator.principal.principal_id,
             typed_limits=body.typed_limits,
             kill_switch_scope=body.kill_switch_scope,
             effective_at_utc=body.effective_at_utc,
             expires_at_utc=body.expires_at_utc,
             authenticated_actor_receipt_ref=actor_receipt_ref,
-            legacy_actor_label=operator.principal.legacy_label,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except AuthorityAdministrationDeniedError as exc:
+        raise _authority_administration_denied(exc) from exc
     except (CapitalMandateValidationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except KeyError as exc:
@@ -195,7 +197,7 @@ async def post_suspend_capital_mandate(
         body=body,
         engine=engine,
         receipt_root=receipt_root,
-        principal_id=operator.principal.principal_id,
+        operator_context=operator,
     )
 
 
@@ -216,7 +218,7 @@ async def post_resume_capital_mandate(
         body=body,
         engine=engine,
         receipt_root=receipt_root,
-        principal_id=operator.principal.principal_id,
+        operator_context=operator,
     )
 
 
@@ -237,7 +239,7 @@ async def post_revoke_capital_mandate(
         body=body,
         engine=engine,
         receipt_root=receipt_root,
-        principal_id=operator.principal.principal_id,
+        operator_context=operator,
     )
 
 
@@ -248,7 +250,7 @@ def _apply_lifecycle_command(
     body: CapitalMandateLifecycleRequest,
     engine: Any,
     receipt_root: Any,
-    principal_id: str,
+    operator_context: OperatorContext,
 ) -> CapitalMandateLifecycleResponse:
     commands = {
         "suspend": suspend_capital_mandate,
@@ -258,23 +260,40 @@ def _apply_lifecycle_command(
     try:
         event = commands[command](
             capital_mandate_id,
-            principal_id=principal_id,
-            actor_principal_id=principal_id,
+            operator_context=operator_context,
             reason=body.reason,
             engine=engine,
             receipt_root=receipt_root,
             effective_at_utc=body.effective_at_utc,
         )
         resolution = resolve_capital_mandate(
-            principal_id=principal_id,
+            principal_id=operator_context.principal.principal_id,
             engine=engine,
             at_utc=event.effective_at_utc,
         )
+    except AuthorityAdministrationDeniedError as exc:
+        raise _authority_administration_denied(exc) from exc
     except CapitalMandateValidationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return CapitalMandateLifecycleResponse(
         resolution=resolution,
         receipt_ref=event.receipt_ref,
+    )
+
+
+def _authority_administration_denied(
+    exc: AuthorityAdministrationDeniedError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail={
+            "code": "authority_administration_denied",
+            "reason": exc.reason,
+            "operation": exc.operation,
+            "policy_version": exc.policy_version,
+            "execution_allowed": False,
+            "authority_transition": False,
+        },
     )
 
 

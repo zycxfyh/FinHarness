@@ -46,14 +46,19 @@ domain model / read model / write(command) model / adapters / invariants
   `GET /agent-authority-grants/{grant_id}`。
 - **write(command)**:`POST /ips/draft` / `record_ips` 写 receipt-backed policy;
   `POST /capital-mandates` / `record_capital_mandate` 写 receipt-backed
-  human-attested mandate;`POST /agent-authority-grants` /
+  human-attested mandate;所有 mandate/grant administration 由 domain-owned
+  `require_authority_administration` 重查 current server assertion;
+  `POST /agent-authority-grants` /
   `record_agent_authority_grant` 写 receipt-backed mandate-bound credential;
   `POST /agent-authority-grants/{grant_id}/validate` 动态重查 grant 与 mandate
   当前状态并返回 structured deny reasons;`POST .../consume` 原子记录 nonce、
   usage 与 notional receipt;`POST .../revoke` 由 owner 原子撤销并留痕。
 - **invariants**:IPS 是用户政策;`execution_allowed=false`;
-  compliance check 是描述性检查。CapitalMandate 的 `human_attester` 由
-  server-authenticated `OperatorContext` 选择(runtime 优先,否则 principal),
+  compliance check 是描述性检查。CapitalMandate 的 `human_attester` 只能由
+  current server-authenticated human authority administrator principal 派生;
+  Agent runtime、service、ordinary human 与 legacy local label 均不能管理 authority。
+  create/replace/resume 与 grant create 要求 elevated assurance,
+  suspend/revoke 与 grant revoke 仍要求 human admin 但允许 standard assurance。
   request 只提供 `human_reason`、`explicit_confirmation=true`,且
   `execution_allowed=false`、`authority_transition=false`。AgentAuthorityGrant
   是 mandate-bound authority credential。CapitalMandate identity 永久绑定

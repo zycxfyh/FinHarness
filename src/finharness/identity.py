@@ -33,13 +33,64 @@ _IDENTITY_MUTATION_RECEIPT_ID = re.compile(r"^identity_mutation_[0-9a-f]{32}$")
 IDENTITY_MUTATION_SOURCE_PREFIX = "identity-mutation:"
 
 
+type PrincipalKind = Literal["human", "service", "legacy_unknown"]
+type AuthenticationAssurance = Literal["standard", "elevated"]
+
+
+class AuthorityAdministrationAssertion(BaseModel):
+    """Current provider assertion consumed by the authority-domain guard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    assertion_id: str
+    principal_id: str
+    provider_id: str
+    capability: Literal["authority_administrator"]
+    policy_version: str
+    authentication_assurance: AuthenticationAssurance
+    issued_at_utc: str
+    expires_at_utc: str
+
+    @field_validator(
+        "assertion_id",
+        "principal_id",
+        "provider_id",
+        "policy_version",
+        "issued_at_utc",
+        "expires_at_utc",
+    )
+    @classmethod
+    def require_assertion_value(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("authority administration assertion fields must be non-empty")
+        return value.strip()
+
+    @field_validator("issued_at_utc", "expires_at_utc")
+    @classmethod
+    def require_utc_timestamp(cls, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("authority assertion timestamps must be ISO-8601") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
+            raise ValueError("authority assertion timestamps must be UTC")
+        return parsed.astimezone(UTC).isoformat()
+
+    def model_post_init(self, _context: object) -> None:
+        if datetime.fromisoformat(self.issued_at_utc) >= datetime.fromisoformat(
+            self.expires_at_utc
+        ):
+            raise ValueError("authority assertion expiry must follow issuance")
+
+
 class PrincipalIdentity(BaseModel):
     """Stable authenticated human/service principal; never capital authority."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     principal_id: str
     provider_id: str
+    principal_kind: PrincipalKind = "legacy_unknown"
     display_label: str | None = None
     legacy_label: str | None = None
     legacy_label_verified: bool = False
@@ -55,7 +106,7 @@ class PrincipalIdentity(BaseModel):
 class AgentRuntimeIdentity(BaseModel):
     """Authenticated runtime instance bound to exactly one principal."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     agent_runtime_id: str
     principal_id: str
@@ -77,10 +128,11 @@ class IdentitySubstitutionError(ValueError):
 class OperatorContext(BaseModel):
     """Server-authenticated actor context, intentionally separate from authority."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     principal: PrincipalIdentity
     agent_runtime: AgentRuntimeIdentity | None = None
+    authority_administration: AuthorityAdministrationAssertion | None = None
     authentication_method: str
     authenticated_at_utc: str
 
@@ -90,6 +142,12 @@ class OperatorContext(BaseModel):
             and self.agent_runtime.principal_id != self.principal.principal_id
         ):
             raise ValueError("agent runtime principal binding mismatch")
+        assertion = self.authority_administration
+        if assertion is not None:
+            if assertion.principal_id != self.principal.principal_id:
+                raise ValueError("authority assertion principal binding mismatch")
+            if assertion.provider_id != self.principal.provider_id:
+                raise ValueError("authority assertion provider binding mismatch")
 
     @property
     def operator_id(self) -> str:
@@ -124,6 +182,7 @@ class OperatorContext(BaseModel):
                 self.agent_runtime.agent_runtime_id if self.agent_runtime is not None else None
             ),
             "identity_provider_id": self.principal.provider_id,
+            "principal_kind": self.principal.principal_kind,
             "authentication_method": self.authentication_method,
             "capital_authority": None,
             "legacy_actor_label": self.principal.legacy_label,

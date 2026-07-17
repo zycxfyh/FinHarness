@@ -20,6 +20,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
+from finharness.authority_administration import (
+    AuthorityAdministrationDecision,
+    require_authority_administration,
+)
+from finharness.identity import OperatorContext
 from finharness.ips import DEFAULT_IPS_RECEIPT_ROOT, current_ips
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
@@ -155,10 +160,10 @@ def current_capital_mandate(engine: Engine) -> CapitalMandate | None:
 
 def record_capital_mandate(
     *,
+    operator_context: OperatorContext,
     profile_snapshot: Mapping[str, Any],
     investment_objectives: Mapping[str, Any],
     risk_profile: Mapping[str, Any],
-    human_attester: str,
     human_reason: str,
     explicit_confirmation: bool,
     engine: Engine,
@@ -176,21 +181,25 @@ def record_capital_mandate(
     receipt_refs: Sequence[str] | None = None,
     capital_mandate_id: str | None = None,
     created_at_utc: str | None = None,
-    principal_id: str | None = None,
     typed_limits: Mapping[str, Any] | CapitalMandateLimits | None = None,
     kill_switch_scope: Mapping[str, Any] | CapitalMandateKillSwitchScope | None = None,
     effective_at_utc: str | None = None,
     expires_at_utc: str | None = None,
     authenticated_actor_receipt_ref: str | None = None,
-    legacy_actor_label: str | None = None,
 ) -> CapitalMandate:
     """Write a receipt-backed active CapitalMandate.
 
     Previously active mandates are marked ``superseded``. The receipt file is the
     source of truth; the SQLite row is the queryable mirror.
     """
+    administration = require_authority_administration(
+        context=operator_context,
+        operation="mandate_create_or_replace",
+    )
+    human_attester = operator_context.principal.principal_id
+    resolved_principal_id = operator_context.principal.principal_id
     _require_attestation(
-        human_attester=human_attester,
+        human_attester=resolved_principal_id,
         human_reason=human_reason,
         explicit_confirmation=explicit_confirmation,
     )
@@ -198,9 +207,6 @@ def record_capital_mandate(
     effective_at = _parse_utc(effective_at_utc or created_at).isoformat()
     expires_at = _parse_utc(expires_at_utc).isoformat() if expires_at_utc else None
     _require_ordered_time(effective_at, expires_at)
-    resolved_principal_id = (principal_id or f"legacy-unverified:{human_attester.strip()}").strip()
-    if not resolved_principal_id:
-        raise CapitalMandateValidationError("principal_id is required")
     parsed_limits = (
         typed_limits
         if isinstance(typed_limits, CapitalMandateLimits)
@@ -267,7 +273,7 @@ def record_capital_mandate(
         effective_at_utc=effective_at,
         expires_at_utc=expires_at,
         authenticated_actor_receipt_ref=authenticated_actor_receipt_ref,
-        legacy_actor_label=legacy_actor_label or (human_attester if principal_id is None else None),
+        legacy_actor_label=operator_context.principal.legacy_label,
         engine=engine,
     )
     activation = _lifecycle_event(
@@ -292,6 +298,7 @@ def record_capital_mandate(
             activation=activation,
             receipt_id=receipt_id,
             source_ips=source_ips,
+            administration=administration,
         ),
     )
     display = _display_path(receipt_path)
@@ -347,6 +354,7 @@ def _capital_mandate_receipt_payload(
     activation: CapitalMandateLifecycleEvent,
     receipt_id: str,
     source_ips: InvestmentPolicyStatement | None,
+    administration: AuthorityAdministrationDecision,
 ) -> dict[str, Any]:
     return {
         "receipt_id": receipt_id,
@@ -355,6 +363,7 @@ def _capital_mandate_receipt_payload(
         "capital_mandate": mandate.model_dump(mode="json"),
         "mandate_version": version.model_dump(mode="json"),
         "lifecycle_event": activation.model_dump(mode="json"),
+        "authority_administration": administration.model_dump(mode="json", by_alias=True),
         "source_ips": source_ips.model_dump(mode="json") if source_ips else None,
         "governance_boundary": {
             "execution_allowed": False,
@@ -520,8 +529,7 @@ def resolve_capital_mandate(
 def suspend_capital_mandate(
     capital_mandate_id: str,
     *,
-    principal_id: str,
-    actor_principal_id: str,
+    operator_context: OperatorContext,
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
@@ -529,8 +537,8 @@ def suspend_capital_mandate(
 ) -> CapitalMandateLifecycleEvent:
     return _record_lifecycle_command(
         capital_mandate_id,
-        principal_id=principal_id,
-        actor_principal_id=actor_principal_id,
+        operator_context=operator_context,
+        operation="mandate_suspend",
         event_type="suspended",
         reason=reason,
         engine=engine,
@@ -542,8 +550,7 @@ def suspend_capital_mandate(
 def resume_capital_mandate(
     capital_mandate_id: str,
     *,
-    principal_id: str,
-    actor_principal_id: str,
+    operator_context: OperatorContext,
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
@@ -551,8 +558,8 @@ def resume_capital_mandate(
 ) -> CapitalMandateLifecycleEvent:
     return _record_lifecycle_command(
         capital_mandate_id,
-        principal_id=principal_id,
-        actor_principal_id=actor_principal_id,
+        operator_context=operator_context,
+        operation="mandate_resume",
         event_type="resumed",
         reason=reason,
         engine=engine,
@@ -564,8 +571,7 @@ def resume_capital_mandate(
 def revoke_capital_mandate(
     capital_mandate_id: str,
     *,
-    principal_id: str,
-    actor_principal_id: str,
+    operator_context: OperatorContext,
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
@@ -573,8 +579,8 @@ def revoke_capital_mandate(
 ) -> CapitalMandateLifecycleEvent:
     return _record_lifecycle_command(
         capital_mandate_id,
-        principal_id=principal_id,
-        actor_principal_id=actor_principal_id,
+        operator_context=operator_context,
+        operation="mandate_revoke",
         event_type="revoked",
         reason=reason,
         engine=engine,
@@ -586,16 +592,20 @@ def revoke_capital_mandate(
 def _record_lifecycle_command(
     capital_mandate_id: str,
     *,
-    principal_id: str,
-    actor_principal_id: str,
+    operator_context: OperatorContext,
+    operation: Literal["mandate_suspend", "mandate_resume", "mandate_revoke"],
     event_type: str,
     reason: str,
     engine: Engine,
     receipt_root: str | Path,
     effective_at_utc: str | None,
 ) -> CapitalMandateLifecycleEvent:
-    if principal_id != actor_principal_id:
-        raise CapitalMandateValidationError("mandate lifecycle actor substitution denied")
+    administration = require_authority_administration(
+        context=operator_context,
+        operation=operation,
+    )
+    principal_id = operator_context.principal.principal_id
+    actor_principal_id = principal_id
     if not reason.strip():
         raise CapitalMandateValidationError("mandate lifecycle reason is required")
     resolved_at = _parse_utc(effective_at_utc or _now_utc()).isoformat()
@@ -641,6 +651,10 @@ def _record_lifecycle_command(
             "mandate_version": version.model_dump(mode="json"),
             "lifecycle_event": event.model_dump(mode="json"),
             "prior_resolution": resolved.model_dump(mode="json"),
+            "authority_administration": administration.model_dump(
+                mode="json",
+                by_alias=True,
+            ),
             "execution_allowed": False,
             "authority_transition": False,
         },
