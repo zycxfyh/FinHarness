@@ -913,10 +913,34 @@ def _reconcile_attestation_identity_mutation(
     if proposal.proposal_id != proposal_id:
         raise IdentityMutationError("attestation proposal snapshot does not match the route")
 
+    admitted_version_id = receipt.get("admitted_proposal_version_id")
+    admitted_receipt_ref = receipt.get("admitted_proposal_receipt_ref")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError("attestation receipt missing admitted_proposal_version_id")
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError("attestation receipt missing admitted_proposal_receipt_ref")
+
+    # Row-level binding verification
+    row_bound_version = getattr(attestation, "bound_proposal_version_id", None)
+    row_bound_receipt = getattr(attestation, "bound_proposal_receipt_ref", None)
+    if row_bound_version != admitted_version_id:
+        raise IdentityMutationError(
+            "attestation row bound version does not match receipt admitted version"
+        )
+    if row_bound_receipt != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "attestation row bound receipt does not match receipt admitted receipt"
+        )
+
     response = AttestationCreateResponse(
         attestation=attestation,
         proposal=proposal,
         receipt_ref=receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=admitted_version_id,
+            receipt_ref=admitted_receipt_ref,
+        ),
         approved_is_not_execution_authorization=True,
         execution_allowed=False,
     )
@@ -1373,11 +1397,47 @@ def _reconcile_scaffold_revision_identity_mutation(
     previous_receipt_ref = context.get("previous_receipt_ref")
     changed_fields = context.get("changed_scaffold_fields", [])
 
+    # Version binding for scaffold reconciliation
+    admitted_version_id = context.get("admitted_proposal_version_id")
+    admitted_receipt_ref = context.get("admitted_proposal_receipt_ref")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_version_id"
+        )
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_receipt_ref"
+        )
+
+    # supersedes must equal admitted receipt
+    supersedes = receipt.get("supersedes")
+    if supersedes != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold receipt supersedes does not match admitted receipt"
+        )
+    if previous_receipt_ref != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold previous_receipt_ref does not match admitted receipt"
+        )
+
+    resulting_version_id = receipt.get("receipt_id", "")
+    resulting_receipt_ref = receipt_ref
+
     response = ProposalScaffoldRevisionResponse(
         proposal=proposal,
         receipt_ref=receipt_ref,
         previous_receipt_ref=(previous_receipt_ref),
         changed_scaffold_fields=tuple(changed_fields),
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=admitted_version_id,
+            receipt_ref=admitted_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=resulting_version_id,
+            receipt_ref=resulting_receipt_ref,
+        ),
         execution_allowed=False,
     )
 
@@ -1524,9 +1584,36 @@ def _reconcile_review_event_identity_mutation(
     if event.content_hash != expected_content_hash:
         raise IdentityMutationError("review-event content hash does not match its row")
 
+    admitted_version_id = receipt.get("admitted_proposal_version_id")
+    admitted_receipt_ref = receipt.get("admitted_proposal_receipt_ref")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError(
+            "review-event receipt missing admitted_proposal_version_id"
+        )
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError(
+            "review-event receipt missing admitted_proposal_receipt_ref"
+        )
+
+    row_bound_version = getattr(event, "bound_proposal_version_id", None)
+    row_bound_receipt = getattr(event, "bound_proposal_receipt_ref", None)
+    if row_bound_version != admitted_version_id:
+        raise IdentityMutationError(
+            "review-event row bound version does not match receipt admitted version"
+        )
+    if row_bound_receipt != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "review-event row bound receipt does not match receipt admitted receipt"
+        )
+
     response = ReviewEventCreateResponse(
         review_event=event,
         receipt_ref=receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=admitted_version_id,
+            receipt_ref=admitted_receipt_ref,
+        ),
         execution_allowed=False,
     )
 
