@@ -4,12 +4,15 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from finharness.api.app import create_app
 from finharness.authority_administration import AuthorityAdministrationDeniedError
 from finharness.identity import IDEMPOTENCY_HEADER, TestIdentityProvider
 from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.agent_authority_grants import (
+    AgentAuthorityGrantValidationError,
+    consume_agent_authority_grant,
     record_agent_authority_grant,
     revoke_agent_authority_grant,
 )
@@ -21,6 +24,7 @@ from finharness.statecore.capital_mandates import (
 )
 from finharness.statecore.models import (
     AgentAuthorityGrant,
+    AgentAuthorityGrantConsumption,
     CapitalMandate,
     CapitalMandateLifecycleEvent,
     CapitalMandateVersion,
@@ -186,10 +190,13 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
                 ),
             )
             for call in calls:
-                with self.subTest(
-                    context=context_name,
-                    call=call,
-                ), self.assertRaises(AuthorityAdministrationDeniedError):
+                with (
+                    self.subTest(
+                        context=context_name,
+                        call=call,
+                    ),
+                    self.assertRaises(AuthorityAdministrationDeniedError),
+                ):
                     call()
                 self.assertEqual(self._domain_snapshot(), before)
 
@@ -379,6 +386,223 @@ class AuthorityAdministrationIntegrationTest(unittest.TestCase):
             json={"reason": "Emergency revoke."},
         )
         self.assertEqual(revoke_mandate.status_code, 200, revoke_mandate.text)
+
+    def test_reduction_requests_cannot_supply_future_or_backdated_authority_time(
+        self,
+    ) -> None:
+        mandate = self._record_mandate()
+        grant = self._record_grant(mandate.capital_mandate_id)
+        client, _mapping = self._client({"admin": self.admin})
+        headers = {"Authorization": "Bearer admin"}
+        cases = (
+            (
+                f"/capital-mandates/{mandate.capital_mandate_id}/suspend",
+                "effective_at_utc",
+            ),
+            (
+                f"/capital-mandates/{mandate.capital_mandate_id}/revoke",
+                "effective_at_utc",
+            ),
+            (
+                f"/agent-authority-grants/{grant.agent_authority_grant_id}/revoke",
+                "revoked_at_utc",
+            ),
+        )
+        for path, field in cases:
+            for hostile_time in (
+                "2020-01-01T00:00:00+00:00",
+                "2035-01-01T00:00:00+00:00",
+            ):
+                with self.subTest(path=path, field=field, hostile_time=hostile_time):
+                    before = self._domain_snapshot()
+                    response = client.post(
+                        path,
+                        headers=headers,
+                        json={
+                            "reason": "Caller must not own reduction time.",
+                            field: hostile_time,
+                        },
+                    )
+                    self.assertEqual(response.status_code, 422, response.text)
+                    self.assertEqual(self._domain_snapshot(), before)
+
+    def test_reduction_mutation_receipt_response_and_decision_share_server_time(
+        self,
+    ) -> None:
+        mandate = self._record_mandate()
+        grant = self._record_grant(mandate.capital_mandate_id)
+        client, _mapping = self._client(
+            {
+                "standard": authority_admin_context(
+                    "principal:alice",
+                    assurance="standard",
+                )
+            }
+        )
+        headers = {"Authorization": "Bearer standard"}
+
+        mandate_time = "2026-07-17T08:30:00+00:00"
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value=mandate_time,
+        ):
+            suspended = client.post(
+                f"/capital-mandates/{mandate.capital_mandate_id}/suspend",
+                headers=headers,
+                json={"reason": "Immediate server-timed pause."},
+            )
+        self.assertEqual(suspended.status_code, 200, suspended.text)
+        suspended_body = suspended.json()
+        event = suspended_body["resolution"]["lifecycle_event"]
+        self.assertEqual(suspended_body["resolution"]["at_utc"], mandate_time)
+        self.assertEqual(event["effective_at_utc"], mandate_time)
+        self.assertEqual(event["created_at_utc"], mandate_time)
+        mandate_receipt = json.loads(
+            Path(suspended_body["receipt_ref"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(mandate_receipt["created_at_utc"], mandate_time)
+        self.assertEqual(
+            mandate_receipt["authority_administration"]["checked_at_utc"],
+            mandate_time,
+        )
+        self.assertEqual(
+            mandate_receipt["lifecycle_event"]["effective_at_utc"],
+            mandate_time,
+        )
+        mandate_index = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.path == suspended_body["receipt_ref"]
+        )
+        self.assertEqual(mandate_index.created_at_utc, mandate_time)
+
+        grant_time = "2026-07-17T08:31:00+00:00"
+        with patch(
+            "finharness.statecore.agent_authority_grants._now_utc",
+            return_value=grant_time,
+        ):
+            revoked = client.post(
+                f"/agent-authority-grants/{grant.agent_authority_grant_id}/revoke",
+                headers=headers,
+                json={"reason": "Immediate server-timed revoke."},
+            )
+        self.assertEqual(revoked.status_code, 200, revoked.text)
+        revoked_body = revoked.json()
+        self.assertEqual(
+            revoked_body["agent_authority_grant"]["revoked_at_utc"],
+            grant_time,
+        )
+        grant_receipt = json.loads(Path(revoked_body["receipt_ref"]).read_text(encoding="utf-8"))
+        self.assertEqual(grant_receipt["created_at_utc"], grant_time)
+        self.assertEqual(
+            grant_receipt["authority_administration"]["checked_at_utc"],
+            grant_time,
+        )
+        self.assertEqual(grant_receipt["grant_after"]["revoked_at_utc"], grant_time)
+        grant_index = next(
+            row
+            for row in read_all(ReceiptIndex, engine=self.engine)
+            if row.path == revoked_body["receipt_ref"]
+        )
+        self.assertEqual(grant_index.created_at_utc, grant_time)
+
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "grant_not_active",
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id="principal:alice",
+                agent_runtime_id="runtime:research",
+                nonce="after-revoke",
+                requested_scope={
+                    "allowed_asset_classes": ["cash"],
+                    "allowed_action_types": ["rebalance"],
+                    "autonomy_level": "L1_candidate_only",
+                },
+                requested_notional={"amount": "0", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipts,
+            )
+
+    def test_reduction_idempotent_replay_keeps_original_authoritative_time(
+        self,
+    ) -> None:
+        mandate = self._record_mandate()
+        client, mapping = self._client({"admin": self.admin})
+        headers = {
+            "Authorization": "Bearer admin",
+            IDEMPOTENCY_HEADER: "authority-reduction-replay-0001",
+        }
+        body = {"reason": "Replay must preserve the committed reduction."}
+        first_time = "2026-07-17T08:32:00+00:00"
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value=first_time,
+        ):
+            first = client.post(
+                f"/capital-mandates/{mandate.capital_mandate_id}/suspend",
+                headers=headers,
+                json=body,
+            )
+        self.assertEqual(first.status_code, 200, first.text)
+        after_first = self._domain_snapshot()
+        self.assertEqual(first.json()["resolution"]["at_utc"], first_time)
+
+        mapping["admin"] = authority_admin_context(
+            "principal:alice",
+            with_assertion=False,
+        )
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value="2026-07-17T09:32:00+00:00",
+        ):
+            replay = client.post(
+                f"/capital-mandates/{mandate.capital_mandate_id}/suspend",
+                headers=headers,
+                json=body,
+            )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
+        self.assertEqual(replay.json(), first.json())
+        self.assertEqual(self._domain_snapshot(), after_first)
+
+    def test_committed_mandate_reduction_blocks_grant_consumption(self) -> None:
+        mandate = self._record_mandate()
+        grant = self._record_grant(mandate.capital_mandate_id)
+        suspend_capital_mandate(
+            mandate.capital_mandate_id,
+            operator_context=authority_admin_context(
+                "principal:alice",
+                assurance="standard",
+            ),
+            reason="Immediate mandate kill switch.",
+            engine=self.engine,
+            receipt_root=self.receipts,
+        )
+
+        with self.assertRaisesRegex(
+            AgentAuthorityGrantValidationError,
+            "capital_mandate_not_active",
+        ):
+            consume_agent_authority_grant(
+                grant.agent_authority_grant_id,
+                principal_id="principal:alice",
+                agent_runtime_id="runtime:research",
+                nonce="after-mandate-suspend",
+                requested_scope={
+                    "allowed_asset_classes": ["cash"],
+                    "allowed_action_types": ["rebalance"],
+                    "autonomy_level": "L1_candidate_only",
+                },
+                requested_notional={"amount": "0", "currency": "USD"},
+                engine=self.engine,
+                receipt_root=self.receipts,
+            )
+        self.assertEqual(
+            read_all(AgentAuthorityGrantConsumption, engine=self.engine),
+            [],
+        )
 
     def test_receipts_bind_decision_to_exact_domain_targets(self) -> None:
         mandate = self._record_mandate()

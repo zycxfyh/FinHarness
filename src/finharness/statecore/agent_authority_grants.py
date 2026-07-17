@@ -711,18 +711,12 @@ def revoke_agent_authority_grant(
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_AGENT_AUTHORITY_GRANT_RECEIPT_ROOT,
-    revoked_at_utc: str | None = None,
 ) -> AgentAuthorityGrant:
     """Revoke a principal-owned grant and append an audit receipt atomically."""
 
-    administration = require_authority_administration(
-        context=operator_context,
-        operation="grant_revoke",
-    )
     principal_id = operator_context.principal.principal_id
     if not reason.strip():
         raise AgentAuthorityGrantValidationError("revocation reason is required")
-    timestamp = revoked_at_utc or _now_utc()
     receipt_id = f"receipt_agent_authority_grant_revoked_{_stamp()}_{uuid4().hex[:8]}"
     receipt_path = resolve_under(
         receipt_root,
@@ -735,6 +729,12 @@ def revoke_agent_authority_grant(
         with Session(engine) as session:
             if engine.dialect.name == "sqlite":
                 session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            timestamp = _now_utc()
+            administration = require_authority_administration(
+                context=operator_context,
+                operation="grant_revoke",
+                checked_at_utc=timestamp,
+            )
             grant = session.exec(
                 select(AgentAuthorityGrant)
                 .where(AgentAuthorityGrant.agent_authority_grant_id == grant_id)

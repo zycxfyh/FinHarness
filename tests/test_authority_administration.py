@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import inspect
 import unittest
 
 from pydantic import ValidationError
 
+from finharness.api.routes_agent_authority_grants import (
+    AgentAuthorityGrantRevokeRequest,
+)
+from finharness.api.routes_capital_mandates import (
+    CapitalMandateReductionRequest,
+    CapitalMandateResumeRequest,
+)
 from finharness.authority_administration import (
     AUTHORITY_ADMINISTRATION_OPERATION_POLICY,
     AUTHORITY_ADMINISTRATION_POLICY_VERSION,
@@ -15,6 +23,13 @@ from finharness.identity import (
     AuthorityAdministrationAssertion,
     OperatorContext,
     PrincipalIdentity,
+)
+from finharness.statecore.agent_authority_grants import (
+    revoke_agent_authority_grant,
+)
+from finharness.statecore.capital_mandates import (
+    revoke_capital_mandate,
+    suspend_capital_mandate,
 )
 
 CHECKED_AT = "2026-07-17T08:00:00+00:00"
@@ -85,6 +100,26 @@ class AuthorityAdministrationTests(unittest.TestCase):
             },
         )
 
+    def test_reduction_interfaces_have_no_caller_owned_authority_time(self) -> None:
+        self.assertEqual(set(CapitalMandateReductionRequest.model_fields), {"reason"})
+        self.assertEqual(
+            set(CapitalMandateResumeRequest.model_fields),
+            {"reason", "effective_at_utc"},
+        )
+        self.assertEqual(set(AgentAuthorityGrantRevokeRequest.model_fields), {"reason"})
+        self.assertNotIn(
+            "effective_at_utc",
+            inspect.signature(suspend_capital_mandate).parameters,
+        )
+        self.assertNotIn(
+            "effective_at_utc",
+            inspect.signature(revoke_capital_mandate).parameters,
+        )
+        self.assertNotIn(
+            "revoked_at_utc",
+            inspect.signature(revoke_agent_authority_grant).parameters,
+        )
+
     def test_elevated_human_admin_is_admitted_for_every_operation(self) -> None:
         context = operator_context()
         for operation, required in AUTHORITY_ADMINISTRATION_OPERATION_POLICY.items():
@@ -133,9 +168,12 @@ class AuthorityAdministrationTests(unittest.TestCase):
 
     def test_non_human_principals_are_denied(self) -> None:
         for kind in ("service", "legacy_unknown"):
-            with self.subTest(kind=kind), self.assertRaisesRegex(
-                AuthorityAdministrationDeniedError,
-                "human_principal_required",
+            with (
+                self.subTest(kind=kind),
+                self.assertRaisesRegex(
+                    AuthorityAdministrationDeniedError,
+                    "human_principal_required",
+                ),
             ):
                 require_authority_administration(
                     context=operator_context(principal_kind=kind),
@@ -170,9 +208,12 @@ class AuthorityAdministrationTests(unittest.TestCase):
             ),
         )
         for context, reason in cases:
-            with self.subTest(reason=reason), self.assertRaisesRegex(
-                AuthorityAdministrationDeniedError,
-                reason,
+            with (
+                self.subTest(reason=reason),
+                self.assertRaisesRegex(
+                    AuthorityAdministrationDeniedError,
+                    reason,
+                ),
             ):
                 require_authority_administration(
                     context=context,
@@ -256,9 +297,12 @@ class AuthorityAdministrationTests(unittest.TestCase):
                 "expiry must follow issuance",
             ),
         ):
-            with self.subTest(updates=updates), self.assertRaisesRegex(
-                ValidationError,
-                reason,
+            with (
+                self.subTest(updates=updates),
+                self.assertRaisesRegex(
+                    ValidationError,
+                    reason,
+                ),
             ):
                 AuthorityAdministrationAssertion.model_validate(payload | updates)
 

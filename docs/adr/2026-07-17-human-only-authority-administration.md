@@ -53,6 +53,15 @@ Every public mandate/grant administration function calls the guard itself and
 derives authoritative principal/attester/issuer fields from `OperatorContext`.
 Routes translate the typed denial to HTTP 403; routes are not the sole defense.
 
+Authority-reducing commands are immediate, server-timed mutations. Ordinary
+suspend/revoke request models contain a reason but no caller-owned effective or
+revocation timestamp. After acquiring the domain write lock, the domain
+owner generates one UTC command time and uses it for assertion-currentness
+checking, the lifecycle or grant mutation, the Receipt/ReceiptIndex, and the
+returned domain state. Future or backdated reduction is not an alternate mode
+of the ordinary command. A future scheduled reduction would require a separate,
+explicitly calibrated protocol and is outside this Issue.
+
 The successful decision is embedded in the existing mandate, lifecycle, grant,
 or grant-revocation receipt. It is evidence for that exact effect, not a token,
 DomainRecord, or reusable authorization. It does not participate in
@@ -95,6 +104,8 @@ needed to make that claim.
 ## Rejected alternatives
 
 - Request roles or assurance headers: caller-controlled and non-authoritative.
+- Caller-owned suspend/revoke timestamps: permit delayed kill switches and
+  backdated authority evidence.
 - Route middleware as the only guard: direct domain calls bypass it.
 - Generic RBAC/ABAC, policy registry, or permissions DSL: no demonstrated need
   and a second authorization lifecycle.
@@ -113,4 +124,6 @@ needed to make that claim.
 - Historical receipts remain readable but cannot prove #391 conformance.
 - Tests must cover unknown fields, Agent-under-admin, service/ordinary human,
   direct domain bypass, operation mislabeling, assertion freshness, emergency
-  reduction, exact target binding, restart, and replay/currentness separation.
+  reduction, server-owned reduction time, future/backdated time injection,
+  revoke-versus-consume behavior, exact target binding, restart, and
+  replay/currentness separation.

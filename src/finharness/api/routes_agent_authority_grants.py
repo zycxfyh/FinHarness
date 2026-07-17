@@ -89,7 +89,6 @@ class AgentAuthorityGrantRevokeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str
-    revoked_at_utc: str | None = None
 
 
 @router.post("/agent-authority-grants", response_model=AgentAuthorityGrantWriteResponse)
@@ -234,7 +233,6 @@ async def post_agent_authority_grant_revoke(
             grant_id,
             operator_context=operator,
             reason=body.reason,
-            revoked_at_utc=body.revoked_at_utc,
             engine=engine,
             receipt_root=receipt_root,
         )

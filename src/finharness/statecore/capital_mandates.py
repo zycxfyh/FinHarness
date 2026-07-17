@@ -18,9 +18,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, select
 
 from finharness.authority_administration import (
+    AUTHORITY_ADMINISTRATION_OPERATION_EFFECT,
     AuthorityAdministrationDecision,
     require_authority_administration,
 )
@@ -391,13 +393,20 @@ def capital_mandate_series_owner(
     """Return the one durable version owner, rejecting corrupted shared series."""
 
     with Session(engine) as session:
-        owners = set(
-            session.exec(
-                select(CapitalMandateVersion.principal_id).where(
-                    CapitalMandateVersion.capital_mandate_id == capital_mandate_id
-                )
-            ).all()
-        )
+        return _capital_mandate_series_owner_in_session(session, capital_mandate_id)
+
+
+def _capital_mandate_series_owner_in_session(
+    session: Session,
+    capital_mandate_id: str,
+) -> str | None:
+    owners = set(
+        session.exec(
+            select(CapitalMandateVersion.principal_id).where(
+                CapitalMandateVersion.capital_mandate_id == capital_mandate_id
+            )
+        ).all()
+    )
     if len(owners) > 1:
         raise CapitalMandateValidationError(
             "capital mandate series has multiple durable principal owners"
@@ -454,51 +463,72 @@ def resolve_capital_mandate(
     if not principal_id.strip():
         raise CapitalMandateValidationError("principal_id is required for mandate resolution")
     resolved_at = at_utc or _now_utc()
-    at_dt = _parse_utc(resolved_at)
     with Session(engine) as session:
-        versions = session.exec(
-            select(CapitalMandateVersion).where(CapitalMandateVersion.principal_id == principal_id)
-        ).all()
-        effective_versions = [
-            candidate for candidate in versions if _parse_utc(candidate.effective_at_utc) <= at_dt
-        ]
-        for candidate in effective_versions:
-            try:
-                owner = capital_mandate_series_owner(engine, candidate.capital_mandate_id)
-            except CapitalMandateValidationError:
-                return ResolvedCapitalMandate(
-                    principal_id=principal_id,
-                    at_utc=resolved_at,
-                    status="invalid",
-                    version=None,
-                    deny_reasons=("mandate_series_owner_conflict",),
-                )
-            if owner != principal_id:
-                return ResolvedCapitalMandate(
-                    principal_id=principal_id,
-                    at_utc=resolved_at,
-                    status="invalid",
-                    version=None,
-                    deny_reasons=("mandate_series_owner_conflict",),
-                )
-        version = max(
-            effective_versions,
-            key=_mandate_resolution_order_key,
-            default=None,
+        return _resolve_capital_mandate_in_session(
+            session,
+            principal_id=principal_id,
+            at_utc=resolved_at,
         )
-        if version is None:
+
+
+def _resolve_capital_mandate_in_session(
+    session: Session,
+    *,
+    principal_id: str,
+    at_utc: str,
+    lock: bool = False,
+) -> ResolvedCapitalMandate:
+    at_dt = _parse_utc(at_utc)
+    version_statement = select(CapitalMandateVersion).where(
+        CapitalMandateVersion.principal_id == principal_id
+    )
+    if lock:
+        version_statement = version_statement.with_for_update()
+    versions = session.exec(version_statement).all()
+    effective_versions = [
+        candidate for candidate in versions if _parse_utc(candidate.effective_at_utc) <= at_dt
+    ]
+    for candidate in effective_versions:
+        try:
+            owner = _capital_mandate_series_owner_in_session(
+                session,
+                candidate.capital_mandate_id,
+            )
+        except CapitalMandateValidationError:
             return ResolvedCapitalMandate(
                 principal_id=principal_id,
-                at_utc=resolved_at,
-                status="unavailable",
+                at_utc=at_utc,
+                status="invalid",
                 version=None,
-                deny_reasons=("no_effective_mandate",),
+                deny_reasons=("mandate_series_owner_conflict",),
             )
-        events = session.exec(
-            select(CapitalMandateLifecycleEvent).where(
-                CapitalMandateLifecycleEvent.mandate_version_id == version.mandate_version_id
+        if owner != principal_id:
+            return ResolvedCapitalMandate(
+                principal_id=principal_id,
+                at_utc=at_utc,
+                status="invalid",
+                version=None,
+                deny_reasons=("mandate_series_owner_conflict",),
             )
-        ).all()
+    version = max(
+        effective_versions,
+        key=_mandate_resolution_order_key,
+        default=None,
+    )
+    if version is None:
+        return ResolvedCapitalMandate(
+            principal_id=principal_id,
+            at_utc=at_utc,
+            status="unavailable",
+            version=None,
+            deny_reasons=("no_effective_mandate",),
+        )
+    event_statement = select(CapitalMandateLifecycleEvent).where(
+        CapitalMandateLifecycleEvent.mandate_version_id == version.mandate_version_id
+    )
+    if lock:
+        event_statement = event_statement.with_for_update()
+    events = session.exec(event_statement).all()
     effective_events = [event for event in events if _parse_utc(event.effective_at_utc) <= at_dt]
     latest_event = max(
         effective_events,
@@ -518,7 +548,7 @@ def resolve_capital_mandate(
         }[latest_event.event_type]
     return ResolvedCapitalMandate(
         principal_id=principal_id,
-        at_utc=resolved_at,
+        at_utc=at_utc,
         status=status,
         version=version,
         lifecycle_event=latest_event,
@@ -533,7 +563,6 @@ def suspend_capital_mandate(
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
-    effective_at_utc: str | None = None,
 ) -> CapitalMandateLifecycleEvent:
     return _record_lifecycle_command(
         capital_mandate_id,
@@ -543,7 +572,7 @@ def suspend_capital_mandate(
         reason=reason,
         engine=engine,
         receipt_root=receipt_root,
-        effective_at_utc=effective_at_utc,
+        effective_at_utc=None,
     )
 
 
@@ -575,7 +604,6 @@ def revoke_capital_mandate(
     reason: str,
     engine: Engine,
     receipt_root: str | Path = DEFAULT_CAPITAL_MANDATE_RECEIPT_ROOT,
-    effective_at_utc: str | None = None,
 ) -> CapitalMandateLifecycleEvent:
     return _record_lifecycle_command(
         capital_mandate_id,
@@ -585,7 +613,7 @@ def revoke_capital_mandate(
         reason=reason,
         engine=engine,
         receipt_root=receipt_root,
-        effective_at_utc=effective_at_utc,
+        effective_at_utc=None,
     )
 
 
@@ -600,79 +628,101 @@ def _record_lifecycle_command(
     receipt_root: str | Path,
     effective_at_utc: str | None,
 ) -> CapitalMandateLifecycleEvent:
-    administration = require_authority_administration(
-        context=operator_context,
-        operation=operation,
-    )
     principal_id = operator_context.principal.principal_id
     actor_principal_id = principal_id
     if not reason.strip():
         raise CapitalMandateValidationError("mandate lifecycle reason is required")
-    resolved_at = _parse_utc(effective_at_utc or _now_utc()).isoformat()
-    resolved = resolve_capital_mandate(
-        principal_id=principal_id,
-        engine=engine,
-        at_utc=resolved_at,
-    )
-    if "mandate_series_owner_conflict" in resolved.deny_reasons:
-        raise CapitalMandateValidationError("mandate_series_owner_conflict")
-    version = resolved.version
-    if version is None or version.capital_mandate_id != capital_mandate_id:
-        raise CapitalMandateValidationError("current principal mandate does not match command")
-    allowed_from = {
-        "suspended": {"active"},
-        "resumed": {"suspended"},
-        "revoked": {"active", "suspended"},
-    }
-    if resolved.status not in allowed_from[event_type]:
-        raise CapitalMandateValidationError(
-            f"cannot apply {event_type} to mandate in {resolved.status} state"
-        )
-    receipt_id = f"receipt_capital_mandate_{event_type}_{_stamp()}_{uuid4().hex[:8]}"
-    receipt_path = resolve_under(
-        receipt_root,
-        "capital-mandates",
-        "lifecycle",
-        f"{receipt_id}.json",
-    )
-    event = _lifecycle_event(
-        version=version,
-        event_type=event_type,
-        actor_principal_id=actor_principal_id,
-        reason=reason,
-        receipt_ref=_display_path(receipt_path),
-        effective_at_utc=resolved_at,
-    )
-    atomic_write_json(
-        receipt_path,
-        {
-            "receipt_id": receipt_id,
-            "kind": "capital_mandate_lifecycle",
-            "mandate_version": version.model_dump(mode="json"),
-            "lifecycle_event": event.model_dump(mode="json"),
-            "prior_resolution": resolved.model_dump(mode="json"),
-            "authority_administration": administration.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-            "execution_allowed": False,
-            "authority_transition": False,
-        },
-    )
-    index = ReceiptIndex(
-        receipt_id=receipt_id,
-        kind="capital_mandate_lifecycle",
-        path=_display_path(receipt_path),
-        created_at_utc=event.created_at_utc,
-        source_refs=[_display_path(receipt_path), *event.source_refs],
-        refs=[capital_mandate_id, version.mandate_version_id, principal_id],
-    )
+    receipt_path: Path | None = None
     try:
-        upsert_records([event, index], engine=engine)
-    except StateCoreStoreError:
-        remove_file_best_effort(receipt_path)
+        with Session(engine) as session:
+            if engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            checked_at = _now_utc()
+            administration = require_authority_administration(
+                context=operator_context,
+                operation=operation,
+                checked_at_utc=checked_at,
+            )
+            if AUTHORITY_ADMINISTRATION_OPERATION_EFFECT[operation] == "reducing":
+                resolved_at = checked_at
+            else:
+                resolved_at = _parse_utc(effective_at_utc or checked_at).isoformat()
+            resolved = _resolve_capital_mandate_in_session(
+                session,
+                principal_id=principal_id,
+                at_utc=resolved_at,
+                lock=True,
+            )
+            if "mandate_series_owner_conflict" in resolved.deny_reasons:
+                raise CapitalMandateValidationError("mandate_series_owner_conflict")
+            version = resolved.version
+            if version is None or version.capital_mandate_id != capital_mandate_id:
+                raise CapitalMandateValidationError(
+                    "current principal mandate does not match command"
+                )
+            allowed_from = {
+                "suspended": {"active"},
+                "resumed": {"suspended"},
+                "revoked": {"active", "suspended"},
+            }
+            if resolved.status not in allowed_from[event_type]:
+                raise CapitalMandateValidationError(
+                    f"cannot apply {event_type} to mandate in {resolved.status} state"
+                )
+            receipt_id = f"receipt_capital_mandate_{event_type}_{_stamp()}_{uuid4().hex[:8]}"
+            receipt_path = resolve_under(
+                receipt_root,
+                "capital-mandates",
+                "lifecycle",
+                f"{receipt_id}.json",
+            )
+            event = _lifecycle_event(
+                version=version,
+                event_type=event_type,
+                actor_principal_id=actor_principal_id,
+                reason=reason,
+                receipt_ref=_display_path(receipt_path),
+                effective_at_utc=resolved_at,
+                created_at_utc=checked_at,
+            )
+            atomic_write_json(
+                receipt_path,
+                {
+                    "receipt_id": receipt_id,
+                    "kind": "capital_mandate_lifecycle",
+                    "created_at_utc": checked_at,
+                    "mandate_version": version.model_dump(mode="json"),
+                    "lifecycle_event": event.model_dump(mode="json"),
+                    "prior_resolution": resolved.model_dump(mode="json"),
+                    "authority_administration": administration.model_dump(
+                        mode="json",
+                        by_alias=True,
+                    ),
+                    "execution_allowed": False,
+                    "authority_transition": False,
+                },
+            )
+            index = ReceiptIndex(
+                receipt_id=receipt_id,
+                kind="capital_mandate_lifecycle",
+                path=_display_path(receipt_path),
+                created_at_utc=checked_at,
+                source_refs=[_display_path(receipt_path), *event.source_refs],
+                refs=[capital_mandate_id, version.mandate_version_id, principal_id],
+            )
+            session.add(event)
+            session.add(index)
+            session.commit()
+            session.refresh(event)
+            return event
+    except (SQLAlchemyError, OSError) as exc:
+        if receipt_path is not None:
+            remove_file_best_effort(receipt_path)
+        raise StateCoreStoreError(f"mandate lifecycle atomic write failed: {exc}") from exc
+    except Exception:
+        if receipt_path is not None:
+            remove_file_best_effort(receipt_path)
         raise
-    return event
 
 
 def _build_mandate_version(
@@ -782,6 +832,7 @@ def _lifecycle_event(
     reason: str,
     receipt_ref: str,
     effective_at_utc: str,
+    created_at_utc: str | None = None,
 ) -> CapitalMandateLifecycleEvent:
     return CapitalMandateLifecycleEvent(
         mandate_lifecycle_event_id=(f"mandate_event_{_stamp()}_{uuid4().hex[:8]}"),
@@ -794,7 +845,7 @@ def _lifecycle_event(
         reason=reason.strip(),
         receipt_ref=receipt_ref,
         source_refs=list(version.source_refs),
-        created_at_utc=_now_utc(),
+        created_at_utc=created_at_utc or _now_utc(),
         as_of_utc=effective_at_utc,
     )
 

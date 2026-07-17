@@ -87,7 +87,13 @@ class CapitalMandateRequest(BaseModel):
     expires_at_utc: str | None = None
 
 
-class CapitalMandateLifecycleRequest(BaseModel):
+class CapitalMandateReductionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str
+
+
+class CapitalMandateResumeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str
@@ -186,7 +192,7 @@ async def get_current_capital_mandate(
 )
 async def post_suspend_capital_mandate(
     capital_mandate_id: str,
-    body: CapitalMandateLifecycleRequest,
+    body: CapitalMandateReductionRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     operator: WriteCapabilityDependency,
@@ -207,7 +213,7 @@ async def post_suspend_capital_mandate(
 )
 async def post_resume_capital_mandate(
     capital_mandate_id: str,
-    body: CapitalMandateLifecycleRequest,
+    body: CapitalMandateResumeRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     operator: WriteCapabilityDependency,
@@ -228,7 +234,7 @@ async def post_resume_capital_mandate(
 )
 async def post_revoke_capital_mandate(
     capital_mandate_id: str,
-    body: CapitalMandateLifecycleRequest,
+    body: CapitalMandateReductionRequest,
     engine: EngineDependency,
     receipt_root: ReceiptRootDependency,
     operator: WriteCapabilityDependency,
@@ -247,25 +253,39 @@ def _apply_lifecycle_command(
     command: str,
     *,
     capital_mandate_id: str,
-    body: CapitalMandateLifecycleRequest,
+    body: CapitalMandateReductionRequest | CapitalMandateResumeRequest,
     engine: Any,
     receipt_root: Any,
     operator_context: OperatorContext,
 ) -> CapitalMandateLifecycleResponse:
-    commands = {
-        "suspend": suspend_capital_mandate,
-        "resume": resume_capital_mandate,
-        "revoke": revoke_capital_mandate,
-    }
     try:
-        event = commands[command](
-            capital_mandate_id,
-            operator_context=operator_context,
-            reason=body.reason,
-            engine=engine,
-            receipt_root=receipt_root,
-            effective_at_utc=body.effective_at_utc,
-        )
+        if command == "suspend":
+            event = suspend_capital_mandate(
+                capital_mandate_id,
+                operator_context=operator_context,
+                reason=body.reason,
+                engine=engine,
+                receipt_root=receipt_root,
+            )
+        elif command == "resume" and isinstance(body, CapitalMandateResumeRequest):
+            event = resume_capital_mandate(
+                capital_mandate_id,
+                operator_context=operator_context,
+                reason=body.reason,
+                engine=engine,
+                receipt_root=receipt_root,
+                effective_at_utc=body.effective_at_utc,
+            )
+        elif command == "revoke":
+            event = revoke_capital_mandate(
+                capital_mandate_id,
+                operator_context=operator_context,
+                reason=body.reason,
+                engine=engine,
+                receipt_root=receipt_root,
+            )
+        else:
+            raise RuntimeError("unknown capital mandate lifecycle command")
         resolution = resolve_capital_mandate(
             principal_id=operator_context.principal.principal_id,
             engine=engine,

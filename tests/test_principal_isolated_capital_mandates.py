@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from sqlalchemy import Engine
 
@@ -342,9 +343,7 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
     ) -> None:
         self._record("shared-id", ALICE)
         self._inject_preexisting_shared_id_owner_conflict()
-        mirror_before = [
-            row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)
-        ]
+        mirror_before = [row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)]
         before = self._side_effect_counts()
         commands = {
             "suspend": suspend_capital_mandate,
@@ -355,6 +354,9 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
         for principal_id in (ALICE, BOB):
             for command_name, command in commands.items():
                 with self.subTest(principal_id=principal_id, command=command_name):
+                    command_kwargs = (
+                        {"effective_at_utc": LATER_TIME} if command_name == "resume" else {}
+                    )
                     with self.assertRaisesRegex(
                         CapitalMandateValidationError,
                         "mandate_series_owner_conflict",
@@ -363,16 +365,13 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
                             "shared-id",
                             operator_context=_context(principal_id),
                             reason="Historical owner conflict must fail closed.",
-                            effective_at_utc=LATER_TIME,
                             engine=self.engine,
                             receipt_root=self.receipts,
+                            **command_kwargs,
                         )
                     self.assertEqual(self._side_effect_counts(), before)
                     self.assertEqual(
-                        [
-                            row.model_dump()
-                            for row in read_all(CapitalMandate, engine=self.engine)
-                        ],
+                        [row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)],
                         mirror_before,
                     )
 
@@ -399,9 +398,7 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
         self._record("shared-id", ALICE)
         self._inject_preexisting_shared_id_owner_conflict()
         before = self._side_effect_counts()
-        mirror_before = [
-            row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)
-        ]
+        mirror_before = [row.model_dump() for row in read_all(CapitalMandate, engine=self.engine)]
 
         with self.assertRaisesRegex(
             CapitalMandateValidationError,
@@ -504,14 +501,17 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
 
     def test_same_time_lifecycle_events_have_stable_recorded_order(self) -> None:
         self._record("mandate-alice", ALICE)
-        suspend_capital_mandate(
-            "mandate-alice",
-            operator_context=authority_admin_context(ALICE, assurance="standard"),
-            reason="Pause.",
-            effective_at_utc=LATER_TIME,
-            engine=self.engine,
-            receipt_root=self.receipts,
-        )
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value=LATER_TIME,
+        ):
+            suspend_capital_mandate(
+                "mandate-alice",
+                operator_context=authority_admin_context(ALICE, assurance="standard"),
+                reason="Pause.",
+                engine=self.engine,
+                receipt_root=self.receipts,
+            )
         resume_capital_mandate(
             "mandate-alice",
             operator_context=_context(ALICE),
@@ -609,23 +609,29 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
         self._record(mandate_id, ALICE, expires_at=expires)
         grant = self._grant(mandate_id)
         if state == "suspended":
-            suspend_capital_mandate(
-                mandate_id,
-                operator_context=authority_admin_context(ALICE, assurance="standard"),
-                reason="Pause.",
-                effective_at_utc=LATER_TIME,
-                engine=self.engine,
-                receipt_root=self.receipts,
-            )
+            with patch(
+                "finharness.statecore.capital_mandates._now_utc",
+                return_value=LATER_TIME,
+            ):
+                suspend_capital_mandate(
+                    mandate_id,
+                    operator_context=authority_admin_context(ALICE, assurance="standard"),
+                    reason="Pause.",
+                    engine=self.engine,
+                    receipt_root=self.receipts,
+                )
         elif state == "revoked":
-            revoke_capital_mandate(
-                mandate_id,
-                operator_context=authority_admin_context(ALICE, assurance="standard"),
-                reason="Revoke.",
-                effective_at_utc=LATER_TIME,
-                engine=self.engine,
-                receipt_root=self.receipts,
-            )
+            with patch(
+                "finharness.statecore.capital_mandates._now_utc",
+                return_value=LATER_TIME,
+            ):
+                revoke_capital_mandate(
+                    mandate_id,
+                    operator_context=authority_admin_context(ALICE, assurance="standard"),
+                    reason="Revoke.",
+                    engine=self.engine,
+                    receipt_root=self.receipts,
+                )
         result = self._validate(grant, now=VALIDATION_TIME)
         self.assertFalse(result.allowed)
         self.assertIn("capital_mandate_not_active", result.deny_reasons)
@@ -721,7 +727,7 @@ class PrincipalIsolatedCapitalMandateApiTest(unittest.TestCase):
         self.assertEqual(takeover.status_code, 422, takeover.text)
         self.assertEqual(self._counts(), before_takeover)
 
-        for command in ("suspend", "resume", "revoke"):
+        for command in ("suspend", "revoke"):
             for effective_at in (
                 "2025-12-01T00:00:00+00:00",
                 LATER_TIME,
@@ -737,7 +743,7 @@ class PrincipalIsolatedCapitalMandateApiTest(unittest.TestCase):
                         },
                         headers=self._headers("bob"),
                     )
-                    self.assertEqual(response.status_code, 409, response.text)
+                    self.assertEqual(response.status_code, 422, response.text)
                     self.assertEqual(self._counts(), before)
                     alice = self.client.get(
                         "/capital-mandates/current",
@@ -745,6 +751,24 @@ class PrincipalIsolatedCapitalMandateApiTest(unittest.TestCase):
                     ).json()["resolution"]
                     self.assertEqual(alice["status"], "active")
                     self.assertEqual(alice["version"]["principal_id"], ALICE)
+
+        for effective_at in (
+            "2025-12-01T00:00:00+00:00",
+            LATER_TIME,
+            "2030-01-01T00:00:00+00:00",
+        ):
+            with self.subTest(command="resume", effective_at=effective_at):
+                before = self._counts()
+                response = self.client.post(
+                    "/capital-mandates/mandate-alice/resume",
+                    json={
+                        "reason": "Hostile lifecycle command.",
+                        "effective_at_utc": effective_at,
+                    },
+                    headers=self._headers("bob"),
+                )
+                self.assertEqual(response.status_code, 409, response.text)
+                self.assertEqual(self._counts(), before)
 
     def test_request_principal_override_is_rejected(self) -> None:
         body = self._body("mandate-hostile")

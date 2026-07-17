@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from finharness.api.app import create_app
 from finharness.identity import StaticIdentityProvider
@@ -103,17 +104,20 @@ class VersionedCapitalMandateTest(unittest.TestCase):
 
     def test_suspend_resume_revoke_are_immediate_append_only_and_receipt_backed(self) -> None:
         self._record()
-        suspend = suspend_capital_mandate(
-            "mandate_primary",
-            operator_context=authority_admin_context(
-                "principal:alice",
-                assurance="standard",
-            ),
-            reason="Pause delegated work.",
-            effective_at_utc="2026-07-13T01:00:00+00:00",
-            engine=self.engine,
-            receipt_root=self.receipts,
-        )
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value="2026-07-13T01:00:00+00:00",
+        ):
+            suspend = suspend_capital_mandate(
+                "mandate_primary",
+                operator_context=authority_admin_context(
+                    "principal:alice",
+                    assurance="standard",
+                ),
+                reason="Pause delegated work.",
+                engine=self.engine,
+                receipt_root=self.receipts,
+            )
         self.assertEqual(
             resolve_capital_mandate(
                 principal_id="principal:alice",
@@ -138,17 +142,20 @@ class VersionedCapitalMandateTest(unittest.TestCase):
             ).status,
             "active",
         )
-        revoke = revoke_capital_mandate(
-            "mandate_primary",
-            operator_context=authority_admin_context(
-                "principal:alice",
-                assurance="standard",
-            ),
-            reason="Owner permanently revokes mandate.",
-            effective_at_utc="2026-07-13T03:00:00+00:00",
-            engine=self.engine,
-            receipt_root=self.receipts,
-        )
+        with patch(
+            "finharness.statecore.capital_mandates._now_utc",
+            return_value="2026-07-13T03:00:00+00:00",
+        ):
+            revoke = revoke_capital_mandate(
+                "mandate_primary",
+                operator_context=authority_admin_context(
+                    "principal:alice",
+                    assurance="standard",
+                ),
+                reason="Owner permanently revokes mandate.",
+                engine=self.engine,
+                receipt_root=self.receipts,
+            )
         self.assertEqual(
             resolve_capital_mandate(
                 principal_id="principal:alice",
