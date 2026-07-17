@@ -300,6 +300,101 @@ async function retainAttempt(dom, state, endpoint, payload) {
     );
   }
 
+  // Duplicate key or logical-request ownership corrupts the whole registry.
+  // No entry is selected, deleted, or rewritten, including for unrelated writes.
+  const duplicateFixtures = [
+    {
+      label: "same key, different logical request",
+      attempts: [
+        { ...retained },
+        {
+          ...retained,
+          endpoint: "/proposals/prop_388/attest",
+          body: JSON.stringify({ decision: "approved" }),
+          created_at_utc: "2026-07-17T00:01:00.000Z",
+        },
+      ],
+      request: {
+        endpoint: "/proposals/prop_388/attest",
+        payload: { decision: "approved" },
+      },
+    },
+    {
+      label: "different key, same logical request",
+      attempts: [
+        { ...retained },
+        {
+          ...retained,
+          idempotency_key:
+            "cockpit:duplicate-logical-request",
+          created_at_utc: "2026-07-17T00:02:00.000Z",
+        },
+      ],
+      request: { endpoint, payload },
+    },
+    {
+      label: "unrelated request with duplicate elsewhere",
+      attempts: [
+        { ...retained },
+        {
+          ...retained,
+          idempotency_key:
+            "cockpit:duplicate-elsewhere",
+          created_at_utc: "2026-07-17T00:03:00.000Z",
+        },
+      ],
+      request: {
+        endpoint:
+          "/proposals/unrelated/review-events",
+        payload: { decision: "defer" },
+      },
+    },
+  ];
+  for (const fixture of duplicateFixtures) {
+    const corrupt = context();
+    const corruptState = {
+      currentBinding: alice,
+      bindingCalls: 0,
+      mutationCalls: 0,
+      keys: [],
+    };
+    installDynamicFetch(corrupt, corruptState);
+    const storageKey =
+      corrupt.window.FinHarness.api
+        .MUTATION_ATTEMPTS_STORAGE_KEY;
+    const raw = JSON.stringify({
+      schema:
+        "finharness.cockpit_mutation_attempts.v2",
+      attempts: fixture.attempts,
+    });
+    corrupt.window.localStorage.setItem(storageKey, raw);
+    await assert.rejects(
+      corrupt.window.FinHarness.api.apiMutation(
+        "POST",
+        fixture.request.endpoint,
+        fixture.request.payload,
+      ),
+      (error) => {
+        assert.equal(
+          error.reason,
+          "registry_corrupt",
+          fixture.label,
+        );
+        return true;
+      },
+    );
+    assert.equal(
+      corruptState.mutationCalls,
+      0,
+      fixture.label,
+    );
+    assert.equal(
+      corrupt.window.localStorage.getItem(storageKey),
+      raw,
+      fixture.label,
+    );
+  }
+
   // Missing/mismatched response echo preserves recovery evidence.
   for (const responseBindingId of [
     null,
@@ -364,7 +459,7 @@ async function retainAttempt(dom, state, endpoint, payload) {
   );
   assert.equal(registry(cleanup).attempts.length, 1);
 
-  // Current binding failure and ambiguous exact requests both stop mutation fetch.
+  // Current binding failure and duplicate exact requests both stop mutation fetch.
   const unavailable = context();
   const unavailableState = {
     currentBinding: alice,
@@ -416,7 +511,7 @@ async function retainAttempt(dom, state, endpoint, payload) {
       endpoint,
       payload,
     ),
-    (error) => error.reason === "registry_ambiguous",
+    (error) => error.reason === "registry_corrupt",
   );
   assert.equal(
     ambiguousState.mutationCalls,

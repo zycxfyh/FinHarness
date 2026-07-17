@@ -324,6 +324,28 @@ function validAttempt(attempt) {
   );
 }
 
+function validRegistryUniqueness(attempts) {
+  const idempotencyKeys = new Set();
+  const logicalRequests = new Set();
+  for (const attempt of attempts) {
+    if (idempotencyKeys.has(attempt.idempotency_key)) {
+      return false;
+    }
+    idempotencyKeys.add(attempt.idempotency_key);
+
+    const logicalRequest = JSON.stringify([
+      attempt.method,
+      attempt.endpoint,
+      attempt.body,
+    ]);
+    if (logicalRequests.has(logicalRequest)) {
+      return false;
+    }
+    logicalRequests.add(logicalRequest);
+  }
+  return true;
+}
+
 function readMutationRegistry() {
   const storage = mutationStorage();
   let raw;
@@ -368,7 +390,8 @@ function readMutationRegistry() {
     !Array.isArray(parsed.attempts) ||
     parsed.attempts.length >
       MAX_PENDING_MUTATION_ATTEMPTS ||
-    !parsed.attempts.every(validAttempt)
+    !parsed.attempts.every(validAttempt) ||
+    !validRegistryUniqueness(parsed.attempts)
   ) {
     throw new MutationIdentityBindingError({
       reason: "registry_corrupt",
