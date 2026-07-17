@@ -12,7 +12,6 @@ from sqlmodel import Session
 
 from finharness.statecore.models import Proposal
 from finharness.statecore.proposal_revisions import RevisionRecord, walk_proposal_revisions
-from finharness.statecore.proposals import proposal_content_hash
 
 ProposalVersionErrorCode = Literal[
     "proposal_not_found",
@@ -22,6 +21,7 @@ ProposalVersionErrorCode = Literal[
     "row_receipt_divergence",
     "stale_expected_version",
     "stale_expected_receipt",
+    "proposal_version_conflict",
 ]
 
 
@@ -48,7 +48,18 @@ class CurrentProposalVersion:
     lineage: tuple[ProposalVersionLineage, ...]
 
 
+@dataclass(frozen=True)
+class ProposalVersionExpectation:
+    """Caller-supplied expected version pair for a governed review write."""
+
+    proposal_id: str
+    proposal_version_id: str
+    receipt_ref: str
+
+
 def _validated_proposal(record: RevisionRecord) -> Proposal:
+    from finharness.statecore.proposals import proposal_content_hash
+
     try:
         proposal = Proposal.model_validate(record.proposal)
     except ValidationError as exc:
@@ -68,6 +79,32 @@ def _validated_proposal(record: RevisionRecord) -> Proposal:
             f"proposal receipt {record.receipt_ref} has no unique receipt/version identity",
         )
     return proposal
+
+
+def _resolve_row_in_session(proposal_id: str, session: Session) -> CurrentProposalVersion:
+    """Resolve current version from the Proposal row inside *session*.
+
+    This is the session-aware resolver: it reads the row from the same Session
+    that will later commit domain effects, closing the TOCTOU gap.
+    """
+    from finharness.statecore.proposals import proposal_content_hash
+
+    row = session.get(Proposal, proposal_id)
+    if row is None:
+        raise ProposalVersionResolutionError(
+            "proposal_not_found", f"proposal not found: {proposal_id}"
+        )
+    if not row.receipt_ref:
+        raise ProposalVersionResolutionError(
+            "proposal_not_found", f"proposal {proposal_id} has no receipt_ref"
+        )
+    return CurrentProposalVersion(
+        proposal_id=proposal_id,
+        proposal_version_id=row.receipt_ref.split("/")[-1].replace(".json", ""),
+        receipt_ref=row.receipt_ref,
+        content_hash=proposal_content_hash(row),
+        lineage=(),
+    )
 
 
 def resolve_current_proposal_version(
@@ -151,5 +188,36 @@ def require_current_proposal_version(
         raise ProposalVersionResolutionError(
             "stale_expected_receipt",
             f"expected proposal receipt {expected_receipt_ref} is not current",
+        )
+    return current
+
+
+def require_current_proposal_version_in_session(
+    expectation: ProposalVersionExpectation,
+    *,
+    session: Session,
+) -> CurrentProposalVersion:
+    """Validate ``expectation`` against the current Proposal row inside *session*.
+
+    The row is read from the same Session that will commit domain effects, so
+    the version check and the write share one transaction boundary.
+
+    Raises ``ProposalVersionResolutionError`` with code
+    ``proposal_version_conflict`` if the expectation is stale.
+    """
+    current = _resolve_row_in_session(expectation.proposal_id, session)
+
+    mismatch_version = (
+        expectation.proposal_version_id != current.proposal_version_id
+    )
+    mismatch_receipt = expectation.receipt_ref != current.receipt_ref
+    if mismatch_version or mismatch_receipt:
+        raise ProposalVersionResolutionError(
+            "proposal_version_conflict",
+            (
+                f"expected ProposalVersion {expectation.proposal_version_id}"
+                f" / {expectation.receipt_ref} is not current;"
+                f" current is {current.proposal_version_id} / {current.receipt_ref}"
+            ),
         )
     return current

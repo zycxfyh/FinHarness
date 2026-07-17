@@ -63,7 +63,6 @@ from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
     ProposalVersionResolutionError,
-    require_current_proposal_version,
     resolve_current_proposal_version,
 )
 from finharness.statecore.proposals import (
@@ -1790,19 +1789,19 @@ class AttestationCreateRequest(BaseModel):
 
     decision: DecisionInput
     reason: str
-    # Optional only for compatibility with pre-version clients. The Cockpit always
-    # supplies both; when either is supplied the pair is mandatory and stale-safe.
-    expected_proposal_version_id: str | None = None
-    expected_proposal_receipt_ref: str | None = None
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     source_refs: list[str] = Field(default_factory=list)
 
     @field_validator(
         "reason",
+        "expected_proposal_version_id",
+        "expected_proposal_receipt_ref",
     )
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("attestation requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
@@ -1810,8 +1809,15 @@ class AttestationCreateResponse(BaseModel):
     attestation: Attestation
     proposal: Proposal
     receipt_ref: str
+    admitted_proposal_version: ProposalVersionView
     approved_is_not_execution_authorization: bool = True
     execution_allowed: bool = False
+
+
+class ProposalVersionView(BaseModel):
+    proposal_id: str
+    proposal_version_id: str
+    receipt_ref: str
 
 
 class AttestationReviewView(BaseModel):
@@ -1945,13 +1951,15 @@ class ProposalScaffoldRevisionRequest(BaseModel):
 
     reason: str
     decision_scaffold: dict[str, Any]
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("reason")
+    @field_validator("reason", "expected_proposal_version_id", "expected_proposal_receipt_ref")
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("proposal scaffold revision requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
@@ -1960,6 +1968,8 @@ class ProposalScaffoldRevisionResponse(BaseModel):
     receipt_ref: str
     previous_receipt_ref: str | None
     changed_scaffold_fields: tuple[str, ...]
+    admitted_proposal_version: ProposalVersionView
+    resulting_proposal_version: ProposalVersionView
     non_claims: tuple[str, ...] = (
         "Proposal scaffold revisions are historical review evidence.",
         "Counter-evidence enables human confirmation checks; it is not execution authorization.",
@@ -1972,6 +1982,7 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     human_reason: str
+    expected_proposal_version_id: str
     expected_candidate_receipt_ref: str
     expected_proposal_receipt_ref: str
     expected_preflight_report_hash: str
@@ -1981,6 +1992,7 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
 
     @field_validator(
         "human_reason",
+        "expected_proposal_version_id",
         "expected_candidate_receipt_ref",
         "expected_proposal_receipt_ref",
         "expected_preflight_report_hash",
@@ -2011,6 +2023,8 @@ class ScaffoldRevisionCandidateApplyResponse(BaseModel):
     receipt_ref: str
     previous_receipt_ref: str | None
     changed_scaffold_fields: tuple[str, ...]
+    admitted_proposal_version: ProposalVersionView
+    resulting_proposal_version: ProposalVersionView
     applied_candidate_id: str
     candidate_receipt_ref: str
     candidate_review_event_id: str
@@ -2573,16 +2587,31 @@ async def revise_proposal_decision_scaffold(
             source_refs.append(mutation_ref)
 
     try:
+        from finharness.statecore.proposal_version import ProposalVersionExpectation
+
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = revise_governed_proposal_scaffold(
             proposal_id=proposal_id,
             scaffold_patch=request.decision_scaffold,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             source_refs=source_refs,
             revision_context_extra=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        status = 404 if exc.code == "proposal_not_found" else 409
+        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
+        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
+            detail["proposal_id"] = proposal_id
+            detail["execution_allowed"] = False
+        raise HTTPException(status_code=status, detail=detail) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -2597,6 +2626,16 @@ async def revise_proposal_decision_scaffold(
         receipt_ref=result.receipt_ref,
         previous_receipt_ref=result.previous_receipt_ref,
         changed_scaffold_fields=result.changed_scaffold_fields,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.resulting_proposal_version_id,
+            receipt_ref=result.resulting_proposal_receipt_ref,
+        ),
         execution_allowed=False,
     )
 
@@ -2694,6 +2733,14 @@ async def apply_scaffold_revision_candidate(
             status_code=409,
             detail="proposal receipt ref does not match expected_proposal_receipt_ref",
         )
+    # Also validate version identity
+    from finharness.statecore.proposal_version import ProposalVersionExpectation
+
+    expectation = ProposalVersionExpectation(
+        proposal_id=event.proposal_id,
+        proposal_version_id=request.expected_proposal_version_id.strip(),
+        receipt_ref=request.expected_proposal_receipt_ref.strip(),
+    )
     preflight = _enforce_scaffold_candidate_preflight_gate(
         candidate_id,
         request=request,
@@ -2708,6 +2755,7 @@ async def apply_scaffold_revision_candidate(
             scaffold_patch=scaffold_patch,
             attester=operator.authoritative_actor_id,
             reason=request.human_reason.strip(),
+            expectation=expectation,
             source_refs=[
                 *([binding[0]] if binding is not None else []),
                 candidate_receipt_ref,
@@ -2747,6 +2795,16 @@ async def apply_scaffold_revision_candidate(
         receipt_ref=result.receipt_ref,
         previous_receipt_ref=result.previous_receipt_ref,
         changed_scaffold_fields=result.changed_scaffold_fields,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=event.proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=event.proposal_id,
+            proposal_version_id=result.resulting_proposal_version_id,
+            receipt_ref=result.resulting_proposal_receipt_ref,
+        ),
         applied_candidate_id=candidate_id,
         candidate_receipt_ref=candidate_receipt_ref,
         candidate_review_event_id=event.review_event_id,
@@ -2839,26 +2897,19 @@ async def attest_proposal(
             source_refs.append(mutation_ref)
 
     try:
-        expected_version = request.expected_proposal_version_id
-        expected_receipt = request.expected_proposal_receipt_ref
-        if (expected_version is None) != (expected_receipt is None):
-            raise HTTPException(
-                status_code=422,
-                detail="expected proposal version and receipt must be supplied together",
-            )
-        if expected_version is not None and expected_receipt is not None:
-            require_current_proposal_version(
-                proposal_id,
-                expected_version_id=expected_version.strip(),
-                expected_receipt_ref=expected_receipt.strip(),
-                engine=engine,
-                receipt_root=receipt_root,
-            )
+        from finharness.statecore.proposal_version import ProposalVersionExpectation
+
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = create_governed_attestation(
             proposal_id=proposal_id,
             decision=request.decision,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             source_refs=source_refs,
             mutation_context=mutation_context,
             engine=engine,
@@ -2866,9 +2917,13 @@ async def attest_proposal(
         )
     except ProposalVersionResolutionError as exc:
         status = 404 if exc.code == "proposal_not_found" else 409
+        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
+        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
+            detail["proposal_id"] = proposal_id
+            detail["execution_allowed"] = False
         raise HTTPException(
             status_code=status,
-            detail={"code": exc.code, "message": str(exc)},
+            detail=detail,
         ) from exc
     except KeyError as exc:
         raise HTTPException(
@@ -2883,6 +2938,11 @@ async def attest_proposal(
         attestation=result.attestation,
         proposal=result.proposal,
         receipt_ref=result.receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
         approved_is_not_execution_authorization=True,
         execution_allowed=False,
     )
@@ -2915,22 +2975,25 @@ class ReviewEventCreateRequest(BaseModel):
 
     kind: ReviewEventKind
     reason: str
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     text: str | None = None
     attestation_ref: str | None = None
     compare_with: str | None = None
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("reason")
+    @field_validator("reason", "expected_proposal_version_id", "expected_proposal_receipt_ref")
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("review event requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
 class ReviewEventCreateResponse(BaseModel):
     review_event: ReviewEvent
     receipt_ref: str
+    admitted_proposal_version: ProposalVersionView
     execution_allowed: bool = False
 
 
@@ -2987,11 +3050,19 @@ async def add_review_event(
             source_refs.append(mutation_ref)
 
     try:
+        from finharness.statecore.proposal_version import ProposalVersionExpectation
+
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = create_governed_review_event(
             proposal_id=proposal_id,
             kind=request.kind,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             text=request.text,
             attestation_ref=request.attestation_ref,
             compare_with=request.compare_with,
@@ -3000,6 +3071,13 @@ async def add_review_event(
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        status = 404 if exc.code == "proposal_not_found" else 409
+        detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
+        if exc.code in ("proposal_version_conflict", "stale_expected_version", "stale_expected_receipt"):  # noqa: E501
+            detail["proposal_id"] = proposal_id
+            detail["execution_allowed"] = False
+        raise HTTPException(status_code=status, detail=detail) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}") from exc
     except ValueError as exc:
@@ -3009,5 +3087,10 @@ async def add_review_event(
     return ReviewEventCreateResponse(
         review_event=result.review_event,
         receipt_ref=result.receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
         execution_allowed=False,
     )

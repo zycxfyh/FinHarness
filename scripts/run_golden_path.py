@@ -25,6 +25,10 @@ from finharness.allocation import record_allocation_candidates
 from finharness.observability import new_trace_id, write_trace_index_receipt
 from finharness.review_read import read_compare_marks, read_proposal_timeline
 from finharness.statecore.models import Account, CashflowEvent, Position, Snapshot
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_review_event,
@@ -126,11 +130,23 @@ def run_golden_path(root: Path) -> dict[str, Any]:
         # P5: the high-risk concentration proposal carries no counter-evidence, so it
         # cannot be *approved* (fail-closed). The honest human action is to record a
         # review and decline to confirm it blind — a rejection is not gated.
+
+        def _expectation(proposal_id):
+            ver = resolve_current_proposal_version(
+                proposal_id, engine=engine, receipt_root=receipt_root
+            )
+            return ProposalVersionExpectation(
+                proposal_id=proposal_id,
+                proposal_version_id=ver.proposal_version_id,
+                receipt_ref=ver.receipt_ref,
+            )
+
         create_governed_attestation(
             proposal_id=concentration.proposal.proposal_id, decision="rejected",
             attester="operator",
             reason="high-risk; not confirming without counter-evidence", engine=engine,
             receipt_root=receipt_root,
+            expectation=_expectation(concentration.proposal.proposal_id),
         )
         # The low-risk cash-buffer proposal is the one the human confirms — the happy
         # approval leg of the loop, still non-execution authorization.
@@ -138,17 +154,20 @@ def run_golden_path(root: Path) -> dict[str, Any]:
             proposal_id=cash_buffer.proposal.proposal_id, decision="approved",
             attester="operator", reason="reviewed cash buffer", engine=engine,
             receipt_root=receipt_root,
+            expectation=_expectation(cash_buffer.proposal.proposal_id),
         )
         annotation = create_governed_review_event(
             proposal_id=concentration.proposal.proposal_id, kind="annotation",
             attester="operator", reason="watch single-name risk",
             text="SPY dominates the book", engine=engine, receipt_root=receipt_root,
+            expectation=_expectation(concentration.proposal.proposal_id),
         )
         create_governed_review_event(
             proposal_id=concentration.proposal.proposal_id, kind="compare_mark",
             attester="operator", reason="compare vs cash buffer",
             compare_with=cash_buffer.proposal.proposal_id, engine=engine,
             receipt_root=receipt_root,
+            expectation=_expectation(concentration.proposal.proposal_id),
         )
 
         timeline = read_proposal_timeline(engine, concentration.proposal.proposal_id)

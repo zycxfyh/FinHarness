@@ -15,6 +15,10 @@ from pathlib import Path
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
 from finharness.statecore.models import Attestation, Proposal
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
@@ -77,11 +81,20 @@ class HighRiskApprovalGateTest(unittest.TestCase):
         )
 
     def _attest(self, proposal_id: str, decision: str) -> None:
+        ver = resolve_current_proposal_version(
+            proposal_id, engine=self.engine, receipt_root=self.receipt_root
+        )
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
         create_governed_attestation(
             proposal_id=proposal_id,
             decision=decision,  # type: ignore[arg-type]
             attester="xzh",
             reason="reviewed the evidence",
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
@@ -156,6 +169,16 @@ class HighRiskApprovalApiTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         return resp.json()["proposal"]["proposal_id"]
 
+    def _version_fields(self, proposal_id: str) -> dict[str, str]:
+        ver = resolve_current_proposal_version(
+            proposal_id, engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        return {
+            "expected_proposal_version_id": ver.proposal_version_id,
+            "expected_proposal_receipt_ref": ver.receipt_ref,
+        }
+
     def test_high_risk_proposal_creates_and_is_open_for_review(self) -> None:
         proposal_id = self._create(VALID_SCAFFOLD)
         open_list = self.client.get("/proposals", params={"status": "open"})
@@ -165,18 +188,20 @@ class HighRiskApprovalApiTest(unittest.TestCase):
 
     def test_approve_high_risk_without_counter_evidence_is_422_and_writes_nothing(self) -> None:
         proposal_id = self._create(VALID_SCAFFOLD)
+        version = self._version_fields(proposal_id)
         resp = self.client.post(
             f"/proposals/{proposal_id}/attest",
-            json={"decision": "approved", "reason": "looks fine"},
+            json={"decision": "approved", "reason": "looks fine", **version},
         )
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(read_all(Attestation, engine=self.engine), [])
 
     def test_approve_high_risk_with_counter_evidence_succeeds(self) -> None:
         proposal_id = self._create(SCAFFOLD_WITH_COUNTER)
+        version = self._version_fields(proposal_id)
         resp = self.client.post(
             f"/proposals/{proposal_id}/attest",
-            json={"decision": "approved", "reason": "reviewed counter-evidence"},
+            json={"decision": "approved", "reason": "reviewed counter-evidence", **version},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["attestation"]["decision"], "approved")

@@ -47,6 +47,10 @@ from finharness.metrics import summarize
 from finharness.risk_register import read_review_risk_register
 from finharness.statecore.decision_scaffold import ALL_FIELDS, ensure_forcing, normalize
 from finharness.statecore.models import Proposal
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_proposal,
     create_governed_review_event,
@@ -529,11 +533,20 @@ def draft_agent_review_note_from_context_payload(
     active_engine = engine or open_state_core()
     active_receipt_root = Path(receipt_root or load_settings().receipt_root)
     try:
+        ver = resolve_current_proposal_version(
+            proposal_id.strip(), engine=active_engine, receipt_root=active_receipt_root
+        )
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id.strip(),
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
         write = create_governed_review_event(
             proposal_id=proposal_id.strip(),
             kind="agent_review_note",
             attester=f"agent:{profile_name}",
             reason=rationale.strip(),
+            expectation=expectation,
             text=json.dumps(
                 review_note,
                 ensure_ascii=False,
@@ -604,6 +617,15 @@ def draft_agent_scaffold_revision_apply_candidate_from_context_payload(
                     "agent scaffold revision apply candidate references unknown proposal"
                 )
             previous_scaffold = normalize(proposal.decision_scaffold)
+
+        ver = resolve_current_proposal_version(
+            proposal_id.strip(), engine=active_engine, receipt_root=active_receipt_root
+        )
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id.strip(),
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
 
         patch = normalize(scaffold_patch)
         proposed_scaffold = ensure_forcing({**previous_scaffold, **patch})
@@ -676,6 +698,7 @@ def draft_agent_scaffold_revision_apply_candidate_from_context_payload(
             kind="agent_scaffold_revision_apply_candidate",
             attester=f"agent:{profile_name}",
             reason=rationale.strip(),
+            expectation=expectation,
             text=json.dumps(
                 candidate,
                 ensure_ascii=False,

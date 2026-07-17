@@ -497,6 +497,21 @@ def _migrate_review_events_kind_constraint(connection: Connection) -> None:
     connection.execute(text("DROP TABLE review_events_legacy_v3"))
 
 
+def _migrate_add_version_binding_columns(connection: Connection) -> None:
+    """Add bound_proposal_version_id / bound_proposal_receipt_ref to attestations
+    and review_events. Legacy rows stay NULL; new writes set them non-null."""
+    for table_name in ("attestations", "review_events"):
+        inspector = inspect(connection)
+        if table_name not in set(inspector.get_table_names()):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table_name)}
+        for col_name in ("bound_proposal_version_id", "bound_proposal_receipt_ref"):
+            if col_name not in existing:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} TEXT"
+                )
+
+
 def migrate_state_core(engine: Engine) -> None:
     """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
     migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
@@ -512,6 +527,7 @@ def migrate_state_core(engine: Engine) -> None:
         (10, _migrate_position_valuation_contract),
         (11, _migrate_add_import_correction_semantics),
         (12, _migrate_add_agent_authority_currency_bindings),
+        (13, _migrate_add_version_binding_columns),
     )
     try:
         with engine.connect() as connection:

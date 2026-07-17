@@ -186,6 +186,7 @@ class AgentContextPackTest(unittest.TestCase):
 
     def test_proposal_timeline_context_reads_review_events(self) -> None:
         self._create_proposal("p_timeline")
+        expectation = self.fixture._version_expectation("p_timeline")
         create_governed_review_event(
             proposal_id="p_timeline",
             kind="annotation",
@@ -193,6 +194,7 @@ class AgentContextPackTest(unittest.TestCase):
             reason="Adding review context.",
             text="Monitor the counter-evidence before any human decision.",
             source_refs=["review://note"],
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
