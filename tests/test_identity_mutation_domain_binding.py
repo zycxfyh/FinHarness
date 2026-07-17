@@ -34,6 +34,7 @@ from finharness.statecore.models import (
     ReviewEvent,
 )
 from finharness.statecore.proposals import proposal_content_hash
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 
@@ -78,6 +79,17 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
         return {
             "Authorization": "Bearer alice",
             IDEMPOTENCY_HEADER: idempotency_key,
+        }
+
+    def _version_fields(self, proposal_id: str) -> dict[str, str]:
+        ver = resolve_current_proposal_version(
+            proposal_id,
+            engine=self.engine,
+            receipt_root=str(self.root / "receipts"),
+        )
+        return {
+            "expected_proposal_version_id": ver.proposal_version_id,
+            "expected_proposal_receipt_ref": ver.receipt_ref,
         }
 
     def _read_receipt_ref(
