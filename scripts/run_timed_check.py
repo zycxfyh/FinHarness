@@ -18,11 +18,6 @@ from typing import Any
 TIMING_SCHEMA = "finharness.check_timing.v1"
 DEFAULT_OUTPUT = Path(".artifacts/check-timing.json")
 ROOT = Path(__file__).resolve().parents[1]
-_LAST_STAGE_OUTPUT = ""
-_DIAGNOSTIC_FILE_PATHS = (
-    "src/finharness/statecore/snapshot_ingest.py",
-    "tests/test_statecore_snapshot_ingest.py",
-)
 
 
 @dataclass(frozen=True)
@@ -31,6 +26,8 @@ class CheckStage:
     task: str
 
 
+# These are existing authoritative Taskfile executors, expanded only far enough
+# to make setup and the three Python test layers independently observable.
 CHECK_STAGES: tuple[CheckStage, ...] = (
     CheckStage("setup", "setup"),
     CheckStage("lint", "lint"),
@@ -51,19 +48,11 @@ Clock = Callable[[], float]
 
 
 def _run_stage(stage: CheckStage, cwd: Path) -> int:
-    global _LAST_STAGE_OUTPUT
     completed = subprocess.run(
         ["task", stage.task],
         cwd=cwd,
         check=False,
-        capture_output=True,
-        text=True,
     )
-    _LAST_STAGE_OUTPUT = (completed.stdout + completed.stderr)[-20000:]
-    if completed.stdout:
-        print(completed.stdout, end="")
-    if completed.stderr:
-        print(completed.stderr, end="", file=sys.stderr)
     return completed.returncode
 
 
@@ -155,12 +144,6 @@ def run_timed_check(
         "stage_count": len(results),
         "stages": results,
     }
-    if failed_stage is not None and runner is _run_stage:
-        payload["failed_stage_output"] = _LAST_STAGE_OUTPUT
-        payload["diagnostic_files"] = {
-            path: (ROOT / path).read_text(encoding="utf-8")
-            for path in _DIAGNOSTIC_FILE_PATHS
-        }
     _atomic_write_json(output_path, payload)
     if summary_path is not None:
         summary_path.parent.mkdir(parents=True, exist_ok=True)
