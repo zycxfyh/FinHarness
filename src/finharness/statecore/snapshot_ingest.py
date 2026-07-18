@@ -45,6 +45,7 @@ from finharness.statecore.store import (
 )
 
 BROKER_READ_SOURCE_KIND = "broker_read"
+BROKER_READ_MATERIALIZED_SOURCE = "broker_read_import"
 BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v1"
 DEFAULT_BROKER_IMPORT_RECEIPT_ROOT = (
     ROOT / "data" / "receipts" / "capital-imports" / "broker-read"
@@ -474,7 +475,7 @@ def _portfolio_records_with_identities(
         kind="portfolio",
         as_of_utc=as_of_utc,
         payload={
-            "source": BROKER_READ_SOURCE_KIND,
+            "source": BROKER_READ_MATERIALIZED_SOURCE,
             "adapter_version": BROKER_READ_ADAPTER_VERSION,
             "account": account_payload,
             "record_counts": record_counts,
