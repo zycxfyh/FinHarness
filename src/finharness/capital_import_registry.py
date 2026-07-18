@@ -124,6 +124,18 @@ PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS = frozenset(
 PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES = frozenset(
     spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 )
+_MATERIALIZED_SOURCE_BY_SOURCE_KIND = {
+    spec.source_kind: spec.materialized_source
+    for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
+}
+
+
+def materialized_source_for(source_kind: str) -> str:
+    """Return the registered materialized marker for one adapter source kind."""
+    try:
+        return _MATERIALIZED_SOURCE_BY_SOURCE_KIND[source_kind]
+    except KeyError as exc:
+        raise ValueError(f"unregistered production import source kind: {source_kind}") from exc
 
 
 def registry_projection() -> dict[str, object]:
