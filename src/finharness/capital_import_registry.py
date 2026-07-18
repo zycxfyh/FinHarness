@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from finharness.import_provenance import RECEIPT_ARTIFACT_SCHEMA, SOURCE_ARTIFACT_SCHEMA
+# Keep this module dependency-free. Store and recovery import it during package
+# initialization, so importing provenance or State Core here would create a cycle.
+SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
+RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
 
 @dataclass(frozen=True)
