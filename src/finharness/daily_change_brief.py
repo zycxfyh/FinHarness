@@ -226,7 +226,7 @@ def run_daily_change_brief(
     portfolio_receipt: str | Path,
     engine: Engine,
     thresholds: ObservationThresholds | None = None,
-    broker_import_receipt_root: str | Path | None = None,
+    broker_import_receipt_root: str | Path = DEFAULT_BROKER_IMPORT_RECEIPT_ROOT,
     state_core_receipt_root: str | Path = DEFAULT_STATE_CORE_RECEIPT_ROOT,
     brief_receipt_root: str | Path = DEFAULT_BRIEF_RECEIPT_ROOT,
     markdown_path: str | Path = DEFAULT_MARKDOWN_PATH,
