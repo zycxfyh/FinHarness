@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Any, Literal
 
+from finharness.position_valuation import reconcile_position_totals
 from finharness.statecore.diff import PositionChange, SnapshotDiff
 from finharness.statecore.models import Position
 
@@ -189,6 +190,9 @@ def _concentration_observations(
     positions: Sequence[Position],
     thresholds: ObservationThresholds,
 ) -> list[Observation]:
+    valuation = reconcile_position_totals(positions)
+    if not valuation.admitted:
+        return []
     totals = _position_totals_by_identity(positions)
     total_market_value = sum((item[1] for item in totals.values()), Decimal("0"))
     if total_market_value <= 0:

@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
+from finharness.position_valuation import reconcile_position_totals, valuation_blockers
 from finharness.statecore.models import (
     CashflowEvent,
     InsurancePolicy,
@@ -63,15 +64,6 @@ def _is_cash_symbol(symbol: str) -> bool:
     return upper in _FIAT_CURRENCIES or upper.startswith("CASH")
 
 
-def _symbol_currency(symbol: str) -> str | None:
-    upper = symbol.upper()
-    if upper in _FIAT_CURRENCIES:
-        return upper
-    if upper.startswith("CASH:"):
-        return upper.split(":", 1)[1] or None
-    return None
-
-
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -84,7 +76,7 @@ def _parse_date(value: str | None) -> date | None:
 class HoldingExposure(BaseModel):
     symbol: str
     market_value: float
-    weight: float
+    weight: float | None
 
 
 class UpcomingObligation(BaseModel):
@@ -113,23 +105,29 @@ class ExposureProvenance(BaseModel):
 class ExposureReport(BaseModel):
     as_of_date: str
     base_currency: str | None
-    total_assets: float
-    total_liabilities: float
-    net_worth: float
+    asset_valuation_admitted: bool
+    net_worth_admitted: bool
+    total_assets: float | None
+    total_liabilities: float | None
+    net_worth: float | None
+    per_currency_totals: dict[str, float]
+    liability_per_currency_totals: dict[str, float]
+    asset_valuation_blockers: tuple[str, ...]
+    net_worth_blockers: tuple[str, ...]
     holding_count: int
     holdings: tuple[HoldingExposure, ...]
-    concentration_hhi: float
-    top_holding_weight: float
-    top5_weight: float
-    concentration_flagged: bool
+    concentration_hhi: float | None
+    top_holding_weight: float | None
+    top5_weight: float | None
+    concentration_flagged: bool | None
     concentration_threshold: float
-    cash_total: float
+    cash_total: float | None
     cash_total_verified: bool
     monthly_net_cashflow: float | None
     cash_runway_months: float | None
-    interest_bearing_debt_total: float
+    interest_bearing_debt_total: float | None
     weighted_avg_interest_rate: float | None
-    annual_interest_estimate: float
+    annual_interest_estimate: float | None
     insurance_active_count: int
     insurance_review_gaps: tuple[str, ...]
     tax_review_gaps: tuple[str, ...]
@@ -153,7 +151,9 @@ def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
 def _holdings(
     positions: list[Position],
     data_gaps: list[str],
-) -> tuple[list[HoldingExposure], Decimal, Decimal, Decimal]:
+    *,
+    denominator_admitted: bool,
+) -> tuple[list[HoldingExposure], Decimal | None, Decimal | None, Decimal | None]:
     by_symbol: dict[str, Decimal] = {}
     for position in positions:
         if position.market_value is None:
@@ -178,16 +178,38 @@ def _holdings(
     hhi = Decimal("0")
     positive_weights: list[Decimal] = []
     for symbol, value in ordered:
-        weight = value / gross_long if gross_long > 0 else Decimal("0")
-        holdings.append(
-            HoldingExposure(symbol=symbol, market_value=float(value), weight=float(weight))
+        weight = (
+            value / gross_long
+            if denominator_admitted and gross_long > 0 and value > 0
+            else None
         )
-        if value > 0:
+        holdings.append(
+            HoldingExposure(
+                symbol=symbol,
+                market_value=float(value),
+                weight=float(weight) if weight is not None else None,
+            )
+        )
+        if weight is not None:
             positive_weights.append(weight)
             hhi += weight * weight
+    if not denominator_admitted:
+        return holdings, None, None, None
     top_weight = positive_weights[0] if positive_weights else Decimal("0")
     top5_weight = sum(positive_weights[:5], Decimal("0"))
     return holdings, hhi, top_weight, top5_weight
+
+
+def _currency_totals(
+    values: list[tuple[str, Decimal]],
+) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for raw_currency, value in values:
+        currency = raw_currency.strip().upper()
+        if not currency:
+            continue
+        totals[currency] = totals.get(currency, Decimal("0")) + value
+    return totals
 
 
 def _rate_exposure(liabilities: list[Liability]) -> tuple[Decimal, Decimal, Decimal | None]:
@@ -365,27 +387,7 @@ def _tax_review(
     return review_gaps
 
 
-def _base_currency(
-    positions: list[Position],
-    liabilities: list[Liability],
-    data_gaps: list[str],
-) -> str | None:
-    currencies: set[str] = {liability.currency.upper() for liability in liabilities}
-    for position in positions:
-        currency = _symbol_currency(position.symbol)
-        if currency is not None:
-            currencies.add(currency)
-    if len(currencies) == 1:
-        return next(iter(currencies))
-    if len(currencies) > 1:
-        data_gaps.append(
-            "mixed currencies present; net worth is not FX-adjusted "
-            f"({', '.join(sorted(currencies))})"
-        )
-    return None
-
-
-def compute_exposure(
+def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestration
     engine: Engine,
     *,
     as_of_date: date | None = None,
@@ -416,28 +418,83 @@ def compute_exposure(
     cash_total_verified = snapshot is not None
     if not cash_total_verified:
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
-    valued_positions = [position for position in positions if position.market_value is not None]
-    total_assets = sum(
-        (
-            position.market_value
-            for position in valued_positions
-            if position.market_value is not None
-        ),
-        Decimal("0"),
+    position_totals = reconcile_position_totals(positions)
+    asset_blockers = list(position_totals.blockers)
+    if snapshot is None:
+        asset_blockers.append("portfolio_snapshot_missing")
+    elif not positions:
+        asset_blockers.append("portfolio_valuation_unavailable")
+    asset_blockers = list(dict.fromkeys(asset_blockers))
+    asset_admitted = (
+        snapshot is not None
+        and bool(positions)
+        and position_totals.admitted
+        and not asset_blockers
     )
-    total_liabilities = sum((liability.balance for liability in liabilities), Decimal("0"))
-    cash_total = sum(
-        (
-            position.market_value
-            for position in valued_positions
-            if _is_cash_symbol(position.symbol) and position.market_value is not None
-        ),
-        Decimal("0"),
+    base_currency = position_totals.base_currency if asset_admitted else None
+    total_assets = position_totals.unified_total if asset_admitted else None
+
+    liability_currency_totals = _currency_totals(
+        [(liability.currency, liability.balance) for liability in liabilities]
+    )
+    net_worth_blockers = list(asset_blockers)
+    if any(not liability.currency.strip() for liability in liabilities):
+        net_worth_blockers.append("liability_currency_missing")
+    if len(liability_currency_totals) > 1:
+        net_worth_blockers.append("mixed_liability_currencies")
+    elif liability_currency_totals and base_currency is not None:
+        liability_currency = next(iter(liability_currency_totals))
+        if liability_currency != base_currency:
+            net_worth_blockers.append(
+                f"liability_currency_mismatch:{liability_currency}:{base_currency}"
+            )
+    net_worth_blockers = list(dict.fromkeys(net_worth_blockers))
+    net_worth_admitted = (
+        asset_admitted
+        and not net_worth_blockers
+        and (
+            not liability_currency_totals
+            or next(iter(liability_currency_totals)) == base_currency
+        )
+    )
+    total_liabilities = (
+        sum(liability_currency_totals.values(), Decimal("0"))
+        if net_worth_admitted
+        else None
+    )
+    net_worth = (
+        total_assets - total_liabilities
+        if total_assets is not None and total_liabilities is not None
+        else None
     )
 
-    holdings, hhi, top_weight, top5_weight = _holdings(positions, data_gaps)
+    admitted_positions = [
+        position for position in positions if not valuation_blockers(position)
+    ]
+    cash_total = (
+        sum(
+            (
+                position.market_value
+                for position in admitted_positions
+                if _is_cash_symbol(position.symbol) and position.market_value is not None
+            ),
+            Decimal("0"),
+        )
+        if asset_admitted
+        else None
+    )
+
+    holdings, hhi, top_weight, top5_weight = _holdings(
+        admitted_positions,
+        data_gaps,
+        denominator_admitted=asset_admitted,
+    )
     interest_bearing, annual_interest, weighted_avg = _rate_exposure(liabilities)
-    monthly_net, runway = _cash_runway(cash_total, cashflows, data_gaps)
+    if cash_total is None:
+        monthly_net, runway = None, None
+        data_gaps.append("cash runway not computed because capital valuation is blocked")
+    else:
+        monthly_net, runway = _cash_runway(cash_total, cashflows, data_gaps)
     obligations = _upcoming_obligations(
         tax_events=tax_events,
         insurance=insurance,
@@ -449,7 +506,14 @@ def compute_exposure(
         insurance, reference_date, data_gaps
     )
     tax_review_gaps = _tax_review(tax_events, reference_date, horizon_days, data_gaps)
-    base_currency = _base_currency(positions, liabilities, data_gaps)
+    data_gaps.extend(
+        f"capital valuation blocked: {blocker}" for blocker in asset_blockers
+    )
+    data_gaps.extend(
+        f"net worth blocked: {blocker}"
+        for blocker in net_worth_blockers
+        if blocker not in asset_blockers
+    )
     # Aggregate provenance from every state input that participated in this report,
     # not just the portfolio snapshot. Otherwise candidates derived from non-position
     # state (insurance, liabilities, cashflows) lose their source_refs and break the
@@ -500,23 +564,48 @@ def compute_exposure(
     return ExposureReport(
         as_of_date=reference_date.isoformat(),
         base_currency=base_currency,
-        total_assets=float(total_assets),
-        total_liabilities=float(total_liabilities),
-        net_worth=float(total_assets - total_liabilities),
+        asset_valuation_admitted=asset_admitted,
+        net_worth_admitted=net_worth_admitted,
+        total_assets=float(total_assets) if total_assets is not None else None,
+        total_liabilities=(
+            float(total_liabilities) if total_liabilities is not None else None
+        ),
+        net_worth=float(net_worth) if net_worth is not None else None,
+        per_currency_totals={
+            key: float(value)
+            for key, value in position_totals.per_currency_totals.items()
+        },
+        liability_per_currency_totals={
+            key: float(value) for key, value in liability_currency_totals.items()
+        },
+        asset_valuation_blockers=tuple(asset_blockers),
+        net_worth_blockers=tuple(net_worth_blockers),
         holding_count=len(holdings),
         holdings=tuple(holdings),
-        concentration_hhi=float(hhi),
-        top_holding_weight=float(top_weight),
-        top5_weight=float(top5_weight),
-        concentration_flagged=float(top_weight) >= active_thresholds.concentration_pct,
+        concentration_hhi=float(hhi) if hhi is not None else None,
+        top_holding_weight=float(top_weight) if top_weight is not None else None,
+        top5_weight=float(top5_weight) if top5_weight is not None else None,
+        concentration_flagged=(
+            float(top_weight) >= active_thresholds.concentration_pct
+            if top_weight is not None
+            else None
+        ),
         concentration_threshold=active_thresholds.concentration_pct,
-        cash_total=float(cash_total),
-        cash_total_verified=cash_total_verified,
+        cash_total=float(cash_total) if cash_total is not None else None,
+        cash_total_verified=cash_total_verified and asset_admitted,
         monthly_net_cashflow=float(monthly_net) if monthly_net is not None else None,
         cash_runway_months=float(runway) if runway is not None else None,
-        interest_bearing_debt_total=float(interest_bearing),
-        weighted_avg_interest_rate=float(weighted_avg) if weighted_avg is not None else None,
-        annual_interest_estimate=float(annual_interest),
+        interest_bearing_debt_total=(
+            float(interest_bearing) if net_worth_admitted else None
+        ),
+        weighted_avg_interest_rate=(
+            float(weighted_avg)
+            if weighted_avg is not None and net_worth_admitted
+            else None
+        ),
+        annual_interest_estimate=(
+            float(annual_interest) if net_worth_admitted else None
+        ),
         insurance_active_count=insurance_active_count,
         insurance_review_gaps=tuple(insurance_review_gaps),
         tax_review_gaps=tuple(tax_review_gaps),

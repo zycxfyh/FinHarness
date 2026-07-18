@@ -26,35 +26,64 @@ class ExposureTest(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
 
+    @staticmethod
+    def _valued_position(
+        *,
+        position_id: str,
+        snapshot_id: str,
+        account_id: str,
+        symbol: str,
+        quantity: str,
+        market_value: str,
+        currency: str = "USD",
+        **overrides: object,
+    ) -> Position:
+        fields: dict[str, object] = {
+            "position_id": position_id,
+            "snapshot_id": snapshot_id,
+            "account_id": account_id,
+            "symbol": symbol,
+            "quantity": Decimal(quantity),
+            "market_value": Decimal(market_value),
+            "valuation_currency": currency,
+            "unit_price": Decimal(market_value) / Decimal(quantity),
+            "price_currency": currency,
+            "valued_at_utc": "2026-06-19T00:00:00+00:00",
+            "price_source_ref": "fixture:prices",
+            "valuation_status": "valued",
+        }
+        fields.update(overrides)
+        return Position(**fields)
+
     def _seed(self) -> None:
         account = Account(account_id="brk", kind="broker", venue="m", display_name="Brokerage")
         snapshot = Snapshot(
             snapshot_id="snap1", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
         positions = [
-            Position(
+            self._valued_position(
                 position_id="p_spy",
                 snapshot_id="snap1",
                 account_id="brk",
                 symbol="SPY",
-                quantity=Decimal("10"),
-                market_value=Decimal("8000"),
+                quantity="10",
+                market_value="8000",
             ),
-            Position(
+            self._valued_position(
                 position_id="p_aapl",
                 snapshot_id="snap1",
                 account_id="brk",
                 symbol="AAPL",
-                quantity=Decimal("5"),
-                market_value=Decimal("2000"),
+                quantity="5",
+                market_value="2000",
             ),
-            Position(
+            self._valued_position(
                 position_id="p_cash",
                 snapshot_id="snap1",
                 account_id="brk",
                 symbol="USD",
-                quantity=Decimal("5000"),
-                market_value=Decimal("5000"),
+                quantity="5000",
+                market_value="5000",
             ),
         ]
         liabilities = [
@@ -158,21 +187,21 @@ class ExposureTest(unittest.TestCase):
             snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
         positions = [
-            Position(
+            self._valued_position(
                 position_id="spy",
                 snapshot_id="s",
                 account_id="brk",
                 symbol="SPY",
-                quantity=Decimal("10"),
-                market_value=Decimal("6000"),
+                quantity="10",
+                market_value="6000",
             ),
-            Position(
+            self._valued_position(
                 position_id="cash",
                 snapshot_id="s",
                 account_id="brk",
                 symbol="USD",
-                quantity=Decimal("-5000"),
-                market_value=Decimal("-5000"),
+                quantity="-5000",
+                market_value="-5000",
             ),
         ]
         write_records([account, snapshot, *positions], engine=self.engine)
@@ -185,15 +214,143 @@ class ExposureTest(unittest.TestCase):
         self.assertEqual(report.top_holding_weight, 1.0)
         self.assertEqual(report.concentration_hhi, 1.0)
 
-    def test_empty_state_reports_zero_net_worth_and_runway_gap(self) -> None:
+    def test_empty_state_does_not_invent_zero_net_worth(self) -> None:
         report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
 
-        self.assertEqual(report.net_worth, 0.0)
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_assets)
+        self.assertIsNone(report.total_liabilities)
+        self.assertIsNone(report.net_worth)
         self.assertEqual(report.holding_count, 0)
         self.assertIsNone(report.cash_runway_months)
         self.assertIn(
-            "no recurring monthly cashflow; cash runway not computed",
-            report.data_gaps,
+            "portfolio_snapshot_missing",
+            report.asset_valuation_blockers,
+        )
+
+    def test_mixed_currencies_preserve_components_but_block_unified_claims(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        positions = [
+            self._valued_position(
+                position_id="usd",
+                snapshot_id="s",
+                account_id="brk",
+                symbol="SPY",
+                quantity="1",
+                market_value="100",
+            ),
+            self._valued_position(
+                position_id="jpy",
+                snapshot_id="s",
+                account_id="brk",
+                symbol="7203",
+                quantity="1",
+                market_value="20000",
+                currency="JPY",
+            ),
+        ]
+        write_records([account, snapshot, *positions], engine=self.engine)
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_assets)
+        self.assertIsNone(report.net_worth)
+        self.assertEqual(report.per_currency_totals, {"JPY": 20000.0, "USD": 100.0})
+        self.assertIn("mixed_valuation_currencies", report.asset_valuation_blockers)
+        self.assertIsNone(report.concentration_hhi)
+        self.assertIsNone(report.top_holding_weight)
+        self.assertIsNone(report.concentration_flagged)
+
+    def test_nonconforming_position_blocks_all_unified_outputs(self) -> None:
+        cases = {
+            "unknown_legacy": {
+                "valuation_status": "unknown_legacy",
+                "valuation_currency": None,
+                "unit_price": None,
+                "price_currency": None,
+                "valued_at_utc": None,
+                "price_source_ref": None,
+            },
+            "unpriced": {
+                "valuation_status": "unpriced",
+                "unit_price": None,
+            },
+            "fx_missing": {
+                "valuation_status": "fx_missing",
+                "price_currency": "EUR",
+            },
+            "stale": {"valuation_status": "stale"},
+            "arithmetic_mismatch": {"unit_price": Decimal("99")},
+        }
+        for index, (name, overrides) in enumerate(cases.items()):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                engine = init_state_core(Path(tmp) / "state-core.sqlite")
+                self.addCleanup(engine.dispose)
+                account = Account(
+                    account_id="brk", kind="broker", venue="m", display_name="Brk"
+                )
+                snapshot = Snapshot(
+                    snapshot_id=f"s{index}",
+                    kind="portfolio",
+                    as_of_utc="2026-06-19T00:00:00+00:00",
+                )
+                position = self._valued_position(
+                    position_id=f"p{index}",
+                    snapshot_id=snapshot.snapshot_id,
+                    account_id="brk",
+                    symbol="SPY",
+                    quantity="1",
+                    market_value="100",
+                    **overrides,
+                )
+                write_records([account, snapshot, position], engine=engine)
+
+                report = compute_exposure(engine, as_of_date=date(2026, 6, 20))
+
+                self.assertFalse(report.asset_valuation_admitted)
+                self.assertIsNone(report.total_assets)
+                self.assertIsNone(report.net_worth)
+                self.assertIsNone(report.concentration_hhi)
+
+    def test_liability_currency_mismatch_blocks_net_worth_only(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        position = self._valued_position(
+            position_id="usd",
+            snapshot_id="s",
+            account_id="brk",
+            symbol="SPY",
+            quantity="1",
+            market_value="100",
+        )
+        liability = Liability(
+            liability_id="jpy-debt",
+            name="JPY debt",
+            liability_type="loan",
+            balance=Decimal("10000"),
+            currency="JPY",
+        )
+        write_records([account, snapshot, position, liability], engine=self.engine)
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+
+        self.assertTrue(report.asset_valuation_admitted)
+        self.assertEqual(report.total_assets, 100.0)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_liabilities)
+        self.assertIsNone(report.net_worth)
+        self.assertEqual(report.liability_per_currency_totals, {"JPY": 10000.0})
+        self.assertIn(
+            "liability_currency_mismatch:JPY:USD",
+            report.net_worth_blockers,
         )
 
 

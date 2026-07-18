@@ -1332,7 +1332,12 @@ async function renderExposure() {
         : `${exposure.cash_runway_months.toFixed(1)} mo`,
     ),
     metric("Top Holding", percent(exposure.top_holding_weight)),
-    metric("Concentration (HHI)", exposure.concentration_hhi.toFixed(3)),
+    metric(
+      "Concentration (HHI)",
+      typeof exposure.concentration_hhi === "number"
+        ? exposure.concentration_hhi.toFixed(3)
+        : "Unknown",
+    ),
     metric("Interest-Bearing Debt", formatMoney(exposure.interest_bearing_debt_total)),
     metric("Avg Rate", percent(exposure.weighted_avg_interest_rate)),
     metric("Annual Interest", formatMoney(exposure.annual_interest_estimate)),

@@ -29,7 +29,10 @@ domain model / read model / write(command) model / adapters / invariants
 - **domain**:`exposure.py`、`daily_brief.py`、`daily_change_brief.py`。
 - **read**:`/exposure`、`/brief/daily`、`/dashboard/summary`。
 - **write(command)**:`task brief:daily`、`task cockpit:daily` 写 receipt/Markdown。
-- **invariants**:描述状态,不授权动作;数据缺口必须显式披露,不能编出完整性。
+- **invariants**:描述状态,不授权动作;数据缺口必须显式披露,不能编出完整性;
+  统一资产、净资产和集中度只从 canonical typed valuation admission 产生。
+  mixed/unpriced/stale/legacy/不一致估值保留 per-currency totals 与 blocker,
+  但不得发布统一金额、集中度分母或 allocation candidate。
 
 ### 3. IPS / Policy / Authority Credentials
 

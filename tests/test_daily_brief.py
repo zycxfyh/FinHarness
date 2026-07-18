@@ -16,6 +16,7 @@ from finharness.daily_brief import (
 )
 from finharness.statecore.models import (
     Account,
+    Liability,
     Position,
     Proposal,
     ReceiptIndex,
@@ -141,7 +142,7 @@ class DailyBriefTest(unittest.TestCase):
         self.assertIn("not verified", slots["Cash & liquidity status"])
         # Concentration: no holdings is "cannot assess", not "within threshold".
         self.assertNotIn("within the", slots["Concentration risks"])
-        self.assertIn("no holdings on record", slots["Concentration risks"])
+        self.assertIn("cannot be unified/valued", slots["Concentration risks"])
         # Do-nothing: must not claim inaction carries "no new risk" outright.
         self.assertIn("existing exposures", slots["Do-nothing option"])
         self.assertNotIn("no transaction cost or new risk", slots["Do-nothing option"])
@@ -166,6 +167,74 @@ class DailyBriefTest(unittest.TestCase):
         # source_refs / data_gaps remain top-level fields.
         self.assertIsInstance(brief.source_refs, tuple)
         self.assertIsInstance(brief.data_gaps, tuple)
+
+    def test_blocked_valuation_never_renders_unified_capital_numbers(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="mixed", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        positions = [
+            Position(
+                position_id="usd",
+                snapshot_id="mixed",
+                account_id="brk",
+                symbol="SPY",
+                quantity=Decimal("1"),
+                market_value=Decimal("100"),
+                valuation_currency="USD",
+                unit_price=Decimal("100"),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
+            ),
+            Position(
+                position_id="jpy",
+                snapshot_id="mixed",
+                account_id="brk",
+                symbol="7203",
+                quantity=Decimal("1"),
+                market_value=Decimal("20000"),
+                valuation_currency="JPY",
+                unit_price=Decimal("20000"),
+                price_currency="JPY",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
+            ),
+        ]
+        debt = Liability(
+            liability_id="card",
+            name="Credit card",
+            liability_type="card",
+            balance=Decimal("5000"),
+            currency="USD",
+            interest_rate=Decimal("0.20"),
+        )
+        write_records([account, snapshot, *positions, debt], engine=self.engine)
+
+        brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
+        slots = {section.title: " ".join(section.lines) for section in brief.sections}
+
+        self.assertIsNone(brief.net_worth)
+        self.assertIn("cannot be unified/valued", brief.headline)
+        self.assertIn("Admitted position total USD: 100.00 USD", slots["Net worth snapshot"])
+        self.assertIn(
+            "Admitted position total JPY: 20,000.00 JPY",
+            slots["Net worth snapshot"],
+        )
+        self.assertNotIn("Net worth 20,100", slots["Net worth snapshot"])
+        self.assertIn("cannot be unified/valued", slots["Concentration risks"])
+        self.assertNotIn(
+            "No interest-bearing debt",
+            slots["Leverage & liquidation warnings"],
+        )
+        self.assertIn(
+            "cannot be assessed",
+            slots["Leverage & liquidation warnings"],
+        )
+        self.assertNotIn("No behavioral flags", slots["Behavioral warnings"])
+        self.assertIn("cannot be fully assessed", slots["Behavioral warnings"])
 
     def test_record_daily_brief_writes_a_dated_receipt(self) -> None:
         self._seed()

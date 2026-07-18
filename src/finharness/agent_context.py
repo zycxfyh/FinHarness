@@ -32,6 +32,16 @@ AGENT_CONTEXT_NON_CLAIMS = (
     "Not investment advice.",
 )
 
+CAPITAL_ADMISSION_SUMMARY_KEYS = (
+    "asset_valuation_admitted",
+    "net_worth_admitted",
+    "per_currency_totals",
+    "liability_per_currency_totals",
+    "asset_valuation_blockers",
+    "net_worth_blockers",
+    "concentration_flagged",
+)
+
 PROPOSAL_CONTEXT_NON_CLAIMS = (
     "Proposal context is review evidence only.",
     "Human review records do not authorize execution.",
@@ -148,9 +158,15 @@ def build_capital_summary_context(engine: Engine) -> AgentContextPack:
     summary = {
         "as_of_date": report.as_of_date,
         "base_currency": report.base_currency,
+        "asset_valuation_admitted": report.asset_valuation_admitted,
+        "net_worth_admitted": report.net_worth_admitted,
         "net_worth": report.net_worth,
         "total_assets": report.total_assets,
         "total_liabilities": report.total_liabilities,
+        "per_currency_totals": report.per_currency_totals,
+        "liability_per_currency_totals": report.liability_per_currency_totals,
+        "asset_valuation_blockers": list(report.asset_valuation_blockers),
+        "net_worth_blockers": list(report.net_worth_blockers),
         "cash_total": report.cash_total,
         "cash_total_verified": report.cash_total_verified,
         "cash_runway_months": report.cash_runway_months,
@@ -416,7 +432,7 @@ def _pack(
     pack = AgentContextPack(
         name=name,
         available=available,
-        summary=_bounded_value(summary, max_items=spec.max_items),
+        summary=_bounded_summary(summary, max_items=spec.max_items),
         source_refs=bounded_refs[: spec.max_items],
         data_gaps=tuple(bounded_data_gaps),
         non_claims=tuple(_dedupe(non_claims)),
@@ -430,7 +446,7 @@ def _fit_pack_to_budget(pack: AgentContextPack, spec: AgentContextPackSpec) -> A
         return pack
     compacted = pack.model_copy(
         update={
-            "summary": _bounded_value(
+            "summary": _bounded_summary(
                 pack.summary,
                 max_items=max(1, spec.max_items // 2),
                 max_string_chars=240,
@@ -449,7 +465,7 @@ def _fit_pack_to_budget(pack: AgentContextPack, spec: AgentContextPackSpec) -> A
         return compacted
     marker = compacted.model_copy(
         update={
-            "summary": {"compacted": True},
+            "summary": _summary_compact_marker(compacted),
             "data_gaps": tuple(
                 _dedupe(
                     [
@@ -475,6 +491,19 @@ def _fit_pack_to_budget(pack: AgentContextPack, spec: AgentContextPackSpec) -> A
             "non_claims": ("Not execution authorization.", "Not investment advice."),
         }
     )
+
+
+def _summary_compact_marker(pack: AgentContextPack) -> dict[str, Any]:
+    marker: dict[str, Any] = {"compacted": True}
+    if pack.name == "capital_summary":
+        marker.update(
+            {
+                key: pack.summary[key]
+                for key in CAPITAL_ADMISSION_SUMMARY_KEYS
+                if key in pack.summary
+            }
+        )
+    return marker
 
 
 def _proposal_summary(proposal: Proposal) -> dict[str, Any]:
@@ -576,6 +605,23 @@ def _bounded_value(value: Any, *, max_items: int, max_string_chars: int = 500) -
         return value
     except TypeError:
         return str(value)
+
+
+def _bounded_summary(
+    summary: dict[str, Any],
+    *,
+    max_items: int,
+    max_string_chars: int = 500,
+) -> dict[str, Any]:
+    """Preserve the closed top-level schema while bounding nested collections."""
+    return {
+        str(key): _bounded_value(
+            child,
+            max_items=max_items,
+            max_string_chars=max_string_chars,
+        )
+        for key, child in summary.items()
+    }
 
 
 def _truncate_text(value: str, *, max_chars: int = 500) -> str:
