@@ -79,6 +79,11 @@ def _safe_id(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in value)
 
 
+def _broker_import_version(source_ref: str, source_sha256: str) -> str:
+    identity = f"{source_ref}\x00{source_sha256}".encode()
+    return hashlib.sha256(identity).hexdigest()[:24]
+
+
 def _string(value: Any, default: str = "") -> str:
     if value is None:
         return default
@@ -577,8 +582,13 @@ def _ingest_broker_read_receipt_with_snapshot(
         artifact_store=active_artifact_store,
         created_at_utc=datetime.now(UTC).isoformat(),
     )
-    version_fragment = source_sha256[:24]
-    active_snapshot_id = snapshot_id or f"snap_broker_read_{version_fragment}"
+    version_fragment = _broker_import_version(source_ref, source_sha256)
+    expected_snapshot_id = f"snap_broker_read_{version_fragment}"
+    if snapshot_id is not None and snapshot_id != expected_snapshot_id:
+        raise StateCoreStoreError(
+            "broker recovery snapshot_id does not match exact source identity"
+        )
+    active_snapshot_id = expected_snapshot_id
     import_receipt_id = f"receipt_broker_read_import_{version_fragment}"
     import_receipt_path = active_receipt_root / f"{import_receipt_id}.json"
     import_receipt_ref = _display_path(import_receipt_path)
