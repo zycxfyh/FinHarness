@@ -203,7 +203,9 @@ class ProposalVersionView(BaseModel):
 
 The identity receipt's `body_sha256` cryptographically binds the expected pair
 through the request body. Reconciliation verifies that the final domain
-evidence uses the same admitted version.
+evidence uses the same admitted version. The resolver does not recover a
+missing expected pair from mutable current state and does not invent a request
+body that was never durably captured.
 
 ## Legacy compatibility
 
@@ -219,12 +221,38 @@ Schema migration adds columns with `nullable=True` and increments
 
 Each reconciliation resolver must verify the full version binding chain:
 
-- Attestation: row.bound_version_id == receipt.admitted_version_id == response.admitted_version_id
-- ReviewEvent: row.bound_version_id == receipt.admitted_version_id == response.admitted_version_id
-- Scaffold: admitted pair consistent, resulting pair consistent, supersedes matches previous_receipt_ref
+- Attestation: the row pair, domain-receipt pair, immutable admitted Proposal
+  receipt, and reconstructed response pair are identical.
+- ReviewEvent: the row pair, domain-receipt pair, immutable admitted Proposal
+  receipt, and reconstructed response pair are identical.
+- Scaffold: admitted and resulting pairs each resolve to their immutable
+  Proposal receipts; `supersedes` equals `previous_receipt_ref`; every inherited
+  foreign candidate has a real terminal identity receipt whose canonical
+  response names those same two exact pairs.
 
-Tamper fail-closed: any mismatch produces `reconciled_rejected`, never
-`reconciled_applied`.
+Tamper fail-closed: missing or substituted version IDs, receipt refs,
+`supersedes`, receipt identities, or foreign canonical response pairs leave the
+identity receipt byte-for-byte `pending`. They never synthesize
+`reconciled_applied`, never create a response, and never write a domain effect.
+
+## Real-browser stale-tab acceptance
+
+The Chromium acceptance uses two real Cockpit pages in one authenticated
+BrowserContext:
+
+```text
+Tab A and Tab B render ProposalVersion v1
+→ Tab A submits the real scaffold form and commits v2
+→ Tab B submits the real review-event form with its captured v1 pair
+→ HTTP 409 proposal_version_conflict, zero ReviewEvent/receipt/index effects
+→ Tab B reloads, renders v2, and submits again
+→ HTTP 200 with exactly one ReviewEvent bound to v2
+```
+
+The fixture is an isolated ephemeral Uvicorn process with real FastAPI,
+SQLite, receipts, browser mutation binding, Idempotency-Key middleware, and
+Cockpit assets. It adds no production route, caller-controlled test header,
+alternate registry, or persistence owner.
 
 ## Rollback
 

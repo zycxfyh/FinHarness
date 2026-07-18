@@ -34,7 +34,7 @@ const RESOLVER_ID = "finharness.api.review_event_create.v1";
 const MARKER = "browser-response-loss acceptance issue-385";
 const NOTE =
   "One logical review event must survive response loss without duplication.";
-const PAYLOAD = {
+const FORM_PAYLOAD = {
   kind: "annotation",
   reason: MARKER,
   text: NOTE,
@@ -177,9 +177,13 @@ async function openProposal(page, base, metadata) {
 
 async function submitReviewEvent(page) {
   const form = page.locator("form.review-event-form");
-  await form.locator('select[name="kind"]').selectOption(PAYLOAD.kind);
-  await form.locator('textarea[name="reason"]').fill(PAYLOAD.reason);
-  await form.locator('textarea[name="text"]').fill(PAYLOAD.text);
+  await form.locator('select[name="kind"]').selectOption(FORM_PAYLOAD.kind);
+  await form.locator('textarea[name="reason"]').fill(FORM_PAYLOAD.reason);
+  await form.locator('textarea[name="text"]').fill(FORM_PAYLOAD.text);
+  assert.equal(
+    await form.locator('textarea[name="reason"]').inputValue(),
+    FORM_PAYLOAD.reason,
+  );
   page.once("dialog", (dialog) => dialog.accept());
   await form.locator('button[type="submit"]').click();
 }
@@ -251,6 +255,13 @@ async function run() {
   let browser;
   try {
     const metadata = readMetadata();
+    const payload = {
+      ...FORM_PAYLOAD,
+      expected_proposal_version_id:
+        metadata.initial_version.proposal_version_id,
+      expected_proposal_receipt_ref:
+        metadata.initial_version.receipt_ref,
+    };
     assert.equal(metadata.capability_id, CAPABILITY_ID);
     assert.equal(metadata.resolver_id, RESOLVER_ID);
     assert.equal(metadata.execution_allowed, false);
@@ -332,7 +343,7 @@ async function run() {
     assert.equal(firstRegistry.attempts.length, 1);
     assert.equal(firstRegistry.attempts[0].method, "POST");
     assert.equal(firstRegistry.attempts[0].endpoint, metadata.target_path);
-    assert.equal(firstRegistry.attempts[0].body, JSON.stringify(PAYLOAD));
+    assert.equal(firstRegistry.attempts[0].body, JSON.stringify(payload));
     assert.ok(firstRegistry.attempts[0].identity_binding.binding_id);
     const firstKey = firstRegistry.attempts[0].idempotency_key;
     assert.equal(
@@ -344,7 +355,7 @@ async function run() {
       requests[0].binding,
       firstRegistry.attempts[0].identity_binding.binding_id,
     );
-    assert.equal(requests[0].body, JSON.stringify(PAYLOAD));
+    assert.equal(requests[0].body, JSON.stringify(payload));
 
     const stageOne = probe(metadata);
     assert.equal(stageOne.domain_effect_count, 1);
@@ -399,6 +410,7 @@ async function run() {
       )
       .click();
     await page.locator("form.review-event-form").waitFor({ state: "visible" });
+    await page.waitForTimeout(500);
 
     const ambiguousResponsePromise = page.waitForResponse(
       (response) =>
@@ -437,7 +449,7 @@ async function run() {
       keyDigest(firstKey),
       "the pending retry must reuse the first key",
     );
-    assert.equal(requests[1].body, JSON.stringify(PAYLOAD));
+    assert.equal(requests[1].body, JSON.stringify(payload));
 
     const secondRegistry = await mutationRegistry(page);
     assert.equal(secondRegistry.attempts.length, 2);
@@ -518,7 +530,7 @@ async function run() {
       keyDigest(firstKey),
       "the canonical replay must reuse the first key",
     );
-    assert.equal(requests[2].body, JSON.stringify(PAYLOAD));
+    assert.equal(requests[2].body, JSON.stringify(payload));
 
     const terminalReceipt = JSON.parse(fs.readFileSync(receiptPath, "utf-8"));
     const canonicalBody = JSON.parse(

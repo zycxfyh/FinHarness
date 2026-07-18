@@ -10,6 +10,7 @@ from finharness.agent_tools import (
 )
 from finharness.review_read import read_proposal_timeline
 from finharness.statecore.models import ReceiptIndex, ReviewEvent
+from finharness.statecore.proposal_version import ProposalVersionResolutionError
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import read_all
 from tests._scaffold import VALID_SCAFFOLD
@@ -81,7 +82,10 @@ class AgentReviewNoteDraftTest(unittest.TestCase):
             self._draft(risks=[{"decision": "approved"}])
 
     def test_unknown_proposal_raises(self) -> None:
-        with self.assertRaises(KeyError):
+        with self.assertRaisesRegex(
+            ProposalVersionResolutionError,
+            "proposal not found",
+        ):
             self._draft(proposal_id="missing")
 
     def test_creates_append_only_review_note_receipt_without_execution(self) -> None:

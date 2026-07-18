@@ -7,6 +7,10 @@ from pathlib import Path
 from finharness.agent_tools import draft_agent_review_note_from_context_payload
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
+from finharness.statecore.proposal_version import (
+    ProposalVersionResolutionError,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
@@ -54,10 +58,28 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         return resp.json()["proposal"]["proposal_id"]
 
     def _add_event(self, proposal_id: str, kind: str, **body) -> object:
+        version = self._version_fields(proposal_id)
         return self.client.post(
             f"/proposals/{proposal_id}/review-events",
-            json={"kind": kind, "reason": "weekly review", **body},
+            json={"kind": kind, "reason": "weekly review", **version, **body},
         )
+
+    def _version_fields(self, proposal_id: str) -> dict[str, str]:
+        try:
+            version = resolve_current_proposal_version(
+                proposal_id,
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+            )
+        except ProposalVersionResolutionError:
+            return {
+                "expected_proposal_version_id": "unknown-version",
+                "expected_proposal_receipt_ref": "unknown-receipt",
+            }
+        return {
+            "expected_proposal_version_id": version.proposal_version_id,
+            "expected_proposal_receipt_ref": version.receipt_ref,
+        }
 
     # --- default /proposals response unchanged by archive (snapshot lock) -------------
     def test_default_list_keeps_legacy_shape_and_includes_archived(self) -> None:
@@ -91,7 +113,11 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
         pid = self._create_proposal("review me")
         self.client.post(
             f"/proposals/{pid}/attest",
-            json={"decision": "approved", "reason": "looks fine"},
+            json={
+                "decision": "approved",
+                "reason": "looks fine",
+                **self._version_fields(pid),
+            },
         )
         self._add_event(pid, "annotation", text="watch the rate path")
 
@@ -172,6 +198,7 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
             json={
                 "decision": "rejected",
                 "reason": "human review recorded",
+                **self._version_fields(pid),
             },
         )
         self.assertEqual(attested.status_code, 200)
@@ -213,6 +240,7 @@ class ReviewWorkspaceApiTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "human review recorded",
+                **self._version_fields(attested_id),
             },
         )
         self._add_event(archived_id, "archive")

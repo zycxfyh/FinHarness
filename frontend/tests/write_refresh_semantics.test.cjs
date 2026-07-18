@@ -186,6 +186,12 @@ async function proveSavedRefreshFailure({
       window.renderReviewEventForm(
         parent,
         "prop_1",
+        {
+          proposal_version_id:
+            "proposal_version_1",
+          receipt_ref:
+            "data/receipts/proposals/prop_1.json",
+        },
       );
     },
     fillForm(form) {
@@ -208,6 +214,12 @@ async function proveSavedRefreshFailure({
       window.renderScaffoldRevisionForm(
         parent,
         "prop_1",
+        {
+          proposal_version_id:
+            "proposal_version_1",
+          receipt_ref:
+            "data/receipts/proposals/prop_1.json",
+        },
       );
     },
     fillForm(form) {

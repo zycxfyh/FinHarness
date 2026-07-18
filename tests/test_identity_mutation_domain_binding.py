@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
 import tempfile
 import unittest
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -33,8 +35,8 @@ from finharness.statecore.models import (
     ReceiptIndex,
     ReviewEvent,
 )
-from finharness.statecore.proposals import proposal_content_hash
 from finharness.statecore.proposal_version import resolve_current_proposal_version
+from finharness.statecore.proposals import proposal_content_hash
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 
@@ -117,6 +119,41 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
         self.assertTrue(path.is_file())
 
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def _rewrite_identity_response(
+        self,
+        receipt_path: Path,
+        *,
+        mutate: Callable[[dict], None],
+    ) -> None:
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        response = payload["response"]
+        body = json.loads(base64.b64decode(response["body_base64"], validate=True))
+        mutate(body)
+        encoded_body = json.dumps(
+            body,
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        ).encode()
+        response["body_base64"] = base64.b64encode(encoded_body).decode()
+        response["body_sha256"] = hashlib.sha256(encoded_body).hexdigest()
+
+        unhashed = copy.deepcopy(payload)
+        unhashed.pop("content_sha256", None)
+        canonical = json.dumps(
+            unhashed,
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        )
+        payload["content_sha256"] = hashlib.sha256(canonical.encode()).hexdigest()
+        receipt_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def _create_proposal(
         self,
@@ -268,6 +305,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                         "counter_evidence": ("A distinct binding-test counter-evidence condition.")
                     },
                     "source_refs": ["test:scaffold-binding"],
+                    **self._version_fields(proposal["proposal_id"]),
                 },
             )
 
@@ -313,6 +351,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "reason": ("Record a mutation-bound review annotation."),
                     "text": ("This effect must be recoverable from domain truth."),
                     "source_refs": ["test:review-event-binding"],
+                    **self._version_fields(proposal["proposal_id"]),
                 },
             )
 
@@ -783,10 +822,23 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
     ) -> None:
         before = receipt_path.read_bytes()
         before_payload = json.loads(before)
+        with Session(self.engine) as session:
+            before_counts = (
+                len(list(session.exec(select(Proposal)).all())),
+                len(list(session.exec(select(Attestation)).all())),
+                len(list(session.exec(select(ReviewEvent)).all())),
+                len(list(session.exec(select(ReceiptIndex)).all())),
+            )
+        before_receipt_files = set(
+            (self.root / "receipts").rglob("*.json")
+        )
 
         self.assertEqual(
             before_payload["state"],
             "pending",
+        )
+        self.assertFalse(
+            before_payload["route_capability"]["execution_allowed"]
         )
 
         with self.assertRaisesRegex(
@@ -824,6 +876,232 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             "response",
             after_payload,
         )
+        self.assertFalse(
+            after_payload["route_capability"]["execution_allowed"]
+        )
+        with Session(self.engine) as session:
+            after_counts = (
+                len(list(session.exec(select(Proposal)).all())),
+                len(list(session.exec(select(Attestation)).all())),
+                len(list(session.exec(select(ReviewEvent)).all())),
+                len(list(session.exec(select(ReceiptIndex)).all())),
+            )
+        self.assertEqual(after_counts, before_counts)
+        self.assertEqual(
+            set((self.root / "receipts").rglob("*.json")),
+            before_receipt_files,
+        )
+
+    def _pending_bound_effect(
+        self,
+        *,
+        effect_kind: str,
+        marker: str,
+    ) -> tuple[str, Path, Attestation | ReviewEvent, Path]:
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            version_fields = self._version_fields(proposal_id)
+            if effect_kind == "attestation":
+                endpoint = f"/proposals/{proposal_id}/attest"
+                body = {
+                    "decision": "rejected",
+                    "reason": f"Tamper-bound attestation {marker}.",
+                    "source_refs": [f"test:{marker}"],
+                    **version_fields,
+                }
+                model = Attestation
+                receipt_directory = "attestations"
+            else:
+                endpoint = f"/proposals/{proposal_id}/review-events"
+                body = {
+                    "kind": "annotation",
+                    "reason": f"Tamper-bound review event {marker}.",
+                    "text": "The admitted ProposalVersion must remain exact.",
+                    "source_refs": [f"test:{marker}"],
+                    **version_fields,
+                }
+                model = ReviewEvent
+                receipt_directory = "review-events"
+            receipt_id, identity_path = self._lose_terminal_write(
+                client,
+                method="POST",
+                endpoint=endpoint,
+                key=f"{marker}-0001",
+                body=body,
+            )
+
+        mutation_ref = identity_mutation_source_ref(receipt_id)
+        with Session(self.engine) as session:
+            effects = [
+                item
+                for item in session.exec(select(model)).all()
+                if mutation_ref in item.source_refs
+            ]
+        self.assertEqual(len(effects), 1)
+        effect = effects[0]
+        refs = [
+            ref
+            for ref in effect.source_refs
+            if receipt_directory in Path(ref).parts
+        ]
+        self.assertEqual(len(refs), 1)
+        return proposal_id, identity_path, effect, self._resolve_receipt_path(refs[0])
+
+    def test_attestation_version_binding_tamper_matrix_fails_closed(self) -> None:
+        cases = (
+            ("row_version", "bound_proposal_version_id"),
+            ("row_receipt", "bound_proposal_receipt_ref"),
+            ("receipt_version", "admitted_proposal_version_id"),
+            ("receipt_ref", "admitted_proposal_receipt_ref"),
+        )
+        for case, field in cases:
+            with self.subTest(case=case):
+                _proposal_id, identity_path, effect, domain_path = (
+                    self._pending_bound_effect(
+                        effect_kind="attestation",
+                        marker=f"attestation-{case}",
+                    )
+                )
+                domain = json.loads(domain_path.read_text(encoding="utf-8"))
+                if case.startswith("row_"):
+                    with Session(self.engine) as session:
+                        row = session.get(Attestation, effect.attestation_id)
+                        self.assertIsNotNone(row)
+                        assert row is not None
+                        setattr(row, field, f"tampered:{case}")
+                        session.add(row)
+                        session.commit()
+                    domain["attestation"][field] = f"tampered:{case}"
+                else:
+                    domain[field] = f"tampered:{case}"
+                domain_path.write_text(
+                    json.dumps(domain, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                self._assert_reconciliation_fails_closed(
+                    identity_path,
+                    message_pattern=(
+                        "bound|admitted|proposal version|proposal receipt"
+                    ),
+                )
+
+    def test_review_event_version_binding_tamper_matrix_fails_closed(self) -> None:
+        cases = (
+            ("row_version", "bound_proposal_version_id"),
+            ("row_receipt", "bound_proposal_receipt_ref"),
+            ("receipt_version", "admitted_proposal_version_id"),
+            ("receipt_ref", "admitted_proposal_receipt_ref"),
+        )
+        for case, field in cases:
+            with self.subTest(case=case):
+                _proposal_id, identity_path, effect, domain_path = (
+                    self._pending_bound_effect(
+                        effect_kind="review_event",
+                        marker=f"review-event-{case}",
+                    )
+                )
+                assert isinstance(effect, ReviewEvent)
+                domain = json.loads(domain_path.read_text(encoding="utf-8"))
+                if case.startswith("row_"):
+                    with Session(self.engine) as session:
+                        row = session.get(ReviewEvent, effect.review_event_id)
+                        self.assertIsNotNone(row)
+                        assert row is not None
+                        setattr(row, field, f"tampered:{case}")
+                        session.add(row)
+                        session.commit()
+                    domain["review_event"][field] = f"tampered:{case}"
+                else:
+                    domain[field] = f"tampered:{case}"
+                domain_path.write_text(
+                    json.dumps(domain, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                self._assert_reconciliation_fails_closed(
+                    identity_path,
+                    message_pattern=(
+                        "bound|admitted|proposal version|proposal receipt"
+                    ),
+                )
+
+    def _pending_scaffold_revision(
+        self,
+        *,
+        marker: str,
+    ) -> tuple[str, Path, Path]:
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+            body = {
+                "reason": f"Tamper-bound scaffold revision {marker}.",
+                "decision_scaffold": {
+                    "counter_evidence": f"Counter-evidence for {marker}."
+                },
+                "source_refs": [f"test:{marker}"],
+                **self._version_fields(proposal_id),
+            }
+            receipt_id, identity_path = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key=f"{marker}-0001",
+                body=body,
+            )
+        mutation_ref = identity_mutation_source_ref(receipt_id)
+        with Session(self.engine) as session:
+            indexes = [
+                item
+                for item in session.exec(
+                    select(ReceiptIndex).where(
+                        ReceiptIndex.kind == "state_core_proposal"
+                    )
+                ).all()
+                if mutation_ref in item.refs
+            ]
+        self.assertEqual(len(indexes), 1)
+        return proposal_id, identity_path, self._resolve_receipt_path(
+            indexes[0].path
+        )
+
+    def test_scaffold_version_binding_tamper_matrix_fails_closed(self) -> None:
+        cases = (
+            "admitted_version",
+            "admitted_receipt",
+            "previous_receipt",
+            "supersedes",
+            "resulting_receipt_id",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                _proposal_id, identity_path, domain_path = (
+                    self._pending_scaffold_revision(
+                        marker=f"scaffold-{case}",
+                    )
+                )
+                domain = json.loads(domain_path.read_text(encoding="utf-8"))
+                context = domain["revision_context"]
+                if case == "admitted_version":
+                    context["admitted_proposal_version_id"] = "tampered:version"
+                elif case == "admitted_receipt":
+                    context["admitted_proposal_receipt_ref"] = "tampered:receipt"
+                elif case == "previous_receipt":
+                    context["previous_receipt_ref"] = "tampered:previous"
+                elif case == "supersedes":
+                    domain["supersedes"] = "tampered:supersedes"
+                else:
+                    domain["receipt_id"] = "tampered:resulting-version"
+                domain_path.write_text(
+                    json.dumps(domain, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                self._assert_reconciliation_fails_closed(
+                    identity_path,
+                    message_pattern=(
+                        "admitted|supersedes|receipt_id|proposal version"
+                    ),
+                )
 
     def test_tampered_attestation_binding_fails_closed(
         self,
@@ -1115,6 +1393,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "counter_evidence": "Reconciliation recovery counter-evidence."
                 },
                 "source_refs": ["test:scaffold-exact-revision-a"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1163,6 +1442,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:scaffold-exact-revision-b"],
+                **self._version_fields(proposal_id),
             }
 
             rev_b_response = client.patch(
@@ -1353,6 +1633,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Ambiguity: counter_evidence",
                 "decision_scaffold": {"counter_evidence": "Ambiguity counter-evidence."},
                 "source_refs": ["test:exact-ambiguity-a"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1409,6 +1690,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             duplicate_content_hash = proposal_content_hash(dup_proposal)
 
             duplicate_receipt = {
+                "receipt_id": "receipt:duplicate-ambiguity-0001",
                 "kind": "state_core_proposal",
                 "proposal": duplicate_proposal_snapshot,
                 "content_hash": duplicate_content_hash,
@@ -1503,6 +1785,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "counter_evidence": "Corrupt-candidate test counter-evidence."
                 },
                 "source_refs": ["test:corrupt-candidate-a"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1520,6 +1803,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:corrupt-candidate-b"],
+                **self._version_fields(proposal_id),
             }
 
             rev_b_response = client.patch(
@@ -1614,6 +1898,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "counter_evidence": "Snapshot binding test counter-evidence."
                 },
                 "source_refs": ["test:snapshot-binding"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1705,6 +1990,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision for relabel test",
                 "decision_scaffold": {"counter_evidence": "Relabel bypass test counter-evidence."},
                 "source_refs": ["test:relabel-duplicate"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1740,6 +2026,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # registered alongside the original.
             dup_receipt_ref = str(revision_a_path.parent / "proposal_relabelled_duplicate.json")
             # Patch receipt_ref in proposal snapshot for hash consistency.
+            receipt["receipt_id"] = "receipt:relabel-duplicate-0001"
             receipt["proposal"]["receipt_ref"] = dup_receipt_ref
             dup_proposal = Proposal.model_validate(receipt["proposal"])
             receipt["content_hash"] = proposal_content_hash(dup_proposal)
@@ -1814,6 +2101,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A for partial-binding test",
                 "decision_scaffold": {"counter_evidence": "Partial binding test counter-evidence."},
                 "source_refs": ["test:partial-binding"],
+                **self._version_fields(proposal_id),
             }
 
             _, receipt_path_a = self._lose_terminal_write(
@@ -1830,6 +2118,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:partial-binding-b"],
+                **self._version_fields(proposal_id),
             }
 
             rev_b_response = client.patch(
@@ -1899,6 +2188,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                     "counter_evidence": "Foreign positive test counter-evidence."
                 },
                 "source_refs": ["test:foreign-positive-a"],
+                **self._version_fields(proposal_id),
             }
 
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
@@ -1913,6 +2203,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision alternatives."},
                 "source_refs": ["test:foreign-positive-b"],
+                **self._version_fields(proposal_id),
             }
 
             rev_b_response = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
@@ -1977,6 +2268,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Pending foreign test."},
                 "source_refs": ["test:pending-foreign-a"],
+                **self._version_fields(proposal_id),
             }
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -1988,6 +2280,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later."},
                 "source_refs": ["test:pending-foreign-b"],
+                **self._version_fields(proposal_id),
             }
 
             _, _lose_ignored = self._lose_terminal_write(
@@ -2024,6 +2317,63 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             self.assertEqual(after, before)
             self.assertEqual(json.loads(after)["state"], "pending")
 
+    def test_scaffold_reconciliation_rejects_foreign_response_version_pair_mismatch(
+        self,
+    ) -> None:
+        """A terminal response cannot substitute a different immutable version pair."""
+        with TestClient(self.app, raise_server_exceptions=False) as client:
+            proposal = self._create_unkeyed_proposal(client)
+            proposal_id = proposal["proposal_id"]
+            endpoint = f"/proposals/{proposal_id}/decision-scaffold"
+
+            _, receipt_path_a = self._lose_terminal_write(
+                client,
+                method="PATCH",
+                endpoint=endpoint,
+                key="foreign-response-pair-a-0001",
+                body={
+                    "reason": "Revision A",
+                    "decision_scaffold": {
+                        "counter_evidence": "Foreign response pair test."
+                    },
+                    "source_refs": ["test:foreign-response-pair-a"],
+                    **self._version_fields(proposal_id),
+                },
+            )
+
+            response_b = client.patch(
+                endpoint,
+                headers=self._headers("foreign-response-pair-b-0001"),
+                json={
+                    "reason": "Revision B",
+                    "decision_scaffold": {"alternatives": "Later."},
+                    "source_refs": ["test:foreign-response-pair-b"],
+                    **self._version_fields(proposal_id),
+                },
+            )
+            self.assertEqual(response_b.status_code, 200, response_b.text)
+            receipt_id_b = response_b.headers[IDENTITY_RECEIPT_HEADER]
+            identity_b_path = (
+                self.root / "receipts" / "identity" / f"{receipt_id_b}.json"
+            )
+
+            def substitute_admitted_version(body: dict) -> None:
+                body["admitted_proposal_version"]["proposal_version_id"] = (
+                    body["resulting_proposal_version"]["proposal_version_id"]
+                )
+
+            self._rewrite_identity_response(
+                identity_b_path,
+                mutate=substitute_admitted_version,
+            )
+
+            self._assert_reconciliation_fails_closed(
+                receipt_path_a,
+                message_pattern=(
+                    "foreign terminal admitted version does not match"
+                ),
+            )
+
     def test_scaffold_reconciliation_rejects_foreign_receipt_identity_mismatch(
         self,
     ) -> None:
@@ -2038,6 +2388,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Identity mismatch test."},
                 "source_refs": ["test:identity-mismatch-a"],
+                **self._version_fields(proposal_id),
             }
             _, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2049,6 +2400,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later."},
                 "source_refs": ["test:identity-mismatch-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             receipt_id_b = rev_b.headers[IDENTITY_RECEIPT_HEADER]
@@ -2113,6 +2465,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A for P1",
                 "decision_scaffold": {"counter_evidence": "P1 counter-evidence."},
                 "source_refs": ["test:foreign-other-prop-a"],
+                **self._version_fields(p1_id),
             }
             receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint1, key=key_a, body=body_a
@@ -2136,6 +2489,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B for P2",
                 "decision_scaffold": {"alternatives": "P2 alternatives."},
                 "source_refs": [f"test:foreign-other-prop-b/{receipt_id_a}"],
+                **self._version_fields(p2_id),
             }
             rev_b = client.patch(endpoint2, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2157,15 +2511,13 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            # Register B in P1's ReceiptIndex
+            # Make B's existing lookup projection claim A's mutation ref.
             with Session(self.engine) as session:
-                dup_index = ReceiptIndex(
-                    receipt_id="receipt:foreign-other-prop-0001",
-                    refs=[mutation_ref_a],
-                    kind="state_core_proposal",
-                    path=b_receipt_ref,
-                )
-                session.add(dup_index)
+                b_index = session.get(ReceiptIndex, b_receipt["receipt_id"])
+                self.assertIsNotNone(b_index)
+                assert b_index is not None
+                b_index.refs = [*b_index.refs, mutation_ref_a]
+                session.add(b_index)
                 session.commit()
 
             # Verify candidates >= 2
@@ -2218,15 +2570,6 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
             # The count should be the same as before (we only added one, and reconcile didn't add)
             self.assertEqual(len(final_indexes), len(indexes))
 
-            # Clean up the manufactured ReceiptIndex
-            with Session(self.engine) as session:
-                dup_row = session.exec(
-                    select(ReceiptIndex).where(ReceiptIndex.path == b_receipt_ref)
-                ).first()
-                if dup_row is not None:
-                    session.delete(dup_row)
-                    session.commit()
-
     def test_scaffold_reconciliation_rejects_foreign_candidate_with_supersedes_mismatch(
         self,
     ) -> None:
@@ -2247,6 +2590,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Supersedes mismatch test."},
                 "source_refs": ["test:supersedes-mismatch-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2258,6 +2602,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:supersedes-mismatch-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2314,6 +2659,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Dup fields test."},
                 "source_refs": ["test:dup-changed-fields-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2325,6 +2671,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:dup-changed-fields-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2377,6 +2724,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Path traversal test."},
                 "source_refs": ["test:path-traversal-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2388,6 +2736,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:path-traversal-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2449,6 +2798,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Invalid ID format test."},
                 "source_refs": ["test:invalid-id-format-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2460,6 +2810,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:invalid-id-format-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2522,6 +2873,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Wrong schema test."},
                 "source_refs": ["test:wrong-schema-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2533,6 +2885,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:wrong-schema-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)
@@ -2598,6 +2951,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision A",
                 "decision_scaffold": {"counter_evidence": "Symlink test."},
                 "source_refs": ["test:symlink-a"],
+                **self._version_fields(proposal_id),
             }
             _receipt_id_a, receipt_path_a = self._lose_terminal_write(
                 client, method="PATCH", endpoint=endpoint, key=key_a, body=body_a
@@ -2609,6 +2963,7 @@ class IdentityMutationDomainBindingTest(unittest.TestCase):
                 "reason": "Revision B: alternatives",
                 "decision_scaffold": {"alternatives": "Later revision."},
                 "source_refs": ["test:symlink-b"],
+                **self._version_fields(proposal_id),
             }
             rev_b = client.patch(endpoint, headers=self._headers(key_b), json=body_b)
             self.assertEqual(rev_b.status_code, 200, rev_b.text)

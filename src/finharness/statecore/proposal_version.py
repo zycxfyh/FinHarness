@@ -11,7 +11,11 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from finharness.statecore.models import Proposal
-from finharness.statecore.proposal_revisions import RevisionRecord, walk_proposal_revisions
+from finharness.statecore.proposal_revisions import (
+    RevisionRecord,
+    proposal_content_hash,
+    walk_proposal_revisions,
+)
 
 ProposalVersionErrorCode = Literal[
     "proposal_not_found",
@@ -79,8 +83,6 @@ class ProposalVersionExpectation:
 
 
 def _validated_proposal(record: RevisionRecord) -> Proposal:
-    from finharness.statecore.proposals import proposal_content_hash
-
     try:
         proposal = Proposal.model_validate(record.proposal)
     except ValidationError as exc:

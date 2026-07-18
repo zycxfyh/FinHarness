@@ -118,7 +118,8 @@
         "tests/test_durable_identity_mutations.py",
         "tests/test_identity_mutation_domain_binding.py",
         "tests/test_keyed_mutation_route_capabilities.py",
-        "tests/test_local_review_mode.py"
+        "tests/test_local_review_mode.py",
+        "tests/test_version_bound_review_writes.py"
       ],
       "task_consumers": [
         "api:serve"
@@ -433,9 +434,11 @@
         "tests/test_scaffold_candidate_apply.py",
         "tests/test_scaffold_candidate_preflight.py",
         "tests/test_simulated_broker_submit.py",
+        "tests/test_statecore_api.py",
         "tests/test_statecore_model_split.py",
         "tests/test_statecore_store.py",
-        "tests/test_statecore_vertical_reconstruction.py"
+        "tests/test_statecore_vertical_reconstruction.py",
+        "tests/test_version_bound_review_writes.py"
       ],
       "task_consumers": [
         "api:serve",
@@ -470,6 +473,7 @@
       "import_consumers": [
         "scripts/run_browser_identity_binding_smoke_server.py",
         "scripts/run_browser_mutation_response_loss_smoke_server.py",
+        "scripts/run_browser_stale_proposal_version_smoke_server.py",
         "scripts/run_cockpit_smoke_server.py",
         "scripts/run_local_review_smoke_server.py",
         "scripts/serve_local_cockpit.py"

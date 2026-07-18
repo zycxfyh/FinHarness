@@ -14,7 +14,8 @@ from finharness.local_operator import LocalOperatorContext
 from finharness.scaffold_candidate_preflight import (
     preflight_scaffold_revision_candidate,
 )
-from finharness.statecore.models import Proposal, ReviewEvent
+from finharness.statecore.models import Proposal, ReceiptIndex, ReviewEvent
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import read_all
 from tests._scaffold import VALID_SCAFFOLD
@@ -81,6 +82,35 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         self.assertIsNotNone(report)
         return report.report_hash  # type: ignore[union-attr]
 
+    def _version_fields(self) -> dict[str, str]:
+        version = resolve_current_proposal_version(
+            "prop_candidate_apply_target",
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        return {
+            "expected_proposal_version_id": version.proposal_version_id,
+            "expected_proposal_receipt_ref": version.receipt_ref,
+        }
+
+    def _proposal_effect_snapshot(self) -> tuple[str, int, set[Path]]:
+        with Session(self.engine) as session:
+            proposal = session.get(Proposal, "prop_candidate_apply_target")
+            self.assertIsNotNone(proposal)
+            indexes = list(
+                session.exec(
+                    select(ReceiptIndex).where(
+                        ReceiptIndex.kind == "state_core_proposal"
+                    )
+                ).all()
+            )
+        assert proposal is not None
+        return (
+            proposal.receipt_ref or "",
+            len(indexes),
+            set((self.receipt_root / "proposals").glob("*.json")),
+        )
+
     def _candidate_event(self) -> ReviewEvent:
         with Session(self.engine) as session:
             return session.exec(
@@ -108,9 +138,9 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
         body = {
             "human_reason": "Confirmed the candidate patch addresses the evidence gap.",
             "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
-            "expected_proposal_receipt_ref": self.proposal_receipt_ref,
             "expected_preflight_report_hash": self._preflight_hash(),
             "explicit_confirmation": True,
+            **self._version_fields(),
         }
         body.update(overrides)
         return self.client.post(
@@ -167,12 +197,65 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
 
     def test_apply_rejects_stale_candidate_or_proposal_receipt(self) -> None:
         stale_candidate = self._apply(expected_candidate_receipt_ref="receipt://stale")
-        stale_proposal = self._apply(expected_proposal_receipt_ref="receipt://stale")
+        before = self._proposal_effect_snapshot()
+        version = self._version_fields()
+        stale_proposal = self._apply(
+            expected_proposal_receipt_ref="receipt://stale",
+            expected_proposal_version_id=version["expected_proposal_version_id"],
+        )
 
         self.assertEqual(stale_candidate.status_code, 409)
         self.assertIn("candidate receipt ref", stale_candidate.json()["detail"])
         self.assertEqual(stale_proposal.status_code, 409)
-        self.assertIn("proposal receipt ref", stale_proposal.json()["detail"])
+        detail = stale_proposal.json()["detail"]
+        self.assertEqual(detail["code"], "proposal_version_conflict")
+        self.assertEqual(detail["expected"]["receipt_ref"], "receipt://stale")
+        self.assertEqual(
+            detail["current"]["receipt_ref"],
+            version["expected_proposal_receipt_ref"],
+        )
+        self.assertFalse(detail["execution_allowed"])
+        self.assertEqual(self._proposal_effect_snapshot(), before)
+
+    def test_apply_rejects_stale_or_mismatched_version_pair_without_effect(self) -> None:
+        current = self._version_fields()
+        for expected_version_id, expected_receipt_ref in (
+            ("receipt_stale_version", current["expected_proposal_receipt_ref"]),
+            (
+                current["expected_proposal_version_id"],
+                "receipt://mismatched-pair",
+            ),
+        ):
+            with self.subTest(
+                expected_version_id=expected_version_id,
+                expected_receipt_ref=expected_receipt_ref,
+            ):
+                before = self._proposal_effect_snapshot()
+                response = self._apply(
+                    expected_proposal_version_id=expected_version_id,
+                    expected_proposal_receipt_ref=expected_receipt_ref,
+                )
+                self.assertEqual(response.status_code, 409, response.text)
+                detail = response.json()["detail"]
+                self.assertEqual(detail["code"], "proposal_version_conflict")
+                self.assertEqual(
+                    detail["expected"],
+                    {
+                        "proposal_version_id": expected_version_id,
+                        "receipt_ref": expected_receipt_ref,
+                    },
+                )
+                self.assertEqual(
+                    detail["current"],
+                    {
+                        "proposal_version_id": current[
+                            "expected_proposal_version_id"
+                        ],
+                        "receipt_ref": current["expected_proposal_receipt_ref"],
+                    },
+                )
+                self.assertFalse(detail["execution_allowed"])
+                self.assertEqual(self._proposal_effect_snapshot(), before)
 
     def test_apply_requires_expected_preflight_report_hash(self) -> None:
         response = self.client.post(
@@ -180,8 +263,8 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
             json={
                 "human_reason": "Missing preflight hash.",
                 "expected_candidate_receipt_ref": self.candidate["receipt_ref"],
-                "expected_proposal_receipt_ref": self.proposal_receipt_ref,
                 "explicit_confirmation": True,
+                **self._version_fields(),
             },
         )
 
@@ -269,9 +352,9 @@ class ScaffoldRevisionCandidateApplyApiTest(unittest.TestCase):
             json={
                 "human_reason": "Trying a missing candidate.",
                 "expected_candidate_receipt_ref": "receipt://missing",
-                "expected_proposal_receipt_ref": self.proposal_receipt_ref,
                 "expected_preflight_report_hash": "sha256:missing",
                 "explicit_confirmation": True,
+                **self._version_fields(),
             },
         )
 

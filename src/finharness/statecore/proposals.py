@@ -22,6 +22,10 @@ from finharness.statecore.models import (
     ReceiptIndex,
     ReviewEvent,
 )
+from finharness.statecore.proposal_revisions import (
+    proposal_content_hash,
+    proposal_content_hash_fields,
+)
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
     ProposalVersionExpectation,
@@ -137,46 +141,7 @@ def _dedupe_text(values: list[str]) -> list[str]:
     return result
 
 
-def _content_hash(
-    *,
-    kind: str,
-    claim: str,
-    evidence: dict[str, Any],
-    assumptions: dict[str, Any],
-    limitations: dict[str, Any],
-    non_claims: list[str],
-    source_refs: list[str],
-    decision_scaffold: dict[str, Any] | None = None,
-) -> str:
-    canonical = json.dumps(
-        {
-            "kind": kind,
-            "claim": claim,
-            "evidence": evidence,
-            "assumptions": assumptions,
-            "limitations": limitations,
-            "non_claims": non_claims,
-            "source_refs": source_refs,
-            "decision_scaffold": decision_scaffold or {},
-        },
-        sort_keys=True,
-        ensure_ascii=False,
-        default=str,
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def proposal_content_hash(proposal: Proposal) -> str:
-    return _content_hash(
-        kind=proposal.kind,
-        claim=proposal.claim,
-        evidence=proposal.evidence,
-        assumptions=proposal.assumptions,
-        limitations=proposal.limitations,
-        non_claims=proposal.non_claims,
-        source_refs=proposal.source_refs,
-        decision_scaffold=proposal.decision_scaffold,
-    )
+_content_hash = proposal_content_hash_fields
 
 
 def _proposal_receipt_payload(

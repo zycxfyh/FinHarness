@@ -27,6 +27,7 @@ from finharness.statecore.decision_scaffold import (
 )
 from finharness.statecore.models import Proposal
 from finharness.statecore.observations import Observation
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core, read_all
 from tests._scaffold import VALID_SCAFFOLD
@@ -207,6 +208,17 @@ class ApiForcingTest(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
 
+    def _version_fields(self, proposal_id: str) -> dict[str, str]:
+        version = resolve_current_proposal_version(
+            proposal_id,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        return {
+            "expected_proposal_version_id": version.proposal_version_id,
+            "expected_proposal_receipt_ref": version.receipt_ref,
+        }
+
     def test_post_without_scaffold_is_422_and_writes_nothing(self) -> None:
         resp = self.client.post(
             "/proposals",
@@ -249,6 +261,7 @@ class ApiForcingTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "Approval attempted before counter-evidence.",
+                **self._version_fields(proposal_id),
             },
         )
         self.assertEqual(blocked.status_code, 422)
@@ -264,6 +277,7 @@ class ApiForcingTest(unittest.TestCase):
                     )
                 },
                 "source_refs": ["review-note://weekly-control"],
+                **self._version_fields(proposal_id),
             },
         )
         self.assertEqual(revised.status_code, 200)
@@ -294,6 +308,7 @@ class ApiForcingTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "Counter-evidence is now recorded; approval is review-only.",
+                **self._version_fields(proposal_id),
             },
         )
         self.assertEqual(approved.status_code, 200)
@@ -316,6 +331,7 @@ class ApiForcingTest(unittest.TestCase):
             json={
                 "reason": "Trying an unknown field.",
                 "decision_scaffold": {"broker_order_type": "market"},
+                **self._version_fields(proposal_id),
             },
         )
         self.assertEqual(unknown.status_code, 422)
@@ -326,6 +342,7 @@ class ApiForcingTest(unittest.TestCase):
             json={
                 "reason": "Trying an empty revision.",
                 "decision_scaffold": {"counter_evidence": "   "},
+                **self._version_fields(proposal_id),
             },
         )
         self.assertEqual(noop.status_code, 422)

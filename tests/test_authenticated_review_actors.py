@@ -31,6 +31,7 @@ from finharness.identity import (
     identity_mutation_source_ref,
 )
 from finharness.statecore.models import Attestation
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 from tests.authority_test_helpers import authority_admin_context
@@ -298,9 +299,16 @@ class AuthenticatedReviewActorContractTest(unittest.TestCase):
                     },
                 ).json()["proposal"]
                 endpoint = f"/proposals/{proposal['proposal_id']}/attest"
+                version = resolve_current_proposal_version(
+                    proposal["proposal_id"],
+                    engine=engine,
+                    receipt_root=root / "receipts",
+                )
                 body = {
                     "decision": "rejected",
                     "reason": "Bind the authenticated runtime, not request prose.",
+                    "expected_proposal_version_id": version.proposal_version_id,
+                    "expected_proposal_receipt_ref": version.receipt_ref,
                 }
                 first = client.post(endpoint, headers=headers, json=body)
             self.assertEqual(first.status_code, 200, first.text)

@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import event
+from sqlmodel import Session
 
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
@@ -27,6 +28,7 @@ from finharness.statecore.models import (
     Snapshot,
     TaxEvent,
 )
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import (
     StateCoreStoreError,
@@ -189,6 +191,17 @@ class StateCoreApiTest(unittest.TestCase):
             ],
             engine=self.engine,
         )
+
+    def _proposal_version_fields(self, proposal_id: str) -> dict[str, str]:
+        version = resolve_current_proposal_version(
+            proposal_id,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        return {
+            "expected_proposal_version_id": version.proposal_version_id,
+            "expected_proposal_receipt_ref": version.receipt_ref,
+        }
 
     def test_read_only_state_endpoints_return_pydantic_state_models(self) -> None:
         accounts = self.client.get("/state/accounts")
@@ -1009,6 +1022,7 @@ class StateCoreApiTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "   ",
+                **self._proposal_version_fields(proposal_id),
             },
         )
         self.assertEqual(rejected.status_code, 422)
@@ -1020,6 +1034,7 @@ class StateCoreApiTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "I reviewed the evidence; this records review only.",
+                **self._proposal_version_fields(proposal_id),
             },
         )
 
@@ -1074,6 +1089,7 @@ class StateCoreApiTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "I reviewed the evidence; this records review only.",
+                **self._proposal_version_fields(proposal_id),
             },
         )
         attested_list = self.client.get("/proposals", params={"status": "attested"})
@@ -1158,9 +1174,11 @@ class StateCoreApiTest(unittest.TestCase):
         )
         proposal_receipt_ref = Path(created.json()["receipt_ref"])
         proposal_id = created.json()["proposal"]["proposal_id"]
+        version_fields = self._proposal_version_fields(proposal_id)
 
-        with patch(
-            "finharness.statecore.proposals.write_records",
+        with patch.object(
+            Session,
+            "flush",
             side_effect=StateCoreStoreError("forced db failure"),
         ):
             response = self.client.post(
@@ -1168,6 +1186,7 @@ class StateCoreApiTest(unittest.TestCase):
                 json={
                     "decision": "approved",
                     "reason": "Review-only approval.",
+                    **version_fields,
                 },
             )
 
