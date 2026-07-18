@@ -6,6 +6,7 @@
     {
       "adapter_id": "personal-finance-export",
       "source_kind": "personal_finance_export",
+      "materialized_source": "personal_finance_export",
       "module": "finharness.personal_finance",
       "symbol": "ingest_personal_finance_export",
       "result_type": "PersonalFinanceImportResult",
@@ -16,6 +17,7 @@
     {
       "adapter_id": "beancount-ledger",
       "source_kind": "beancount_ledger",
+      "materialized_source": "beancount_ledger",
       "module": "finharness.beancount_adapter",
       "symbol": "ingest_beancount_ledger",
       "result_type": "BeancountImportResult",
@@ -26,6 +28,7 @@
     {
       "adapter_id": "broker-read-receipt",
       "source_kind": "broker_read",
+      "materialized_source": "broker_read_import",
       "module": "finharness.statecore.snapshot_ingest",
       "symbol": "ingest_broker_read_receipt",
       "result_type": "BrokerReadImportResult",
