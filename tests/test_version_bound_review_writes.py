@@ -29,7 +29,15 @@ from finharness.identity import (
 from finharness.statecore.models import Attestation, Proposal, ReviewEvent
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
+    ProposalVersionExpectation,
+    ProposalVersionResolutionError,
+    require_current_proposal_version_in_session,
     resolve_current_proposal_version,
+)
+from finharness.statecore.proposals import (
+    create_governed_attestation,
+    create_governed_review_event,
+    revise_governed_proposal_scaffold,
 )
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
@@ -577,84 +585,255 @@ class ReviewEventVersionBindingTest(unittest.TestCase):
 # -- Concurrent Revision Race -------------------------------------------
 
 
-class ConcurrentVersionRaceTest(unittest.TestCase):
-    """Deterministic concurrent-race test using real SQLite + thread coordination.
+class RealConcurrentRaceTest(unittest.TestCase):
+    """Prove atomicity under real concurrent writers using BEGIN IMMEDIATE.
 
-    Scaffold writer commits v2 first, then stale attestation must get 409."""
+    Uses the service layer directly with threading.Event coordination.
+    The first writer to enter BEGIN IMMEDIATE holds the SQLite write lock;
+    the second blocks, then reads current state and sees the conflict.
+    """
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.receipt_root_path = self.root / "receipts"
         self.engine = init_state_core(self.root / "state.sqlite")
         self.addCleanup(self.engine.dispose)
-        self.receipt_root = str(self.root / "receipts")
-        self.app = create_app(
-            state_core_engine=self.engine,
-            receipt_root=self.receipt_root,
-            identity_provider=TestIdentityProvider({"alice": _alice_context()}),
+
+        from finharness.statecore.proposals import create_governed_proposal
+
+        write = create_governed_proposal(
+            kind="allocation",
+            claim="Race test proposal",
+            evidence={},
+            decision_scaffold=VALID_SCAFFOLD,
+            engine=self.engine,
+            receipt_root=str(self.receipt_root_path),
+            proposal_id="race-prop-1",
         )
-        self.client = TestClient(self.app)
+        self.proposal_id = write.proposal.proposal_id
+        self.v1 = resolve_current_proposal_version(
+            self.proposal_id,
+            engine=self.engine,
+            receipt_root=str(self.receipt_root_path),
+        )
+        self.v1_expectation = ProposalVersionExpectation(
+            proposal_id=self.proposal_id,
+            proposal_version_id=self.v1.proposal_version_id,
+            receipt_ref=self.v1.receipt_ref,
+        )
 
-    def test_scaffold_wins_attestation_stale(self) -> None:
-        """Scaffold writer commits v2 first; stale attestation gets 409."""
-        proposal = _create_proposal(self.client, key="k-racekey2")
-        v1 = _current_version(proposal["proposal_id"], self.engine, self.receipt_root)
-        pid = proposal["proposal_id"]
+    @staticmethod
+    def _build_scaffold_in_session(
+        session: Session,
+        existing: Proposal,
+        thesis: str,
+        receipt_root: str,
+    ) -> None:
+        from finharness.statecore.proposals import (
+            _build_proposal_revision,
+            _content_hash,
+        )
+        from finharness.statecore.receipt_io import atomic_write_json
 
-        scaffold_done = threading.Event()
+        merged = {**VALID_SCAFFOLD, "thesis": thesis}
+        ch = _content_hash(
+            kind=existing.kind, claim=existing.claim,
+            evidence=existing.evidence, assumptions=existing.assumptions,
+            limitations=existing.limitations, non_claims=existing.non_claims,
+            source_refs=existing.source_refs, decision_scaffold=merged,
+        )
+        built = _build_proposal_revision(
+            existing=existing, merged_scaffold=merged, content_hash=ch,
+            supersedes=existing.receipt_ref, source_refs=existing.source_refs,
+            revision_context={"kind": "test", "reason": "race"},
+            receipt_root=receipt_root,
+        )
+        atomic_write_json(built.receipt_path, built.receipt_payload)
+        session.merge(built.proposal)
+        session.add(built.receipt_index)
 
-        results: dict[str, int] = {}
+    def test_scaffold_wins_attestation_stale_real_race(self) -> None:
+        from finharness.statecore.store import immediate_state_core_session
 
-        def do_scaffold() -> None:
-            resp = self.client.patch(
-                f"/proposals/{pid}/decision-scaffold",
-                headers=_headers("k-racescn2"),
-                json={
-                    "reason": "race scaffold first",
-                    "decision_scaffold": {**VALID_SCAFFOLD, "thesis": "race v2"},
-                    **_version_pair(v1),
-                },
-            )
-            scaffold_done.set()
-            results["scaffold"] = resp.status_code
+        A_got_lock = threading.Event()
+        A_may_commit = threading.Event()
+        saw_conflict: list[bool] = []
 
-        def do_attest() -> None:
-            scaffold_done.wait()  # scaffold commits first
-            resp = self.client.post(
-                f"/proposals/{pid}/attest",
-                headers=_headers("k-raceatt2"),
-                json={
-                    "decision": "approved",
-                    "reason": "stale attest",
-                    **_version_pair(v1),
-                },
-            )
-            results["attest"] = resp.status_code
+        def scaffold() -> None:
+            with immediate_state_core_session(self.engine) as session:
+                require_current_proposal_version_in_session(
+                    self.v1_expectation, proposal_id=self.proposal_id,
+                    session=session, receipt_root=str(self.receipt_root_path),
+                )
+                A_got_lock.set()
+                A_may_commit.wait(timeout=5)
+                existing = session.get(Proposal, self.proposal_id)
+                assert existing is not None
+                self._build_scaffold_in_session(
+                    session, existing, "race v2", str(self.receipt_root_path),
+                )
 
-        t1 = threading.Thread(target=do_scaffold)
-        t2 = threading.Thread(target=do_attest)
+        def attest() -> None:
+            assert A_got_lock.wait(timeout=5)
+            try:
+                create_governed_attestation(
+                    proposal_id=self.proposal_id, decision="approved",
+                    attester="tester", reason="should fail",
+                    expectation=self.v1_expectation, engine=self.engine,
+                    receipt_root=str(self.receipt_root_path),
+                )
+            except ProposalVersionResolutionError:
+                saw_conflict.append(True)
+
+        t1 = threading.Thread(target=scaffold)
+        t2 = threading.Thread(target=attest)
+        t1.start()
+        assert A_got_lock.wait(timeout=5)
+        t2.start()
+        A_may_commit.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        self.assertTrue(saw_conflict)
+        with Session(self.engine) as s:
+            self.assertEqual(
+                len(list(s.exec(select(Attestation).where(
+                    Attestation.proposal_id == self.proposal_id)))), 0)
+
+    def test_attestation_wins_scaffold_succeeds_real_race(self) -> None:
+        from finharness.statecore.store import immediate_state_core_session
+
+        A_got_lock = threading.Event()
+        A_may_commit = threading.Event()
+        scaffold_ok: list[bool] = []
+
+        def attest() -> None:
+            with immediate_state_core_session(self.engine) as session:
+                require_current_proposal_version_in_session(
+                    self.v1_expectation, proposal_id=self.proposal_id,
+                    session=session, receipt_root=str(self.receipt_root_path),
+                )
+                A_got_lock.set()
+                A_may_commit.wait(timeout=5)
+                att = Attestation(
+                    attestation_id="att-race-win", proposal_id=self.proposal_id,
+                    attester="tester", reason="race", decision="approved",
+                    bound_proposal_version_id=self.v1.proposal_version_id,
+                    bound_proposal_receipt_ref=self.v1.receipt_ref,
+                )
+                session.add(att)
+
+        def scaffold() -> None:
+            assert A_got_lock.wait(timeout=5)
+            try:
+                revise_governed_proposal_scaffold(
+                    proposal_id=self.proposal_id,
+                    scaffold_patch={"thesis": "race v2"},
+                    attester="tester", reason="race",
+                    expectation=self.v1_expectation, engine=self.engine,
+                    receipt_root=str(self.receipt_root_path),
+                )
+                scaffold_ok.append(True)
+            except ProposalVersionResolutionError:
+                pass
+
+        t1 = threading.Thread(target=attest)
+        t2 = threading.Thread(target=scaffold)
+        t1.start()
+        assert A_got_lock.wait(timeout=5)
+        t2.start()
+        A_may_commit.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        self.assertTrue(scaffold_ok)
+        with Session(self.engine) as s:
+            att = s.get(Attestation, "att-race-win")
+            self.assertIsNotNone(att)
+            self.assertEqual(att.bound_proposal_version_id, self.v1.proposal_version_id)
+        vf = resolve_current_proposal_version(
+            self.proposal_id, engine=self.engine,
+            receipt_root=str(self.receipt_root_path),
+        )
+        self.assertNotEqual(vf.proposal_version_id, self.v1.proposal_version_id)
+
+    def test_two_scaffold_writers_one_wins(self) -> None:
+        committed: list[str] = []
+        lock = threading.Lock()
+
+        def writer(thesis: str) -> None:
+            try:
+                revise_governed_proposal_scaffold(
+                    proposal_id=self.proposal_id,
+                    scaffold_patch={"thesis": thesis},
+                    attester="tester", reason=f"race {thesis}",
+                    expectation=self.v1_expectation, engine=self.engine,
+                    receipt_root=str(self.receipt_root_path),
+                )
+                with lock:
+                    committed.append(thesis)
+            except ProposalVersionResolutionError:
+                pass
+
+        t1 = threading.Thread(target=writer, args=("race v2a",))
+        t2 = threading.Thread(target=writer, args=("race v2b",))
         t1.start()
         t2.start()
-        t1.join()
-        t2.join()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        self.assertEqual(len(committed), 1)
+        vf = resolve_current_proposal_version(
+            self.proposal_id, engine=self.engine,
+            receipt_root=str(self.receipt_root_path),
+        )
+        self.assertNotEqual(vf.proposal_version_id, self.v1.proposal_version_id)
 
-        # Scaffold succeeds with v1 expectation
-        self.assertEqual(results["scaffold"], 200)
+    def test_scaffold_vs_review_event_stale_loses(self) -> None:
+        from finharness.statecore.store import immediate_state_core_session
 
-        # Attestation with stale v1 gets 409
-        self.assertEqual(results["attest"], 409)
+        A_got_lock = threading.Event()
+        A_may_commit = threading.Event()
+        review_conflict: list[bool] = []
 
-        # Zero attestation domain effect
+        def scaffold() -> None:
+            with immediate_state_core_session(self.engine) as session:
+                require_current_proposal_version_in_session(
+                    self.v1_expectation, proposal_id=self.proposal_id,
+                    session=session, receipt_root=str(self.receipt_root_path),
+                )
+                A_got_lock.set()
+                A_may_commit.wait(timeout=5)
+                existing = session.get(Proposal, self.proposal_id)
+                assert existing is not None
+                self._build_scaffold_in_session(
+                    session, existing, "race v2", str(self.receipt_root_path),
+                )
+
+        def review() -> None:
+            assert A_got_lock.wait(timeout=5)
+            try:
+                create_governed_review_event(
+                    proposal_id=self.proposal_id, kind="annotation",
+                    attester="tester", reason="should fail",
+                    expectation=self.v1_expectation, engine=self.engine,
+                    receipt_root=str(self.receipt_root_path),
+                )
+            except ProposalVersionResolutionError:
+                review_conflict.append(True)
+
+        t1 = threading.Thread(target=scaffold)
+        t2 = threading.Thread(target=review)
+        t1.start()
+        assert A_got_lock.wait(timeout=5)
+        t2.start()
+        A_may_commit.set()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+        self.assertTrue(review_conflict)
         with Session(self.engine) as s:
-            atts = list(
-                s.exec(select(Attestation).where(Attestation.proposal_id == pid))
-            )
-            self.assertEqual(len(atts), 0)
-
-        # Proposal advanced to v2
-        v_final = _current_version(pid, self.engine, self.receipt_root)
-        self.assertNotEqual(v_final.proposal_version_id, v1.proposal_version_id)
+            self.assertEqual(
+                len(list(s.exec(select(ReviewEvent).where(
+                    ReviewEvent.proposal_id == self.proposal_id)))), 0)
 
 
 # -- Immediate Transaction Tests ---------------------------------------
