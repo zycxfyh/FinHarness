@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-# Keep this module dependency-free. Store and recovery import it during package
-# initialization, so importing provenance or State Core here would create a cycle.
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
@@ -15,6 +13,7 @@ RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 class CapitalImportAdapterSpec:
     adapter_id: str
     source_kind: str
+    materialized_source: str
     module: str
     symbol: str
     result_type: str
@@ -42,6 +41,7 @@ PRODUCTION_CAPITAL_IMPORT_ADAPTERS: tuple[CapitalImportAdapterSpec, ...] = (
     CapitalImportAdapterSpec(
         adapter_id="personal-finance-export",
         source_kind="personal_finance_export",
+        materialized_source="personal_finance_export",
         module="finharness.personal_finance",
         symbol="ingest_personal_finance_export",
         result_type="PersonalFinanceImportResult",
@@ -49,6 +49,7 @@ PRODUCTION_CAPITAL_IMPORT_ADAPTERS: tuple[CapitalImportAdapterSpec, ...] = (
     CapitalImportAdapterSpec(
         adapter_id="beancount-ledger",
         source_kind="beancount_ledger",
+        materialized_source="beancount_ledger",
         module="finharness.beancount_adapter",
         symbol="ingest_beancount_ledger",
         result_type="BeancountImportResult",
@@ -56,6 +57,7 @@ PRODUCTION_CAPITAL_IMPORT_ADAPTERS: tuple[CapitalImportAdapterSpec, ...] = (
     CapitalImportAdapterSpec(
         adapter_id="broker-read-receipt",
         source_kind="broker_read",
+        materialized_source="broker_read_import",
         module="finharness.statecore.snapshot_ingest",
         symbol="ingest_broker_read_receipt",
         result_type="BrokerReadImportResult",
@@ -118,6 +120,9 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
 
 PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS = frozenset(
     spec.source_kind for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
+)
+PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES = frozenset(
+    spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 )
 
 
