@@ -213,3 +213,15 @@ authority can consider larger live execution, leverage, options, short selling,
 margin, illiquid assets, crypto derivatives, naked options, transfers, or cross-
 account movement only behind higher Authority Contracts, stronger monitoring,
 and explicit revocation paths.
+
+## Future Agent Architecture Contracts
+
+The following documents define dormant architecture boundaries for future Agent
+runtime evolution. None of them authorizes current implementation, selects a
+runtime framework, or activates new Agent capabilities.
+
+| Document | Status | Purpose |
+|----------|--------|---------|
+| [Runtime-Neutral Agent Governance Kernel](../../adr/2026-07-19-runtime-neutral-agent-governance-kernel.md) | Proposed ADR | Canonical ownership boundary between FinHarness kernel and replaceable runtimes |
+| [Delegation and Child WorkRequest Ontology](research-contracts/2026-07-19-delegation-child-workrequest-ontology-research-contract.md) | Dormant research contract | Activation gates, candidate ontology, and rollback criteria for future multi-Agent work |
+| [Orchestration Strategy and Versioning](research-contracts/2026-07-19-orchestration-strategy-versioning-research-contract.md) | Dormant research contract | Compatibility boundary for evolving from reducer to graphs, durable runtimes, or dynamic plans |
