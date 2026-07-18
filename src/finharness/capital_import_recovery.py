@@ -19,6 +19,7 @@ from finharness.artifact_store import (
     ArtifactStoreError,
     LocalArtifactStore,
 )
+from finharness.capital_import_registry import PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS
 from finharness.import_provenance import RECEIPT_ARTIFACT_SCHEMA, canonical_json_bytes
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
@@ -32,7 +33,7 @@ from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_jso
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
 CAPITAL_IMPORT_RECOVERY_SCHEMA = "finharness.capital_import_recovery.v1"
 CAPITAL_IMPORT_RECOVERY_ARTIFACT_SCHEMA = "finharness.capital_import_recovery_receipt"
-PRODUCTION_IMPORT_KINDS = {"personal_finance_export", "beancount_ledger"}
+PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS)
 
 
 class CapitalImportRecoveryError(RuntimeError):
@@ -492,6 +493,16 @@ def _replay_receipt(
         from finharness.beancount_adapter import ingest_beancount_ledger
 
         ingest_beancount_ledger(
+            source_path,
+            engine=engine,
+            receipt_root=receipt_root,
+            artifact_store=store,
+            snapshot_id=str(payload["snapshot_id"]),
+        )
+    elif kind == "broker_read":
+        from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+
+        ingest_broker_read_receipt(
             source_path,
             engine=engine,
             receipt_root=receipt_root,
