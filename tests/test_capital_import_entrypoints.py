@@ -8,6 +8,8 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
+from sqlmodel import Session
+
 from finharness.artifact_store import LocalArtifactStore
 from finharness.capital_import_recovery import audit_capital_imports, recover_capital_imports
 from finharness.capital_import_registry import (
@@ -18,9 +20,23 @@ from finharness.capital_import_registry import (
 )
 from finharness.daily_change_brief import run_daily_change_brief
 from finharness.project_paths import ROOT
-from finharness.statecore.models import ImportBatch, Proposal, ReceiptManifest, Snapshot
-from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
-from finharness.statecore.store import StateCoreStoreError, init_state_core, read_all
+from finharness.statecore.models import (
+    ImportBatch,
+    Proposal,
+    ReceiptIndex,
+    ReceiptManifest,
+    Snapshot,
+)
+from finharness.statecore.snapshot_ingest import (
+    BROKER_READ_MATERIALIZED_SOURCE,
+    ingest_broker_read_receipt,
+)
+from finharness.statecore.store import (
+    StateCoreStoreError,
+    init_state_core,
+    read_all,
+    upsert_records,
+)
 
 
 def _load_checker() -> ModuleType:
@@ -140,6 +156,26 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_legacy_broker_evidence_index_is_not_an_import_mirror(self) -> None:
+        upsert_records(
+            [
+                ReceiptIndex(
+                    receipt_id="receipt_legacy_broker_evidence",
+                    kind="broker_read",
+                    path="legacy-broker.json",
+                    created_at_utc="2026-07-18T09:00:00+00:00",
+                )
+            ],
+            engine=self.engine,
+        )
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.import_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(report.ok, report)
+        self.assertEqual(report.findings, ())
+
     def test_prepared_failure_replays_through_current_path_contract(self) -> None:
         with patch(
             "finharness.statecore.snapshot_ingest.materialize_import_batch",
@@ -175,6 +211,38 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
         self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
         self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
         self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 1)
+
+    def test_missing_import_index_rebuilds_with_materialized_marker(self) -> None:
+        result = ingest_broker_read_receipt(
+            self.source,
+            engine=self.engine,
+            receipt_root=self.import_root,
+            artifact_store=self.store,
+        )
+        with Session(self.engine) as session:
+            index = session.get(ReceiptIndex, result.receipt_id)
+            self.assertIsNotNone(index)
+            session.delete(index)
+            session.commit()
+
+        before = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.import_root,
+            artifact_store=self.store,
+        )
+        self.assertIn(
+            "manifest_receipt_index_missing_or_stale",
+            {finding.code for finding in before.findings},
+        )
+        recovery = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.import_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovery.after.ok, recovery.after)
+        rebuilt = read_all(ReceiptIndex, engine=self.engine)
+        self.assertEqual(len(rebuilt), 1)
+        self.assertEqual(rebuilt[0].kind, BROKER_READ_MATERIALIZED_SOURCE)
 
     def test_daily_brief_publishes_manifested_import_lineage(self) -> None:
         result = run_daily_change_brief(
