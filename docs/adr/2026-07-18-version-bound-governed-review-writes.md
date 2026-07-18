@@ -69,26 +69,32 @@ a v1 expectation against v3.
 
 ## Transaction strategy
 
-**BEGIN IMMEDIATE on the same connection**: the version check and the domain
-write must share one SQLite write transaction. The approach:
+**`immediate_state_core_session`**: a dedicated context manager in `store.py`
+that opens a fresh SQLite connection, executes `BEGIN IMMEDIATE`, binds a
+Session with `expire_on_commit=False`, and owns the commit/rollback lifecycle.
 
-1. Route handler resolves the expected `ProposalVersionExpectation` from the
-   request body
-2. A new session-aware resolver `require_current_proposal_version_in_session()`
-   reads and validates the current Proposal row inside the same Session that
-   will later commit the domain effects
-3. The domain write function receives this Session (not a bare Engine) and
-   uses it for all reads and writes
-4. `session.begin()` with `BEGIN IMMEDIATE` to acquire the write lock at the
-   start of the check
+The version check and domain write share one SQLite write transaction:
 
-Alternative: exact CAS (`UPDATE ... WHERE receipt_ref = expected_ref`) —
-also valid but requires the CAS to be in the same transaction as the remaining
-writes and to verify affected row count == 1.
+1. API route handler builds a `ProposalVersionExpectation` from the required
+   request fields
+2. `create_governed_attestation`, `create_governed_review_event`, and
+   `revise_governed_proposal_scaffold` each open an `immediate_state_core_session`
+3. Inside the transaction: `require_current_proposal_version_in_session()`
+   resolves the current ProposalVersion via the full receipt-chain walker
+   (`_resolve_current_proposal_version_from_row`) — not from filename derivation
+4. Domain objects are constructed, receipt files written, rows added to the
+   session, and all committed atomically
 
-The `write_records` / `upsert_records` helpers currently own their Session
-lifecycle. The version-bound path will bypass them and use the in-transaction
-Session directly for `session.add()` / `session.flush()`.
+**Scaffold revision**: uses `_build_proposal_revision` (pure builder, no Session)
+inside the same `BEGIN IMMEDIATE` transaction — no separate `create_governed_proposal`
+call. The version check, scaffold merge, new revision receipt, and Proposal row
+update are all one atomic unit.
+
+Receipt files are not ACID with SQLite — they are staged before the DB commit,
+and cleaned up on any exception via `remove_file_best_effort`. We make no claim
+of cross-storage atomicity; we guarantee that a committed DB row always has its
+receipt file present, and that a rolled-back transaction never leaves a receipt
+file behind.
 
 ## API request contract
 
