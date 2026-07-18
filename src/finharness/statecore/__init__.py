@@ -1,7 +1,5 @@
 """State-core storage package for the FinHarness cockpit foundation."""
 
-from finharness.capital_import_registry import PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS
-from finharness.statecore import store as _store
 from finharness.statecore.diff import SnapshotDiff, diff_snapshots
 from finharness.statecore.models import (
     Account,
@@ -35,8 +33,6 @@ from finharness.statecore.store import (
     write_records,
 )
 
-_store._PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS)
-
 __all__ = [
     "Account",
     "ActionIntentSimulationReport",
@@ -67,3 +63,18 @@ __all__ = [
     "upsert_records",
     "write_records",
 ]
+
+
+def _bind_production_import_materialization_kinds() -> None:
+    from finharness.capital_import_registry import (
+        PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
+    )
+    from finharness.statecore import store
+
+    store._PRODUCTION_IMPORT_KINDS = set(
+        PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES
+    )
+
+
+_bind_production_import_materialization_kinds()
+del _bind_production_import_materialization_kinds
