@@ -48,6 +48,9 @@ That reviewability is an enablement layer:
 
 ## Design Rule
 
+The canonical runtime ownership boundary is defined by
+[Runtime-Neutral Agent Governance Kernel](../../adr/2026-07-19-runtime-neutral-agent-governance-kernel.md).
+
 Use Hermes as a runtime pattern library for opening capabilities deliberately,
 not as a permission ceiling or as an invitation to copy every tool.
 
