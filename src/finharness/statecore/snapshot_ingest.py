@@ -561,7 +561,11 @@ def _ingest_broker_read_receipt_with_snapshot(
     source_sha256 = hashlib.sha256(source_content).hexdigest()
     payload = _payload_from_exact_bytes(target, source_content)
     source_ref = _display_path(target)
-    active_receipt_root = Path(receipt_root) if receipt_root is not None else target.parent / "capital-import"
+    active_receipt_root = (
+        Path(receipt_root)
+        if receipt_root is not None
+        else target.parent / "capital-import"
+    )
     active_artifact_store = artifact_store or LocalArtifactStore(
         active_receipt_root / "artifact-store"
     )
