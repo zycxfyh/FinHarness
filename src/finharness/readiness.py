@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,12 +22,16 @@ from finharness.artifact_store import (
     ArtifactStoreError,
     LocalArtifactStore,
 )
+from finharness.capital_truth import (
+    CapitalTruthAdmissionStatus,
+    EvidenceIntegrityStatus,
+)
 from finharness.statecore.receipt_io import resolve_under
 from finharness.statecore.store import CURRENT_STATE_CORE_USER_VERSION
 
 _REQUIRED_TABLES = frozenset({"import_batches", "receipt_manifests", "receipt_index", "snapshots"})
 _CAPITAL_MAX_AGE = timedelta(hours=24)
-TruthCategory = Literal["missing", "corrupt", "stale", "partial", "unavailable"]
+TruthCategory = Literal["missing", "corrupt", "stale", "partial", "blocked", "unavailable"]
 
 
 class _QueryConnection(Protocol):
@@ -55,7 +59,7 @@ class OperationalReadiness(BaseModel):
 
 
 class TruthFinding(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     code: str
     category: TruthCategory
@@ -63,11 +67,12 @@ class TruthFinding(BaseModel):
 
 
 class CapitalTruthReadiness(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     status: Literal["usable", "partial", "blocked", "unavailable"]
+    evidence_integrity: EvidenceIntegrityStatus
+    capital_truth_admission: CapitalTruthAdmissionStatus
     current: bool
-    verified: bool
     checked_manifest_id: str | None
     findings: tuple[TruthFinding, ...]
     execution_allowed: Literal[False] = False
@@ -250,8 +255,12 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
             )
     except ArtifactNotFoundError as exc:
         findings.append(_finding("source_artifact_missing_or_corrupt", "missing", str(exc)))
+    except (ValidationError, UnicodeDecodeError) as exc:
+        findings.append(_finding("source_artifact_missing_or_corrupt", "corrupt", str(exc)))
     except ArtifactStoreError as exc:
         findings.append(_finding("source_artifact_missing_or_corrupt", "corrupt", str(exc)))
+    except OSError as exc:
+        findings.append(_finding("source_artifact_unavailable", "unavailable", str(exc)))
     try:
         receipt_descriptor = store.descriptor(str(row["receipt_artifact_id"]))
         store.read(str(row["receipt_artifact_id"]))
@@ -261,8 +270,12 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
             )
     except ArtifactNotFoundError as exc:
         findings.append(_finding("receipt_artifact_missing_or_corrupt", "missing", str(exc)))
+    except (ValidationError, UnicodeDecodeError) as exc:
+        findings.append(_finding("receipt_artifact_missing_or_corrupt", "corrupt", str(exc)))
     except ArtifactStoreError as exc:
         findings.append(_finding("receipt_artifact_missing_or_corrupt", "corrupt", str(exc)))
+    except OSError as exc:
+        findings.append(_finding("receipt_artifact_unavailable", "unavailable", str(exc)))
     return findings
 
 
@@ -277,8 +290,9 @@ def capital_truth_readiness(
     if db_check.status != "ready":
         return CapitalTruthReadiness(
             status="unavailable",
+            evidence_integrity=EvidenceIntegrityStatus.UNAVAILABLE,
+            capital_truth_admission=CapitalTruthAdmissionStatus.UNAVAILABLE,
             current=False,
-            verified=False,
             checked_manifest_id=None,
             findings=(_finding("state_core_unavailable", "unavailable", db_check.detail),),
         )
@@ -288,16 +302,18 @@ def capital_truth_readiness(
     except (OSError, sqlite3.DatabaseError, SQLAlchemyError) as exc:
         return CapitalTruthReadiness(
             status="unavailable",
+            evidence_integrity=EvidenceIntegrityStatus.UNAVAILABLE,
+            capital_truth_admission=CapitalTruthAdmissionStatus.UNAVAILABLE,
             current=False,
-            verified=False,
             checked_manifest_id=None,
             findings=(_finding("state_core_query_failed", "unavailable", str(exc)),),
         )
     if row is None:
         return CapitalTruthReadiness(
             status="blocked",
+            evidence_integrity=EvidenceIntegrityStatus.MISSING,
+            capital_truth_admission=CapitalTruthAdmissionStatus.BLOCKED,
             current=False,
-            verified=False,
             checked_manifest_id=None,
             findings=(
                 _finding("capital_import_missing", "missing", "no materialized import found"),
@@ -327,21 +343,41 @@ def capital_truth_readiness(
         findings.append(_finding("capital_import_partial", "partial", "latest import is partial"))
     elif completeness != "complete":
         findings.append(
-            _finding("capital_import_blocked", "partial", f"latest import is {completeness}")
+            _finding("capital_import_blocked", "blocked", f"latest import is {completeness}")
         )
 
-    blocking_categories = {"missing", "corrupt", "stale", "unavailable"}
+    blocking_categories = {"missing", "corrupt", "stale", "blocked", "unavailable"}
     blocked = any(finding.category in blocking_categories for finding in findings)
+    unavailable = any(finding.category == "unavailable" for finding in findings)
     status: Literal["usable", "partial", "blocked", "unavailable"]
     status = (
-        "blocked"
+        "unavailable"
+        if unavailable
+        else "blocked"
         if blocked or completeness not in {"complete", "partial"}
         else ("partial" if findings else "usable")
     )
+    finding_categories = {finding.category for finding in findings}
+    evidence_integrity = (
+        EvidenceIntegrityStatus.UNAVAILABLE
+        if "unavailable" in finding_categories
+        else EvidenceIntegrityStatus.CORRUPT
+        if "corrupt" in finding_categories
+        else EvidenceIntegrityStatus.MISSING
+        if "missing" in finding_categories
+        else EvidenceIntegrityStatus.INTACT
+    )
+    admission = {
+        "usable": CapitalTruthAdmissionStatus.ADMITTED,
+        "partial": CapitalTruthAdmissionStatus.PARTIAL,
+        "blocked": CapitalTruthAdmissionStatus.BLOCKED,
+        "unavailable": CapitalTruthAdmissionStatus.UNAVAILABLE,
+    }[status]
     return CapitalTruthReadiness(
         status=status,
+        evidence_integrity=evidence_integrity,
+        capital_truth_admission=admission,
         current=current,
-        verified=not blocked,
         checked_manifest_id=manifest_id,
         findings=tuple(findings),
     )

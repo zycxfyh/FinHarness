@@ -169,8 +169,13 @@ The API exposes three deliberately different probes:
   storage is available for runtime use.
 - `GET /ready/truth` returns 200 only when the latest production-capital import
   is current and its database, receipt, source artifact, and receipt artifact
-  bindings verify. Missing, corrupt, stale, partial, and unavailable evidence
-  are disclosed separately; the probe never migrates state or writes a test file.
+  bindings are intact and capital truth is admitted. The response reports
+  `evidence_integrity` separately from `capital_truth_admission`; it has no
+  generic `verified` boolean. Missing, corrupt, stale, partial, blocked, and
+  unavailable findings remain distinct. The probe never migrates state or
+  writes a test file. Consumers migrating from `verified` must require
+  `evidence_integrity=intact`, `capital_truth_admission=admitted`, and
+  `status=usable` rather than deriving admission from evidence integrity alone.
 
 Review mode creates a missing database, identifies the process as
 `local-human`, and still exposes no execution capability. Stop and restart the
