@@ -1247,17 +1247,30 @@ async function renderProposalDetail() {
   renderReviewTaskLifecycle(selectors.proposalDetail, reviewTask);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
   renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
-  const proposalVersion = {
-    proposal_version_id:
-      revisionHistory.revisions.length > 0
-        ? revisionHistory.revisions[0].receipt_id
-        : null,
-    receipt_ref:
-      revisionHistory.revisions.length > 0
-        ? revisionHistory.revisions[0].receipt_ref
-        : null,
-  };
-  renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id, proposalVersion);
+  const latestRevision =
+    revisionHistory.revisions.length > 0
+      ? revisionHistory.revisions[0]
+      : null;
+
+  const proposalVersion =
+    latestRevision &&
+    typeof latestRevision.receipt_id === "string" &&
+    latestRevision.receipt_id &&
+    typeof latestRevision.receipt_ref === "string" &&
+    latestRevision.receipt_ref
+      ? {
+          proposal_version_id: latestRevision.receipt_id,
+          receipt_ref: latestRevision.receipt_ref,
+        }
+      : null;
+
+  if (proposalVersion) {
+    renderScaffoldRevisionForm(
+      selectors.proposalDetail,
+      detail.proposal.proposal_id,
+      proposalVersion,
+    );
+  }
   renderRevisionHistory(selectors.proposalDetail, revisionHistory);
   renderNonClaims(selectors.proposalDetail, detail.non_claims);
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));
@@ -1273,7 +1286,21 @@ async function renderProposalDetail() {
     );
   }
   renderReviewTimeline(selectors.proposalDetail, timeline);
-  renderReviewEventForm(selectors.proposalDetail, detail.proposal.proposal_id, proposalVersion);
+  if (proposalVersion) {
+    renderReviewEventForm(
+      selectors.proposalDetail,
+      detail.proposal.proposal_id,
+      proposalVersion,
+    );
+  } else {
+    selectors.proposalDetail.append(
+      textElement(
+        "p",
+        "governed-writes-unavailable",
+        "Governed writes are unavailable because the current ProposalVersion cannot be verified.",
+      ),
+    );
+  }
 }
 
 async function renderProposals() {
