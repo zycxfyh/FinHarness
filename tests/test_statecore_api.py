@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import event
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
@@ -336,7 +336,7 @@ class StateCoreApiTest(unittest.TestCase):
             422,
         )
 
-    def test_dashboard_scopes_position_valuation_rows_to_latest_snapshot(self) -> None:
+    def test_dashboard_has_no_independent_capital_sum_queries(self) -> None:
         statements: list[str] = []
 
         def capture_statement(
@@ -356,25 +356,12 @@ class StateCoreApiTest(unittest.TestCase):
             event.remove(self.engine, "before_cursor_execute", capture_statement)
 
         self.assertEqual(response.status_code, 200)
-        position_reads = [
-            sql for sql in statements if " from positions " in f" {sql} "
-        ]
-        self.assertEqual(len(position_reads), 1)
-        self.assertIn("where positions.snapshot_id =", position_reads[0])
-        self.assertTrue(any("sum(liabilities.balance)" in sql for sql in statements))
-        forbidden_full_reads = (
-            "select accounts.account_id",
-            "select proposals.proposal_id",
-            "select attestations.attestation_id",
-            "select liabilities.liability_id",
-            "select financial_goals.goal_id",
-            "select cashflow_events.cashflow_id",
-            "select tax_events.tax_event_id",
-            "select insurance_policies.policy_id",
-            "select document_refs.document_id",
+        self.assertFalse(
+            any("sum(positions.market_value)" in sql for sql in statements)
         )
-        for prefix in forbidden_full_reads:
-            self.assertFalse(any(sql.startswith(prefix) for sql in statements), prefix)
+        self.assertFalse(
+            any("sum(liabilities.balance)" in sql for sql in statements)
+        )
 
     def test_dashboard_does_not_sum_mixed_currency_latest_snapshot(self) -> None:
         snapshot = Snapshot(
@@ -412,18 +399,61 @@ class StateCoreApiTest(unittest.TestCase):
                 valuation_status="valued",
             ),
         ]
-        write_records([snapshot, *positions], engine=self.engine)
+        jpy_liability = Liability(
+            liability_id="mixed_jpy_liability",
+            name="JPY Liability",
+            liability_type="loan",
+            balance=10000,
+            currency="JPY",
+        )
+        write_records([snapshot, *positions, jpy_liability], engine=self.engine)
 
         dashboard = self.client.get("/dashboard/summary")
         exposure = self.client.get("/exposure")
 
         self.assertEqual(dashboard.status_code, 200)
         self.assertIsNone(dashboard.json()["total_market_value"])
+        self.assertIsNone(dashboard.json()["liability_balance_total"])
         self.assertEqual(exposure.status_code, 200)
         self.assertIsNone(exposure.json()["total_assets"])
         self.assertEqual(
             exposure.json()["per_currency_totals"],
             {"JPY": 20000.0, "USD": 100.0},
+        )
+        self.assertEqual(
+            exposure.json()["liability_per_currency_totals"],
+            {"JPY": 10000.0, "USD": 1200.0},
+        )
+
+    def test_dashboard_blocks_usd_assets_with_jpy_liability(self) -> None:
+        with Session(self.engine) as session:
+            for liability in session.exec(select(Liability)).all():
+                session.delete(liability)
+            session.commit()
+        write_records(
+            [
+                Liability(
+                    liability_id="jpy_only",
+                    name="JPY Liability",
+                    liability_type="loan",
+                    balance=10000,
+                    currency="JPY",
+                )
+            ],
+            engine=self.engine,
+        )
+
+        dashboard = self.client.get("/dashboard/summary")
+        exposure = self.client.get("/exposure")
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.json()["total_market_value"], 235.0)
+        self.assertIsNone(dashboard.json()["liability_balance_total"])
+        self.assertTrue(exposure.json()["asset_valuation_admitted"])
+        self.assertFalse(exposure.json()["net_worth_admitted"])
+        self.assertIn(
+            "liability_currency_mismatch:JPY:USD",
+            exposure.json()["net_worth_blockers"],
         )
 
     def test_dashboard_open_count_respects_current_revision_attestations(self) -> None:

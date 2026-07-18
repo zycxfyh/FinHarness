@@ -16,6 +16,7 @@ from finharness.daily_brief import (
 )
 from finharness.statecore.models import (
     Account,
+    Liability,
     Position,
     Proposal,
     ReceiptIndex,
@@ -202,7 +203,15 @@ class DailyBriefTest(unittest.TestCase):
                 valuation_status="valued",
             ),
         ]
-        write_records([account, snapshot, *positions], engine=self.engine)
+        debt = Liability(
+            liability_id="card",
+            name="Credit card",
+            liability_type="card",
+            balance=Decimal("5000"),
+            currency="USD",
+            interest_rate=Decimal("0.20"),
+        )
+        write_records([account, snapshot, *positions, debt], engine=self.engine)
 
         brief = compute_daily_brief(self.engine, as_of_date=date(2026, 6, 20))
         slots = {section.title: " ".join(section.lines) for section in brief.sections}
@@ -216,6 +225,16 @@ class DailyBriefTest(unittest.TestCase):
         )
         self.assertNotIn("Net worth 20,100", slots["Net worth snapshot"])
         self.assertIn("cannot be unified/valued", slots["Concentration risks"])
+        self.assertNotIn(
+            "No interest-bearing debt",
+            slots["Leverage & liquidation warnings"],
+        )
+        self.assertIn(
+            "cannot be assessed",
+            slots["Leverage & liquidation warnings"],
+        )
+        self.assertNotIn("No behavioral flags", slots["Behavioral warnings"])
+        self.assertIn("cannot be fully assessed", slots["Behavioral warnings"])
 
     def test_record_daily_brief_writes_a_dated_receipt(self) -> None:
         self._seed()

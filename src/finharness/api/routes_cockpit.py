@@ -12,7 +12,6 @@ from sqlmodel import Session, col, select
 from finharness.api.dependencies import EngineDependency
 from finharness.daily_brief import DailyBrief, compute_daily_brief
 from finharness.exposure import ExposureReport, compute_exposure
-from finharness.position_valuation import reconcile_position_totals
 from finharness.statecore.models import (
     Account,
     Attestation,
@@ -50,7 +49,7 @@ class DashboardSummaryResponse(BaseModel):
     receipt_count: int
     latest_brief_receipt_id: str | None
     liability_count: int
-    liability_balance_total: float
+    liability_balance_total: float | None
     goal_count: int
     cashflow_count: int
     tax_event_count: int
@@ -157,14 +156,13 @@ async def daily_brief(engine: EngineDependency) -> DailyBrief:
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryResponse:
+    capital = compute_exposure(engine)
     with Session(engine) as session:
         account_count = session.scalar(select(func.count()).select_from(Account)) or 0
         open_proposal_count = _open_proposal_count(session)
         receipt_count = session.scalar(select(func.count()).select_from(ReceiptIndex)) or 0
         latest_brief = _latest_brief_receipt(session)
-        liability_count, liability_balance_total = session.exec(
-            select(func.count(), func.coalesce(func.sum(Liability.balance), 0))
-        ).one()
+        liability_count = session.scalar(select(func.count()).select_from(Liability)) or 0
         goal_count = session.scalar(select(func.count()).select_from(FinancialGoal)) or 0
         cashflow_count = session.scalar(select(func.count()).select_from(CashflowEvent)) or 0
         tax_event_count = session.scalar(select(func.count()).select_from(TaxEvent)) or 0
@@ -174,18 +172,15 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         document_count = session.scalar(select(func.count()).select_from(DocumentRef)) or 0
         latest_snapshot = _latest_portfolio_snapshot(session)
         position_count = 0
-        total_market_value = None
         if latest_snapshot is not None:
-            positions = list(
-                session.exec(
-                    select(Position).where(
-                        Position.snapshot_id == latest_snapshot.snapshot_id
-                    )
-                ).all()
+            position_count = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(Position)
+                    .where(Position.snapshot_id == latest_snapshot.snapshot_id)
+                )
+                or 0
             )
-            position_count = len(positions)
-            valuation = reconcile_position_totals(positions)
-            total_market_value = valuation.unified_total if valuation.admitted else None
 
     source_refs = tuple(sorted(set(latest_snapshot.source_refs if latest_snapshot else ())))
     return DashboardSummaryResponse(
@@ -193,16 +188,12 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         latest_snapshot_id=latest_snapshot.snapshot_id if latest_snapshot else None,
         latest_snapshot_as_of_utc=latest_snapshot.as_of_utc if latest_snapshot else None,
         position_count=int(position_count),
-        total_market_value=(
-            float(total_market_value) if total_market_value is not None else None
-        ),
+        total_market_value=capital.total_assets,
         open_proposal_count=open_proposal_count,
         receipt_count=int(receipt_count),
         latest_brief_receipt_id=latest_brief.receipt_id if latest_brief else None,
         liability_count=int(liability_count),
-        # Sum exactly in Decimal, then expose a float display rollup (the raw
-        # /state/liabilities rows keep the exact Decimal balance).
-        liability_balance_total=float(liability_balance_total),
+        liability_balance_total=capital.total_liabilities,
         goal_count=int(goal_count),
         cashflow_count=int(cashflow_count),
         tax_event_count=int(tax_event_count),

@@ -6,6 +6,7 @@ from decimal import Decimal
 from finharness.agent_context import (
     CONTEXT_PACK_SPECS,
     AgentContextPackSpec,
+    build_capital_summary_context,
     build_current_ips_context,
     build_ips_check_context,
     build_open_proposals_context,
@@ -128,6 +129,59 @@ class AgentContextPackTest(unittest.TestCase):
         self.assertEqual(body["summary"], {})
         self.assertIn("No active IPS has been recorded.", body["data_gaps"])
         self.assert_non_authoritative(body)
+
+    def test_blocked_capital_context_preserves_typed_admission_state(self) -> None:
+        account = Account(account_id="mixed", kind="broker", venue="m", display_name="Mixed")
+        snapshot = Snapshot(
+            snapshot_id="mixed",
+            kind="portfolio",
+            as_of_utc="2026-06-20T00:00:00+00:00",
+        )
+        positions = [
+            Position(
+                position_id="usd",
+                snapshot_id="mixed",
+                account_id="mixed",
+                symbol="SPY",
+                quantity=1,
+                market_value=100,
+                valuation_currency="USD",
+                unit_price=100,
+                price_currency="USD",
+                valued_at_utc=snapshot.as_of_utc,
+                price_source_ref="fixture:usd",
+                valuation_status="valued",
+            ),
+            Position(
+                position_id="jpy",
+                snapshot_id="mixed",
+                account_id="mixed",
+                symbol="7203",
+                quantity=1,
+                market_value=20000,
+                valuation_currency="JPY",
+                unit_price=20000,
+                price_currency="JPY",
+                valued_at_utc=snapshot.as_of_utc,
+                price_source_ref="fixture:jpy",
+                valuation_status="valued",
+            ),
+        ]
+        write_records([account, snapshot, *positions], engine=self.engine)
+
+        summary = build_capital_summary_context(self.engine).summary
+
+        self.assertFalse(summary["asset_valuation_admitted"])
+        self.assertFalse(summary["net_worth_admitted"])
+        self.assertIsNone(summary["concentration_flagged"])
+        self.assertEqual(
+            summary["per_currency_totals"],
+            {"JPY": 20000.0, "USD": 100.0},
+        )
+        self.assertIn(
+            "mixed_valuation_currencies",
+            summary["asset_valuation_blockers"],
+        )
 
     def test_current_ips_context_summarizes_active_policy(self) -> None:
         ips = record_ips(

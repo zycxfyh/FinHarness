@@ -113,6 +113,11 @@ def _behavioral_warnings(exposure: ExposureReport) -> list[str]:
         warnings.append(
             f"Insurance: {len(exposure.insurance_review_gaps)} coverage gap(s) outstanding."
         )
+    if not exposure.asset_valuation_admitted or not exposure.net_worth_admitted:
+        warnings.append(
+            "Behavioral flags cannot be fully assessed because the capital basis "
+            "is unavailable or blocked."
+        )
     return warnings
 
 
@@ -305,9 +310,12 @@ def compute_daily_brief(
         ]
 
     # Slot 5: Leverage & liquidation warnings (qualitative in v1; no liquidation price).
-    if (
-        exposure.interest_bearing_debt_total is not None
-        and exposure.annual_interest_estimate is not None
+    if exposure.interest_bearing_debt_total is None:
+        leverage_lines = [
+            "Debt and leverage cannot be assessed because the capital basis is blocked."
+        ]
+    elif (
+        exposure.annual_interest_estimate is not None
         and exposure.interest_bearing_debt_total > 0
     ):
         leverage_lines = [

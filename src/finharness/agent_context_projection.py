@@ -17,6 +17,7 @@ from sqlalchemy.engine import Engine
 
 from finharness.agent_capabilities import get_agent_profile
 from finharness.agent_context import (
+    CAPITAL_ADMISSION_SUMMARY_KEYS,
     AgentContextPack,
     build_capital_summary_context,
     build_current_ips_context,
@@ -116,6 +117,12 @@ class AgentContextProjectionProfile:
 DEFAULT_CAPITAL_SUMMARY_KEYS = (
     "as_of_date",
     "base_currency",
+    "asset_valuation_admitted",
+    "net_worth_admitted",
+    "per_currency_totals",
+    "liability_per_currency_totals",
+    "asset_valuation_blockers",
+    "net_worth_blockers",
     "net_worth",
     "cash_runway_months",
     "monthly_net_cashflow",
@@ -349,19 +356,38 @@ def project_context_pack_payload(
     selected_summary, dropped_keys = _select_summary(summary, spec.summary_keys)
     source_refs = list(_refs(_field_values(payload, "source_refs")))
     projected_source_refs = source_refs[: spec.max_source_refs]
+    data_gaps = list(_refs(_field_values(payload, "data_gaps")))
+    projected_data_gaps = data_gaps[: spec.max_items]
     context_pack_refs = list(_refs(_field_values(payload, "context_pack_refs")))
     receipt_refs = list(_refs(_field_values(payload, "receipt_refs")))
     receipt_ref = next(iter(_refs(_field_values(payload, "receipt_ref"))), None)
     dropped_top_level_keys = sorted(
         str(key) for key in payload if key not in CONTEXT_PACK_TOP_LEVEL_ALLOWLIST
     )
+    if dropped_keys:
+        projected_data_gaps.append(
+            f"context projection omitted summary keys: {', '.join(dropped_keys)}"
+        )
+    if dropped_top_level_keys:
+        projected_data_gaps.append(
+            "context projection omitted top-level keys: "
+            f"{', '.join(dropped_top_level_keys)}"
+        )
+    if len(source_refs) > spec.max_source_refs:
+        projected_data_gaps.append(
+            f"context projection truncated source refs to {spec.max_source_refs}"
+        )
+    if len(data_gaps) > spec.max_items:
+        projected_data_gaps.append(
+            f"context projection truncated data gaps to {spec.max_items}"
+        )
     raw_available = payload.get("available", True)
     projected = {
         "name": pack_name,
         "available": raw_available if isinstance(raw_available, bool) else True,
-        "summary": _bounded_value(selected_summary, max_items=spec.max_items),
+        "summary": _bounded_summary(selected_summary, max_items=spec.max_items),
         "source_refs": projected_source_refs,
-        "data_gaps": list(_refs(_field_values(payload, "data_gaps"))),
+        "data_gaps": projected_data_gaps,
         "non_claims": list(
             _refs([*AGENT_CONTEXT_PROJECTION_NON_CLAIMS, *_field_values(payload, "non_claims")])
         ),
@@ -373,21 +399,6 @@ def project_context_pack_payload(
         projected["receipt_refs"] = receipt_refs
     if receipt_ref is not None:
         projected["receipt_ref"] = receipt_ref
-    if dropped_keys:
-        projected["data_gaps"] = [
-            *projected["data_gaps"],
-            f"context projection omitted summary keys: {', '.join(dropped_keys)}",
-        ]
-    if dropped_top_level_keys:
-        projected["data_gaps"] = [
-            *projected["data_gaps"],
-            f"context projection omitted top-level keys: {', '.join(dropped_top_level_keys)}",
-        ]
-    if len(source_refs) > spec.max_source_refs:
-        projected["data_gaps"] = [
-            *projected["data_gaps"],
-            f"context projection truncated source refs to {spec.max_source_refs}",
-        ]
     projected = _fit_pack_to_budget(
         projected=projected,
         profile_name=profile_name,
@@ -549,7 +560,7 @@ def _fit_pack_to_budget(
         return out
 
     compact = dict(out)
-    compact["summary"] = _bounded_value(
+    compact["summary"] = _bounded_summary(
         compact.get("summary", {}),
         max_items=max(1, spec.max_items // 2),
         max_string_chars=240,
@@ -576,7 +587,10 @@ def _fit_pack_to_budget(
         return compact
 
     marker = dict(compact)
-    marker["summary"] = {"compacted": True}
+    marker["summary"] = _summary_compact_marker(
+        pack_name=spec.pack_name,
+        summary=compact.get("summary", {}),
+    )
     source_refs = _field_values(compact, "source_refs")
     marker["source_refs"] = source_refs[:1]
     marker["data_gaps"] = [
@@ -701,6 +715,40 @@ def _bounded_value(
     if isinstance(value, str) and len(value) > max_string_chars:
         return value[: max_string_chars - 15].rstrip() + "... [truncated]"
     return value
+
+
+def _bounded_summary(
+    value: object,
+    *,
+    max_items: int,
+    max_string_chars: int = 500,
+) -> dict[str, Any]:
+    summary = value if isinstance(value, dict) else {}
+    return {
+        str(key): _bounded_value(
+            child,
+            max_items=max_items,
+            max_string_chars=max_string_chars,
+        )
+        for key, child in summary.items()
+    }
+
+
+def _summary_compact_marker(
+    *,
+    pack_name: str,
+    summary: object,
+) -> dict[str, Any]:
+    marker: dict[str, Any] = {"compacted": True}
+    if pack_name == "capital_summary" and isinstance(summary, dict):
+        marker.update(
+            {
+                key: summary[key]
+                for key in CAPITAL_ADMISSION_SUMMARY_KEYS
+                if key in summary
+            }
+        )
+    return marker
 
 
 def _field_values(result: dict[str, object], key: str) -> list[str]:

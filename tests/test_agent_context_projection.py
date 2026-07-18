@@ -200,6 +200,26 @@ class AgentContextProjectionTest(unittest.TestCase):
         )
         self.assertFalse(body["execution_allowed"])
 
+    def test_blocked_admission_survives_default_and_review_projections(self) -> None:
+        self._seed_portfolio()
+
+        for profile_name in ("default", "review-draft"):
+            with self.subTest(profile=profile_name):
+                body = build_capital_context_projection_payload(
+                    profile_name=profile_name,
+                    engine=self.engine,
+                )
+                capital = next(
+                    pack for pack in body["packs"] if pack["name"] == "capital_summary"
+                )
+                summary = capital["summary"]
+                self.assertFalse(summary["asset_valuation_admitted"])
+                self.assertFalse(summary["net_worth_admitted"])
+                self.assertIsNone(summary["concentration_flagged"])
+                self.assertTrue(summary["asset_valuation_blockers"])
+                self.assertIn("per_currency_totals", summary)
+                self.assertIn("liability_per_currency_totals", summary)
+
     def test_runtime_view_exposes_context_projection_policy(self) -> None:
         view = agent_runtime_view("review-draft")
 

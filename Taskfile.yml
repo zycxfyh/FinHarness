@@ -191,6 +191,7 @@ tasks:
       - node frontend/tests/mutation_identity_binding.test.cjs
       - node frontend/tests/cockpit_execution.test.cjs
       - node frontend/tests/exposure_unknown_state.test.cjs
+      - node frontend/tests/dashboard_unknown_capital.test.cjs
 
   test:browser:
     desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.

@@ -119,7 +119,7 @@ class ExposureReport(BaseModel):
     concentration_hhi: float | None
     top_holding_weight: float | None
     top5_weight: float | None
-    concentration_flagged: bool
+    concentration_flagged: bool | None
     concentration_threshold: float
     cash_total: float | None
     cash_total_verified: bool
@@ -586,8 +586,9 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
         top_holding_weight=float(top_weight) if top_weight is not None else None,
         top5_weight=float(top5_weight) if top5_weight is not None else None,
         concentration_flagged=(
-            top_weight is not None
-            and float(top_weight) >= active_thresholds.concentration_pct
+            float(top_weight) >= active_thresholds.concentration_pct
+            if top_weight is not None
+            else None
         ),
         concentration_threshold=active_thresholds.concentration_pct,
         cash_total=float(cash_total) if cash_total is not None else None,

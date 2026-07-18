@@ -265,7 +265,7 @@ class ExposureTest(unittest.TestCase):
         self.assertIn("mixed_valuation_currencies", report.asset_valuation_blockers)
         self.assertIsNone(report.concentration_hhi)
         self.assertIsNone(report.top_holding_weight)
-        self.assertFalse(report.concentration_flagged)
+        self.assertIsNone(report.concentration_flagged)
 
     def test_nonconforming_position_blocks_all_unified_outputs(self) -> None:
         cases = {
