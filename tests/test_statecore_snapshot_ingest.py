@@ -143,7 +143,10 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         positions = sorted(read_all(Position, engine=self.engine), key=lambda row: row.symbol)
         receipts = read_all(ReceiptIndex, engine=self.engine)
 
-        self.assertEqual(result.snapshot_id, f"snap_broker_read_{source_sha[:24]}")
+        version = hashlib.sha256(
+            f"{receipt.resolve()}\x00{source_sha}".encode()
+        ).hexdigest()[:24]
+        self.assertEqual(result.snapshot_id, f"snap_broker_read_{version}")
         self.assertEqual(result.batch_id, batches[0].batch_id)
         self.assertEqual(result.manifest_id, manifests[0].manifest_id)
         self.assertEqual(result.receipt_id, manifests[0].receipt_id)
@@ -193,6 +196,34 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
         self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 1)
         self.assertEqual(len(read_all(Position, engine=self.engine)), 2)
+
+    def test_same_bytes_from_distinct_source_paths_do_not_share_import_identity(self) -> None:
+        first_path = self._write_receipt("broker/path-a.json", self._broker_payload())
+        second_path = self._write_receipt("broker/path-b.json", self._broker_payload())
+        first = ingest_broker_read_receipt(
+            first_path, engine=self.engine, receipt_root=self.import_root
+        )
+        second = ingest_broker_read_receipt(
+            second_path, engine=self.engine, receipt_root=self.import_root
+        )
+        self.assertNotEqual(first.batch_id, second.batch_id)
+        self.assertNotEqual(first.manifest_id, second.manifest_id)
+        self.assertNotEqual(first.receipt_id, second.receipt_id)
+        self.assertNotEqual(first.snapshot_id, second.snapshot_id)
+        self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 2)
+
+    def test_recovery_snapshot_override_must_match_exact_source_identity(self) -> None:
+        receipt = self._write_receipt("broker/recovery-id.json", self._broker_payload())
+        with self.assertRaisesRegex(StateCoreStoreError, "exact source identity"):
+            ingest_broker_read_receipt(
+                receipt,
+                engine=self.engine,
+                receipt_root=self.import_root,
+                snapshot_id="snap_caller_supplied",
+            )
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
+        self.assertEqual(read_all(ReceiptManifest, engine=self.engine), [])
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
 
     def test_changed_bytes_with_same_upstream_receipt_id_create_new_version(self) -> None:
         receipt = self._write_receipt("broker/versioned.json", self._broker_payload())
