@@ -169,6 +169,7 @@ class TestRunnerContractTest(unittest.TestCase):
         for required in (
             "tests/test_agent_work_loop_models.py",
             "tests/test_agent_cognition_flow.py",
+            "tests/test_decision_ontology.py",
         ):
             with self.subTest(file=required):
                 self.assertIn(required, manifest)

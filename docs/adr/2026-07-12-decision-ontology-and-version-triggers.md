@@ -6,9 +6,9 @@ Date: 2026-07-12
 
 Issue: #255
 
-Case/Scenario direction was superseded by #403. The canonical direction is
-`DecisionCaseVersion -> ScenarioVersion`; runtime correction remains owned by
-#392.
+Case/Scenario direction was superseded by #403 and its runtime contract was
+aligned by #392. The canonical direction is
+`DecisionCaseVersion -> ScenarioVersion`.
 
 ## Decision
 
@@ -28,9 +28,16 @@ FinHarness separates the following identities and responsibilities:
 the DecisionProblem, ProposalVersion, EvidenceSetVersion, adopted
 CapitalStateVersion, and effective PolicyVersion identities. A
 `ScenarioVersion` binds one exact `DecisionCaseVersion`; it never enters the
-Case basis.
+Case basis. Its contract also binds the verified capital projection,
+AssumptionSetVersion, CalculatorVersion, and optional EvidenceBundleVersion
+used for that immutable calculation.
 ReviewEvent, Attestation, ReviewStateVersion, and DecisionRecord are forbidden
 case-basis inputs.
+
+`DecisionRecord` may cite the ScenarioVersions considered and one selected
+ScenarioVersion. Every citation remains bound to the same DecisionCaseVersion;
+the selected Scenario must be present in the considered set. Recording that
+choice does not mutate either identity.
 
 ## Identity and integrity
 

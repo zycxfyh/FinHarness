@@ -174,10 +174,11 @@ to prove the semantics of arbitrary strings at runtime.
 - This ADR preserves #402 plane dependency and object ownership.
 - It supersedes the Case/Scenario direction and corresponding trigger row in
   `2026-07-12-decision-ontology-and-version-triggers.md`.
-- Current `finharness.decision_ontology.DecisionCaseBasis` still contains a
-  pre-correction Scenario reference. #392 remains the implementation owner for
-  removing that field, binding ScenarioVersion to CaseVersion, and aligning its
-  downstream Issues. #403 does not silently implement or close #392.
+- #392 aligns `finharness.decision_ontology` with this graph: Case basis has no
+  Scenario reference, ScenarioVersion binds one exact CaseVersion, Scenario
+  changes do not trigger a new CaseVersion, and DecisionRecord citations remain
+  Case-bound. #403 remains the canonical architecture graph rather than a
+  second runtime registry.
 - #394 remains the owner of stable imported-source registration, path-derived
   identity migration, and collision handling.
 - #386 remains the sole owner of PR head, merge-ref, and final-main Git identity.
