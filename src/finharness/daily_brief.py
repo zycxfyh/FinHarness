@@ -85,7 +85,7 @@ def _behavioral_warnings(exposure: ExposureReport) -> list[str]:
     thin liquidity, leverage, ignored tax/insurance), not advice on what to do.
     """
     warnings: list[str] = []
-    if exposure.concentration_flagged:
+    if exposure.concentration_flagged and exposure.top_holding_weight is not None:
         warnings.append(
             f"Concentration: top holding is {exposure.top_holding_weight * 100:.1f}% "
             f"(over the {exposure.concentration_threshold * 100:.0f}% threshold). Watch for "
@@ -96,7 +96,10 @@ def _behavioral_warnings(exposure: ExposureReport) -> list[str]:
             f"Liquidity: cash runway is {exposure.cash_runway_months:.1f} months. Thin "
             "buffers make forced selling more likely under stress."
         )
-    if exposure.interest_bearing_debt_total > 0:
+    if (
+        exposure.interest_bearing_debt_total is not None
+        and exposure.interest_bearing_debt_total > 0
+    ):
         warnings.append(
             "Leverage: interest-bearing debt is on the books. Confirm new risk is not "
             "being taken on borrowed money without a written rationale."
@@ -121,9 +124,9 @@ class BriefSection(BaseModel):
 class DailyBrief(BaseModel):
     as_of_date: str
     headline: str
-    net_worth: float
-    total_assets: float
-    total_liabilities: float
+    net_worth: float | None
+    total_assets: float | None
+    total_liabilities: float | None
     holdings_change: float | None
     open_review_count: int
     sections: tuple[BriefSection, ...]
@@ -162,10 +165,24 @@ def _change_section(
     observations = build_observations(diff, current_positions, thresholds=thresholds)
     lines = [observation.detail for observation in observations]
     if not lines:
-        lines = [
-            f"Holdings value moved by {diff.total_market_value_delta:,.2f}; no threshold crossings."
-        ]
+        if diff.valuation_blockers or diff.total_market_value_delta is None:
+            lines = [
+                "Holdings change cannot be unified/valued from the current "
+                "valuation evidence."
+            ]
+        else:
+            lines = [
+                f"Holdings value moved by {diff.total_market_value_delta:,.2f}; "
+                "no threshold crossings."
+            ]
     return BriefSection(title=title, lines=tuple(lines)), diff.total_market_value_delta
+
+
+def _currency_total_lines(label: str, totals: dict[str, float]) -> list[str]:
+    return [
+        f"{label} {currency}: {_money(value, currency)}"
+        for currency, value in sorted(totals.items())
+    ]
 
 
 def _open_reviews(engine: Engine) -> list[Proposal]:
@@ -210,11 +227,29 @@ def compute_daily_brief(
     # mapped into slots 1-5/7/10; slots 6/8/9 are additive. ---
 
     # Slot 1: Net worth snapshot (+ change-since-last, folded in here).
-    net_worth_lines = [
-        f"Net worth {_money(exposure.net_worth, exposure.base_currency)}",
-        f"Assets {_money(exposure.total_assets, exposure.base_currency)}; "
-        f"liabilities {_money(exposure.total_liabilities, exposure.base_currency)}",
-    ]
+    if (
+        exposure.net_worth_admitted
+        and exposure.net_worth is not None
+        and exposure.total_assets is not None
+        and exposure.total_liabilities is not None
+    ):
+        net_worth_lines = [
+            f"Net worth {_money(exposure.net_worth, exposure.base_currency)}",
+            f"Assets {_money(exposure.total_assets, exposure.base_currency)}; "
+            f"liabilities {_money(exposure.total_liabilities, exposure.base_currency)}",
+        ]
+    else:
+        net_worth_lines = [
+            "Net worth cannot be unified/valued from current capital evidence.",
+            *_currency_total_lines(
+                "Admitted position total",
+                exposure.per_currency_totals,
+            ),
+            *_currency_total_lines(
+                "Liability total",
+                exposure.liability_per_currency_totals,
+            ),
+        ]
     net_worth_lines += list(change_section.lines)
 
     # Slot 2: Cash & liquidity status (+ upcoming obligations).
@@ -223,10 +258,12 @@ def compute_daily_brief(
         cash_lines.append(f"Cash runway {exposure.cash_runway_months:.1f} months")
     # Only render an amount when the cash total is verified; an unverified 0.00 would
     # read as "you have no cash" rather than "no snapshot to read cash from".
-    if exposure.cash_total_verified:
+    if exposure.cash_total_verified and exposure.cash_total is not None:
         cash_lines.append(f"Cash on record {_money(exposure.cash_total, exposure.base_currency)}")
     else:
-        cash_lines.append("Cash total not verified; no portfolio snapshot on record.")
+        cash_lines.append(
+            "Cash total not verified because the portfolio valuation is unavailable or blocked."
+        )
     cash_lines += [
         f"Upcoming: {item.due_date} · {item.label}"
         + (f" · {_money(item.amount, item.currency)}" if item.amount is not None else "")
@@ -234,15 +271,29 @@ def compute_daily_brief(
     ] or ["Nothing due in the horizon."]
 
     # Slot 3: Exposure map (holdings-level in v1; factor-level is deferred debt).
-    exposure_map_lines = [
-        f"{exposure.holding_count} holding(s); "
-        f"top holding {exposure.top_holding_weight * 100:.1f}% "
-        f"(HHI {exposure.concentration_hhi:.3f})"
-    ]
+    if (
+        exposure.asset_valuation_admitted
+        and exposure.top_holding_weight is not None
+        and exposure.concentration_hhi is not None
+    ):
+        exposure_map_lines = [
+            f"{exposure.holding_count} holding(s); "
+            f"top holding {exposure.top_holding_weight * 100:.1f}% "
+            f"(HHI {exposure.concentration_hhi:.3f})"
+        ]
+    else:
+        exposure_map_lines = [
+            "Exposure concentration cannot be assessed because capital valuation "
+            "is blocked."
+        ]
 
     # Slot 4: Concentration risks. No holdings means "cannot assess", not "low risk" —
     # do not render absence of data as reassurance.
-    if exposure.holding_count == 0:
+    if not exposure.asset_valuation_admitted:
+        concentration_lines = [
+            "Concentration not assessed: capital valuation cannot be unified/valued."
+        ]
+    elif exposure.holding_count == 0:
         concentration_lines = ["Concentration not assessed: no holdings on record."]
     elif exposure.concentration_flagged:
         concentration_lines = [
@@ -254,7 +305,11 @@ def compute_daily_brief(
         ]
 
     # Slot 5: Leverage & liquidation warnings (qualitative in v1; no liquidation price).
-    if exposure.interest_bearing_debt_total > 0:
+    if (
+        exposure.interest_bearing_debt_total is not None
+        and exposure.annual_interest_estimate is not None
+        and exposure.interest_bearing_debt_total > 0
+    ):
         leverage_lines = [
             f"Interest-bearing debt {exposure.interest_bearing_debt_total:,.2f}; "
             f"annual interest ~{exposure.annual_interest_estimate:,.2f}",
@@ -302,9 +357,19 @@ def compute_daily_brief(
         for title, lines in zip(SLOT_TITLES, slot_lines, strict=True)
     )
 
-    headline = (
+    headline_prefix = (
         f"Net worth {exposure.net_worth:,.0f} {exposure.base_currency or ''}".rstrip()
-        + f"; {1 if exposure.concentration_flagged else 0} concentration flag"
+        if exposure.net_worth_admitted and exposure.net_worth is not None
+        else "Net worth cannot be unified/valued"
+    )
+    concentration_summary = (
+        f"{1 if exposure.concentration_flagged else 0} concentration flag"
+        if exposure.asset_valuation_admitted
+        else "concentration unavailable"
+    )
+    headline = (
+        headline_prefix
+        + f"; {concentration_summary}"
         + f"; {len(exposure.upcoming_obligations)} upcoming"
         + f"; {len(open_reviews)} open review(s)"
     )

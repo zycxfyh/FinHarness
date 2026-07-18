@@ -64,12 +64,27 @@ def _seed(engine: Any, root: Path) -> None:
         source_refs=[p_ref],
     )
     positions = [
-        Position(position_id="spy", snapshot_id="s", account_id="gp", symbol="SPY",
-                 quantity=Decimal("80"), market_value=Decimal("8000"), source_refs=[p_ref]),
-        Position(position_id="aapl", snapshot_id="s", account_id="gp", symbol="AAPL",
-                 quantity=Decimal("20"), market_value=Decimal("2000"), source_refs=[p_ref]),
-        Position(position_id="cash", snapshot_id="s", account_id="gp", symbol="USD",
-                 quantity=Decimal("5000"), market_value=Decimal("5000"), source_refs=[c_ref]),
+        Position(
+            position_id="spy", snapshot_id="s", account_id="gp", symbol="SPY",
+            quantity=Decimal("80"), market_value=Decimal("8000"),
+            valuation_currency="USD", unit_price=Decimal("100"), price_currency="USD",
+            valued_at_utc="2026-06-19T00:00:00+00:00",
+            price_source_ref=p_ref, valuation_status="valued", source_refs=[p_ref],
+        ),
+        Position(
+            position_id="aapl", snapshot_id="s", account_id="gp", symbol="AAPL",
+            quantity=Decimal("20"), market_value=Decimal("2000"),
+            valuation_currency="USD", unit_price=Decimal("100"), price_currency="USD",
+            valued_at_utc="2026-06-19T00:00:00+00:00",
+            price_source_ref=p_ref, valuation_status="valued", source_refs=[p_ref],
+        ),
+        Position(
+            position_id="cash", snapshot_id="s", account_id="gp", symbol="USD",
+            quantity=Decimal("5000"), market_value=Decimal("5000"),
+            valuation_currency="USD", unit_price=Decimal("1"), price_currency="USD",
+            valued_at_utc="2026-06-19T00:00:00+00:00",
+            price_source_ref=c_ref, valuation_status="valued", source_refs=[c_ref],
+        ),
     ]
     cashflows = [
         CashflowEvent(cashflow_id="salary", description="Salary", amount=Decimal("5000"),

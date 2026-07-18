@@ -45,6 +45,12 @@ class AgentContextPackTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=Decimal("1"),
                 market_value=Decimal("8000"),
+                valuation_currency="USD",
+                unit_price=Decimal("8000"),
+                price_currency="USD",
+                valued_at_utc="2026-06-20T00:00:00+00:00",
+                price_source_ref="position://spy",
+                valuation_status="valued",
                 source_refs=["position://spy"],
             ),
             Position(
@@ -54,6 +60,12 @@ class AgentContextPackTest(unittest.TestCase):
                 symbol="AAPL",
                 quantity=Decimal("1"),
                 market_value=Decimal("2000"),
+                valuation_currency="USD",
+                unit_price=Decimal("2000"),
+                price_currency="USD",
+                valued_at_utc="2026-06-20T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
             Position(
                 position_id="cash",
@@ -62,6 +74,12 @@ class AgentContextPackTest(unittest.TestCase):
                 symbol="USD",
                 quantity=Decimal("5000"),
                 market_value=Decimal("5000"),
+                valuation_currency="USD",
+                unit_price=Decimal("1"),
+                price_currency="USD",
+                valued_at_utc="2026-06-20T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
         ]
         cashflows = [

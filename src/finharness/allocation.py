@@ -175,9 +175,15 @@ def _concentration_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
 ) -> AllocationCandidate | None:
-    if report.holding_count == 0 or not report.holdings:
+    if (
+        not report.asset_valuation_admitted
+        or report.holding_count == 0
+        or not report.holdings
+    ):
         return None
     weight = report.top_holding_weight
+    if weight is None:
+        return None
     threshold = thresholds.concentration_pct
     if weight < threshold:
         return None
@@ -244,7 +250,13 @@ def _cash_overweight_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
 ) -> AllocationCandidate | None:
-    if report.total_assets <= 0 or report.cash_total <= 0:
+    if (
+        not report.asset_valuation_admitted
+        or report.total_assets is None
+        or report.cash_total is None
+        or report.total_assets <= 0
+        or report.cash_total <= 0
+    ):
         return None
     runway = report.cash_runway_months
     if runway is None or runway < thresholds.cash_runway_target_months:
@@ -329,8 +341,15 @@ def _rate_exposure_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
 ) -> AllocationCandidate | None:
+    if not report.net_worth_admitted:
+        return None
     rate = report.weighted_avg_interest_rate
-    if rate is None or report.interest_bearing_debt_total <= 0:
+    if (
+        rate is None
+        or report.interest_bearing_debt_total is None
+        or report.annual_interest_estimate is None
+        or report.interest_bearing_debt_total <= 0
+    ):
         return None
     threshold = thresholds.high_interest_rate_pct
     if rate < threshold:

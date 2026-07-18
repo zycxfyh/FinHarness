@@ -40,35 +40,63 @@ class AllocationCandidateTest(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
 
+    @staticmethod
+    def _valued_position(
+        *,
+        position_id: str,
+        snapshot_id: str,
+        account_id: str,
+        symbol: str,
+        quantity: str,
+        market_value: str,
+        **overrides: object,
+    ) -> Position:
+        fields: dict[str, object] = {
+            "position_id": position_id,
+            "snapshot_id": snapshot_id,
+            "account_id": account_id,
+            "symbol": symbol,
+            "quantity": Decimal(quantity),
+            "market_value": Decimal(market_value),
+            "valuation_currency": "USD",
+            "unit_price": Decimal(market_value) / Decimal(quantity),
+            "price_currency": "USD",
+            "valued_at_utc": "2026-06-19T00:00:00+00:00",
+            "price_source_ref": "fixture:prices",
+            "valuation_status": "valued",
+        }
+        fields.update(overrides)
+        return Position(**fields)
+
     def _seed_triggering(self) -> None:
         account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
         snapshot = Snapshot(
             snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
         positions = [
-            Position(
+            self._valued_position(
                 position_id="spy",
                 snapshot_id="s",
                 account_id="brk",
                 symbol="SPY",
-                quantity=Decimal("10"),
-                market_value=Decimal("8000"),
+                quantity="10",
+                market_value="8000",
             ),
-            Position(
+            self._valued_position(
                 position_id="aapl",
                 snapshot_id="s",
                 account_id="brk",
                 symbol="AAPL",
-                quantity=Decimal("5"),
-                market_value=Decimal("2000"),
+                quantity="5",
+                market_value="2000",
             ),
-            Position(
+            self._valued_position(
                 position_id="cash",
                 snapshot_id="s",
                 account_id="brk",
                 symbol="USD",
-                quantity=Decimal("5000"),
-                market_value=Decimal("5000"),
+                quantity="5000",
+                market_value="5000",
             ),
         ]
         cashflows = [
@@ -124,13 +152,13 @@ class AllocationCandidateTest(unittest.TestCase):
         snapshot = Snapshot(
             snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
-        position = Position(
+        position = self._valued_position(
             position_id="cash",
             snapshot_id="s",
             account_id="brk",
             symbol="USD",
-            quantity=Decimal("1000"),
-            market_value=Decimal("1000"),
+            quantity="1000",
+            market_value="1000",
         )
         high = Liability(
             liability_id="card",
@@ -187,13 +215,13 @@ class AllocationCandidateTest(unittest.TestCase):
         snapshot = Snapshot(
             snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
-        cash = Position(
+        cash = self._valued_position(
             position_id="cash",
             snapshot_id="s",
             account_id="brk",
             symbol="USD",
-            quantity=Decimal("8000"),
-            market_value=Decimal("8000"),
+            quantity="8000",
+            market_value="8000",
         )
         cashflows = [
             CashflowEvent(
@@ -237,13 +265,13 @@ class AllocationCandidateTest(unittest.TestCase):
         snapshot = Snapshot(
             snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
         )
-        cash = Position(
+        cash = self._valued_position(
             position_id="cash",
             snapshot_id="s",
             account_id="brk",
             symbol="USD",
-            quantity=Decimal("5000"),
-            market_value=Decimal("5000"),
+            quantity="5000",
+            market_value="5000",
         )
         rent = CashflowEvent(
             cashflow_id="rent",
@@ -507,17 +535,17 @@ class AllocationCandidateTest(unittest.TestCase):
             [
                 account,
                 snapshot,
-                Position(
+                self._valued_position(
                     position_id="spy", snapshot_id="s", account_id="brk", symbol="SPY",
-                    quantity=Decimal("10"), market_value=Decimal("8000"), source_refs=["r_sec"],
+                    quantity="10", market_value="8000", source_refs=["r_sec"],
                 ),
-                Position(
+                self._valued_position(
                     position_id="aapl", snapshot_id="s", account_id="brk", symbol="AAPL",
-                    quantity=Decimal("5"), market_value=Decimal("2000"), source_refs=["r_sec"],
+                    quantity="5", market_value="2000", source_refs=["r_sec"],
                 ),
-                Position(
+                self._valued_position(
                     position_id="cash", snapshot_id="s", account_id="brk", symbol="USD",
-                    quantity=Decimal("1000"), market_value=Decimal("1000"), source_refs=["r_cash"],
+                    quantity="1000", market_value="1000", source_refs=["r_cash"],
                 ),
                 CashflowEvent(
                     cashflow_id="salary", description="Salary", amount=Decimal("1000"),
@@ -582,9 +610,9 @@ class AllocationCandidateTest(unittest.TestCase):
             [
                 Account(account_id="brk", kind="broker", venue="m", display_name="Brk"),
                 snapshot,
-                Position(
+                self._valued_position(
                     position_id="cash", snapshot_id="s", account_id="brk", symbol="USD",
-                    quantity=Decimal("8000"), market_value=Decimal("8000"), source_refs=["r_cash"],
+                    quantity="8000", market_value="8000", source_refs=["r_cash"],
                 ),
                 CashflowEvent(
                     cashflow_id="salary", description="Salary", amount=Decimal("4000"),
@@ -640,6 +668,39 @@ class AllocationCandidateTest(unittest.TestCase):
         # No cashflows -> runway not computed; no holdings -> no concentration.
         report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
         self.assertEqual(compute_allocation_candidates(report), ())
+
+    def test_unadmitted_valuation_cannot_emit_capital_candidates(self) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(
+            snapshot_id="s", kind="portfolio", as_of_utc="2026-06-19T00:00:00+00:00"
+        )
+        legacy_position = Position(
+            position_id="legacy",
+            snapshot_id="s",
+            account_id="brk",
+            symbol="SPY",
+            quantity=Decimal("10"),
+            market_value=Decimal("10000"),
+        )
+        liability = Liability(
+            liability_id="card",
+            name="Card",
+            liability_type="card",
+            balance=Decimal("5000"),
+            currency="USD",
+            interest_rate=Decimal("0.20"),
+        )
+        write_records([account, snapshot, legacy_position, liability], engine=self.engine)
+
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        kinds = {candidate.detector_kind for candidate in compute_allocation_candidates(report)}
+
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertNotIn("concentration_high", kinds)
+        self.assertNotIn("cash_buffer_low", kinds)
+        self.assertNotIn("cash_overweight", kinds)
+        self.assertNotIn("rate_exposure_high", kinds)
 
     def test_record_writes_governed_proposals_and_is_idempotent(self) -> None:
         self._seed_triggering()

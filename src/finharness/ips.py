@@ -120,13 +120,18 @@ def _liquidity_rule(report: ExposureReport, ips: InvestmentPolicyStatement) -> I
 def _single_holding_rule(report: ExposureReport, ips: InvestmentPolicyStatement) -> IpsRuleResult:
     cap = float(ips.max_single_holding_pct)
     boundary = f"top holding <= {cap:.0%} of invested book"
-    if report.holding_count == 0 or not report.holdings:
+    if (
+        not report.asset_valuation_admitted
+        or report.top_holding_weight is None
+        or report.holding_count == 0
+        or not report.holdings
+    ):
         return IpsRuleResult(
             rule="single_holding_cap",
             boundary=boundary,
-            observed="no holdings",
+            observed="unverified",
             status="blocked",
-            detail="No holdings on record to measure concentration against.",
+            detail="No admitted unified valuation basis for measuring concentration.",
         )
     weight = report.top_holding_weight
     top = report.holdings[0]
@@ -151,7 +156,19 @@ def _high_interest_rule(
         return None
     threshold = float(ips.high_interest_rate_pct)
     boundary = f"weighted debt rate < {threshold:.0%}"
-    if report.interest_bearing_debt_total <= 0 or report.weighted_avg_interest_rate is None:
+    if (
+        not report.net_worth_admitted
+        or report.interest_bearing_debt_total is None
+        or report.weighted_avg_interest_rate is None
+    ):
+        return IpsRuleResult(
+            rule="high_interest_debt",
+            boundary=boundary,
+            observed="unverified",
+            status="blocked",
+            detail="No admitted capital basis for the weighted debt-rate check.",
+        )
+    if report.interest_bearing_debt_total <= 0:
         return IpsRuleResult(
             rule="high_interest_debt",
             boundary=boundary,

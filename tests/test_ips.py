@@ -53,6 +53,12 @@ class IpsSliceTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=Decimal("1"),
                 market_value=Decimal(top_value),
+                valuation_currency="USD",
+                unit_price=Decimal(top_value),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
             Position(
                 position_id="aapl",
@@ -61,6 +67,12 @@ class IpsSliceTest(unittest.TestCase):
                 symbol="AAPL",
                 quantity=Decimal("1"),
                 market_value=Decimal(other_value),
+                valuation_currency="USD",
+                unit_price=Decimal(other_value),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
             Position(
                 position_id="cash",
@@ -69,6 +81,12 @@ class IpsSliceTest(unittest.TestCase):
                 symbol="USD",
                 quantity=Decimal(cash),
                 market_value=Decimal(cash),
+                valuation_currency="USD",
+                unit_price=Decimal("1"),
+                price_currency="USD",
+                valued_at_utc="2026-06-19T00:00:00+00:00",
+                price_source_ref="fixture:prices",
+                valuation_status="valued",
             ),
         ]
         cashflows = [

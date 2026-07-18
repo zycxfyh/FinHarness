@@ -111,6 +111,12 @@ class StateCoreApiTest(unittest.TestCase):
                 symbol="SPY",
                 quantity=1.5,
                 market_value=155.0,
+                valuation_currency="USD",
+                unit_price=103.333333333333,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="data/receipts/after.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/after.json"],
             ),
             Position(
@@ -120,6 +126,12 @@ class StateCoreApiTest(unittest.TestCase):
                 symbol="AAPL",
                 quantity=4.0,
                 market_value=80.0,
+                valuation_currency="USD",
+                unit_price=20.0,
+                price_currency="USD",
+                valued_at_utc="2026-06-17T10:00:00+00:00",
+                price_source_ref="data/receipts/after.json",
+                valuation_status="valued",
                 source_refs=["data/receipts/after.json"],
             ),
         ]
@@ -324,7 +336,7 @@ class StateCoreApiTest(unittest.TestCase):
             422,
         )
 
-    def test_dashboard_uses_aggregate_queries_instead_of_full_table_reads(self) -> None:
+    def test_dashboard_scopes_position_valuation_rows_to_latest_snapshot(self) -> None:
         statements: list[str] = []
 
         def capture_statement(
@@ -344,7 +356,11 @@ class StateCoreApiTest(unittest.TestCase):
             event.remove(self.engine, "before_cursor_execute", capture_statement)
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(any("sum(positions.market_value)" in sql for sql in statements))
+        position_reads = [
+            sql for sql in statements if " from positions " in f" {sql} "
+        ]
+        self.assertEqual(len(position_reads), 1)
+        self.assertIn("where positions.snapshot_id =", position_reads[0])
         self.assertTrue(any("sum(liabilities.balance)" in sql for sql in statements))
         forbidden_full_reads = (
             "select accounts.account_id",
@@ -356,10 +372,59 @@ class StateCoreApiTest(unittest.TestCase):
             "select tax_events.tax_event_id",
             "select insurance_policies.policy_id",
             "select document_refs.document_id",
-            "select positions.position_id",
         )
         for prefix in forbidden_full_reads:
             self.assertFalse(any(sql.startswith(prefix) for sql in statements), prefix)
+
+    def test_dashboard_does_not_sum_mixed_currency_latest_snapshot(self) -> None:
+        snapshot = Snapshot(
+            snapshot_id="snap_mixed",
+            kind="portfolio",
+            as_of_utc="2026-06-17T11:00:00+00:00",
+        )
+        positions = [
+            Position(
+                position_id="mixed_usd",
+                snapshot_id=snapshot.snapshot_id,
+                account_id="acct_api",
+                symbol="SPY",
+                quantity=1,
+                market_value=100,
+                valuation_currency="USD",
+                unit_price=100,
+                price_currency="USD",
+                valued_at_utc=snapshot.as_of_utc,
+                price_source_ref="fixture:usd",
+                valuation_status="valued",
+            ),
+            Position(
+                position_id="mixed_jpy",
+                snapshot_id=snapshot.snapshot_id,
+                account_id="acct_api",
+                symbol="7203",
+                quantity=1,
+                market_value=20000,
+                valuation_currency="JPY",
+                unit_price=20000,
+                price_currency="JPY",
+                valued_at_utc=snapshot.as_of_utc,
+                price_source_ref="fixture:jpy",
+                valuation_status="valued",
+            ),
+        ]
+        write_records([snapshot, *positions], engine=self.engine)
+
+        dashboard = self.client.get("/dashboard/summary")
+        exposure = self.client.get("/exposure")
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIsNone(dashboard.json()["total_market_value"])
+        self.assertEqual(exposure.status_code, 200)
+        self.assertIsNone(exposure.json()["total_assets"])
+        self.assertEqual(
+            exposure.json()["per_currency_totals"],
+            {"JPY": 20000.0, "USD": 100.0},
+        )
 
     def test_dashboard_open_count_respects_current_revision_attestations(self) -> None:
         proposals = [
@@ -433,7 +498,9 @@ class StateCoreApiTest(unittest.TestCase):
         body = response.json()
         self.assertFalse(body["execution_allowed"])
         self.assertIsNone(body["total_market_value_before"])
-        self.assertIsNone(body["total_market_value_after"])
+        self.assertEqual(body["total_market_value_after"], 235.0)
+        self.assertIsNone(body["total_market_value_delta"])
+        self.assertEqual(body["per_currency_totals_after"], {"USD": 235.0})
         self.assertTrue(body["valuation_blockers"])
         self.assertEqual([row["symbol"] for row in body["added"]], ["AAPL"])
         self.assertEqual([row["symbol"] for row in body["changed"]], ["SPY"])
@@ -929,6 +996,12 @@ class StateCoreApiTest(unittest.TestCase):
         body = response.json()
         self.assertFalse(body["execution_allowed"])
         self.assertIn("Not execution authorization.", body["non_claims"])
+        self.assertTrue(body["asset_valuation_admitted"])
+        self.assertTrue(body["net_worth_admitted"])
+        self.assertEqual(body["asset_valuation_blockers"], [])
+        self.assertEqual(body["net_worth_blockers"], [])
+        self.assertEqual(body["per_currency_totals"], {"USD": 235.0})
+        self.assertEqual(body["liability_per_currency_totals"], {"USD": 1200.0})
         # Reflects the seeded liability, and net worth is assets - liabilities.
         self.assertEqual(body["total_liabilities"], 1200.0)
         self.assertAlmostEqual(

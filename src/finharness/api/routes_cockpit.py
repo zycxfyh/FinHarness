@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -13,6 +12,7 @@ from sqlmodel import Session, col, select
 from finharness.api.dependencies import EngineDependency
 from finharness.daily_brief import DailyBrief, compute_daily_brief
 from finharness.exposure import ExposureReport, compute_exposure
+from finharness.position_valuation import reconcile_position_totals
 from finharness.statecore.models import (
     Account,
     Attestation,
@@ -45,7 +45,7 @@ class DashboardSummaryResponse(BaseModel):
     latest_snapshot_id: str | None
     latest_snapshot_as_of_utc: str | None
     position_count: int
-    total_market_value: float
+    total_market_value: float | None
     open_proposal_count: int
     receipt_count: int
     latest_brief_receipt_id: str | None
@@ -174,15 +174,18 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         document_count = session.scalar(select(func.count()).select_from(DocumentRef)) or 0
         latest_snapshot = _latest_portfolio_snapshot(session)
         position_count = 0
-        total_market_value = Decimal("0")
+        total_market_value = None
         if latest_snapshot is not None:
-            position_aggregate = session.exec(
-                select(func.count(), func.coalesce(func.sum(Position.market_value), 0)).where(
-                    Position.snapshot_id == latest_snapshot.snapshot_id
-                )
-            ).one()
-            position_count = int(position_aggregate[0])
-            total_market_value = position_aggregate[1] or Decimal("0")
+            positions = list(
+                session.exec(
+                    select(Position).where(
+                        Position.snapshot_id == latest_snapshot.snapshot_id
+                    )
+                ).all()
+            )
+            position_count = len(positions)
+            valuation = reconcile_position_totals(positions)
+            total_market_value = valuation.unified_total if valuation.admitted else None
 
     source_refs = tuple(sorted(set(latest_snapshot.source_refs if latest_snapshot else ())))
     return DashboardSummaryResponse(
@@ -190,7 +193,9 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         latest_snapshot_id=latest_snapshot.snapshot_id if latest_snapshot else None,
         latest_snapshot_as_of_utc=latest_snapshot.as_of_utc if latest_snapshot else None,
         position_count=int(position_count),
-        total_market_value=float(total_market_value),
+        total_market_value=(
+            float(total_market_value) if total_market_value is not None else None
+        ),
         open_proposal_count=open_proposal_count,
         receipt_count=int(receipt_count),
         latest_brief_receipt_id=latest_brief.receipt_id if latest_brief else None,

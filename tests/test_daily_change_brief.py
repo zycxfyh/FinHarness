@@ -205,6 +205,48 @@ class DailyChangeBriefTest(unittest.TestCase):
 
         self.assertEqual(observations, ())
 
+    def test_mixed_currency_positions_cannot_emit_concentration_observation(self) -> None:
+        before_path = self._write_portfolio_receipt(
+            "mixed-before",
+            as_of_utc="2026-06-17T09:00:00+00:00",
+            positions=[
+                {"symbol": "SPY", "qty": 1, "market_value": 100, "cost_basis": 90},
+            ],
+        )
+        after_path = self._write_portfolio_receipt(
+            "mixed-after",
+            as_of_utc="2026-06-18T09:00:00+00:00",
+            positions=[
+                {"symbol": "SPY", "qty": 1, "market_value": 100, "cost_basis": 90},
+                {"symbol": "7203", "qty": 1, "market_value": 20000, "cost_basis": 19000},
+            ],
+        )
+        before = ingest_portfolio_snapshot_from_receipt(before_path, engine=self.engine)
+        after = ingest_portfolio_snapshot_from_receipt(after_path, engine=self.engine)
+        diff = diff_snapshots(before.snapshot_id, after.snapshot_id, engine=self.engine)
+        positions = [
+            position.model_copy(
+                update={
+                    "valuation_currency": "JPY",
+                    "price_currency": "JPY",
+                }
+            )
+            if position.symbol == "7203"
+            else position
+            for position in portfolio_positions(after.snapshot_id, engine=self.engine)
+        ]
+
+        observations = build_observations(
+            diff,
+            positions,
+            thresholds=ObservationThresholds(concentration_pct=0.01),
+        )
+
+        self.assertNotIn(
+            "concentration",
+            {observation.kind for observation in observations},
+        )
+
     def test_daily_loop_writes_governed_proposal_markdown_and_rebuildable_receipt(self) -> None:
         day1 = self._write_portfolio_receipt(
             "loop-day1",
