@@ -1,13 +1,11 @@
-"""Validate the production capital-import registry and checked-in projection."""
+"""Validate production capital-import adapters and operator exposures."""
 
 from __future__ import annotations
 
 import argparse
 import ast
-import importlib
 import json
 import sys
-from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,10 +43,29 @@ def _call_names(tree: ast.AST) -> set[str]:
     }
 
 
-def _function_node(tree: ast.Module, symbol: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+def _function_node(
+    tree: ast.Module,
+    symbol: str,
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    return next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == symbol
+        ),
+        None,
+    )
+
+
+def _class_fields(tree: ast.Module, symbol: str) -> set[str] | None:
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == symbol:
-            return node
+        if isinstance(node, ast.ClassDef) and node.name == symbol:
+            return {
+                item.target.id
+                for item in node.body
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
+            }
     return None
 
 
@@ -57,19 +74,12 @@ def find_generic_write_bypasses(
     *,
     registered_source_kinds: set[str] | frozenset[str],
 ) -> list[dict[str, Any]]:
-    """Classify obvious unregistered direct import writers in one Python module.
-
-    This intentionally proves only explicit static patterns: a function that calls a
-    generic State Core writer and embeds an import-like source kind. Dynamic Python
-    remains outside the claim and is covered by repository review and tests.
-    """
-    tree = ast.parse(source)
+    """Find explicit direct writers that embed an unregistered import-like kind."""
     findings: list[dict[str, Any]] = []
-    for node in tree.body:
+    for node in ast.parse(source).body:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        calls = _call_names(node)
-        writers = sorted(calls & FORBIDDEN_GENERIC_WRITES)
+        writers = sorted(_call_names(node) & FORBIDDEN_GENERIC_WRITES)
         if not writers:
             continue
         strings = {
@@ -77,13 +87,13 @@ def find_generic_write_bypasses(
             for value in ast.walk(node)
             if isinstance(value, ast.Constant) and isinstance(value.value, str)
         }
-        source_kinds = sorted(
-            item
-            for item in strings
-            if item.endswith(("_import", "_ledger", "_read")) or "import" in item
+        candidates = sorted(
+            value
+            for value in strings
+            if value.endswith(("_import", "_ledger", "_read")) or "import" in value
         )
         unregistered = [
-            item for item in source_kinds if item not in registered_source_kinds
+            value for value in candidates if value not in registered_source_kinds
         ]
         if unregistered:
             findings.append(
@@ -92,6 +102,68 @@ def find_generic_write_bypasses(
                     "function": node.name,
                     "writers": writers,
                     "source_kinds": unregistered,
+                }
+            )
+    return findings
+
+
+def _adapter_contract_findings(spec: Any, *, root: Path) -> list[dict[str, Any]]:
+    path = _module_path(spec.module, root=root)
+    if not path.is_file():
+        return [
+            {
+                "code": "adapter_module_missing",
+                "adapter_id": spec.adapter_id,
+                "path": str(path),
+            }
+        ]
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    findings: list[dict[str, Any]] = []
+    function = _function_node(tree, spec.symbol)
+    if function is None:
+        findings.append(
+            {
+                "code": "adapter_symbol_missing",
+                "adapter_id": spec.adapter_id,
+                "symbol": spec.symbol,
+            }
+        )
+    missing_calls = sorted(REQUIRED_ENVELOPE_CALLS - _call_names(tree))
+    if missing_calls:
+        findings.append(
+            {
+                "code": "adapter_missing_canonical_envelope",
+                "adapter_id": spec.adapter_id,
+                "missing_calls": missing_calls,
+            }
+        )
+    if function is not None:
+        forbidden = sorted(_call_names(function) & FORBIDDEN_GENERIC_WRITES)
+        if forbidden:
+            findings.append(
+                {
+                    "code": "adapter_direct_generic_write",
+                    "adapter_id": spec.adapter_id,
+                    "writers": forbidden,
+                }
+            )
+    result_fields = _class_fields(tree, spec.result_type)
+    if result_fields is None:
+        findings.append(
+            {
+                "code": "adapter_result_type_missing",
+                "adapter_id": spec.adapter_id,
+                "result_type": spec.result_type,
+            }
+        )
+    else:
+        missing_fields = sorted(REQUIRED_RESULT_FIELDS - result_fields)
+        if missing_fields:
+            findings.append(
+                {
+                    "code": "adapter_result_missing_identity",
+                    "adapter_id": spec.adapter_id,
+                    "missing_fields": missing_fields,
                 }
             )
     return findings
@@ -108,68 +180,7 @@ def _adapter_findings(*, root: Path = ROOT) -> list[dict[str, Any]]:
         if spec.source_kind in source_kinds:
             findings.append({"code": "duplicate_source_kind", "value": spec.source_kind})
         source_kinds.add(spec.source_kind)
-
-        path = _module_path(spec.module, root=root)
-        if not path.is_file():
-            findings.append(
-                {"code": "adapter_module_missing", "adapter_id": spec.adapter_id, "path": str(path)}
-            )
-            continue
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(path))
-        if _function_node(tree, spec.symbol) is None:
-            findings.append(
-                {"code": "adapter_symbol_missing", "adapter_id": spec.adapter_id, "symbol": spec.symbol}
-            )
-        module_calls = _call_names(tree)
-        missing_calls = sorted(REQUIRED_ENVELOPE_CALLS - module_calls)
-        if missing_calls:
-            findings.append(
-                {
-                    "code": "adapter_missing_canonical_envelope",
-                    "adapter_id": spec.adapter_id,
-                    "missing_calls": missing_calls,
-                }
-            )
-        function = _function_node(tree, spec.symbol)
-        if function is not None:
-            forbidden = sorted(_call_names(function) & FORBIDDEN_GENERIC_WRITES)
-            if forbidden:
-                findings.append(
-                    {
-                        "code": "adapter_direct_generic_write",
-                        "adapter_id": spec.adapter_id,
-                        "writers": forbidden,
-                    }
-                )
-
-        try:
-            module = importlib.import_module(spec.module)
-            result_type = getattr(module, spec.result_type)
-        except (ImportError, AttributeError) as exc:
-            findings.append(
-                {
-                    "code": "adapter_runtime_contract_missing",
-                    "adapter_id": spec.adapter_id,
-                    "message": str(exc),
-                }
-            )
-            continue
-        if not is_dataclass(result_type):
-            findings.append(
-                {"code": "adapter_result_not_dataclass", "adapter_id": spec.adapter_id}
-            )
-            continue
-        field_names = {field.name for field in fields(result_type)}
-        missing_fields = sorted(REQUIRED_RESULT_FIELDS - field_names)
-        if missing_fields:
-            findings.append(
-                {
-                    "code": "adapter_result_missing_identity",
-                    "adapter_id": spec.adapter_id,
-                    "missing_fields": missing_fields,
-                }
-            )
+        findings.extend(_adapter_contract_findings(spec, root=root))
     if source_kinds != set(PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS):
         findings.append(
             {
@@ -179,6 +190,15 @@ def _adapter_findings(*, root: Path = ROOT) -> list[dict[str, Any]]:
             }
         )
     return findings
+
+
+def _function_exposure_exists(exposure_ref: str, *, root: Path) -> bool:
+    module_name, _, symbol = exposure_ref.rpartition(".")
+    path = _module_path(module_name, root=root)
+    if not path.is_file():
+        return False
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return _function_node(tree, symbol) is not None
 
 
 def _exposure_findings(*, root: Path = ROOT) -> list[dict[str, Any]]:
@@ -198,8 +218,7 @@ def _exposure_findings(*, root: Path = ROOT) -> list[dict[str, Any]]:
                     "adapter_id": spec.adapter_id,
                 }
             )
-            continue
-        if spec.exposure_kind == "task" and f"{spec.exposure_ref}:" not in taskfile:
+        elif spec.exposure_kind == "task" and f"{spec.exposure_ref}:" not in taskfile:
             findings.append(
                 {"code": "task_exposure_missing", "exposure_id": spec.exposure_id}
             )
@@ -207,19 +226,13 @@ def _exposure_findings(*, root: Path = ROOT) -> list[dict[str, Any]]:
             findings.append(
                 {"code": "script_exposure_missing", "exposure_id": spec.exposure_id}
             )
-        elif spec.exposure_kind == "function":
-            module_name, _, symbol = spec.exposure_ref.rpartition(".")
-            try:
-                module = importlib.import_module(module_name)
-                getattr(module, symbol)
-            except (ImportError, AttributeError) as exc:
-                findings.append(
-                    {
-                        "code": "function_exposure_missing",
-                        "exposure_id": spec.exposure_id,
-                        "message": str(exc),
-                    }
-                )
+        elif spec.exposure_kind == "function" and not _function_exposure_exists(
+            spec.exposure_ref,
+            root=root,
+        ):
+            findings.append(
+                {"code": "function_exposure_missing", "exposure_id": spec.exposure_id}
+            )
     return findings
 
 
@@ -227,9 +240,14 @@ def _projection_findings(path: Path) -> list[dict[str, Any]]:
     try:
         actual = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return [{"code": "projection_unreadable", "path": str(path), "message": str(exc)}]
-    expected = registry_projection()
-    if actual != expected:
+        return [
+            {
+                "code": "projection_unreadable",
+                "path": str(path),
+                "message": str(exc),
+            }
+        ]
+    if actual != registry_projection():
         return [{"code": "projection_drift", "path": str(path)}]
     return []
 
