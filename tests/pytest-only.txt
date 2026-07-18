@@ -5,4 +5,5 @@
 
 tests/test_agent_work_loop_models.py
 tests/test_agent_cognition_flow.py
+tests/test_decision_ontology.py
 tests/test_pytest_runner_sentinel.py

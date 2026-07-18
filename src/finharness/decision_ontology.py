@@ -11,7 +11,7 @@ import json
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from uuid6 import uuid7
 
 
@@ -55,7 +55,7 @@ CASE_VERSION_TRIGGER_MATRIX: dict[CaseVersionTrigger, bool] = {
     CaseVersionTrigger.EVIDENCE_WITHDRAWAL: True,
     CaseVersionTrigger.ADOPTED_CAPITAL_STATE_VERSION: True,
     CaseVersionTrigger.EFFECTIVE_POLICY_VERSION: True,
-    CaseVersionTrigger.SCENARIO_VERSION: True,
+    CaseVersionTrigger.SCENARIO_VERSION: False,
     CaseVersionTrigger.REVIEW_EVENT: False,
     CaseVersionTrigger.ATTESTATION: False,
     CaseVersionTrigger.DECISION_RECORD: False,
@@ -77,7 +77,15 @@ class DecisionProblem(FrozenContract):
 
 class ScenarioVersionRef(FrozenContract):
     scenario_id: str = Field(min_length=1)
-    scenario_version_id: str = Field(min_length=1)
+    scenario_version_id: UUID
+    decision_case_version_id: UUID
+
+    @field_validator("scenario_version_id", "decision_case_version_id")
+    @classmethod
+    def require_uuid7(cls, value: UUID) -> UUID:
+        if value.version != 7:
+            raise ValueError("scenario references require RFC 9562 UUIDv7 identities")
+        return value
 
 
 class DecisionCaseBasis(FrozenContract):
@@ -88,7 +96,6 @@ class DecisionCaseBasis(FrozenContract):
     evidence_set_version_id: str = Field(min_length=1)
     capital_state_version_id: str = Field(min_length=1)
     policy_version_id: str = Field(min_length=1)
-    scenario_versions: tuple[ScenarioVersionRef, ...] = ()
 
 
 class DecisionCaseVersion(FrozenContract):
@@ -105,6 +112,32 @@ class DecisionCaseVersion(FrozenContract):
         return value
 
 
+class ScenarioVersion(FrozenContract):
+    """Immutable Scenario inputs bound to one pre-existing CaseVersion."""
+
+    scenario_id: str = Field(min_length=1)
+    scenario_version_id: UUID
+    decision_case_version_id: UUID
+    verified_capital_projection_ref: str = Field(min_length=1)
+    assumption_set_version_id: str = Field(min_length=1)
+    calculator_version_id: str = Field(min_length=1)
+    evidence_bundle_version_id: str | None = Field(default=None, min_length=1)
+
+    @field_validator("scenario_version_id", "decision_case_version_id")
+    @classmethod
+    def require_uuid7(cls, value: UUID) -> UUID:
+        if value.version != 7:
+            raise ValueError("ScenarioVersion identities must be RFC 9562 UUIDv7")
+        return value
+
+    def reference(self) -> ScenarioVersionRef:
+        return ScenarioVersionRef(
+            scenario_id=self.scenario_id,
+            scenario_version_id=self.scenario_version_id,
+            decision_case_version_id=self.decision_case_version_id,
+        )
+
+
 class ReviewStateVersion(FrozenContract):
     review_state_version_id: UUID
     decision_case_version_id: UUID
@@ -118,6 +151,43 @@ class DecisionRecord(FrozenContract):
     decision_case_version_id: UUID
     decision: str = Field(min_length=1)
     decided_by: str = Field(min_length=1)
+    considered_scenarios: tuple[ScenarioVersionRef, ...] = ()
+    selected_scenario: ScenarioVersionRef | None = None
+
+    @field_validator("decision_case_version_id")
+    @classmethod
+    def require_uuid7(cls, value: UUID) -> UUID:
+        if value.version != 7:
+            raise ValueError("decision_case_version_id must be an RFC 9562 UUIDv7")
+        return value
+
+    @model_validator(mode="after")
+    def validate_scenario_citations(self) -> DecisionRecord:
+        scenario_version_ids = [
+            reference.scenario_version_id for reference in self.considered_scenarios
+        ]
+        if len(scenario_version_ids) != len(set(scenario_version_ids)):
+            raise ValueError("considered ScenarioVersion citations must be unique")
+        if any(
+            reference.decision_case_version_id != self.decision_case_version_id
+            for reference in self.considered_scenarios
+        ):
+            raise ValueError(
+                "considered ScenarioVersion citations must evaluate the DecisionCaseVersion"
+            )
+        if self.selected_scenario is not None:
+            if (
+                self.selected_scenario.decision_case_version_id
+                != self.decision_case_version_id
+            ):
+                raise ValueError(
+                    "selected ScenarioVersion must evaluate the DecisionCaseVersion"
+                )
+            if self.selected_scenario not in self.considered_scenarios:
+                raise ValueError(
+                    "selected ScenarioVersion must be one of the considered Scenarios"
+                )
+        return self
 
 
 class DecisionValidity(FrozenContract):
@@ -145,6 +215,26 @@ def new_decision_case_version(
         decision_case_version_id=uuid7(),
         basis=basis,
         basis_hash=canonical_basis_hash(basis),
+    )
+
+
+def new_scenario_version(
+    *,
+    scenario_id: str,
+    decision_case_version_id: UUID,
+    verified_capital_projection_ref: str,
+    assumption_set_version_id: str,
+    calculator_version_id: str,
+    evidence_bundle_version_id: str | None = None,
+) -> ScenarioVersion:
+    return ScenarioVersion(
+        scenario_id=scenario_id,
+        scenario_version_id=uuid7(),
+        decision_case_version_id=decision_case_version_id,
+        verified_capital_projection_ref=verified_capital_projection_ref,
+        assumption_set_version_id=assumption_set_version_id,
+        calculator_version_id=calculator_version_id,
+        evidence_bundle_version_id=evidence_bundle_version_id,
     )
 
 
