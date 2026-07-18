@@ -662,7 +662,7 @@ def _ingest_broker_read_receipt_with_snapshot(
     }
     receipt_index = ReceiptIndex(
         receipt_id=import_receipt_id,
-        kind=BROKER_READ_SOURCE_KIND,
+        kind=BROKER_READ_MATERIALIZED_SOURCE,
         path=import_receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
         source_refs=lineage_refs,
