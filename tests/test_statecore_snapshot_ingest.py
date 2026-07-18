@@ -306,13 +306,12 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         with patch(
             "finharness.statecore.snapshot_ingest.materialize_import_batch",
             side_effect=StateCoreStoreError("injected materialization failure"),
-        ):
-            with self.assertRaisesRegex(StateCoreStoreError, "injected"):
-                ingest_broker_read_receipt(
-                    receipt,
-                    engine=self.engine,
-                    receipt_root=self.import_root,
-                )
+        ), self.assertRaisesRegex(StateCoreStoreError, "injected"):
+            ingest_broker_read_receipt(
+                receipt,
+                engine=self.engine,
+                receipt_root=self.import_root,
+            )
         self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
         self.assertEqual(read_all(ReceiptManifest, engine=self.engine), [])
         self.assertEqual(read_all(Snapshot, engine=self.engine), [])
