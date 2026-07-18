@@ -33,6 +33,18 @@ from finharness.statecore.store import (
     write_records,
 )
 
+# Compatibility bridge for the pre-registry store module. Importing any
+# ``finharness.statecore.*`` module initializes this package first, so the generic
+# store helpers use the code-owned production-import inventory rather than an
+# adapter-local list. A later cleanup may move the import into store.py directly;
+# the canonical owner remains capital_import_registry.py.
+from finharness.capital_import_registry import (  # noqa: E402
+    PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS,
+)
+from finharness.statecore import store as _store  # noqa: E402
+
+_store._PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS)
+
 __all__ = [
     "Account",
     "ActionIntentSimulationReport",
