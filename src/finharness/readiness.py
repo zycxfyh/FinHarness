@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
@@ -255,8 +255,12 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
             )
     except ArtifactNotFoundError as exc:
         findings.append(_finding("source_artifact_missing_or_corrupt", "missing", str(exc)))
+    except (ValidationError, UnicodeDecodeError) as exc:
+        findings.append(_finding("source_artifact_missing_or_corrupt", "corrupt", str(exc)))
     except ArtifactStoreError as exc:
         findings.append(_finding("source_artifact_missing_or_corrupt", "corrupt", str(exc)))
+    except OSError as exc:
+        findings.append(_finding("source_artifact_unavailable", "unavailable", str(exc)))
     try:
         receipt_descriptor = store.descriptor(str(row["receipt_artifact_id"]))
         store.read(str(row["receipt_artifact_id"]))
@@ -266,8 +270,12 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
             )
     except ArtifactNotFoundError as exc:
         findings.append(_finding("receipt_artifact_missing_or_corrupt", "missing", str(exc)))
+    except (ValidationError, UnicodeDecodeError) as exc:
+        findings.append(_finding("receipt_artifact_missing_or_corrupt", "corrupt", str(exc)))
     except ArtifactStoreError as exc:
         findings.append(_finding("receipt_artifact_missing_or_corrupt", "corrupt", str(exc)))
+    except OSError as exc:
+        findings.append(_finding("receipt_artifact_unavailable", "unavailable", str(exc)))
     return findings
 
 

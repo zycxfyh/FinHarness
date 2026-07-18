@@ -301,6 +301,99 @@ class ReadinessTest(unittest.TestCase):
         self.assertEqual(response.json()["capital_truth_admission"], "unavailable")
         self.assertIn("unavailable", {item["category"] for item in response.json()["findings"]})
 
+    def test_truth_readiness_reports_artifact_descriptor_io_as_unavailable(self) -> None:
+        engine, prepared, store = self._materialize()
+        client = self._client(
+            state_core_engine=engine,
+            state_core_path=str(self.db_path),
+            receipt_root=str(self.receipt_root),
+        )
+        source_descriptor_path = store._descriptor_path(prepared.batch.source_artifact_id)
+        original_read_text = Path.read_text
+
+        def read_text(path: Path, *args: object, **kwargs: object) -> str:
+            if path == source_descriptor_path:
+                raise PermissionError("source descriptor unavailable")
+            return original_read_text(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", autospec=True, side_effect=read_text):
+            response = client.get("/ready/truth")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(payload["evidence_integrity"], "unavailable")
+        self.assertEqual(payload["capital_truth_admission"], "unavailable")
+        self.assertTrue(payload["current"])
+        self.assertEqual(payload["checked_manifest_id"], prepared.manifest.manifest_id)
+        self.assertFalse(payload["execution_allowed"])
+        self.assertIn(
+            ("source_artifact_unavailable", "unavailable"),
+            {(item["code"], item["category"]) for item in payload["findings"]},
+        )
+
+    def test_truth_readiness_reports_artifact_object_io_as_unavailable(self) -> None:
+        engine, prepared, store = self._materialize()
+        client = self._client(
+            state_core_engine=engine,
+            state_core_path=str(self.db_path),
+            receipt_root=str(self.receipt_root),
+        )
+        descriptor = store.descriptor(prepared.manifest.receipt_artifact_id)
+        object_path = store._object_path(descriptor.content_sha256)
+        original_read_bytes = Path.read_bytes
+
+        def read_bytes(path: Path) -> bytes:
+            if path == object_path:
+                raise OSError("receipt artifact object unavailable")
+            return original_read_bytes(path)
+
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes):
+            response = client.get("/ready/truth")
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(payload["evidence_integrity"], "unavailable")
+        self.assertEqual(payload["capital_truth_admission"], "unavailable")
+        self.assertTrue(payload["current"])
+        self.assertEqual(payload["checked_manifest_id"], prepared.manifest.manifest_id)
+        self.assertFalse(payload["execution_allowed"])
+        self.assertIn(
+            ("receipt_artifact_unavailable", "unavailable"),
+            {(item["code"], item["category"]) for item in payload["findings"]},
+        )
+
+    def test_truth_readiness_reports_malformed_artifact_descriptor_as_corrupt(self) -> None:
+        engine, prepared, store = self._materialize()
+        descriptor_path = store._descriptor_path(prepared.batch.source_artifact_id)
+        client = self._client(
+            state_core_engine=engine,
+            state_core_path=str(self.db_path),
+            receipt_root=str(self.receipt_root),
+        )
+
+        for malformed in ('{"artifact_id":', "{}"):
+            with self.subTest(malformed=malformed):
+                descriptor_path.write_text(malformed, encoding="utf-8")
+                response = client.get("/ready/truth")
+
+                payload = response.json()
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(payload["status"], "blocked")
+                self.assertEqual(payload["evidence_integrity"], "corrupt")
+                self.assertEqual(payload["capital_truth_admission"], "blocked")
+                self.assertTrue(payload["current"])
+                self.assertEqual(
+                    payload["checked_manifest_id"],
+                    prepared.manifest.manifest_id,
+                )
+                self.assertFalse(payload["execution_allowed"])
+                self.assertIn(
+                    ("source_artifact_missing_or_corrupt", "corrupt"),
+                    {(item["code"], item["category"]) for item in payload["findings"]},
+                )
+
     def test_truth_readiness_contract_rejects_verified_and_unknown_fields(self) -> None:
         payload = {
             "status": "usable",
