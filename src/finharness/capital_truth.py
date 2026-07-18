@@ -20,14 +20,22 @@ class CapitalUseCase(StrEnum):
     AGENT = "agent"
 
 
-class CapitalReadiness(StrEnum):
-    USABLE = "usable"
+class EvidenceIntegrityStatus(StrEnum):
+    INTACT = "intact"
+    MISSING = "missing"
+    CORRUPT = "corrupt"
+    UNAVAILABLE = "unavailable"
+
+
+class CapitalTruthAdmissionStatus(StrEnum):
+    ADMITTED = "admitted"
     PARTIAL = "partial"
     BLOCKED = "blocked"
+    UNAVAILABLE = "unavailable"
 
 
 class CapitalTruthInput(BaseModel):
-    """Evidence needed to make bounded current/verified/reconciled claims."""
+    """Evidence needed for bounded freshness, integrity, admission, and reconciliation claims."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -67,12 +75,11 @@ class CapitalTruthInput(BaseModel):
 
 
 class CapitalTruthResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-    readiness: CapitalReadiness
-    admitted: bool
+    evidence_integrity: EvidenceIntegrityStatus
+    capital_truth_admission: CapitalTruthAdmissionStatus
     current: bool
-    verified: bool
     reconciled: bool
     blockers: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -101,6 +108,14 @@ def _evidence_blockers(value: CapitalTruthInput) -> list[str]:
         (not value.cross_account_assets_deduplicated, "cross_account_asset_duplicate"),
     )
     return [code for failed, code in checks if failed]
+
+
+def _evidence_integrity(value: CapitalTruthInput) -> EvidenceIntegrityStatus:
+    if not value.receipt_present or not value.db_mirror_present:
+        return EvidenceIntegrityStatus.MISSING
+    if not value.receipt_hash_valid or not value.db_mirror_matches_receipt:
+        return EvidenceIntegrityStatus.CORRUPT
+    return EvidenceIntegrityStatus.INTACT
 
 
 def _valuation_findings(
@@ -138,25 +153,23 @@ def evaluate_capital_truth(value: CapitalTruthInput) -> CapitalTruthResult:
     valuation_blockers, warnings = _valuation_findings(value, max_age)
     blockers.extend(valuation_blockers)
 
-    verified = value.receipt_present and value.receipt_hash_valid and value.provenance_verified
+    evidence_integrity = _evidence_integrity(value)
     reconciled = (
-        verified
-        and value.db_mirror_present
-        and value.db_mirror_matches_receipt
+        evidence_integrity is EvidenceIntegrityStatus.INTACT
+        and value.provenance_verified
         and value.cross_account_assets_deduplicated
     )
-    readiness = (
-        CapitalReadiness.BLOCKED
+    admission = (
+        CapitalTruthAdmissionStatus.BLOCKED
         if blockers
-        else CapitalReadiness.PARTIAL
+        else CapitalTruthAdmissionStatus.PARTIAL
         if warnings
-        else CapitalReadiness.USABLE
+        else CapitalTruthAdmissionStatus.ADMITTED
     )
     return CapitalTruthResult(
-        readiness=readiness,
-        admitted=readiness is CapitalReadiness.USABLE,
+        evidence_integrity=evidence_integrity,
+        capital_truth_admission=admission,
         current=current,
-        verified=verified,
         reconciled=reconciled,
         blockers=tuple(blockers),
         warnings=tuple(warnings),

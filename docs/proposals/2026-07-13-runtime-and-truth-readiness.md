@@ -34,6 +34,13 @@ snapshot, receipt index, receipt file, source artifact, and receipt artifact. It
 fails closed while distinguishing missing, corrupt, stale, partial, and unavailable
 states.
 
+Issue #407 subsequently removed the ambiguous `/ready/truth.verified` boolean.
+The probe now reports `evidence_integrity` (`intact`, `missing`, `corrupt`, or
+`unavailable`) separately from `capital_truth_admission` (`admitted`, `partial`,
+`blocked`, or `unavailable`). An explicitly blocked import remains a `blocked`
+finding rather than being downgraded to `partial`. The probe's `status` continues
+to own truth readiness; it does not replace liveness or operational readiness.
+
 ## 4. Surface Inventory
 
 - **Inputs:** configured State Core path/engine and state-core receipt root.
@@ -60,7 +67,8 @@ now have a non-ambiguous readiness contract, authorized by issue #348.
 | Liveness makes no readiness claim | `api/app.py` | `test_liveness_does_not_claim_dependency_or_truth_readiness` | Health remains 200 while readiness is 503 |
 | Runtime probe is non-mutating and fail-closed | `readiness.py` | corrupt DB and unwritable-storage tests | Original corrupt bytes unchanged; storage mode detected |
 | Truth evidence is bounded and directly bound | `readiness.py` | usable and missing-artifact tests | One `LIMIT 1` query plus two artifact IDs |
-| Truth states remain distinguishable | `readiness.py` | stale/partial/missing tests | Machine-readable finding categories and 503 |
+| Truth states remain distinguishable | `readiness.py` | missing/corrupt/stale/partial/blocked/unavailable tests | Machine-readable finding categories and 503 |
+| Evidence integrity is not capital admission | `readiness.py`, `capital_truth.py` | partial-with-intact-evidence and unverified-provenance tests | Named dimensions; no `verified` alias |
 | Public route semantics remain governed | OpenAPI allowlist and attestation inventory | State API/governance tests | Exact route set and current-view regeneration |
 
 ## 7. Test / Gate Plan
