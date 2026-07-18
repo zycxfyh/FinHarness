@@ -1607,5 +1607,110 @@ class WriteCapabilityGateTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
 
 
+class PositionSnapshotScopeApiTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.db_path = self.root / "state-core.sqlite"
+        self.receipt_root = self.root / "receipts" / "state-core"
+        self.engine = init_state_core(self.db_path)
+        self.app = create_app(
+            state_core_engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        self.client = AsgiTestClient(self.app)
+        self.addCleanup(self.client.close)
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_position_collection_distinguishes_unknown_empty_and_malformed_scope(
+        self,
+    ) -> None:
+        write_records(
+            [
+                Snapshot(
+                    snapshot_id="snap_empty",
+                    kind="portfolio",
+                    as_of_utc="2026-06-17T11:00:00+00:00",
+                    source_refs=["test://empty-snapshot"],
+                ),
+                Snapshot(
+                    snapshot_id="snap_non_portfolio_empty",
+                    kind="research",
+                    as_of_utc="2026-06-17T12:00:00+00:00",
+                    source_refs=["test://non-portfolio-snapshot"],
+                ),
+            ],
+            engine=self.engine,
+        )
+
+        unknown = self.client.get(
+            "/state/positions",
+            params={"snapshot_id": "snap_unknown"},
+            headers={TRACE_HEADER: "trace_test_unknown_snapshot"},
+        )
+        empty = self.client.get(
+            "/state/positions",
+            params={"snapshot_id": "snap_empty"},
+        )
+        non_portfolio = self.client.get(
+            "/state/positions",
+            params={"snapshot_id": "snap_non_portfolio_empty"},
+        )
+        missing = self.client.get("/state/positions")
+        malformed = self.client.get(
+            "/state/positions",
+            params={"snapshot_id": ""},
+        )
+
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(
+            unknown.json(),
+            {
+                "detail": {
+                    "code": "snapshot_not_found",
+                    "message": "snapshot not found: snap_unknown",
+                    "snapshot_id": "snap_unknown",
+                }
+            },
+        )
+        self.assertEqual(
+            unknown.headers[TRACE_HEADER],
+            "trace_test_unknown_snapshot",
+        )
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.json(), [])
+        self.assertEqual(non_portfolio.status_code, 200)
+        self.assertEqual(non_portfolio.json(), [])
+        self.assertEqual(missing.status_code, 422)
+        self.assertEqual(malformed.status_code, 422)
+
+    def test_unknown_position_snapshot_does_not_query_positions(self) -> None:
+        statements: list[str] = []
+
+        def capture_statement(
+            _connection: object,
+            _cursor: object,
+            statement: str,
+            _parameters: object,
+            _context: object,
+            _executemany: bool,
+        ) -> None:
+            statements.append(" ".join(statement.lower().split()))
+
+        event.listen(self.engine, "before_cursor_execute", capture_statement)
+        try:
+            response = self.client.get(
+                "/state/positions",
+                params={"snapshot_id": "snap_unknown"},
+            )
+        finally:
+            event.remove(self.engine, "before_cursor_execute", capture_statement)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(any("from snapshots" in statement for statement in statements))
+        self.assertFalse(any("from positions" in statement for statement in statements))
+
+
 if __name__ == "__main__":
     unittest.main()

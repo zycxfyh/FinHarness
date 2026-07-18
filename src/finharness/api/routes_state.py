@@ -130,6 +130,15 @@ async def list_positions(
         .limit(limit)
     )
     with Session(engine) as session:
+        if session.get(Snapshot, snapshot_id) is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "snapshot_not_found",
+                    "message": f"snapshot not found: {snapshot_id}",
+                    "snapshot_id": snapshot_id,
+                },
+            )
         return list(session.exec(statement).all())
 
 
