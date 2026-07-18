@@ -18,6 +18,7 @@ from finharness.statecore.models import (
 )
 from finharness.statecore.receipt_index import index_receipts, receipt_index_record_from_path
 from finharness.statecore.snapshot_ingest import (
+    BROKER_READ_MATERIALIZED_SOURCE,
     BROKER_READ_SOURCE_KIND,
     ingest_broker_read_receipt,
     ingest_portfolio_snapshot_from_payload,
@@ -294,7 +295,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                         snapshot_id="snap_direct_broker",
                         kind="portfolio",
                         as_of_utc="2026-07-13T07:00:00+00:00",
-                        payload={"source": BROKER_READ_SOURCE_KIND},
+                        payload={"source": BROKER_READ_MATERIALIZED_SOURCE},
                         source_refs=["direct.json"],
                     ),
                 ],
