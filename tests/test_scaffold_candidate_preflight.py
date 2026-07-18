@@ -135,12 +135,16 @@ class ScaffoldRevisionCandidatePreflightTest(unittest.TestCase):
         self.assertIn("not approval", " ".join(body["non_claims"]).lower())
 
     def test_preflight_blocks_stale_proposal_receipt(self) -> None:
+        expectation = self.fixture._version_expectation(
+            "prop_candidate_preflight_target"
+        )
         revise_governed_proposal_scaffold(
             proposal_id="prop_candidate_preflight_target",
             scaffold_patch={"alternatives": "Wait for updated cashflow context."},
             attester="Jane Control",
             reason="Human reviewer added an alternative before candidate apply.",
             source_refs=["human://review"],
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
         )

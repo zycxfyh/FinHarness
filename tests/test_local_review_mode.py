@@ -104,6 +104,8 @@ class LocalReviewModeTest(unittest.TestCase):
                 json={
                     "reason": "Add current counter evidence",
                     "decision_scaffold": {"counter_evidence": "A falsifier appeared"},
+                    "expected_proposal_version_id": before["receipt_id"],
+                    "expected_proposal_receipt_ref": before["receipt_ref"],
                 },
             )
             self.assertEqual(revised.status_code, 200)
@@ -121,7 +123,10 @@ class LocalReviewModeTest(unittest.TestCase):
                 },
             )
             self.assertEqual(stale.status_code, 409)
-            self.assertEqual(stale.json()["detail"]["code"], "stale_expected_version")
+            self.assertEqual(
+                stale.json()["detail"]["code"],
+                "proposal_version_conflict",
+            )
 
     def test_read_only_mode_denies_write_and_persistence_failure_is_structured(self) -> None:
         writable = build_app(self._args("review"))

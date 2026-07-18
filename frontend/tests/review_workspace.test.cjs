@@ -194,7 +194,10 @@ assert.strictEqual(
 // 6. The write form never POSTs without an explicit confirm.
 function renderForm() {
   const parent = window.document.createElement("div");
-  window.renderReviewEventForm(parent, "prop_1");
+  window.renderReviewEventForm(parent, "prop_1", {
+    proposal_version_id: "proposal_version_v1",
+    receipt_ref: "receipts/proposals/v1.json",
+  });
   return parent.querySelector("form");
 }
 
@@ -237,5 +240,8 @@ setTimeout(() => {
       String(p).includes("/proposals/prop_1/review-events") && opts && opts.method === "POST",
   );
   assert.strictEqual(posts.length, 1, "confirmed action posts exactly once to review-events");
+  const payload = JSON.parse(posts[0][1].body);
+  assert.strictEqual(payload.expected_proposal_version_id, "proposal_version_v1");
+  assert.strictEqual(payload.expected_proposal_receipt_ref, "receipts/proposals/v1.json");
   console.log("review_workspace.test.cjs: all assertions passed");
 }, 0);

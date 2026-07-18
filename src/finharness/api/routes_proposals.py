@@ -62,8 +62,8 @@ from finharness.statecore.models import (
 from finharness.statecore.proposal_revisions import walk_proposal_revisions
 from finharness.statecore.proposal_version import (
     CurrentProposalVersion,
+    ProposalVersionExpectation,
     ProposalVersionResolutionError,
-    require_current_proposal_version,
     resolve_current_proposal_version,
 )
 from finharness.statecore.proposals import (
@@ -809,6 +809,68 @@ def _verified_proposal_snapshot(
     return proposal, receipt
 
 
+def _verified_proposal_version_binding(
+    *,
+    proposal_id: str,
+    proposal_version_id: str,
+    proposal_receipt_ref: str,
+    receipt_root: Path,
+) -> Proposal:
+    """Verify one immutable ProposalVersion identity against its receipt."""
+    proposal, receipt = _verified_proposal_snapshot(
+        proposal_receipt_ref,
+        receipt_root=receipt_root,
+    )
+    if receipt.get("receipt_id") != proposal_version_id:
+        raise IdentityMutationError(
+            "proposal version id does not match immutable proposal receipt"
+        )
+    if proposal.proposal_id != proposal_id:
+        raise IdentityMutationError(
+            "proposal version snapshot does not match reconciliation route"
+        )
+    if proposal.receipt_ref != proposal_receipt_ref:
+        raise IdentityMutationError(
+            "proposal version snapshot receipt ref does not match admitted receipt"
+        )
+    return proposal
+
+
+def _verified_admitted_proposal_version(
+    receipt: dict[str, Any],
+    *,
+    label: str,
+    proposal_id: str,
+    proposal_receipt_ref: str,
+    receipt_root: Path,
+) -> tuple[Proposal, ProposalVersionView]:
+    admitted_version_id = receipt.get("admitted_proposal_version_id")
+    admitted_receipt_ref = receipt.get("admitted_proposal_receipt_ref")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError(
+            f"{label} receipt missing admitted_proposal_version_id"
+        )
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError(
+            f"{label} receipt missing admitted_proposal_receipt_ref"
+        )
+    if proposal_receipt_ref != admitted_receipt_ref:
+        raise IdentityMutationError(
+            f"{label} proposal receipt does not match admitted receipt"
+        )
+    proposal = _verified_proposal_version_binding(
+        proposal_id=proposal_id,
+        proposal_version_id=admitted_version_id,
+        proposal_receipt_ref=admitted_receipt_ref,
+        receipt_root=receipt_root,
+    )
+    return proposal, ProposalVersionView(
+        proposal_id=proposal_id,
+        proposal_version_id=admitted_version_id,
+        receipt_ref=admitted_receipt_ref,
+    )
+
+
 def _record_typed_reconciliation(
     mutation_path: Path,
     *,
@@ -899,24 +961,36 @@ def _reconcile_attestation_identity_mutation(
         raise IdentityMutationError("attestation row actor differs from authenticated actor")
 
     proposal_receipt_ref = receipt.get("proposal_receipt_ref")
-    if not isinstance(
-        proposal_receipt_ref,
-        str,
-    ):
+    if not isinstance(proposal_receipt_ref, str):
         raise IdentityMutationError("attestation receipt has no bound proposal receipt")
 
-    proposal, _proposal_receipt = _verified_proposal_snapshot(
-        proposal_receipt_ref,
+    proposal, admitted_view = _verified_admitted_proposal_version(
+        receipt,
+        label="attestation",
+        proposal_id=proposal_id,
+        proposal_receipt_ref=proposal_receipt_ref,
         receipt_root=receipt_root,
     )
+    admitted_version_id = admitted_view.proposal_version_id
+    admitted_receipt_ref = admitted_view.receipt_ref
 
-    if proposal.proposal_id != proposal_id:
-        raise IdentityMutationError("attestation proposal snapshot does not match the route")
+    # Row-level binding verification
+    row_bound_version = getattr(attestation, "bound_proposal_version_id", None)
+    row_bound_receipt = getattr(attestation, "bound_proposal_receipt_ref", None)
+    if row_bound_version != admitted_version_id:
+        raise IdentityMutationError(
+            "attestation row bound version does not match receipt admitted version"
+        )
+    if row_bound_receipt != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "attestation row bound receipt does not match receipt admitted receipt"
+        )
 
     response = AttestationCreateResponse(
         attestation=attestation,
         proposal=proposal,
         receipt_ref=receipt_ref,
+        admitted_proposal_version=admitted_view,
         approved_is_not_execution_authorization=True,
         execution_allowed=False,
     )
@@ -986,6 +1060,7 @@ def _require_verifiable_foreign_mutation_claim(
     claim_id: object,
     context: dict[str, Any],
     candidate_proposal: Proposal,
+    candidate_receipt: dict[str, Any],
     candidate_ref: str,
     receipt_root: Path,
     previous_receipt_ref: str | None,
@@ -1086,19 +1161,104 @@ def _require_verifiable_foreign_mutation_claim(
     _require_foreign_response_ownership(
         foreign_receipt,
         candidate_proposal=candidate_proposal,
+        candidate_receipt=candidate_receipt,
         candidate_ref=candidate_ref,
         previous_receipt_ref=previous_receipt_ref,
         changed_fields=changed_fields,
+        receipt_root=receipt_root,
     )
+
+
+def _verified_scaffold_candidate_version_views(
+    *,
+    candidate_proposal: Proposal,
+    candidate_receipt: dict[str, Any],
+    candidate_ref: str,
+    previous_receipt_ref: str | None,
+    receipt_root: Path,
+) -> tuple[ProposalVersionView, ProposalVersionView]:
+    context = candidate_receipt.get("revision_context")
+    if not isinstance(context, dict):
+        raise IdentityMutationError("scaffold candidate receipt has no revision context")
+    admitted_version_id = context.get("admitted_proposal_version_id")
+    admitted_receipt_ref = context.get("admitted_proposal_receipt_ref")
+    resulting_version_id = candidate_receipt.get("receipt_id")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_version_id"
+        )
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_receipt_ref"
+        )
+    if previous_receipt_ref != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold previous_receipt_ref does not match admitted receipt"
+        )
+    if not isinstance(resulting_version_id, str) or not resulting_version_id:
+        raise IdentityMutationError("scaffold candidate receipt has no receipt_id")
+
+    proposal_id = candidate_proposal.proposal_id
+    _verified_proposal_version_binding(
+        proposal_id=proposal_id,
+        proposal_version_id=admitted_version_id,
+        proposal_receipt_ref=admitted_receipt_ref,
+        receipt_root=receipt_root,
+    )
+    _verified_proposal_version_binding(
+        proposal_id=proposal_id,
+        proposal_version_id=resulting_version_id,
+        proposal_receipt_ref=candidate_ref,
+        receipt_root=receipt_root,
+    )
+    return (
+        ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=admitted_version_id,
+            receipt_ref=admitted_receipt_ref,
+        ),
+        ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=resulting_version_id,
+            receipt_ref=candidate_ref,
+        ),
+    )
+
+
+def _verified_foreign_scaffold_response(
+    foreign_receipt: dict[str, Any],
+) -> ProposalScaffoldRevisionResponse:
+    try:
+        status_code, body, content_type = replay_identity_mutation(foreign_receipt)
+    except IdentityMutationError as err:
+        raise IdentityMutationError(
+            "scaffold candidate foreign receipt has no valid terminal response"
+        ) from err
+    if status_code != 200:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response status is not 200"
+        )
+    if content_type != "application/json":
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response is not JSON"
+        )
+    try:
+        return ProposalScaffoldRevisionResponse.model_validate_json(body)
+    except Exception as err:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal response is not a valid scaffold revision"
+        ) from err
 
 
 def _require_foreign_response_ownership(
     foreign_receipt: dict[str, Any],
     *,
     candidate_proposal: Proposal,
+    candidate_receipt: dict[str, Any],
     candidate_ref: str,
     previous_receipt_ref: str | None,
     changed_fields: list[str],
+    receipt_root: Path,
 ) -> None:
     """Verify the foreign terminal response points to this candidate receipt.
 
@@ -1106,26 +1266,7 @@ def _require_foreign_response_ownership(
     validated by the common scaffold candidate integrity helper — this
     function only proves the foreign terminal response agrees with them.
     """
-    try:
-        status_code, body, content_type = replay_identity_mutation(foreign_receipt)
-    except IdentityMutationError as err:
-        raise IdentityMutationError(
-            "scaffold candidate foreign receipt has no valid terminal response"
-        ) from err
-
-    if status_code != 200:
-        raise IdentityMutationError(
-            "scaffold candidate foreign terminal response status is not 200"
-        )
-    if content_type != "application/json":
-        raise IdentityMutationError("scaffold candidate foreign terminal response is not JSON")
-
-    try:
-        foreign_response = ProposalScaffoldRevisionResponse.model_validate_json(body)
-    except Exception as err:
-        raise IdentityMutationError(
-            "scaffold candidate foreign terminal response is not a valid scaffold revision"
-        ) from err
+    foreign_response = _verified_foreign_scaffold_response(foreign_receipt)
 
     if foreign_response.receipt_ref != candidate_ref:
         raise IdentityMutationError(
@@ -1160,6 +1301,24 @@ def _require_foreign_response_ownership(
         raise IdentityMutationError(
             "scaffold candidate foreign terminal response changed_scaffold_fields "
             "does not match context"
+        )
+
+    expected_admitted, expected_resulting = (
+        _verified_scaffold_candidate_version_views(
+            candidate_proposal=candidate_proposal,
+            candidate_receipt=candidate_receipt,
+            candidate_ref=candidate_ref,
+            previous_receipt_ref=previous_receipt_ref,
+            receipt_root=receipt_root,
+        )
+    )
+    if foreign_response.admitted_proposal_version != expected_admitted:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal admitted version does not match"
+        )
+    if foreign_response.resulting_proposal_version != expected_resulting:
+        raise IdentityMutationError(
+            "scaffold candidate foreign terminal resulting version does not match"
         )
 
 
@@ -1213,6 +1372,7 @@ def _require_common_scaffold_candidate_integrity(
 def _validate_scaffold_candidate_revision(
     candidate_ref: str,
     *,
+    candidate_version_id: str,
     receipt_id: str,
     request_binding: dict[str, Any],
     proposal_id: str,
@@ -1238,6 +1398,10 @@ def _validate_scaffold_candidate_revision(
         candidate_ref,
         receipt_root=receipt_root,
     )
+    if candidate_receipt.get("receipt_id") != candidate_version_id:
+        raise IdentityMutationError(
+            "scaffold candidate receipt_id does not match ReceiptIndex"
+        )
 
     # 2. Index must agree with the immutable domain snapshot.
     if mutation_ref not in candidate_proposal.source_refs:
@@ -1262,7 +1426,17 @@ def _validate_scaffold_candidate_revision(
         proposal_id=proposal_id,
     )
 
-    # 5. Claim disposition classification.
+    # 5. Every candidate must prove both its admitted and resulting
+    # immutable ProposalVersion identities before claim classification.
+    _verified_scaffold_candidate_version_views(
+        candidate_proposal=candidate_proposal,
+        candidate_receipt=candidate_receipt,
+        candidate_ref=candidate_ref,
+        previous_receipt_ref=previous_receipt_ref,
+        receipt_root=receipt_root,
+    )
+
+    # 6. Claim disposition classification.
     claim_id = context.get("identity_mutation_receipt_id")
 
     if not claim_id:
@@ -1279,6 +1453,7 @@ def _validate_scaffold_candidate_revision(
             claim_id=claim_id,
             context=context,
             candidate_proposal=candidate_proposal,
+            candidate_receipt=candidate_receipt,
             candidate_ref=candidate_ref,
             receipt_root=receipt_root,
             previous_receipt_ref=previous_receipt_ref,
@@ -1286,7 +1461,7 @@ def _validate_scaffold_candidate_revision(
         )
         return None
 
-    # 6. Candidate **claims** this exact receipt_id.
+    # 7. Candidate **claims** this exact receipt_id.
     #    Full binding validation is mandatory; any mismatch
     #    is evidence of a tampered or inconsistent receipt.
     _require_exact_domain_binding(
@@ -1349,6 +1524,7 @@ def _reconcile_scaffold_revision_identity_mutation(
     for candidate in candidates:
         result = _validate_scaffold_candidate_revision(
             candidate.path,
+            candidate_version_id=candidate.receipt_id,
             receipt_id=receipt_id,
             request_binding=request_binding,
             proposal_id=proposal_id,
@@ -1373,11 +1549,47 @@ def _reconcile_scaffold_revision_identity_mutation(
     previous_receipt_ref = context.get("previous_receipt_ref")
     changed_fields = context.get("changed_scaffold_fields", [])
 
+    # Version binding for scaffold reconciliation
+    admitted_version_id = context.get("admitted_proposal_version_id")
+    admitted_receipt_ref = context.get("admitted_proposal_receipt_ref")
+    if not isinstance(admitted_version_id, str) or not admitted_version_id:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_version_id"
+        )
+    if not isinstance(admitted_receipt_ref, str) or not admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold revision_context missing admitted_proposal_receipt_ref"
+        )
+
+    # supersedes must equal admitted receipt
+    supersedes = receipt.get("supersedes")
+    if supersedes != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold receipt supersedes does not match admitted receipt"
+        )
+    if previous_receipt_ref != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "scaffold previous_receipt_ref does not match admitted receipt"
+        )
+
+    resulting_version_id = receipt.get("receipt_id", "")
+    resulting_receipt_ref = receipt_ref
+
     response = ProposalScaffoldRevisionResponse(
         proposal=proposal,
         receipt_ref=receipt_ref,
         previous_receipt_ref=(previous_receipt_ref),
         changed_scaffold_fields=tuple(changed_fields),
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=admitted_version_id,
+            receipt_ref=admitted_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=resulting_version_id,
+            receipt_ref=resulting_receipt_ref,
+        ),
         execution_allowed=False,
     )
 
@@ -1524,9 +1736,31 @@ def _reconcile_review_event_identity_mutation(
     if event.content_hash != expected_content_hash:
         raise IdentityMutationError("review-event content hash does not match its row")
 
+    _proposal, admitted_view = _verified_admitted_proposal_version(
+        receipt,
+        label="review-event",
+        proposal_id=proposal_id,
+        proposal_receipt_ref=proposal_receipt_ref,
+        receipt_root=receipt_root,
+    )
+    admitted_version_id = admitted_view.proposal_version_id
+    admitted_receipt_ref = admitted_view.receipt_ref
+
+    row_bound_version = getattr(event, "bound_proposal_version_id", None)
+    row_bound_receipt = getattr(event, "bound_proposal_receipt_ref", None)
+    if row_bound_version != admitted_version_id:
+        raise IdentityMutationError(
+            "review-event row bound version does not match receipt admitted version"
+        )
+    if row_bound_receipt != admitted_receipt_ref:
+        raise IdentityMutationError(
+            "review-event row bound receipt does not match receipt admitted receipt"
+        )
+
     response = ReviewEventCreateResponse(
         review_event=event,
         receipt_ref=receipt_ref,
+        admitted_proposal_version=admitted_view,
         execution_allowed=False,
     )
 
@@ -1790,19 +2024,19 @@ class AttestationCreateRequest(BaseModel):
 
     decision: DecisionInput
     reason: str
-    # Optional only for compatibility with pre-version clients. The Cockpit always
-    # supplies both; when either is supplied the pair is mandatory and stale-safe.
-    expected_proposal_version_id: str | None = None
-    expected_proposal_receipt_ref: str | None = None
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     source_refs: list[str] = Field(default_factory=list)
 
     @field_validator(
         "reason",
+        "expected_proposal_version_id",
+        "expected_proposal_receipt_ref",
     )
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("attestation requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
@@ -1810,8 +2044,15 @@ class AttestationCreateResponse(BaseModel):
     attestation: Attestation
     proposal: Proposal
     receipt_ref: str
+    admitted_proposal_version: ProposalVersionView
     approved_is_not_execution_authorization: bool = True
     execution_allowed: bool = False
+
+
+class ProposalVersionView(BaseModel):
+    proposal_id: str
+    proposal_version_id: str
+    receipt_ref: str
 
 
 class AttestationReviewView(BaseModel):
@@ -1945,13 +2186,15 @@ class ProposalScaffoldRevisionRequest(BaseModel):
 
     reason: str
     decision_scaffold: dict[str, Any]
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("reason")
+    @field_validator("reason", "expected_proposal_version_id", "expected_proposal_receipt_ref")
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("proposal scaffold revision requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
@@ -1960,6 +2203,8 @@ class ProposalScaffoldRevisionResponse(BaseModel):
     receipt_ref: str
     previous_receipt_ref: str | None
     changed_scaffold_fields: tuple[str, ...]
+    admitted_proposal_version: ProposalVersionView
+    resulting_proposal_version: ProposalVersionView
     non_claims: tuple[str, ...] = (
         "Proposal scaffold revisions are historical review evidence.",
         "Counter-evidence enables human confirmation checks; it is not execution authorization.",
@@ -1972,6 +2217,7 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     human_reason: str
+    expected_proposal_version_id: str
     expected_candidate_receipt_ref: str
     expected_proposal_receipt_ref: str
     expected_preflight_report_hash: str
@@ -1981,6 +2227,7 @@ class ScaffoldRevisionCandidateApplyRequest(BaseModel):
 
     @field_validator(
         "human_reason",
+        "expected_proposal_version_id",
         "expected_candidate_receipt_ref",
         "expected_proposal_receipt_ref",
         "expected_preflight_report_hash",
@@ -2011,6 +2258,8 @@ class ScaffoldRevisionCandidateApplyResponse(BaseModel):
     receipt_ref: str
     previous_receipt_ref: str | None
     changed_scaffold_fields: tuple[str, ...]
+    admitted_proposal_version: ProposalVersionView
+    resulting_proposal_version: ProposalVersionView
     applied_candidate_id: str
     candidate_receipt_ref: str
     candidate_review_event_id: str
@@ -2291,6 +2540,46 @@ def _resolve_proposal_version_for_api(
         ) from exc
 
 
+def _proposal_version_http_exception(
+    exc: ProposalVersionResolutionError,
+) -> HTTPException:
+    """Map a ProposalVersionResolutionError to a typed HTTP response.
+
+    - proposal_not_found / receipt_chain failures → 404
+    - conflict / stale expectation → 409 with structured expected+current pair
+    """
+    if exc.code in (
+        "proposal_not_found",
+        "receipt_chain_invalid",
+        "receipt_payload_invalid",
+        "receipt_content_hash_invalid",
+        "row_receipt_divergence",
+    ):
+        return HTTPException(
+            status_code=404,
+            detail={"code": exc.code, "message": str(exc)},
+        )
+
+    # proposal_version_conflict, stale_expected_*, expectation_proposal_id_mismatch
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "proposal_version_conflict",
+            "message": str(exc),
+            "proposal_id": exc.proposal_id,
+            "expected": {
+                "proposal_version_id": exc.expected_version_id,
+                "receipt_ref": exc.expected_receipt_ref,
+            },
+            "current": {
+                "proposal_version_id": exc.current_version_id,
+                "receipt_ref": exc.current_receipt_ref,
+            },
+            "execution_allowed": False,
+        },
+    )
+
+
 def _attestation_review_views(
     attestations: list[Attestation],
     *,
@@ -2309,7 +2598,13 @@ def _attestation_review_views(
         )
         views.append(
             AttestationReviewView(
-                **attestation.model_dump(mode="json"),
+                **attestation.model_dump(
+                    mode="json",
+                    exclude={
+                        "bound_proposal_version_id",
+                        "bound_proposal_receipt_ref",
+                    },
+                ),
                 bound_proposal_version_id=(
                     bound.proposal_version_id if bound is not None else None
                 ),
@@ -2573,16 +2868,24 @@ async def revise_proposal_decision_scaffold(
             source_refs.append(mutation_ref)
 
     try:
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = revise_governed_proposal_scaffold(
             proposal_id=proposal_id,
             scaffold_patch=request.decision_scaffold,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             source_refs=source_refs,
             revision_context_extra=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -2597,6 +2900,16 @@ async def revise_proposal_decision_scaffold(
         receipt_ref=result.receipt_ref,
         previous_receipt_ref=result.previous_receipt_ref,
         changed_scaffold_fields=result.changed_scaffold_fields,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.resulting_proposal_version_id,
+            receipt_ref=result.resulting_proposal_receipt_ref,
+        ),
         execution_allowed=False,
     )
 
@@ -2689,11 +3002,11 @@ async def apply_scaffold_revision_candidate(
             status_code=404,
             detail=f"proposal not found: {event.proposal_id}",
         )
-    if request.expected_proposal_receipt_ref.strip() != (proposal.receipt_ref or ""):
-        raise HTTPException(
-            status_code=409,
-            detail="proposal receipt ref does not match expected_proposal_receipt_ref",
-        )
+    expectation = ProposalVersionExpectation(
+        proposal_id=event.proposal_id,
+        proposal_version_id=request.expected_proposal_version_id.strip(),
+        receipt_ref=request.expected_proposal_receipt_ref.strip(),
+    )
     preflight = _enforce_scaffold_candidate_preflight_gate(
         candidate_id,
         request=request,
@@ -2708,6 +3021,7 @@ async def apply_scaffold_revision_candidate(
             scaffold_patch=scaffold_patch,
             attester=operator.authoritative_actor_id,
             reason=request.human_reason.strip(),
+            expectation=expectation,
             source_refs=[
                 *([binding[0]] if binding is not None else []),
                 candidate_receipt_ref,
@@ -2738,6 +3052,8 @@ async def apply_scaffold_revision_candidate(
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        raise _proposal_version_http_exception(exc) from exc
     except (DecisionScaffoldError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StateCoreStoreError as exc:
@@ -2747,6 +3063,16 @@ async def apply_scaffold_revision_candidate(
         receipt_ref=result.receipt_ref,
         previous_receipt_ref=result.previous_receipt_ref,
         changed_scaffold_fields=result.changed_scaffold_fields,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=event.proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
+        resulting_proposal_version=ProposalVersionView(
+            proposal_id=event.proposal_id,
+            proposal_version_id=result.resulting_proposal_version_id,
+            receipt_ref=result.resulting_proposal_receipt_ref,
+        ),
         applied_candidate_id=candidate_id,
         candidate_receipt_ref=candidate_receipt_ref,
         candidate_review_event_id=event.review_event_id,
@@ -2839,37 +3165,24 @@ async def attest_proposal(
             source_refs.append(mutation_ref)
 
     try:
-        expected_version = request.expected_proposal_version_id
-        expected_receipt = request.expected_proposal_receipt_ref
-        if (expected_version is None) != (expected_receipt is None):
-            raise HTTPException(
-                status_code=422,
-                detail="expected proposal version and receipt must be supplied together",
-            )
-        if expected_version is not None and expected_receipt is not None:
-            require_current_proposal_version(
-                proposal_id,
-                expected_version_id=expected_version.strip(),
-                expected_receipt_ref=expected_receipt.strip(),
-                engine=engine,
-                receipt_root=receipt_root,
-            )
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = create_governed_attestation(
             proposal_id=proposal_id,
             decision=request.decision,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             source_refs=source_refs,
             mutation_context=mutation_context,
             engine=engine,
             receipt_root=receipt_root,
         )
     except ProposalVersionResolutionError as exc:
-        status = 404 if exc.code == "proposal_not_found" else 409
-        raise HTTPException(
-            status_code=status,
-            detail={"code": exc.code, "message": str(exc)},
-        ) from exc
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(
             status_code=404,
@@ -2883,6 +3196,11 @@ async def attest_proposal(
         attestation=result.attestation,
         proposal=result.proposal,
         receipt_ref=result.receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
         approved_is_not_execution_authorization=True,
         execution_allowed=False,
     )
@@ -2915,22 +3233,25 @@ class ReviewEventCreateRequest(BaseModel):
 
     kind: ReviewEventKind
     reason: str
+    expected_proposal_version_id: str
+    expected_proposal_receipt_ref: str
     text: str | None = None
     attestation_ref: str | None = None
     compare_with: str | None = None
     source_refs: list[str] = Field(default_factory=list)
 
-    @field_validator("reason")
+    @field_validator("reason", "expected_proposal_version_id", "expected_proposal_receipt_ref")
     @classmethod
-    def require_human_context(cls, value: str) -> str:
+    def require_non_blank(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("review event requires a written reason")
+            raise ValueError("this field is required and must not be blank")
         return value
 
 
 class ReviewEventCreateResponse(BaseModel):
     review_event: ReviewEvent
     receipt_ref: str
+    admitted_proposal_version: ProposalVersionView
     execution_allowed: bool = False
 
 
@@ -2987,11 +3308,17 @@ async def add_review_event(
             source_refs.append(mutation_ref)
 
     try:
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=request.expected_proposal_version_id.strip(),
+            receipt_ref=request.expected_proposal_receipt_ref.strip(),
+        )
         result = create_governed_review_event(
             proposal_id=proposal_id,
             kind=request.kind,
             attester=operator.authoritative_actor_id,
             reason=request.reason.strip(),
+            expectation=expectation,
             text=request.text,
             attestation_ref=request.attestation_ref,
             compare_with=request.compare_with,
@@ -3000,6 +3327,8 @@ async def add_review_event(
             engine=engine,
             receipt_root=receipt_root,
         )
+    except ProposalVersionResolutionError as exc:
+        raise _proposal_version_http_exception(exc) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"proposal not found: {proposal_id}") from exc
     except ValueError as exc:
@@ -3009,5 +3338,10 @@ async def add_review_event(
     return ReviewEventCreateResponse(
         review_event=result.review_event,
         receipt_ref=result.receipt_ref,
+        admitted_proposal_version=ProposalVersionView(
+            proposal_id=proposal_id,
+            proposal_version_id=result.admitted_proposal_version_id,
+            receipt_ref=result.admitted_proposal_receipt_ref,
+        ),
         execution_allowed=False,
     )

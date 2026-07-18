@@ -14,6 +14,10 @@ from typing import Any
 
 from sqlalchemy.engine import Engine
 
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.store import init_state_core
 
 
@@ -31,6 +35,16 @@ class StateCoreFixture:
     def cleanup(self) -> None:
         self.engine.dispose()
         self.tmp.cleanup()
+
+    def _version_expectation(self, proposal_id: str) -> ProposalVersionExpectation:
+        current = resolve_current_proposal_version(
+            proposal_id, engine=self.engine, receipt_root=self.receipt_root
+        )
+        return ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=current.proposal_version_id,
+            receipt_ref=current.receipt_ref,
+        )
 
     def write_receipt(self, relative_path: str, payload: dict[str, Any]) -> Path:
         path = self.receipt_root / relative_path

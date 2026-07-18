@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -205,7 +206,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 12
+CURRENT_STATE_CORE_USER_VERSION = 13
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -497,6 +498,21 @@ def _migrate_review_events_kind_constraint(connection: Connection) -> None:
     connection.execute(text("DROP TABLE review_events_legacy_v3"))
 
 
+def _migrate_add_version_binding_columns(connection: Connection) -> None:
+    """Add bound_proposal_version_id / bound_proposal_receipt_ref to attestations
+    and review_events. Legacy rows stay NULL; new writes set them non-null."""
+    for table_name in ("attestations", "review_events"):
+        inspector = inspect(connection)
+        if table_name not in set(inspector.get_table_names()):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table_name)}
+        for col_name in ("bound_proposal_version_id", "bound_proposal_receipt_ref"):
+            if col_name not in existing:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} TEXT"
+                )
+
+
 def migrate_state_core(engine: Engine) -> None:
     """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
     migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
@@ -512,6 +528,7 @@ def migrate_state_core(engine: Engine) -> None:
         (10, _migrate_position_valuation_contract),
         (11, _migrate_add_import_correction_semantics),
         (12, _migrate_add_agent_authority_currency_bindings),
+        (13, _migrate_add_version_binding_columns),
     )
     try:
         with engine.connect() as connection:
@@ -533,6 +550,45 @@ def migrate_state_core(engine: Engine) -> None:
                     connection.commit()
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core migration failed: {exc}") from exc
+
+
+@contextmanager
+def immediate_state_core_session(engine: Engine) -> Iterator[Session]:
+    """Yield a Session on a ``BEGIN IMMEDIATE`` SQLite connection.
+
+    The connection is created, ``BEGIN IMMEDIATE`` is executed, then a Session
+    is bound to it with ``expire_on_commit=False``.  The caller does the
+    application-level writes inside the ``with`` block, then:
+
+    * ``session.flush()``
+    * ``connection.commit()``
+
+    On any exception the connection is rolled back.  The session and
+    connection are always closed before leaving the context manager.
+
+    Only the context manager owns commit/rollback — callers must never call
+    ``session.commit()`` or ``connection.commit()`` inside the block.
+    """
+    connection = engine.connect()
+    session: Session | None = None
+    try:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        session = Session(bind=connection, expire_on_commit=False)
+        yield session
+        session.flush()
+        connection.commit()
+    except (SQLAlchemyError, OSError) as exc:
+        connection.rollback()
+        raise StateCoreStoreError(
+            f"state-core immediate transaction failed: {exc}"
+        ) from exc
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        if session is not None:
+            session.close()
+        connection.close()
 
 
 def write_records(

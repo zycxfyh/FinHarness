@@ -188,6 +188,8 @@ class Attestation(StateCoreBase, table=True):
     reason: str
     decision: Decision
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    bound_proposal_version_id: str | None = None
+    bound_proposal_receipt_ref: str | None = None
     authority_level: AuthorityLevel = "needs_human_confirm"
     created_at_utc: str = Field(default_factory=utc_now_iso)
 
@@ -253,6 +255,8 @@ class ReviewEvent(StateCoreBase, table=True):
     attestation_ref: str | None = None
     compare_with: str | None = None
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    bound_proposal_version_id: str | None = None
+    bound_proposal_receipt_ref: str | None = None
     content_hash: str = ""
     authority_level: AuthorityLevel = "needs_human_confirm"
     execution_allowed: bool = False

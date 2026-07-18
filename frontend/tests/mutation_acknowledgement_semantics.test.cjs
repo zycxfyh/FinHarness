@@ -154,6 +154,10 @@ function settle() {
   dom.window.renderReviewEventForm(
     parent,
     "prop_1",
+    {
+      proposal_version_id: "proposal_version_1",
+      receipt_ref: "data/receipts/proposals/prop_1.json",
+    },
   );
 
   const form = parent.querySelector("form");

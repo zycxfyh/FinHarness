@@ -6,6 +6,9 @@ from pathlib import Path
 
 from finharness.api.app import create_app
 from finharness.local_operator import LocalOperatorContext
+from finharness.statecore.proposal_version import (
+    resolve_current_proposal_version,
+)
 from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 from tests.asgi_test_client import AsgiTestClient
@@ -38,13 +41,25 @@ class CompareMarksApiTest(unittest.TestCase):
         )
         return resp.json()["proposal"]["proposal_id"]
 
+    def _version_fields(self, proposal_id: str) -> dict[str, str]:
+        ver = resolve_current_proposal_version(
+            proposal_id, engine=self.engine,
+            receipt_root=str(self.receipt_root),
+        )
+        return {
+            "expected_proposal_version_id": ver.proposal_version_id,
+            "expected_proposal_receipt_ref": ver.receipt_ref,
+        }
+
     def _compare_mark(self, proposal_id: str, compare_with: str) -> None:
+        version = self._version_fields(proposal_id)
         resp = self.client.post(
             f"/proposals/{proposal_id}/review-events",
             json={
                 "kind": "compare_mark",
                 "reason": "compare these",
                 "compare_with": compare_with,
+                **version,
             },
         )
         self.assertEqual(resp.status_code, 200)

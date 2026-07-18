@@ -136,6 +136,9 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
         )
         self.assertEqual(create.status_code, 200)
         proposal_id = create.json()["proposal"]["proposal_id"]
+        version = self.client.get(
+            f"/proposals/{proposal_id}/revisions"
+        ).json()["revisions"][0]
 
         # 3) a human attests; approval is review only, never execution
         attest = self.client.post(
@@ -143,6 +146,8 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
             json={
                 "decision": "approved",
                 "reason": "Reviewed; will trim SPY at the next session.",
+                "expected_proposal_version_id": version["receipt_id"],
+                "expected_proposal_receipt_ref": version["receipt_ref"],
             },
         )
         self.assertEqual(attest.status_code, 200)

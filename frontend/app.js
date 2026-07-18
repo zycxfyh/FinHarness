@@ -715,7 +715,7 @@ function renderDecisionScaffold(parent, proposal) {
   }
 }
 
-function renderScaffoldRevisionForm(parent, proposalId) {
+function renderScaffoldRevisionForm(parent, proposalId, proposalVersion) {
   const form = document.createElement("form");
   form.className = "scaffold-revision-form";
   form.innerHTML = `
@@ -746,6 +746,10 @@ function renderScaffoldRevisionForm(parent, proposalId) {
               counter_evidence:
                 data.get("counter_evidence"),
             },
+            expected_proposal_version_id:
+              proposalVersion.proposal_version_id,
+            expected_proposal_receipt_ref:
+              proposalVersion.receipt_ref,
           },
         ),
     });
@@ -932,7 +936,7 @@ function renderReviewTimeline(parent, timeline) {
 
 // Human write affordance: annotation / archive / reopen. State-changing, so it requires
 // an explicit confirm before any POST — rendering alone never writes.
-function renderReviewEventForm(parent, proposalId) {
+function renderReviewEventForm(parent, proposalId, proposalVersion) {
   const form = document.createElement("form");
   form.className = "review-event-form";
   form.innerHTML = `
@@ -959,7 +963,7 @@ function renderReviewEventForm(parent, proposalId) {
     const data = new FormData(form);
     const kind = data.get("kind");
     if (!window.confirm(`Record review action "${kind}"? It is logged with the authenticated actor and reason.`)) {
-      return; // explicit confirm required; no write on cancel
+      return;
     }
     await submitGovernedFormWrite({
       form,
@@ -970,6 +974,10 @@ function renderReviewEventForm(parent, proposalId) {
             kind,
             reason: data.get("reason"),
             text: data.get("text") || null,
+            expected_proposal_version_id:
+              proposalVersion.proposal_version_id,
+            expected_proposal_receipt_ref:
+              proposalVersion.receipt_ref,
           },
         ),
     });
@@ -1239,7 +1247,30 @@ async function renderProposalDetail() {
   renderReviewTaskLifecycle(selectors.proposalDetail, reviewTask);
   renderCandidateDetail(selectors.proposalDetail, detail.proposal);
   renderDecisionScaffold(selectors.proposalDetail, detail.proposal);
-  renderScaffoldRevisionForm(selectors.proposalDetail, detail.proposal.proposal_id);
+  const latestRevision =
+    revisionHistory.revisions.length > 0
+      ? revisionHistory.revisions[0]
+      : null;
+
+  const proposalVersion =
+    latestRevision &&
+    typeof latestRevision.receipt_id === "string" &&
+    latestRevision.receipt_id &&
+    typeof latestRevision.receipt_ref === "string" &&
+    latestRevision.receipt_ref
+      ? {
+          proposal_version_id: latestRevision.receipt_id,
+          receipt_ref: latestRevision.receipt_ref,
+        }
+      : null;
+
+  if (proposalVersion) {
+    renderScaffoldRevisionForm(
+      selectors.proposalDetail,
+      detail.proposal.proposal_id,
+      proposalVersion,
+    );
+  }
   renderRevisionHistory(selectors.proposalDetail, revisionHistory);
   renderNonClaims(selectors.proposalDetail, detail.non_claims);
   selectors.proposalDetail.append(textElement("h4", "", "Attestations"));
@@ -1255,7 +1286,21 @@ async function renderProposalDetail() {
     );
   }
   renderReviewTimeline(selectors.proposalDetail, timeline);
-  renderReviewEventForm(selectors.proposalDetail, detail.proposal.proposal_id);
+  if (proposalVersion) {
+    renderReviewEventForm(
+      selectors.proposalDetail,
+      detail.proposal.proposal_id,
+      proposalVersion,
+    );
+  } else {
+    selectors.proposalDetail.append(
+      textElement(
+        "p",
+        "governed-writes-unavailable",
+        "Governed writes are unavailable because the current ProposalVersion cannot be verified.",
+      ),
+    );
+  }
 }
 
 async function renderProposals() {

@@ -56,7 +56,10 @@ assert.strictEqual(
 
 function renderForm() {
   const parent = window.document.createElement("div");
-  window.renderScaffoldRevisionForm(parent, "prop_1");
+  window.renderScaffoldRevisionForm(parent, "prop_1", {
+    proposal_version_id: "proposal_version_v1",
+    receipt_ref: "receipts/proposals/v1.json",
+  });
   return parent.querySelector("form");
 }
 
@@ -110,5 +113,13 @@ setTimeout(() => {
   assert.deepStrictEqual(payload.decision_scaffold, {
     counter_evidence: "Top holding below 40%.",
   });
+  assert.strictEqual(
+    payload.expected_proposal_version_id,
+    "proposal_version_v1",
+  );
+  assert.strictEqual(
+    payload.expected_proposal_receipt_ref,
+    "receipts/proposals/v1.json",
+  );
   console.log("scaffold_revision.test.cjs: all assertions passed");
 }, 0);

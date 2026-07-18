@@ -8,6 +8,10 @@ from pathlib import Path
 
 from finharness.annual_review import compute_annual_review, record_annual_review
 from finharness.statecore.models import ReceiptIndex
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
@@ -51,11 +55,20 @@ class AnnualReviewTest(unittest.TestCase):
         self._proposal("a", "cash_buffer_low", "2026-03-01T00:00:00+00:00")
         self._proposal("b", "concentration_high", "2026-05-01T00:00:00+00:00")
         self._proposal("c", "tax_window", "2024-01-01T00:00:00+00:00")  # outside window
+        ver = resolve_current_proposal_version(
+            "a", engine=self.engine, receipt_root=self.receipt_root
+        )
+        expectation = ProposalVersionExpectation(
+            proposal_id="a",
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
         create_governed_attestation(
             proposal_id="a",
             decision="approved",
             attester="xzh",
             reason="reviewed the evidence",
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
         )

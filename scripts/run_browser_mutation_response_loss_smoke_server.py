@@ -19,6 +19,7 @@ from finharness.identity import (
     PrincipalIdentity,
     TestIdentityProvider,
 )
+from finharness.statecore.proposal_version import resolve_current_proposal_version
 from finharness.statecore.proposals import create_governed_proposal
 from finharness.statecore.store import init_state_core
 
@@ -74,6 +75,11 @@ def main() -> None:
         engine=engine,
         receipt_root=receipt_root,
     )
+    initial_version = resolve_current_proposal_version(
+        PROPOSAL_ID,
+        engine=engine,
+        receipt_root=receipt_root,
+    )
 
     provider = TestIdentityProvider({"alice-session": _identity()})
     app = create_app(
@@ -94,6 +100,10 @@ def main() -> None:
         "receipt_root": str(receipt_root),
         "proposal_id": PROPOSAL_ID,
         "proposal_claim": PROPOSAL_CLAIM,
+        "initial_version": {
+            "proposal_version_id": initial_version.proposal_version_id,
+            "receipt_ref": initial_version.receipt_ref,
+        },
         "target_path": TARGET_PATH,
         "capability_id": capability.capability_id,
         "resolver_id": capability.resolver_id,

@@ -208,6 +208,16 @@ class AgentProposalDraftTest(unittest.TestCase):
                     )
                 },
                 "source_refs": ["human://review_note"],
+                "expected_proposal_version_id": (
+                    self.fixture._version_expectation(
+                        str(body["proposal_id"])
+                    ).proposal_version_id
+                ),
+                "expected_proposal_receipt_ref": (
+                    self.fixture._version_expectation(
+                        str(body["proposal_id"])
+                    ).receipt_ref
+                ),
             },
         )
         self.assertEqual(revised.status_code, 200)
@@ -244,11 +254,13 @@ class AgentProposalDraftTest(unittest.TestCase):
 
     def test_agent_queue_checks_clear_human_review_required_after_attestation(self) -> None:
         body = self._draft()
+        expectation = self.fixture._version_expectation(str(body["proposal_id"]))
         create_governed_attestation(
             proposal_id=str(body["proposal_id"]),
             decision="rejected",
             attester="Jane Control",
             reason="Recorded human review; this is not execution authorization.",
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
@@ -276,12 +288,14 @@ class AgentProposalDraftTest(unittest.TestCase):
             evidence={"top_holding_weight": 0.8},
         )
 
+        expectation = self.fixture._version_expectation(str(body["proposal_id"]))
         with self.assertRaises(HighRiskConfirmationError):
             create_governed_attestation(
                 proposal_id=str(body["proposal_id"]),
                 decision="approved",
                 attester="Jane Control",
                 reason="Attempted approval before counter-evidence.",
+                expectation=expectation,
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )

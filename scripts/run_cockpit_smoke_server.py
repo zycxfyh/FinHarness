@@ -31,6 +31,10 @@ from finharness.statecore.models import (
     Position,
     Snapshot,
 )
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_review_event,
@@ -96,26 +100,41 @@ def build_seeded_app():
     # Give the Proposals detail real revision/review content to render (not an empty state).
     # P5: the high-risk concentration proposal has no counter-evidence, so it cannot be
     # approved (fail-closed). The human declines to confirm it blind; a rejection is not gated.
+
+    def _expectation(proposal_id: str):
+        ver = resolve_current_proposal_version(
+            proposal_id, engine=engine, receipt_root=receipt_root
+        )
+        return ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
+
     create_governed_attestation(
         proposal_id=concentration.proposal.proposal_id, decision="rejected",
         attester="operator", reason="high-risk; not confirming without counter-evidence",
+        expectation=_expectation(concentration.proposal.proposal_id),
         engine=engine, receipt_root=receipt_root,
     )
     # The low-risk cash-buffer proposal is the one the human confirms (non-execution).
     create_governed_attestation(
         proposal_id=cash_buffer.proposal.proposal_id, decision="approved",
         attester="operator", reason="reviewed cash buffer",
+        expectation=_expectation(cash_buffer.proposal.proposal_id),
         engine=engine, receipt_root=receipt_root,
     )
     create_governed_review_event(
         proposal_id=concentration.proposal.proposal_id, kind="annotation",
         attester="operator", reason="seed smoke", text="SPY dominates the book",
+        expectation=_expectation(concentration.proposal.proposal_id),
         engine=engine, receipt_root=receipt_root,
     )
     # A compare_mark so the read-only Compare view renders real content, not an empty state.
     create_governed_review_event(
         proposal_id=concentration.proposal.proposal_id, kind="compare_mark",
         attester="operator", reason="seed smoke", compare_with=cash_buffer.proposal.proposal_id,
+        expectation=_expectation(concentration.proposal.proposal_id),
         engine=engine, receipt_root=receipt_root,
     )
     return create_app(state_core_engine=engine, receipt_root=str(receipt_root))

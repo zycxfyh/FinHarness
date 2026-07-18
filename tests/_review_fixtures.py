@@ -10,6 +10,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     create_governed_attestation,
     create_governed_proposal,
@@ -30,6 +34,16 @@ class ReviewFixture:
     def cleanup(self) -> None:
         self.engine.dispose()
         self.tmp.cleanup()
+
+    def _version_expectation(self, proposal_id: str) -> ProposalVersionExpectation:
+        current = resolve_current_proposal_version(
+            proposal_id, engine=self.engine, receipt_root=self.receipt_root
+        )
+        return ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=current.proposal_version_id,
+            receipt_ref=current.receipt_ref,
+        )
 
     def proposal(
         self,
@@ -63,6 +77,7 @@ class ReviewFixture:
             decision=decision,  # type: ignore[arg-type]
             attester="operator",
             reason="reviewed",
+            expectation=self._version_expectation(proposal_id),
             engine=self.engine,
             receipt_root=self.receipt_root,
         )
@@ -73,6 +88,7 @@ class ReviewFixture:
             kind=kind,  # type: ignore[arg-type]
             attester="operator",
             reason="reviewed",
+            expectation=self._version_expectation(proposal_id),
             engine=self.engine,
             receipt_root=self.receipt_root,
             **kw,

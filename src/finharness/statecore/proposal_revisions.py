@@ -18,14 +18,59 @@ the retrospective never drift apart.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 from finharness.project_paths import ROOT, display_path
+from finharness.statecore.models import Proposal
 
 PROPOSAL_RECEIPT_KIND = "state_core_proposal"
+
+
+def proposal_content_hash_fields(
+    *,
+    kind: str,
+    claim: str,
+    evidence: dict[str, Any],
+    assumptions: dict[str, Any],
+    limitations: dict[str, Any],
+    non_claims: list[str],
+    source_refs: list[str],
+    decision_scaffold: dict[str, Any] | None = None,
+) -> str:
+    """Canonical Proposal content hash shared by writers and receipt readers."""
+    canonical = json.dumps(
+        {
+            "kind": kind,
+            "claim": claim,
+            "evidence": evidence,
+            "assumptions": assumptions,
+            "limitations": limitations,
+            "non_claims": non_claims,
+            "source_refs": source_refs,
+            "decision_scaffold": decision_scaffold or {},
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def proposal_content_hash(proposal: Proposal) -> str:
+    return proposal_content_hash_fields(
+        kind=proposal.kind,
+        claim=proposal.claim,
+        evidence=proposal.evidence,
+        assumptions=proposal.assumptions,
+        limitations=proposal.limitations,
+        non_claims=proposal.non_claims,
+        source_refs=proposal.source_refs,
+        decision_scaffold=proposal.decision_scaffold,
+    )
 
 RevisionAnomalyCode = Literal[
     "no_receipt_ref",

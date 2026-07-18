@@ -9,6 +9,10 @@ from unittest import mock
 from pydantic import ValidationError
 
 from finharness.statecore.models import ReviewEvent
+from finharness.statecore.proposal_version import (
+    ProposalVersionExpectation,
+    resolve_current_proposal_version,
+)
 from finharness.statecore.proposals import (
     archived_proposal_ids,
     create_governed_proposal,
@@ -42,11 +46,20 @@ class ReviewEventTest(unittest.TestCase):
         )
 
     def _event(self, kind: str, *, proposal_id: str = "alloc_cash_buffer_low_2026-06-20", **kw):
+        ver = resolve_current_proposal_version(
+            proposal_id, engine=self.engine, receipt_root=self.receipt_root
+        )
+        expectation = ProposalVersionExpectation(
+            proposal_id=proposal_id,
+            proposal_version_id=ver.proposal_version_id,
+            receipt_ref=ver.receipt_ref,
+        )
         return create_governed_review_event(
             proposal_id=proposal_id,
             kind=kind,  # type: ignore[arg-type]
             attester="operator",
             reason="reviewed during weekly check",
+            expectation=expectation,
             engine=self.engine,
             receipt_root=self.receipt_root,
             **kw,
@@ -120,7 +133,7 @@ class ReviewEventTest(unittest.TestCase):
     # --- DB failure leaves no residual receipt ----------------------------------------
     def test_db_write_failure_cleans_up_receipt(self) -> None:
         with mock.patch(
-            "finharness.statecore.proposals.write_records",
+            "sqlmodel.Session.flush",
             side_effect=StateCoreStoreError("disk full"),
         ), self.assertRaises(StateCoreStoreError):
             self._event("annotation", text="will fail")
@@ -133,17 +146,30 @@ class ReviewEventTest(unittest.TestCase):
 
     def test_blank_attester_or_reason_is_rejected(self) -> None:
         with self.assertRaises((ValueError, ValidationError)):
+            ver = resolve_current_proposal_version(
+                "alloc_cash_buffer_low_2026-06-20",
+                engine=self.engine, receipt_root=self.receipt_root,
+            )
+            expectation = ProposalVersionExpectation(
+                proposal_id="alloc_cash_buffer_low_2026-06-20",
+                proposal_version_id=ver.proposal_version_id,
+                receipt_ref=ver.receipt_ref,
+            )
             create_governed_review_event(
                 proposal_id="alloc_cash_buffer_low_2026-06-20",
                 kind="annotation",
                 attester="  ",
                 reason="x",
+                expectation=expectation,
                 engine=self.engine,
                 receipt_root=self.receipt_root,
             )
 
     def test_unknown_proposal_raises(self) -> None:
-        with self.assertRaises(KeyError):
+        # Unknown proposal is caught by version resolution (ProposalVersionResolutionError)
+        # or by the write function (KeyError). Both are fail-closed.
+        from finharness.statecore.proposal_version import ProposalVersionResolutionError
+        with self.assertRaises((KeyError, ProposalVersionResolutionError)):
             self._event("annotation", proposal_id="nope")
 
     def test_db_rejects_unknown_kind_at_persistence(self) -> None:
