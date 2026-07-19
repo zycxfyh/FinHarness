@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   repair:
+    if: ${{ !contains(github.event.head_commit.message, 'record repair diagnostic') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact branch head
@@ -25,15 +26,20 @@ jobs:
       - name: Install locked environment
         run: uv sync --frozen
 
-      - name: Apply independent-audit repairs
+      - name: Apply, verify, and publish deterministic result
+        shell: bash
         run: |
-          set -euo pipefail
-          python scripts/_patch_373_core.py
-          python scripts/_patch_373_checker.py
-          python scripts/_patch_373_tests.py
-          python scripts/_patch_373_checker_lint.py
-          python scripts/_patch_373_recovery_lint.py
-          PYTHONPATH=src python - <<'PY'
+          set +e
+          LOG=/tmp/patch-373.log
+          : > "$LOG"
+          {
+            set -euo pipefail
+            python scripts/_patch_373_core.py
+            python scripts/_patch_373_checker.py
+            python scripts/_patch_373_tests.py
+            python scripts/_patch_373_checker_lint.py
+            python scripts/_patch_373_recovery_lint.py
+            PYTHONPATH=src python - <<'PY'
           import json
           from pathlib import Path
           from finharness.capital_import_registry import registry_projection
@@ -44,53 +50,51 @@ jobs:
               encoding="utf-8",
           )
           PY
+            rm scripts/_patch_373_core.py
+            rm scripts/_patch_373_checker.py
+            rm scripts/_patch_373_tests.py
+            rm scripts/_patch_373_checker_lint.py
+            rm scripts/_patch_373_recovery_lint.py
+            rm -f scripts/sitecustomize.py patch-373-status.txt
+            git checkout origin/main -- scripts/run_timed_check.py
+            rm .github/workflows/patch-373-independent-audit.yml
+            files=(
+              scripts/check_capital_import_entrypoints.py
+              src/finharness/capital_import_registry.py
+              src/finharness/capital_import_recovery.py
+              src/finharness/personal_finance.py
+              src/finharness/beancount_adapter.py
+              src/finharness/statecore/__init__.py
+              src/finharness/statecore/store.py
+              tests/test_capital_import_entrypoints.py
+            )
+            uv run ruff format "${files[@]}"
+            uv run ruff check --fix "${files[@]}"
+            uv run ruff check "${files[@]}"
+            python -m json.tool docs/governance/capital-import-entrypoints.json >/dev/null
+            PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
+            PYTHONPATH=src uv run python -m unittest \
+              tests.test_capital_import_entrypoints \
+              tests.test_statecore_snapshot_ingest \
+              tests.test_capital_import_recovery \
+              tests.test_daily_change_brief
+            git diff --check
+          } >> "$LOG" 2>&1
+          STATUS=$?
 
-      - name: Remove temporary repair infrastructure
-        run: |
-          set -euo pipefail
-          rm scripts/_patch_373_core.py
-          rm scripts/_patch_373_checker.py
-          rm scripts/_patch_373_tests.py
-          rm scripts/_patch_373_checker_lint.py
-          rm scripts/_patch_373_recovery_lint.py
-          rm -f scripts/sitecustomize.py patch-373-status.txt
-          git checkout origin/main -- scripts/run_timed_check.py
-          rm .github/workflows/patch-373-independent-audit.yml
-
-      - name: Format and lint repaired Python surface
-        run: |
-          set -euo pipefail
-          files=(
-            scripts/check_capital_import_entrypoints.py
-            src/finharness/capital_import_registry.py
-            src/finharness/capital_import_recovery.py
-            src/finharness/personal_finance.py
-            src/finharness/beancount_adapter.py
-            src/finharness/statecore/__init__.py
-            src/finharness/statecore/store.py
-            tests/test_capital_import_entrypoints.py
-          )
-          uv run ruff format "${files[@]}"
-          uv run ruff check --fix "${files[@]}"
-          uv run ruff check "${files[@]}"
-          python -m json.tool docs/governance/capital-import-entrypoints.json >/dev/null
-
-      - name: Run focused semantic verification
-        run: |
-          set -euo pipefail
-          PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
-          PYTHONPATH=src uv run python -m unittest \
-            tests.test_capital_import_entrypoints \
-            tests.test_statecore_snapshot_ingest \
-            tests.test_capital_import_recovery \
-            tests.test_daily_change_brief
-          git diff --check
-
-      - name: Commit repaired implementation
-        run: |
-          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ "$STATUS" -ne 0 ]; then
+            git reset --hard HEAD
+            printf 'failure\n\n' > patch-373-status.txt
+            tail -c 50000 "$LOG" >> patch-373-status.txt
+            git add patch-373-status.txt
+            git commit -m "ci(373): record repair diagnostic"
+            git push origin HEAD:agent/373-capital-import-manifest
+            exit 1
+          fi
+
           git add -A
           git diff --cached --check
           git commit -m "ASSURE-CAP-01: close independent audit blockers"
