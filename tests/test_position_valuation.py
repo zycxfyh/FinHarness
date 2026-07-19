@@ -28,6 +28,7 @@ def position(position_id: str, **overrides: object) -> Position:
         "valued_at_utc": "2026-07-13T11:00:00+00:00",
         "price_source_ref": "receipt:prices",
         "valuation_status": "valued",
+        "as_of_utc": NOW.isoformat(),
     }
     values.update(overrides)
     return Position(**values)  # type: ignore[arg-type]
@@ -55,8 +56,9 @@ class PositionValuationTest(unittest.TestCase):
         totals = reconcile_position_totals([position("spy"), eur])
 
         self.assertIsNone(totals.unified_total)
-        self.assertIn("eur:valuation_fx_missing", totals.blockers)
+        self.assertIn("eur:valuation_unpriced", totals.blockers)
         self.assertIn("eur:market_value_missing", totals.blockers)
+        self.assertIn("eur:fx_rate_missing", totals.blockers)
 
     def test_converted_fx_requires_evidence_and_reconciles(self) -> None:
         converted = position(

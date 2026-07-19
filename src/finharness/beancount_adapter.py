@@ -32,7 +32,12 @@ from finharness.capital_import_contract import (
     completeness_status,
     currency_code,
 )
+from finharness.capital_import_valuation import (
+    assess_positions,
+    merge_valuation_findings,
+)
 from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
@@ -52,7 +57,6 @@ from finharness.statecore.models import (
     utc_now_iso,
 )
 from finharness.statecore.store import (
-    StateCoreRecord,
     materialize_import_batch,
 )
 
@@ -123,13 +127,12 @@ def _safe_id(value: str) -> str:
 
 def _ledger_metadata(
     source_path: Path,
-) -> tuple[list[str], set[str], str, str | None]:
-    """Return the ledger's loaded files and its declared operating currencies.
+) -> tuple[list[str], set[str], str, dict[tuple[str, str], tuple[str, Decimal, str]]]:
+    """Return loaded files, operating currencies, effective_at, and direct Price index.
 
-    Beancount already reports every loaded file as an absolute path in
-    ``options_map["include"]`` (even when the ledger was opened with a relative
-    path), so each entry only needs ``resolve`` to dedupe. The fallback resolves a
-    lone relative ``source_path`` against the current directory.
+    Price index keys are ``(base_commodity, quote_currency)`` and values are
+    ``(valued_at_utc, unit_price, price_source_ref)`` for the latest unambiguous
+    direct Price directive.
     """
     entries, errors, options_map = loader.load_file(str(source_path))
     if errors:
@@ -145,14 +148,76 @@ def _ledger_metadata(
     dated = [entry.date for entry in entries if getattr(entry, "date", None) is not None]
     if not dated:
         raise BeancountLedgerError("beancount ledger has no effective dated entries")
-    price_dates = [
-        entry.date
-        for entry in entries
-        if type(entry).__name__ == "Price" and getattr(entry, "date", None) is not None
-    ]
     effective_at = f"{max(dated).isoformat()}T00:00:00+00:00"
-    valued_at = f"{max(price_dates).isoformat()}T00:00:00+00:00" if price_dates else None
-    return loaded_files, operating, effective_at, valued_at
+    # Collect all direct Price directives; resolve latest per (base, quote).
+    by_key: dict[tuple[str, str], list[tuple[Any, Decimal, str, int]]] = {}
+    for entry in entries:
+        if type(entry).__name__ != "Price":
+            continue
+        base = str(getattr(entry, "currency", "") or "").upper()
+        amount = getattr(entry, "amount", None)
+        if not base or amount is None:
+            continue
+        quote = str(getattr(amount, "currency", "") or "").upper()
+        number = getattr(amount, "number", None)
+        if not quote or number is None:
+            continue
+        meta = getattr(entry, "meta", None) or {}
+        filename = str(meta.get("filename") or source_path)
+        lineno = int(meta.get("lineno") or 0)
+        locator = f"{display_path(Path(filename))}#price:{base}/{quote}@{entry.date}:L{lineno}"
+        by_key.setdefault((base, quote), []).append(
+            (entry.date, Decimal(str(number)), locator, lineno)
+        )
+    price_index: dict[tuple[str, str], tuple[str, Decimal, str]] = {}
+    for key, rows in by_key.items():
+        latest_date = max(item[0] for item in rows)
+        same_day = [item for item in rows if item[0] == latest_date]
+        prices = {item[1] for item in same_day}
+        if len(prices) > 1:
+            raise BeancountLedgerError(
+                "beancount_price_evidence_ambiguous: "
+                f"conflicting Price directives for {key[0]}/{key[1]} on {latest_date}"
+            )
+        _date, price, locator, _lineno = same_day[0]
+        valued_at = f"{latest_date.isoformat()}T00:00:00+00:00"
+        price_index[key] = (valued_at, price, locator)
+    return loaded_files, operating, effective_at, price_index
+
+
+def _select_direct_price(
+    price_index: dict[tuple[str, str], tuple[str, Decimal, str]],
+    *,
+    commodity: str,
+    preferred_quotes: set[str],
+) -> tuple[str, Decimal, str, str] | None:
+    """Return (valued_at, unit_price, price_source_ref, quote_currency) if any."""
+    commodity_key = commodity.upper()
+    candidates: list[tuple[str, Decimal, str, str]] = []
+    for (base, quote), (valued_at, price, locator) in price_index.items():
+        if base != commodity_key:
+            continue
+        if preferred_quotes and quote not in preferred_quotes:
+            continue
+        candidates.append((valued_at, price, locator, quote))
+    if not candidates and preferred_quotes:
+        # Fall back to any quote currency for the commodity.
+        for (base, quote), (valued_at, price, locator) in price_index.items():
+            if base == commodity_key:
+                candidates.append((valued_at, price, locator, quote))
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        # Prefer operating-currency quote if multiple commodities quotes exist.
+        preferred = [item for item in candidates if item[3] in preferred_quotes]
+        pool = preferred or candidates
+        if len({(item[0], item[1], item[3]) for item in pool}) > 1:
+            raise BeancountLedgerError(
+                "beancount_price_evidence_ambiguous: "
+                f"multiple direct Price quotes for {commodity_key}"
+            )
+        return pool[0]
+    return candidates[0]
 
 
 def _ledger_evidence_bytes(files: list[str]) -> bytes:
@@ -296,7 +361,7 @@ def _records_from_rows(
     assets_root: str,
     liabilities_root: str,
     operating_currencies: set[str],
-    valued_at_utc: str | None,
+    price_index: dict[tuple[str, str], tuple[str, Decimal, str]],
 ) -> tuple[
     list[Account],
     list[AccountIdentity],
@@ -316,6 +381,7 @@ def _records_from_rows(
     data_gaps: list[str] = []
     unresolved_identities: list[str] = []
     source_namespace = f"beancount:{source_refs[-1]}"
+    ledger_ref = source_refs[-1]
     for index, (account, currency, units_inv, market_inv) in enumerate(rows, start=1):
         units = _amount(units_inv)
         if units is None or units[0] == 0:
@@ -343,30 +409,11 @@ def _records_from_rows(
                     source_refs=source_refs,
                 ),
             )
-            # With no price, value() returns the holding in its own commodity.
-            # Preserve the holding but never turn missing monetary evidence into zero.
-            if market is None or (
-                bool(operating_currencies)
-                and market[1] == currency
-                and currency not in operating_currencies
-            ):
-                market_value = None
-                valuation_currency = None
-                unit_price = None
-                price_currency = None
-                valuation_status = "unpriced"
-                data_gaps.append(currency.upper())
-            else:
-                market_value = market[0]
-                try:
-                    valuation_currency = currency_code(market[1], field="valuation_currency")
-                except CapitalImportContractError as exc:
-                    raise BeancountLedgerError(str(exc)) from exc
-                unit_price = market_value / units[0]
-                price_currency = valuation_currency
-                valuation_status = "valued" if valued_at_utc else "unpriced"
+            commodity = currency.upper()
+            position_id = _safe_id(f"pos_{snapshot_id}_{index}_{account}_{currency}")
             instrument_id: str | None = None
-            if currency.upper() in operating_currencies:
+            is_cash = commodity in {value.upper() for value in operating_currencies}
+            if is_cash:
                 instrument, alias = instrument_identity(
                     symbol=currency,
                     instrument_type="cash",
@@ -378,23 +425,73 @@ def _records_from_rows(
                 instrument_id = instrument.instrument_id
                 instrument_identities.setdefault(instrument_id, instrument)
                 aliases.setdefault(alias.alias_id, alias)
+                try:
+                    cash_currency = currency_code(commodity, field="valuation_currency")
+                except CapitalImportContractError as exc:
+                    raise BeancountLedgerError(str(exc)) from exc
+                market_value = units[0]
+                unit_price = Decimal("1")
+                valuation_currency = cash_currency
+                price_currency = cash_currency
+                valued_at_utc = as_of_utc
+                price_source_ref = f"{ledger_ref}#nominal-cash:{cash_currency}"
             else:
-                unresolved_identities.append(currency.upper())
+                unresolved_identities.append(commodity)
+                direct = _select_direct_price(
+                    price_index,
+                    commodity=commodity,
+                    preferred_quotes={value.upper() for value in operating_currencies},
+                )
+                if direct is None:
+                    market_value = None
+                    valuation_currency = None
+                    unit_price = None
+                    price_currency = None
+                    valued_at_utc = None
+                    price_source_ref = None
+                    data_gaps.append(commodity)
+                else:
+                    valued_at_utc, unit_price, price_source_ref, quote = direct
+                    try:
+                        price_currency = currency_code(quote, field="price_currency")
+                        valuation_currency = price_currency
+                    except CapitalImportContractError as exc:
+                        raise BeancountLedgerError(str(exc)) from exc
+                    market_value = units[0] * unit_price
+                    # beanquery market inventory is not provenance for unit_price.
+                    del market_inv, market
+            evidence = ValuationEvidence(
+                quantity=units[0],
+                market_value=market_value,
+                valuation_currency=valuation_currency,
+                unit_price=unit_price,
+                price_currency=price_currency,
+                valued_at_utc=valued_at_utc,
+                price_source_ref=price_source_ref,
+            )
+            provisional = assess_position_valuation(
+                evidence,
+                record_id=position_id,
+                record_number=index,
+                evaluated_at_utc=as_of_utc,
+                check_freshness=False,
+                allow_unknown_legacy=False,
+            )
             positions.append(
                 Position(
-                    position_id=_safe_id(f"pos_{snapshot_id}_{index}_{account}_{currency}"),
+                    position_id=position_id,
                     snapshot_id=snapshot_id,
                     account_id=canonical_account_id,
                     instrument_id=instrument_id,
-                    symbol=currency.upper(),
+                    symbol=commodity,
                     quantity=units[0],
                     market_value=market_value,
                     valuation_currency=valuation_currency,
                     unit_price=unit_price,
                     price_currency=price_currency,
                     valued_at_utc=valued_at_utc,
-                    price_source_ref=source_refs[-1] if market_value is not None else None,
-                    valuation_status=valuation_status,
+                    price_source_ref=price_source_ref,
+                    valuation_status=provisional.status.value,
                     as_of_utc=as_of_utc,
                     authority_level="read_only",
                     source_refs=source_refs,
@@ -480,7 +577,7 @@ def ingest_beancount_ledger(
     source_path = Path(ledger_path)
     if not source_path.exists():
         raise BeancountLedgerError(f"beancount ledger missing: {source_path}")
-    source_files, operating_currencies, effective_at_utc, valued_at_utc = _ledger_metadata(
+    source_files, operating_currencies, effective_at_utc, price_index = _ledger_metadata(
         source_path
     )
     rows = _query_rows(source_path)
@@ -496,11 +593,12 @@ def ingest_beancount_ledger(
         artifact_store=active_artifact_store,
         created_at_utc=utc_now_iso(),
     )
+    # Provisional clocks without batch-level valued_at; Position owns valuation times.
     try:
         time_contract, time_findings = build_time_semantics(
             effective_at=effective_at_utc,
             observed_at=source_descriptor.created_at_utc,
-            valued_at=valued_at_utc,
+            valued_at=None,
             ingested_at=source_descriptor.created_at_utc,
         )
     except CapitalImportContractError as exc:
@@ -529,7 +627,7 @@ def ingest_beancount_ledger(
         assets_root=assets_root,
         liabilities_root=liabilities_root,
         operating_currencies=operating_currencies,
-        valued_at_utc=valued_at_utc,
+        price_index=price_index,
     )
     if not positions and not liabilities:
         raise BeancountLedgerError(
@@ -561,16 +659,6 @@ def ingest_beancount_ledger(
             )
         ]
     )
-    if positions and valued_at_utc is None:
-        findings.append(
-            ImportFinding(
-                "valuation_time_missing",
-                "blocking",
-                "holdings exist but the ledger has no dated price evidence",
-                record_type="position",
-                field="valued_at_utc",
-            )
-        )
     cashflow_rows = _cashflow_rows(source_path)
     if cashflow_rows and len(operating_currencies) != 1:
         findings.append(
@@ -588,6 +676,32 @@ def ingest_beancount_ledger(
         source_refs=source_refs,
         operating_currencies=operating_currencies,
     )
+    assessments = assess_positions(positions, evaluated_at_utc=as_of_utc)
+    # Replace positions with copies carrying derived status (avoid mutating
+    # SQLModel instances in-place which triggers ObjectDereferencedError).
+    status_map = {}
+    for position, assessment in zip(positions, assessments, strict=True):
+        p = Position(**position.model_dump())
+        p.valuation_status = assessment.status.value
+        status_map[position.position_id] = p
+    positions = [status_map[p.position_id] for p in positions]
+    findings = merge_valuation_findings(findings, assessments)
+    # Batch-level valued_at is only set when every position agrees; else None.
+    position_valued_ats = {
+        position.valued_at_utc for position in positions if position.valued_at_utc
+    }
+    batch_valued_at = next(iter(position_valued_ats)) if len(position_valued_ats) == 1 else None
+    try:
+        time_contract, _ = build_time_semantics(
+            effective_at=effective_at_utc,
+            observed_at=source_descriptor.created_at_utc,
+            valued_at=batch_valued_at,
+            ingested_at=source_descriptor.created_at_utc,
+        )
+    except CapitalImportContractError as exc:
+        raise BeancountLedgerError(str(exc)) from exc
+    final_completeness = completeness_status(findings)
+    time_semantics = time_contract.as_dict()
     snapshot = Snapshot(
         snapshot_id=active_snapshot_id,
         kind="portfolio" if positions else "personal_finance",
@@ -605,8 +719,8 @@ def ingest_beancount_ledger(
             },
             "data_gaps_unpriced": data_gaps,
             "coverage_mode": "full",
-            "completeness_status": completeness_status(findings),
-            "time_semantics": time_contract.as_dict(),
+            "completeness_status": final_completeness,
+            "time_semantics": time_semantics,
             "findings": [finding.as_dict() for finding in findings],
             "non_claims": list(NON_CLAIMS),
         },
@@ -645,8 +759,8 @@ def ingest_beancount_ledger(
         artifact_store=active_artifact_store,
         receipt_payload=receipt_payload,
         created_at_utc=as_of_utc,
-        completeness_status=completeness_status(findings),
-        time_semantics=time_contract.as_dict(),
+        completeness_status=final_completeness,
+        time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in findings],
         covered_domains=["account", "position", "liability", "cashflow"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
@@ -659,18 +773,18 @@ def ingest_beancount_ledger(
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )
-    records: list[StateCoreRecord] = [
-        snapshot,
-        *account_identities,
-        *instrument_identities,
-        *identity_aliases,
-        *accounts,
-        *positions,
-        *liabilities,
-        *cashflows,
-    ]
     materialize_import_batch(
-        [receipt_index, *records],
+        [
+            receipt_index,
+            *account_identities,
+            *instrument_identities,
+            *identity_aliases,
+            *accounts,
+            snapshot,
+            *positions,
+            *liabilities,
+            *cashflows,
+        ],
         source=LEDGER_KIND,
         batch=prepared.batch,
         manifest=prepared.manifest,
@@ -686,9 +800,10 @@ def ingest_beancount_ledger(
         account_count=len(accounts),
         position_count=len(positions),
         liability_count=len(liabilities),
-        cashflow_count=len(cashflows),
         as_of_utc=as_of_utc,
-        completeness_status=completeness_status(findings),
+        completeness_status=final_completeness,
+        cashflow_count=len(cashflows),
+        execution_allowed=False,
     )
 
 

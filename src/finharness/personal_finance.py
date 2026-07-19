@@ -34,7 +34,19 @@ from finharness.capital_import_contract import (
     currency_code,
     exact_decimal,
 )
-from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.capital_import_valuation import (
+    assess_positions,
+    merge_valuation_findings,
+)
+from finharness.import_provenance import (
+    derive_import_batch_id,
+    persist_source_evidence,
+    prepare_import,
+)
+from finharness.position_valuation import (
+    ValuationEvidence,
+    assess_position_valuation,
+)
 from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
@@ -484,41 +496,36 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
     fx_rate = _optional_decimal(row, "fx_rate", row_number=index)
     fx_as_of_utc = _optional_text(row, "fx_as_of_utc")
     fx_source_ref = _optional_text(row, "fx_source_ref")
-    typed_evidence = any(
-        value is not None
-        for value in (
-            unit_price,
-            valuation_currency,
-            price_currency,
-            valued_at_utc,
-            price_source_ref,
-            fx_rate,
-            fx_as_of_utc,
-            fx_source_ref,
-        )
+    position_id = _safe_id(f"pos_{ctx.snapshot_id}_{index}_{account_id}_{symbol}")
+    evidence = ValuationEvidence(
+        quantity=_decimal_value(row, "quantity", row_number=index),
+        market_value=market_value,
+        valuation_currency=valuation_currency,
+        unit_price=unit_price,
+        price_currency=price_currency,
+        valued_at_utc=valued_at_utc,
+        price_source_ref=price_source_ref,
+        fx_rate=fx_rate,
+        fx_as_of_utc=fx_as_of_utc,
+        fx_source_ref=fx_source_ref,
     )
-    if not typed_evidence:
-        valuation_status = "unknown_legacy"
-    elif market_value is None or unit_price is None or price_currency is None:
-        valuation_status = "unpriced"
-    elif valuation_currency is None or price_currency != valuation_currency:
-        valuation_status = (
-            "valued_converted"
-            if valuation_currency is not None
-            and fx_rate is not None
-            and fx_as_of_utc is not None
-            and fx_source_ref is not None
-            else "fx_missing"
-        )
-    else:
-        valuation_status = "valued"
+    # Provisional status; final assessment runs over the full/delta position set
+    # with batch observed_at_utc before prepare_import.
+    provisional = assess_position_valuation(
+        evidence,
+        record_id=position_id,
+        record_number=index,
+        evaluated_at_utc=ctx.as_of_utc,
+        check_freshness=False,
+        allow_unknown_legacy=False,
+    )
     return Position(
-        position_id=_safe_id(f"pos_{ctx.snapshot_id}_{index}_{account_id}_{symbol}"),
+        position_id=position_id,
         snapshot_id=ctx.snapshot_id,
         account_id=account_id,
         instrument_id=resolved_instrument_id,
         symbol=symbol,
-        quantity=_decimal_value(row, "quantity", row_number=index),
+        quantity=evidence.quantity,
         market_value=market_value,
         cost_basis=_optional_decimal(row, "cost_basis", row_number=index),
         valuation_currency=valuation_currency,
@@ -529,7 +536,7 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
         fx_rate=fx_rate,
         fx_as_of_utc=fx_as_of_utc,
         fx_source_ref=fx_source_ref,
-        valuation_status=valuation_status,
+        valuation_status=provisional.status.value,
         as_of_utc=ctx.as_of_utc,
         authority_level="read_only",
         source_refs=ctx.source_refs,
@@ -666,17 +673,6 @@ def _records_from_rows(
     built: list[StateCoreRecord] = [
         _ROW_BUILDERS[_row_type(row)](row, index, ctx) for index, row in enumerate(rows, start=1)
     ]
-    for position in (record for record in built if isinstance(record, Position)):
-        if position.valuation_status not in {"valued", "valued_converted"}:
-            findings.append(
-                ImportFinding(
-                    f"valuation_{position.valuation_status}",
-                    "blocking",
-                    f"{position.symbol} lacks an admitted typed valuation",
-                    record_type="position",
-                    field="valuation_status",
-                )
-            )
     # Tag source-owned rows so a re-import replaces exactly this adapter's rows.
     for record in built:
         if isinstance(record, SourcedStateCoreBase):
@@ -707,6 +703,58 @@ def _records_from_rows(
         *ctx.accounts.values(),
         *built,
     ]
+
+
+def _finalize_valuation_on_records(
+    records: list[StateCoreRecord],
+    *,
+    base_findings: list[ImportFinding],
+    observed_at_utc: str,
+    time_semantics: dict[str, str | None],
+    coverage_mode: str,
+    rows: list[dict[str, str]],
+    source_path: Path,
+) -> tuple[list[StateCoreRecord], list[ImportFinding], str]:
+    """Assess final Position set, rewrite statuses/findings/completeness/snapshot."""
+    positions = [record for record in records if isinstance(record, Position)]
+    assessments = assess_positions(positions, evaluated_at_utc=observed_at_utc)
+    # Build replacement positions with derived status; avoid mutating SQLModel
+    # instances in-place to prevent ObjectDereferencedError.
+    status_by_id = {}
+    for position, assessment in zip(positions, assessments, strict=True):
+        updated = Position(**position.model_dump())
+        updated.valuation_status = assessment.status.value
+        status_by_id[position.position_id] = updated
+    rewritten: list[StateCoreRecord] = []
+    for record in records:
+        if isinstance(record, Position) and record.position_id in status_by_id:
+            rewritten.append(status_by_id[record.position_id])
+        else:
+            rewritten.append(record)
+    final_findings = merge_valuation_findings(base_findings, assessments)
+    status = completeness_status(final_findings)
+    original_snap = next((item for item in records if isinstance(item, Snapshot)), None)
+    prior_delta = {
+        key: (original_snap.payload or {}).get(key)
+        for key in ("delta_base_batch_id", "materialized_position_count")
+        if original_snap is not None and key in (original_snap.payload or {})
+    }
+    for record in rewritten:
+        if not isinstance(record, Snapshot):
+            continue
+        payload = _payload_for_snapshot(
+            rows,
+            source_path,
+            time_semantics=time_semantics,
+            findings=final_findings,
+            coverage_mode=coverage_mode,
+        )
+        payload.update(prior_delta)
+        payload["completeness_status"] = status
+        payload["findings"] = [finding.as_dict() for finding in final_findings]
+        record.payload = payload
+    return rewritten, final_findings, status
+
 
 
 def _position_identity(position: Position) -> tuple[str, str]:
@@ -747,6 +795,7 @@ def _materialize_delta_positions(
     engine: Engine,
     source_id: str,
     snapshot_id: str,
+    as_of_utc: str,
     tombstones: Sequence[ImportDeletion],
     exclude_batch_id: str,
 ) -> tuple[list[StateCoreRecord], str | None]:
@@ -774,6 +823,7 @@ def _materialize_delta_positions(
                         f"pos_{snapshot_id}_carried_{position.account_id}_{identity_fragment}"
                     ),
                     "snapshot_id": snapshot_id,
+                    "as_of_utc": as_of_utc,
                 }
             )
         )
@@ -929,6 +979,52 @@ def ingest_personal_finance_export(
     )
     receipt_payload["deletions"] = [asdict(tombstone) for tombstone in tombstones]
     receipt_ref = display_path(receipt_path)
+    batch_id = derive_import_batch_id(
+        source_kind=EXPORT_KIND,
+        source_id=source_id,
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode=coverage_mode,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+    )
+    source_refs = [receipt_ref, display_path(source_path)]
+    records = _records_from_rows(
+        rows=rows,
+        source_refs=source_refs,
+        snapshot_id=active_snapshot_id,
+        as_of_utc=as_of_utc,
+        source_path=source_path,
+        time_semantics=time_semantics,
+        findings=list(findings),
+        coverage_mode=coverage_mode,
+    )
+    delta_base_batch_id: str | None = None
+    if coverage_mode == "delta":
+        records, delta_base_batch_id = _materialize_delta_positions(
+            records,
+            engine=engine,
+            source_id=source_id,
+            snapshot_id=active_snapshot_id,
+            as_of_utc=as_of_utc,
+            tombstones=tombstones,
+            exclude_batch_id=batch_id,
+        )
+        if delta_base_batch_id is None:
+            raise PersonalFinanceExportError("delta import requires a materialized base import")
+    records, final_findings, final_completeness = _finalize_valuation_on_records(
+        records,
+        base_findings=list(findings),
+        observed_at_utc=as_of_utc,
+        time_semantics=time_semantics,
+        coverage_mode=coverage_mode,
+        rows=rows,
+        source_path=source_path,
+    )
+    # Materialized position counts include carried rows for delta receipts.
+    final_position_count = sum(1 for record in records if isinstance(record, Position))
+    record_counts = {**record_counts, "position": final_position_count}
+    receipt_payload["record_counts"] = record_counts
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,
@@ -944,17 +1040,20 @@ def ingest_personal_finance_export(
         artifact_store=active_artifact_store,
         receipt_payload=receipt_payload,
         created_at_utc=source_descriptor.created_at_utc,
-        completeness_status=completeness_status(findings),
+        completeness_status=final_completeness,
         time_semantics=time_semantics,
-        findings=[finding.as_dict() for finding in findings],
+        findings=[finding.as_dict() for finding in final_findings],
         covered_domains=resolved_covered_domains,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
         corporate_action_status=(
-            "unsupported_gap" if record_counts.get("position", 0) else "not_applicable"
+            "unsupported_gap" if final_position_count else "not_applicable"
         ),
     )
-    source_refs = [receipt_ref, display_path(source_path)]
+    if prepared.batch.batch_id != batch_id:
+        raise PersonalFinanceExportError(
+            "derived batch identity diverged from prepare_import batch_id"
+        )
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
         kind=EXPORT_KIND,
@@ -963,28 +1062,6 @@ def ingest_personal_finance_export(
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )
-    records = _records_from_rows(
-        rows=rows,
-        source_refs=source_refs,
-        snapshot_id=active_snapshot_id,
-        as_of_utc=as_of_utc,
-        source_path=source_path,
-        time_semantics=time_semantics,
-        findings=findings,
-        coverage_mode=coverage_mode,
-    )
-    delta_base_batch_id: str | None = None
-    if coverage_mode == "delta":
-        records, delta_base_batch_id = _materialize_delta_positions(
-            records,
-            engine=engine,
-            source_id=source_id,
-            snapshot_id=active_snapshot_id,
-            tombstones=tombstones,
-            exclude_batch_id=prepared.batch.batch_id,
-        )
-        if delta_base_batch_id is None:
-            raise PersonalFinanceExportError("delta import requires a materialized base import")
     deletion_records = _import_tombstones(batch=prepared.batch, deletions=tombstones)
     materialize_import_batch(
         [receipt_index, *records, *deletion_records],
@@ -1001,7 +1078,7 @@ def ingest_personal_finance_export(
         receipt_id=receipt_id,
         receipt_ref=receipt_ref,
         account_count=sum(1 for record in records if isinstance(record, Account)),
-        position_count=sum(1 for record in records if isinstance(record, Position)),
+        position_count=final_position_count,
         liability_count=sum(1 for record in records if isinstance(record, Liability)),
         goal_count=sum(1 for record in records if isinstance(record, FinancialGoal)),
         cashflow_count=sum(1 for record in records if isinstance(record, CashflowEvent)),
@@ -1009,7 +1086,7 @@ def ingest_personal_finance_export(
         insurance_policy_count=sum(1 for record in records if isinstance(record, InsurancePolicy)),
         document_count=sum(1 for record in records if isinstance(record, DocumentRef)),
         as_of_utc=as_of_utc,
-        completeness_status=completeness_status(findings),
+        completeness_status=final_completeness,
         execution_allowed=False,
     )
 
