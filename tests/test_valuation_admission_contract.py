@@ -11,9 +11,13 @@ import contextlib
 import copy
 import csv
 import json
+import re
 import tempfile
 import unittest
+from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from finharness.artifact_store import LocalArtifactStore
 from finharness.beancount_adapter import ingest_beancount_ledger
@@ -44,7 +48,40 @@ TYPED_CSV_COLUMNS = [
     "unit_price", "valuation_currency", "price_currency",
     "valued_at_utc", "price_source_ref",
     "fx_rate", "fx_as_of_utc", "fx_source_ref",
+    "effective_at_utc", "observed_at_utc",
 ]
+
+# Full #374 canonical valuation finding closed set.
+VALUATION_CODES = frozenset({
+    "valuation_unpriced",
+    "valuation_fx_missing",
+    "valuation_stale",
+    "valuation_unknown_legacy",
+    "market_value_missing",
+    "unit_price_missing",
+    "valuation_currency_missing",
+    "price_currency_missing",
+    "valued_at_utc_missing",
+    "price_source_ref_missing",
+    "fx_rate_missing",
+    "fx_as_of_utc_missing",
+    "fx_source_ref_missing",
+    "fx_rate_not_positive",
+    "valued_at_invalid",
+    "valued_at_not_timezone_aware",
+    "fx_as_of_invalid",
+    "fx_as_of_not_timezone_aware",
+    "valuation_components_do_not_reconcile",
+    "market_price_stale",
+    "fx_stale",
+    "valued_at_after_evaluation",
+    "fx_as_of_after_evaluation",
+})
+
+_VALUATION_CODE_PATTERN = re.compile(
+    r"^(valuation_|market_value_|unit_price_|valuation_currency_|"
+    r"price_currency_|valued_at_|price_source_|fx_|market_price_)"
+)
 
 
 def _typed_row(overrides: dict | None = None) -> dict[str, str]:
@@ -58,6 +95,8 @@ def _typed_row(overrides: dict | None = None) -> dict[str, str]:
         "valued_at_utc": "2025-06-20T07:00:00+00:00",
         "price_source_ref": "fixture:test",
         "fx_rate": "", "fx_as_of_utc": "", "fx_source_ref": "",
+        "effective_at_utc": "2025-06-20T08:00:00+00:00",
+        "observed_at_utc": "2025-06-20T08:00:00+00:00",
     }
     if overrides:
         row.update(overrides)
@@ -68,28 +107,64 @@ def _pos_by_symbol(engine, symbol):
     return next(p for p in read_all(Position, engine=engine) if p.symbol == symbol)
 
 
-VALUATION_CODES = frozenset({
-    "valuation_unpriced", "valuation_fx_missing", "valuation_stale",
-    "valued_at_utc_missing", "price_source_ref_missing",
-    "valuation_components_do_not_reconcile",
-    "market_price_stale", "fx_stale",
-})
+def exactly_one(iterable: Iterable[Any]) -> Any:
+    """Return the sole item or raise a decisive AssertionError."""
+    items = list(iterable)
+    if len(items) != 1:
+        raise AssertionError(
+            f"expected exactly one match, got {len(items)}: {items!r}"
+        )
+    return items[0]
 
 
-def _normalize_finding(f):
-    """Return (code, severity) tuple from a finding dict or object."""
-    if isinstance(f, dict):
-        return (f.get("code", ""), f.get("severity", ""))
-    return (getattr(f, "code", ""), getattr(f, "severity", ""))
+def _finding_get(finding: Any, key: str) -> Any:
+    if isinstance(finding, dict):
+        return finding.get(key)
+    return getattr(finding, key, None)
 
 
-def _valuation_codes(findings, select_codes=None):
-    codes = set()
-    for f in findings or ():
-        cd, _ = _normalize_finding(f)
-        if cd and (select_codes is None or cd in select_codes):
-            codes.add(cd)
-    return codes
+def _normalize_valuation_finding(finding: Any) -> tuple:
+    """Normalize to (code, severity, record_type, record_number, field)."""
+    return (
+        _finding_get(finding, "code") or "",
+        _finding_get(finding, "severity") or "",
+        _finding_get(finding, "record_type"),
+        _finding_get(finding, "record_number"),
+        _finding_get(finding, "field"),
+    )
+
+
+def _is_valuation_shaped_code(code: str) -> bool:
+    if not code:
+        return False
+    if code in VALUATION_CODES:
+        return True
+    if "valuation" in code:
+        return True
+    if code.endswith("_stale"):
+        return True
+    return bool(_VALUATION_CODE_PATTERN.match(code))
+
+
+def _valuation_finding_tuples(findings) -> list[tuple]:
+    """Extract closed-set valuation findings as sorted normalized tuples.
+
+    Unknown valuation-shaped codes fail loudly so the contract set is updated.
+    """
+    tuples: list[tuple] = []
+    unknown: list[str] = []
+    for finding in findings or ():
+        code = _finding_get(finding, "code") or ""
+        if code in VALUATION_CODES:
+            tuples.append(_normalize_valuation_finding(finding))
+        elif _is_valuation_shaped_code(code):
+            unknown.append(code)
+    if unknown:
+        raise AssertionError(
+            "unknown valuation finding code(s) not in #374 closed set; "
+            f"update VALUATION_CODES contract: {sorted(set(unknown))}"
+        )
+    return sorted(tuples)
 
 
 def _assert_import_surface_agreement(
@@ -97,19 +172,31 @@ def _assert_import_surface_agreement(
     symbol, expected_status, expected_completeness,
     expected_codes,
 ):
-    """Verify batch/snapshot/receipt/result agreement for target Position."""
-    batches = list(read_all(ImportBatch, engine=engine))
-    manifests = list(read_all(ReceiptManifest, engine=engine))
-    snapshots = list(read_all(Snapshot, engine=engine))
-    test.assertEqual(len(batches), 1)
-    test.assertEqual(len(manifests), 1)
-    test.assertEqual(len(snapshots), 1)
-    batch = batches[0]
-    manifest = manifests[0]
-    snapshot = snapshots[0]
+    """Verify batch/snapshot/receipt/result agreement for target Position.
+
+    Selects import surfaces by result identity so multi-batch (delta) DBs work.
+    """
+    batch = exactly_one(
+        batch
+        for batch in read_all(ImportBatch, engine=engine)
+        if batch.batch_id == result.batch_id
+    )
+    manifest = exactly_one(
+        manifest
+        for manifest in read_all(ReceiptManifest, engine=engine)
+        if manifest.batch_id == result.batch_id
+    )
+    snapshot = exactly_one(
+        snapshot
+        for snapshot in read_all(Snapshot, engine=engine)
+        if snapshot.snapshot_id == manifest.snapshot_id
+    )
     pos = _pos_by_symbol(engine, symbol)
-    test.assertEqual(pos.valuation_status, expected_status,
-                     f"{symbol} status: {pos.valuation_status} != {expected_status}")
+    test.assertEqual(
+        pos.valuation_status,
+        expected_status,
+        f"{symbol} status: {pos.valuation_status} != {expected_status}",
+    )
     bc = batch.completeness_status
     sc = snapshot.payload.get("completeness_status")
     test.assertEqual(bc, expected_completeness)
@@ -119,19 +206,33 @@ def _assert_import_surface_agreement(
     receipt_payload = json.loads(receipt_bytes)
     rc = receipt_payload.get("completeness_status")
     test.assertEqual(rc, expected_completeness)
-    batch_codes = _valuation_codes(
-        getattr(batch, "findings", None), VALUATION_CODES)
-    snap_codes = _valuation_codes(
-        snapshot.payload.get("findings"), VALUATION_CODES)
-    receipt_codes = _valuation_codes(
-        receipt_payload.get("findings"), VALUATION_CODES)
-    test.assertEqual(batch_codes, snap_codes,
-                     f"batch={batch_codes} != snapshot={snap_codes}")
-    test.assertEqual(batch_codes, receipt_codes,
-                     f"batch={batch_codes} != receipt={receipt_codes}")
+
+    batch_tuples = _valuation_finding_tuples(getattr(batch, "findings", None))
+    snap_tuples = _valuation_finding_tuples(snapshot.payload.get("findings"))
+    receipt_tuples = _valuation_finding_tuples(receipt_payload.get("findings"))
+    test.assertEqual(
+        Counter(batch_tuples),
+        Counter(snap_tuples),
+        f"batch={batch_tuples} != snapshot={snap_tuples}",
+    )
+    test.assertEqual(
+        Counter(batch_tuples),
+        Counter(receipt_tuples),
+        f"batch={batch_tuples} != receipt={receipt_tuples}",
+    )
+    present_codes = [item[0] for item in batch_tuples]
     for code in expected_codes:
-        test.assertIn(code, batch_codes,
-                      f"{code} missing from batch findings: {batch_codes}")
+        test.assertIn(
+            code,
+            present_codes,
+            f"{code} missing from batch valuation findings: {batch_tuples}",
+        )
+    if not expected_codes:
+        test.assertEqual(
+            batch_tuples,
+            [],
+            f"expected empty valuation findings, got {batch_tuples}",
+        )
 
 
 # ============================================================================
@@ -148,6 +249,7 @@ class CompleteValuationPositiveControlTest(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
         self.receipt_root = self.root / "receipts"
+        self.store = LocalArtifactStore(self.receipt_root / "artifact-store")
 
     def _csv(self, rows):
         path = self.root / "export.csv"
@@ -159,18 +261,24 @@ class CompleteValuationPositiveControlTest(unittest.TestCase):
         return path
 
     def test_complete_direct_valuation_passes(self):
-        ingest_personal_finance_export(
+        result = ingest_personal_finance_export(
             self._csv([_typed_row()]), engine=self.engine,
             receipt_root=self.receipt_root,
-            artifact_store=LocalArtifactStore(
-                self.receipt_root / "artifact-store"),
+            artifact_store=self.store,
         )
         pos = _pos_by_symbol(self.engine, "SPY")
         self.assertEqual(pos.valuation_status, "valued")
         self.assertEqual(valuation_blockers(pos), ())
+        self.assertEqual(result.completeness_status, "complete")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="valued",
+            expected_completeness="complete",
+            expected_codes=(),
+        )
 
     def test_complete_converted_valuation_passes(self):
-        ingest_personal_finance_export(
+        result = ingest_personal_finance_export(
             self._csv([_typed_row({
                 "valuation_currency": "USD", "price_currency": "EUR",
                 "unit_price": "50", "market_value": "110",
@@ -178,12 +286,18 @@ class CompleteValuationPositiveControlTest(unittest.TestCase):
                 "fx_source_ref": "fixture:fx",
             })]), engine=self.engine,
             receipt_root=self.receipt_root,
-            artifact_store=LocalArtifactStore(
-                self.receipt_root / "artifact-store"),
+            artifact_store=self.store,
         )
         pos = _pos_by_symbol(self.engine, "SPY")
         self.assertEqual(pos.valuation_status, "valued_converted")
         self.assertEqual(valuation_blockers(pos), ())
+        self.assertEqual(result.completeness_status, "complete")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="valued_converted",
+            expected_completeness="complete",
+            expected_codes=(),
+        )
 
 
 class BrokerSnapshotTimePositiveControlTest(unittest.TestCase):
@@ -217,7 +331,7 @@ class BrokerSnapshotTimePositiveControlTest(unittest.TestCase):
         path = self.root / "broker-read" / "portfolio.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload), encoding="utf-8")
-        ingest_broker_read_receipt(
+        result = ingest_broker_read_receipt(
             path, engine=self.engine,
             receipt_root=self.import_root, artifact_store=self.store,
         )
@@ -225,6 +339,13 @@ class BrokerSnapshotTimePositiveControlTest(unittest.TestCase):
         self.assertEqual(pos.valued_at_utc, "2025-06-20T09:00:00+00:00")
         self.assertEqual(pos.valuation_status, "valued")
         self.assertEqual(valuation_blockers(pos), ())
+        self.assertEqual(result.completeness_status, "complete")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="valued",
+            expected_completeness="complete",
+            expected_codes=(),
+        )
 
 
 # ============================================================================
