@@ -1,0 +1,9 @@
+option "operating_currency" "USD"
+2025-01-01 open Assets:Brokerage
+2025-01-01 open Equity:Opening
+2025-06-18 * "Buy"
+  Assets:Brokerage  10 AAA {50 USD}
+  Assets:Brokerage  5 BBB {100 USD}
+  Equity:Opening
+2025-06-18 price AAA  55 USD
+2025-06-15 price BBB  105 USD
