@@ -63,18 +63,3 @@ __all__ = [
     "upsert_records",
     "write_records",
 ]
-
-
-def _bind_production_import_materialization_kinds() -> None:
-    from finharness.capital_import_registry import (
-        PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
-    )
-    from finharness.statecore import store
-
-    store._PRODUCTION_IMPORT_KINDS = set(
-        PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES
-    )
-
-
-_bind_production_import_materialization_kinds()
-del _bind_production_import_materialization_kinds
