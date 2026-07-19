@@ -759,14 +759,19 @@ def _validate_import_envelope(  # noqa: C901
         expected_source_refs = [manifest.receipt_ref, batch.source_id]
         if receipt_index.source_refs != expected_source_refs:
             raise StateCoreStoreError("receipt index source_refs contract mismatch")
-    if manifest.snapshot_id and source in _PRODUCTION_SOURCE_KINDS:
-        snapshots = [
-            record for record in records
-            if isinstance(record, Snapshot) and record.snapshot_id == manifest.snapshot_id
+    if manifest.snapshot_id and source == "broker_read":
+        all_snapshots = [
+            record for record in records if isinstance(record, Snapshot)
         ]
-        if len(snapshots) != 1:
-            raise StateCoreStoreError("manifest declares snapshot_id but record count != 1")
-        active_snapshot = snapshots[0]
+        if len(all_snapshots) != 1:
+            raise StateCoreStoreError(
+                f"manifest declares snapshot_id but found {len(all_snapshots)} snapshots"
+            )
+        if all_snapshots[0].snapshot_id != manifest.snapshot_id:
+            raise StateCoreStoreError(
+                f"snapshot id {all_snapshots[0].snapshot_id!r} != manifest {manifest.snapshot_id!r}"
+            )
+        active_snapshot = all_snapshots[0]
         snapshot_payload = active_snapshot.payload
         required_bindings = {
             "import_batch_id": batch.batch_id,
@@ -776,13 +781,43 @@ def _validate_import_envelope(  # noqa: C901
             "source_artifact_id": batch.source_artifact_id,
             "record_counts": batch.record_counts,
             "completeness_status": batch.completeness_status,
+            "findings": batch.findings,
         }
         for key, expected in required_bindings.items():
-            actual = snapshot_payload.get(key)
-            if actual is not None and actual != expected:
+            if key not in snapshot_payload:
                 raise StateCoreStoreError(
-                    f"snapshot payload {key!r} binding mismatch: {actual!r} != {expected!r}"
+                    f"snapshot payload missing required import binding: {key}"
                 )
+            if snapshot_payload[key] != expected:
+                raise StateCoreStoreError(
+                    f"snapshot payload {key!r} binding mismatch: "
+                    f"{snapshot_payload[key]!r} != {expected!r}"
+                )
+    if source == "broker_read":
+        from finharness.capital_import_registry import receipt_index_contract_fields
+
+        try:
+            receipt_payload = json.loads(receipt_content)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            receipt_payload = {}
+        contract = receipt_index_contract_fields(
+            source_kind=source,
+            receipt_ref=manifest.receipt_ref,
+            created_at_utc=receipt_descriptor.created_at_utc,
+            source_ref=str(receipt_payload.get("source_ref") or batch.source_id),
+            upstream_receipt_id=receipt_payload.get("upstream_receipt_id"),
+            source_artifact_id=batch.source_artifact_id,
+        )
+        if receipt_index.kind != contract["kind"]:
+            raise StateCoreStoreError("receipt index kind contract mismatch")
+        if receipt_index.path != contract["path"]:
+            raise StateCoreStoreError("receipt index path contract mismatch")
+        if receipt_index.created_at_utc != contract["created_at_utc"]:
+            raise StateCoreStoreError("receipt index created_at_utc contract mismatch")
+        if receipt_index.source_refs != contract["source_refs"]:
+            raise StateCoreStoreError("receipt index source_refs contract mismatch")
+        if receipt_index.refs != contract["refs"]:
+            raise StateCoreStoreError("receipt index refs contract mismatch")
 
 
 def _validate_import_contract_fields(

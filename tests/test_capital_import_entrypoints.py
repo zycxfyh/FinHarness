@@ -279,6 +279,7 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
         manifest = read_all(ReceiptManifest, engine=self.engine)[0]
         self.assertEqual(result.capital_import_batch_id, batch.batch_id)
         self.assertEqual(result.capital_import_manifest_id, manifest.manifest_id)
+        self.assertEqual(result.capital_import_receipt_id, manifest.receipt_id)
         self.assertEqual(result.capital_import_receipt_ref, manifest.receipt_ref)
 
         proposal = next(
@@ -287,21 +288,17 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
             if item.proposal_id == result.proposal_id
         )
         self.assertEqual(
-            proposal.evidence["capital_import_batch_id"],
-            result.capital_import_batch_id,
+            proposal.evidence["capital_import_receipt_id"],
+            result.capital_import_receipt_id,
         )
         self.assertEqual(
-            proposal.evidence["capital_import_manifest_id"],
-            result.capital_import_manifest_id,
+            proposal.evidence["capital_import_receipt_ref"],
+            result.capital_import_receipt_ref,
         )
         brief = json.loads(Path(result.receipt_ref).read_text(encoding="utf-8"))
         self.assertEqual(
-            brief["capital_import_batch_id"],
-            result.capital_import_batch_id,
-        )
-        self.assertEqual(
-            brief["capital_import_manifest_id"],
-            result.capital_import_manifest_id,
+            brief["capital_import_receipt_id"],
+            result.capital_import_receipt_id,
         )
         self.assertEqual(
             brief["capital_import_receipt_ref"],

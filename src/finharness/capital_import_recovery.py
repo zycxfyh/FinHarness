@@ -606,21 +606,29 @@ def recover_capital_imports(
                     atomic_write_bytes(target, content)
                     actions.append(f"restored_receipt_file:{manifest.receipt_id}")
                 current_index = session.get(ReceiptIndex, manifest.receipt_id)
-                if current_index is None or current_index.path != manifest.receipt_ref:
-                    payload = json.loads(content)
-                    batch = batches[manifest.batch_id]
-                    source_ref = str(payload.get("source_ref") or batch.source_id)
-                    upstream_id = payload.get("upstream_receipt_id")
-                    from finharness.capital_import_registry import receipt_index_contract_fields
+                payload = json.loads(content)
+                batch = batches[manifest.batch_id]
+                source_ref = str(payload.get("source_ref") or batch.source_id)
+                upstream_id = payload.get("upstream_receipt_id")
+                from finharness.capital_import_registry import receipt_index_contract_fields
 
-                    contract = receipt_index_contract_fields(
-                        source_kind=batch.source_kind,
-                        receipt_ref=manifest.receipt_ref,
-                        created_at_utc=batch.as_of_utc,
-                        source_ref=source_ref,
-                        upstream_receipt_id=upstream_id,
-                        source_artifact_id=manifest.receipt_artifact_id,
-                    )
+                contract = receipt_index_contract_fields(
+                    source_kind=batch.source_kind,
+                    receipt_ref=manifest.receipt_ref,
+                    created_at_utc=batch.as_of_utc,
+                    source_ref=source_ref,
+                    upstream_receipt_id=upstream_id,
+                    source_artifact_id=batch.source_artifact_id,
+                )
+                needs_rebuild = (
+                    current_index is None
+                    or current_index.kind != contract["kind"]
+                    or current_index.path != contract["path"]
+                    or current_index.created_at_utc != contract["created_at_utc"]
+                    or current_index.source_refs != contract["source_refs"]
+                    or current_index.refs != contract["refs"]
+                )
+                if needs_rebuild:
                     session.merge(
                         ReceiptIndex(
                             receipt_id=manifest.receipt_id,

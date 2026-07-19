@@ -295,6 +295,7 @@ def run_daily_change_brief(
             "after_snapshot_id": after_snapshot.snapshot_id,
             "capital_import_batch_id": capital_import.batch_id,
             "capital_import_manifest_id": capital_import.manifest_id,
+            "capital_import_receipt_id": capital_import.receipt_id,
             "capital_import_receipt_ref": capital_import.receipt_ref,
             "diff": diff.as_dict() if diff else None,
             "observations": _observation_dicts(observations),
