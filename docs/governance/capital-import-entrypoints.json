@@ -1,0 +1,107 @@
+{
+  "schema": "finharness.capital_import_entrypoints.v1",
+  "status": "current",
+  "generated_from": "src/finharness/capital_import_registry.py",
+  "adapters": [
+    {
+      "adapter_id": "personal-finance-export",
+      "source_kind": "personal_finance_export",
+      "materialized_source": "personal_finance_export",
+      "module": "finharness.personal_finance",
+      "symbol": "ingest_personal_finance_export",
+      "result_type": "PersonalFinanceImportResult",
+      "materializer_symbol": "materialize_import_batch",
+      "source_artifact_schema": "finharness.import_source_evidence",
+      "receipt_artifact_schema": "finharness.import_receipt"
+    },
+    {
+      "adapter_id": "beancount-ledger",
+      "source_kind": "beancount_ledger",
+      "materialized_source": "beancount_ledger",
+      "module": "finharness.beancount_adapter",
+      "symbol": "ingest_beancount_ledger",
+      "result_type": "BeancountImportResult",
+      "materializer_symbol": "materialize_import_batch",
+      "source_artifact_schema": "finharness.import_source_evidence",
+      "receipt_artifact_schema": "finharness.import_receipt"
+    },
+    {
+      "adapter_id": "broker-read-receipt",
+      "source_kind": "broker_read",
+      "materialized_source": "broker_read_import",
+      "module": "finharness.statecore.snapshot_ingest",
+      "symbol": "ingest_broker_read_receipt",
+      "result_type": "BrokerReadImportResult",
+      "materializer_symbol": "materialize_import_batch",
+      "source_artifact_schema": "finharness.import_source_evidence",
+      "receipt_artifact_schema": "finharness.import_receipt"
+    }
+  ],
+  "exposures": [
+    {
+      "exposure_id": "task-personal-finance-import",
+      "exposure_kind": "task",
+      "exposure_ref": "personal-finance:import",
+      "adapter_id": "personal-finance-export",
+      "production": true
+    },
+    {
+      "exposure_id": "script-personal-finance-import",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/import_personal_finance_export.py",
+      "adapter_id": "personal-finance-export",
+      "production": true
+    },
+    {
+      "exposure_id": "task-beancount-import",
+      "exposure_kind": "task",
+      "exposure_ref": "beancount:import",
+      "adapter_id": "beancount-ledger",
+      "production": true
+    },
+    {
+      "exposure_id": "script-beancount-import",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/import_beancount_ledger.py",
+      "adapter_id": "beancount-ledger",
+      "production": true
+    },
+    {
+      "exposure_id": "task-cockpit-daily",
+      "exposure_kind": "task",
+      "exposure_ref": "cockpit:daily",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    },
+    {
+      "exposure_id": "script-daily-change-brief",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/run_daily_change_brief.py",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    },
+    {
+      "exposure_id": "function-daily-change-brief",
+      "exposure_kind": "function",
+      "exposure_ref": "finharness.daily_change_brief.run_daily_change_brief",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    },
+    {
+      "exposure_id": "function-broker-receipt-compat",
+      "exposure_kind": "function",
+      "exposure_ref": "finharness.statecore.snapshot_ingest.ingest_portfolio_snapshot_from_receipt",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    }
+  ],
+  "empty_surface_claims": {
+    "api": [],
+    "agent": []
+  },
+  "non_claims": [
+    "Registration does not make an import current CapitalState.",
+    "Complete materialization does not prove valuation admission.",
+    "No import adapter grants execution authority."
+  ]
+}
