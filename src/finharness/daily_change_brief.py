@@ -21,9 +21,12 @@ from finharness.statecore.observations import (
 )
 from finharness.statecore.proposals import GovernedProposalWrite, create_governed_proposal
 from finharness.statecore.receipt_io import atomic_write_json, atomic_write_text
-from finharness.statecore.snapshot_ingest import ingest_portfolio_snapshot_from_receipt
+from finharness.statecore.snapshot_ingest import (
+    DEFAULT_BROKER_IMPORT_RECEIPT_ROOT,
+    ingest_broker_read_receipt,
+)
 from finharness.statecore.snapshots import latest_portfolio_snapshot, portfolio_positions
-from finharness.statecore.store import upsert_records
+from finharness.statecore.store import StateCoreStoreError, get_snapshot, upsert_records
 
 DEFAULT_MARKDOWN_PATH = ROOT / "docs" / "operations" / "daily-change-brief-latest.md"
 DEFAULT_STATE_CORE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "state-core"
@@ -48,6 +51,10 @@ class DailyChangeBriefResult:
     markdown_ref: str
     receipt_ref: str
     observation_count: int
+    capital_import_batch_id: str
+    capital_import_manifest_id: str
+    capital_import_receipt_id: str
+    capital_import_receipt_ref: str
     execution_allowed: bool = False
 
     def as_dict(self) -> dict[str, Any]:
@@ -90,14 +97,7 @@ def _claim(status: BriefStatus, observations: tuple[Observation, ...]) -> str:
 def _change_scaffold(
     status: BriefStatus, observations: tuple[Observation, ...]
 ) -> dict[str, str]:
-    """Decision scaffold for the daily-change review candidate.
-
-    The thesis is the real computed claim; the do-nothing/risk fields carry the
-    concrete status and flagged-observation count so the brake is specific, not
-    boilerplate. (This candidate is a generic "should I look at today's change",
-    not an asset-level buy/sell, so the do-nothing/risk wording is templated around
-    those real signals rather than per-instrument.)
-    """
+    """Decision scaffold for the daily-change review candidate."""
     count = len(observations)
     return {
         "decision_intent": "Review today's portfolio change before it goes unexamined.",
@@ -123,6 +123,9 @@ def _render_markdown(
     observations: tuple[Observation, ...],
     thresholds: ObservationThresholds,
     proposal: GovernedProposalWrite,
+    capital_import_batch_id: str,
+    capital_import_manifest_id: str,
+    capital_import_receipt_ref: str,
 ) -> str:
     lines = [
         "# Daily Change Brief",
@@ -130,6 +133,9 @@ def _render_markdown(
         f"- Status: `{status}`",
         f"- After snapshot: `{after_snapshot.snapshot_id}` at `{after_snapshot.as_of_utc}`",
         f"- Before snapshot: `{before_snapshot.snapshot_id if before_snapshot else 'baseline'}`",
+        f"- Capital import batch: `{capital_import_batch_id}`",
+        f"- Capital import manifest: `{capital_import_manifest_id}`",
+        f"- Capital import receipt: `{capital_import_receipt_ref}`",
         f"- Proposal: `{proposal.proposal.proposal_id}`",
         f"- Execution allowed: `{str(proposal.execution_allowed).lower()}`",
         "",
@@ -190,6 +196,10 @@ def _brief_receipt_payload(
     proposal: GovernedProposalWrite,
     markdown_ref: str,
     source_refs: list[str],
+    capital_import_batch_id: str,
+    capital_import_manifest_id: str,
+    capital_import_receipt_id: str,
+    capital_import_receipt_ref: str,
 ) -> dict[str, Any]:
     return {
         "receipt_id": receipt_id,
@@ -198,6 +208,10 @@ def _brief_receipt_payload(
         "status": status,
         "after_snapshot_id": after_snapshot.snapshot_id,
         "before_snapshot_id": before_snapshot.snapshot_id if before_snapshot else None,
+        "capital_import_batch_id": capital_import_batch_id,
+        "capital_import_manifest_id": capital_import_manifest_id,
+        "capital_import_receipt_id": capital_import_receipt_id,
+        "capital_import_receipt_ref": capital_import_receipt_ref,
         "diff": diff.as_dict() if diff else None,
         "observations": _observation_dicts(observations),
         "thresholds": thresholds.as_dict(),
@@ -215,15 +229,25 @@ def run_daily_change_brief(
     portfolio_receipt: str | Path,
     engine: Engine,
     thresholds: ObservationThresholds | None = None,
+    broker_import_receipt_root: str | Path = DEFAULT_BROKER_IMPORT_RECEIPT_ROOT,
     state_core_receipt_root: str | Path = DEFAULT_STATE_CORE_RECEIPT_ROOT,
     brief_receipt_root: str | Path = DEFAULT_BRIEF_RECEIPT_ROOT,
     markdown_path: str | Path = DEFAULT_MARKDOWN_PATH,
 ) -> DailyChangeBriefResult:
-    """Run ingest -> diff -> deterministic observations -> governed proposal."""
+    """Run manifested ingest -> diff -> observations -> governed proposal."""
     logger = get_logger(__name__)
     active_thresholds = thresholds or ObservationThresholds()
     receipt_path = Path(portfolio_receipt)
-    after_snapshot = ingest_portfolio_snapshot_from_receipt(receipt_path, engine=engine)
+    capital_import = ingest_broker_read_receipt(
+        receipt_path,
+        engine=engine,
+        receipt_root=broker_import_receipt_root,
+    )
+    after_snapshot = get_snapshot(capital_import.snapshot_id, engine=engine)
+    if after_snapshot is None:
+        raise StateCoreStoreError(
+            f"materialized broker snapshot missing: {capital_import.snapshot_id}"
+        )
     before_snapshot = latest_portfolio_snapshot(
         engine=engine,
         before=after_snapshot.as_of_utc,
@@ -250,6 +274,8 @@ def run_daily_change_brief(
         "kind": "daily_change_brief",
         "after_snapshot_id": after_snapshot.snapshot_id,
         "before_snapshot_id": before_snapshot.snapshot_id if before_snapshot else None,
+        "capital_import_batch_id": capital_import.batch_id,
+        "capital_import_manifest_id": capital_import.manifest_id,
         "thresholds": active_thresholds.as_dict(),
     }
     run_hash = _run_hash(identity)
@@ -267,6 +293,10 @@ def run_daily_change_brief(
             "status": status,
             "before_snapshot_id": before_snapshot.snapshot_id if before_snapshot else None,
             "after_snapshot_id": after_snapshot.snapshot_id,
+            "capital_import_batch_id": capital_import.batch_id,
+            "capital_import_manifest_id": capital_import.manifest_id,
+            "capital_import_receipt_id": capital_import.receipt_id,
+            "capital_import_receipt_ref": capital_import.receipt_ref,
             "diff": diff.as_dict() if diff else None,
             "observations": _observation_dicts(observations),
             "thresholds": active_thresholds.as_dict(),
@@ -297,6 +327,9 @@ def run_daily_change_brief(
             observations=observations,
             thresholds=active_thresholds,
             proposal=proposal,
+            capital_import_batch_id=capital_import.batch_id,
+            capital_import_manifest_id=capital_import.manifest_id,
+            capital_import_receipt_ref=capital_import.receipt_ref,
         ),
     )
     brief_receipt_id = _safe_id(f"receipt_daily_change_brief_{run_date}_{run_hash}")
@@ -311,6 +344,10 @@ def run_daily_change_brief(
         thresholds=active_thresholds,
         proposal=proposal,
         markdown_ref=markdown_ref,
+        capital_import_batch_id=capital_import.batch_id,
+        capital_import_manifest_id=capital_import.manifest_id,
+        capital_import_receipt_id=capital_import.receipt_id,
+        capital_import_receipt_ref=capital_import.receipt_ref,
         source_refs=source_refs,
     )
     atomic_write_json(brief_receipt_path, brief_payload)
@@ -323,7 +360,7 @@ def run_daily_change_brief(
                 path=brief_receipt_ref,
                 created_at_utc=after_snapshot.as_of_utc,
                 source_refs=[brief_receipt_ref],
-                refs=[proposal.receipt_ref, *source_refs],
+                refs=[proposal.receipt_ref, capital_import.receipt_ref, *source_refs],
             )
         ],
         engine=engine,
@@ -333,6 +370,8 @@ def run_daily_change_brief(
         status=status,
         after_snapshot_id=after_snapshot.snapshot_id,
         before_snapshot_id=before_snapshot.snapshot_id if before_snapshot else None,
+        capital_import_batch_id=capital_import.batch_id,
+        capital_import_manifest_id=capital_import.manifest_id,
         observation_count=len(observations),
         proposal_id=proposal.proposal.proposal_id,
         execution_allowed=False,
@@ -346,5 +385,9 @@ def run_daily_change_brief(
         markdown_ref=markdown_ref,
         receipt_ref=brief_receipt_ref,
         observation_count=len(observations),
+        capital_import_batch_id=capital_import.batch_id,
+        capital_import_manifest_id=capital_import.manifest_id,
+        capital_import_receipt_id=capital_import.receipt_id,
+        capital_import_receipt_ref=capital_import.receipt_ref,
         execution_allowed=False,
     )

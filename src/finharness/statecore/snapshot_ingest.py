@@ -1,8 +1,10 @@
-"""Portfolio snapshot ingestion for broker-read evidence."""
+"""Portfolio snapshot normalization and manifested broker-read ingestion."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Engine
 
+from finharness.artifact_store import ArtifactStore, LocalArtifactStore
 from finharness.capital_import_contract import (
     CapitalImportContractError,
     ImportFinding,
@@ -18,6 +21,8 @@ from finharness.capital_import_contract import (
     currency_code,
     exact_decimal,
 )
+from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
@@ -29,14 +34,57 @@ from finharness.statecore.models import (
     IdentityAlias,
     InstrumentIdentity,
     Position,
+    ReceiptIndex,
     Snapshot,
 )
-from finharness.statecore.receipt_index import _display_path, receipt_index_record_from_path
-from finharness.statecore.store import StateCoreStoreError, upsert_records
+from finharness.statecore.receipt_index import _display_path
+from finharness.statecore.store import (
+    StateCoreRecord,
+    StateCoreStoreError,
+    materialize_import_batch,
+)
+
+BROKER_READ_SOURCE_KIND = "broker_read"
+BROKER_READ_MATERIALIZED_SOURCE = "broker_read_import"
+BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v1"
+DEFAULT_BROKER_IMPORT_RECEIPT_ROOT = (
+    ROOT / "data" / "receipts" / "capital-imports" / "broker-read"
+)
+BROKER_IMPORT_NON_CLAIMS = (
+    "Read-only broker receipt import.",
+    "Not investment advice.",
+    "Not execution authorization.",
+)
+
+
+@dataclass(frozen=True)
+class BrokerReadImportResult:
+    batch_id: str
+    manifest_id: str
+    snapshot_id: str
+    receipt_id: str
+    receipt_ref: str
+    source_artifact_id: str
+    upstream_receipt_id: str | None
+    account_count: int
+    position_count: int
+    record_counts: dict[str, int]
+    findings: list[dict[str, Any]]
+    as_of_utc: str
+    completeness_status: str
+    execution_allowed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def _safe_id(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"_", "-", "."} else "_" for ch in value)
+
+
+def _broker_import_version(source_ref: str, source_sha256: str) -> str:
+    identity = f"{source_ref}\x00{source_sha256}".encode()
+    return hashlib.sha256(identity).hexdigest()[:24]
 
 
 def _string(value: Any, default: str = "") -> str:
@@ -307,7 +355,10 @@ def _position_records(
 
 
 def _time_contract(
-    payload: dict[str, Any], positions: list[dict[str, Any]]
+    payload: dict[str, Any],
+    positions: list[dict[str, Any]],
+    *,
+    ingested_at_utc: str | None = None,
 ) -> tuple[dict[str, str | None], list[ImportFinding]]:
     needs_legacy = not payload.get("effective_at_utc") or not payload.get("observed_at_utc")
     legacy = _created_at(payload) if needs_legacy else None
@@ -344,7 +395,7 @@ def _time_contract(
             effective_at=effective,
             observed_at=observed,
             valued_at=valued,
-            ingested_at=datetime.now(UTC),
+            ingested_at=ingested_at_utc or datetime.now(UTC),
         )
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
@@ -357,6 +408,7 @@ def _portfolio_records_with_identities(
     *,
     source_ref: str,
     snapshot_id: str | None = None,
+    ingested_at_utc: str | None = None,
 ) -> tuple[
     Account,
     AccountIdentity,
@@ -365,18 +417,17 @@ def _portfolio_records_with_identities(
     list[InstrumentIdentity],
     list[Position],
 ]:
-    """Normalize a broker-read payload into state-core records.
-
-    This is state ingestion only. It never infers positions from orders or
-    execution plans, and it leaves cost basis empty unless the source disclosed
-    it directly.
-    """
+    """Normalize broker-read evidence without persisting it."""
     if not isinstance(payload, dict):
         raise StateCoreStoreError("portfolio snapshot input must be a JSON object")
     account_payload = _account_payload(payload)
     positions_payload = _positions_payload(payload)
     try:
-        time_semantics, findings = _time_contract(payload, positions_payload)
+        time_semantics, findings = _time_contract(
+            payload,
+            positions_payload,
+            ingested_at_utc=ingested_at_utc,
+        )
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
     as_of_utc = str(time_semantics["observed_at_utc"])
@@ -412,6 +463,7 @@ def _portfolio_records_with_identities(
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
     findings.extend(position_findings)
+    record_counts = {"account": 1, "position": len(position_records)}
     account = Account(
         account_id=account_id,
         canonical_account_id=account_id,
@@ -431,11 +483,15 @@ def _portfolio_records_with_identities(
         kind="portfolio",
         as_of_utc=as_of_utc,
         payload={
-            "source": "broker_read",
+            "source": BROKER_READ_MATERIALIZED_SOURCE,
+            "adapter_version": BROKER_READ_ADAPTER_VERSION,
             "account": account_payload,
+            "record_counts": record_counts,
             "position_count": len(normalized_positions),
             "positions": normalized_positions,
-            "omitted_position_count": len(position_findings),
+            "omitted_position_count": sum(
+                1 for finding in findings if finding.code == "omitted_incomplete_position"
+            ),
             "positions_source_disclosed": bool(positions_payload),
             "coverage_mode": "full",
             "completeness_status": completeness_status(findings),
@@ -466,22 +522,213 @@ def portfolio_records_from_broker_payload(
     source_ref: str,
     snapshot_id: str | None = None,
 ) -> tuple[Account, Snapshot, list[Position]]:
-    """Compatibility projection; identity records are persisted by ingest helpers."""
+    """Pure compatibility projection; this function never writes State Core."""
     account, _account_identity, _aliases, snapshot, _instruments, positions = (
         _portfolio_records_with_identities(payload, source_ref=source_ref, snapshot_id=snapshot_id)
     )
     return account, snapshot, positions
 
 
-def load_portfolio_payload_from_receipt(path: str | Path) -> dict[str, Any]:
-    target = Path(path)
+def _payload_from_exact_bytes(target: Path, source_content: bytes) -> dict[str, Any]:
     try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = json.loads(source_content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise StateCoreStoreError(f"portfolio receipt unreadable: {target}: {exc}") from exc
     if not isinstance(payload, dict):
         raise StateCoreStoreError(f"portfolio receipt must contain a JSON object: {target}")
     return payload
+
+
+def load_portfolio_payload_from_receipt(path: str | Path) -> dict[str, Any]:
+    target = Path(path)
+    try:
+        source_content = target.read_bytes()
+    except OSError as exc:
+        raise StateCoreStoreError(f"portfolio receipt unreadable: {target}: {exc}") from exc
+    return _payload_from_exact_bytes(target, source_content)
+
+
+def _set_lineage_refs(records: list[StateCoreRecord], refs: list[str]) -> None:
+    for record in records:
+        if hasattr(record, "source_refs"):
+            record.source_refs = list(refs)
+
+
+def _ingest_broker_read_receipt_with_snapshot(
+    path: str | Path,
+    *,
+    engine: Engine,
+    receipt_root: str | Path | None = None,
+    artifact_store: ArtifactStore | None = None,
+    snapshot_id: str | None = None,
+) -> tuple[BrokerReadImportResult, Snapshot]:
+    target = Path(path)
+    try:
+        source_content = target.read_bytes()
+    except OSError as exc:
+        raise StateCoreStoreError(f"portfolio receipt unreadable: {target}: {exc}") from exc
+    source_sha256 = hashlib.sha256(source_content).hexdigest()
+    payload = _payload_from_exact_bytes(target, source_content)
+    source_ref = _display_path(target)
+    active_receipt_root = (
+        Path(receipt_root)
+        if receipt_root is not None
+        else target.parent / "capital-import"
+    )
+    active_artifact_store = artifact_store or LocalArtifactStore(
+        active_receipt_root / "artifact-store"
+    )
+    source_descriptor = persist_source_evidence(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        source_content=source_content,
+        source_sha256=source_sha256,
+        artifact_store=active_artifact_store,
+        created_at_utc=datetime.now(UTC).isoformat(),
+    )
+    version_fragment = _broker_import_version(source_ref, source_sha256)
+    expected_snapshot_id = f"snap_broker_read_{version_fragment}"
+    if snapshot_id is not None and snapshot_id != expected_snapshot_id:
+        raise StateCoreStoreError(
+            "broker recovery snapshot_id does not match exact source identity"
+        )
+    active_snapshot_id = expected_snapshot_id
+    import_receipt_id = f"receipt_broker_read_import_{version_fragment}"
+    import_receipt_path = active_receipt_root / f"{import_receipt_id}.json"
+    import_receipt_ref = _display_path(import_receipt_path)
+    (
+        account,
+        account_identity_record,
+        aliases,
+        snapshot,
+        instrument_identities,
+        positions,
+    ) = _portfolio_records_with_identities(
+        payload,
+        source_ref=source_ref,
+        snapshot_id=active_snapshot_id,
+        ingested_at_utc=source_descriptor.created_at_utc,
+    )
+    record_counts = dict(snapshot.payload["record_counts"])
+    receipt_payload = {
+        "receipt_id": import_receipt_id,
+        "kind": BROKER_READ_SOURCE_KIND,
+        "adapter_version": BROKER_READ_ADAPTER_VERSION,
+        "source_ref": source_ref,
+        "source_sha256": source_sha256,
+        "upstream_receipt_id": (
+            str(payload["receipt_id"]) if payload.get("receipt_id") is not None else None
+        ),
+        "upstream_kind": str(payload.get("kind") or BROKER_READ_SOURCE_KIND),
+        "snapshot_id": active_snapshot_id,
+        "record_counts": record_counts,
+        "non_claims": list(BROKER_IMPORT_NON_CLAIMS),
+        "execution_allowed": False,
+    }
+    prepared = prepare_import(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        source_id=source_ref,
+        source_content=source_content,
+        source_sha256=source_sha256,
+        adapter_version=BROKER_READ_ADAPTER_VERSION,
+        coverage_mode="full",
+        record_counts=record_counts,
+        snapshot_id=active_snapshot_id,
+        receipt_id=import_receipt_id,
+        receipt_root=active_receipt_root,
+        receipt_ref=import_receipt_ref,
+        artifact_store=active_artifact_store,
+        receipt_payload=receipt_payload,
+        created_at_utc=source_descriptor.created_at_utc,
+        completeness_status=str(snapshot.payload["completeness_status"]),
+        time_semantics=dict(snapshot.payload["time_semantics"]),
+        findings=list(snapshot.payload["findings"]),
+        covered_domains=["position"],
+        corporate_action_status="unsupported_gap" if positions else "not_applicable",
+    )
+    lineage_refs = [import_receipt_ref, source_ref]
+    all_records: list[StateCoreRecord] = [
+        account_identity_record,
+        *instrument_identities,
+        *aliases,
+        account,
+        snapshot,
+        *positions,
+    ]
+    _set_lineage_refs(all_records, lineage_refs)
+    snapshot.payload = {
+        **snapshot.payload,
+        "import_batch_id": prepared.batch.batch_id,
+        "receipt_manifest_id": prepared.manifest.manifest_id,
+        "import_receipt_id": import_receipt_id,
+        "import_receipt_ref": import_receipt_ref,
+        "source_artifact_id": prepared.batch.source_artifact_id,
+    }
+    from typing import cast
+
+    from finharness.capital_import_registry import receipt_index_contract_fields
+
+    contract = receipt_index_contract_fields(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        receipt_ref=import_receipt_ref,
+        created_at_utc=source_descriptor.created_at_utc,
+        source_ref=source_ref,
+        upstream_receipt_id=cast(str | None, receipt_payload.get("upstream_receipt_id")),
+        source_artifact_id=prepared.batch.source_artifact_id,
+    )
+    receipt_index = ReceiptIndex(
+        receipt_id=import_receipt_id,
+        kind=cast(str, contract["kind"]),
+        path=cast(str, contract["path"]),
+        created_at_utc=cast(str, contract["created_at_utc"]),
+        source_refs=cast(list[str], contract["source_refs"]),
+        refs=cast(list[str], contract["refs"]),
+    )
+    materialize_import_batch(
+        [receipt_index, *all_records],
+        source=BROKER_READ_SOURCE_KIND,
+        batch=prepared.batch,
+        manifest=prepared.manifest,
+        artifact_store=active_artifact_store,
+        engine=engine,
+    )
+    result = BrokerReadImportResult(
+        batch_id=prepared.batch.batch_id,
+        manifest_id=prepared.manifest.manifest_id,
+        snapshot_id=active_snapshot_id,
+        receipt_id=import_receipt_id,
+        receipt_ref=import_receipt_ref,
+        source_artifact_id=prepared.batch.source_artifact_id,
+        upstream_receipt_id=(
+            str(payload["receipt_id"]) if payload.get("receipt_id") is not None else None
+        ),
+        account_count=1,
+        position_count=len(positions),
+        record_counts=dict(record_counts),
+        findings=list(snapshot.payload["findings"]),
+        as_of_utc=snapshot.as_of_utc,
+        completeness_status=str(snapshot.payload["completeness_status"]),
+        execution_allowed=False,
+    )
+    return result, snapshot
+
+
+def ingest_broker_read_receipt(
+    path: str | Path,
+    *,
+    engine: Engine,
+    receipt_root: str | Path | None = None,
+    artifact_store: ArtifactStore | None = None,
+    snapshot_id: str | None = None,
+) -> BrokerReadImportResult:
+    """Materialize one broker-read receipt through the canonical import envelope."""
+    result, _snapshot = _ingest_broker_read_receipt_with_snapshot(
+        path,
+        engine=engine,
+        receipt_root=receipt_root,
+        artifact_store=artifact_store,
+        snapshot_id=snapshot_id,
+    )
+    return result
 
 
 def ingest_portfolio_snapshot_from_payload(
@@ -490,35 +737,26 @@ def ingest_portfolio_snapshot_from_payload(
     source_ref: str,
     engine: Engine,
 ) -> Snapshot:
-    account, account_id, aliases, snapshot, instruments, positions = (
-        _portfolio_records_with_identities(
-            payload,
-            source_ref=source_ref,
-        )
+    """Reject the legacy direct-mutation surface; use the pure normalizer instead."""
+    del payload, source_ref, engine
+    raise StateCoreStoreError(
+        "direct broker payload materialization is not a production import surface; "
+        "persist an immutable broker-read receipt and use ingest_broker_read_receipt"
     )
-    upsert_records(
-        [account_id, *instruments, *aliases, account, snapshot, *positions], engine=engine
-    )
-    return snapshot
 
 
 def ingest_portfolio_snapshot_from_receipt(
     path: str | Path,
     *,
     engine: Engine,
+    receipt_root: str | Path | None = None,
+    artifact_store: ArtifactStore | None = None,
 ) -> Snapshot:
-    target = Path(path)
-    source_ref = _display_path(target)
-    payload = load_portfolio_payload_from_receipt(target)
-    receipt_index = receipt_index_record_from_path(target, receipt_root=target.parent)
-    account, account_id, aliases, snapshot, instruments, positions = (
-        _portfolio_records_with_identities(
-            payload,
-            source_ref=source_ref,
-        )
-    )
-    upsert_records(
-        [receipt_index, account_id, *instruments, *aliases, account, snapshot, *positions],
+    """Compatibility wrapper routed through the canonical broker import adapter."""
+    _result, snapshot = _ingest_broker_read_receipt_with_snapshot(
+        path,
         engine=engine,
+        receipt_root=receipt_root,
+        artifact_store=artifact_store,
     )
     return snapshot

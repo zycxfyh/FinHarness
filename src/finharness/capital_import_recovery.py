@@ -1,3 +1,4 @@
+# ruff: noqa: C901
 """Cross-store audit and fail-closed recovery for production capital imports."""
 
 from __future__ import annotations
@@ -19,6 +20,10 @@ from finharness.artifact_store import (
     ArtifactStoreError,
     LocalArtifactStore,
 )
+from finharness.capital_import_registry import (
+    PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
+    materialized_source_for,
+)
 from finharness.import_provenance import RECEIPT_ARTIFACT_SCHEMA, canonical_json_bytes
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
@@ -32,7 +37,7 @@ from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_jso
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
 CAPITAL_IMPORT_RECOVERY_SCHEMA = "finharness.capital_import_recovery.v1"
 CAPITAL_IMPORT_RECOVERY_ARTIFACT_SCHEMA = "finharness.capital_import_recovery_receipt"
-PRODUCTION_IMPORT_KINDS = {"personal_finance_export", "beancount_ledger"}
+PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES)
 
 
 class CapitalImportRecoveryError(RuntimeError):
@@ -225,15 +230,41 @@ def _audit_manifest_evidence(
     return findings
 
 
+def _expected_receipt_index_contract(
+    *,
+    manifest: ReceiptManifest,
+    batch: ImportBatch,
+    receipt_payload: dict[str, Any],
+) -> dict[str, object]:
+    from finharness.capital_import_registry import receipt_index_contract_fields
+
+    return receipt_index_contract_fields(
+        source_kind=batch.source_kind,
+        receipt_ref=manifest.receipt_ref,
+        created_at_utc=batch.as_of_utc,
+        source_ref=str(receipt_payload.get("source_ref") or batch.source_id),
+        upstream_receipt_id=receipt_payload.get("upstream_receipt_id"),
+        source_artifact_id=batch.source_artifact_id,
+    )
+
+
 def _audit_manifest_mirror(
     manifest: ReceiptManifest,
     batch: ImportBatch,
     descriptor: ArtifactDescriptor | None,
     index: ReceiptIndex | None,
     snapshot: Snapshot | None,
+    receipt_payload: dict[str, Any] | None = None,
 ) -> list[CapitalImportFinding]:
     findings: list[CapitalImportFinding] = []
-    if index is None or index.path != manifest.receipt_ref:
+    if receipt_payload is not None and batch.source_kind == "broker_read":
+        expected = _expected_receipt_index_contract(
+            manifest=manifest, batch=batch, receipt_payload=receipt_payload,
+        )
+    else:
+        expected = None
+    expected_kind = materialized_source_for(batch.source_kind)
+    if index is None:
         findings.append(
             _finding(
                 "manifest_receipt_index_missing_or_stale",
@@ -244,6 +275,41 @@ def _audit_manifest_mirror(
                 recovery_action="rebuild_receipt_index",
             )
         )
+    else:
+        if index.kind != expected_kind:
+            findings.append(_finding(
+                "receipt_index_kind_drift",
+                batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                message="kind drift",
+                recoverable=True, recovery_action="rebuild_receipt_index",
+            ))
+        if index.path != manifest.receipt_ref:
+            findings.append(_finding(
+                "receipt_index_path_drift",
+                batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                path=index.path,
+                message="path drift",
+                recoverable=True, recovery_action="rebuild_receipt_index",
+            ))
+        if expected is not None:
+            if index.created_at_utc != expected["created_at_utc"]:
+                findings.append(_finding(
+                    "receipt_index_created_at_drift",
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
+            if index.source_refs != expected["source_refs"]:
+                findings.append(_finding(
+                    "receipt_index_source_refs_drift",
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
+            if index.refs != expected["refs"]:
+                findings.append(_finding(
+                    "receipt_index_refs_drift",
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
     if snapshot is None:
         findings.append(
             _finding(
@@ -373,6 +439,13 @@ def audit_capital_imports(
         findings.extend(
             _audit_manifest_evidence(manifest, current_batch, current_descriptor, store)
         )
+        rp: dict[str, Any] | None = None
+        if current_descriptor is not None:
+            try:
+                raw = store.read(current_descriptor.artifact_id)
+                rp = json.loads(raw)
+            except (ArtifactStoreError, json.JSONDecodeError):
+                pass
         findings.extend(
             _audit_manifest_mirror(
                 manifest,
@@ -380,6 +453,7 @@ def audit_capital_imports(
                 current_descriptor,
                 indexes_by_receipt.get(manifest.receipt_id),
                 snapshots.get(manifest.snapshot_id),
+                receipt_payload=rp,
             )
         )
 
@@ -498,6 +572,16 @@ def _replay_receipt(
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
         )
+    elif kind == "broker_read":
+        from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+
+        ingest_broker_read_receipt(
+            source_path,
+            engine=engine,
+            receipt_root=receipt_root,
+            artifact_store=store,
+            snapshot_id=str(payload["snapshot_id"]),
+        )
     else:
         raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")
     return f"replayed:{descriptor.artifact_id}"
@@ -556,17 +640,37 @@ def recover_capital_imports(
                     atomic_write_bytes(target, content)
                     actions.append(f"restored_receipt_file:{manifest.receipt_id}")
                 current_index = session.get(ReceiptIndex, manifest.receipt_id)
-                if current_index is None or current_index.path != manifest.receipt_ref:
-                    payload = json.loads(content)
-                    batch = batches[manifest.batch_id]
+                payload = json.loads(content)
+                batch = batches[manifest.batch_id]
+                source_ref = str(payload.get("source_ref") or batch.source_id)
+                upstream_id = payload.get("upstream_receipt_id")
+                from finharness.capital_import_registry import receipt_index_contract_fields
+
+                contract = receipt_index_contract_fields(
+                    source_kind=batch.source_kind,
+                    receipt_ref=manifest.receipt_ref,
+                    created_at_utc=batch.as_of_utc,
+                    source_ref=source_ref,
+                    upstream_receipt_id=upstream_id,
+                    source_artifact_id=batch.source_artifact_id,
+                )
+                needs_rebuild = (
+                    current_index is None
+                    or current_index.kind != contract["kind"]
+                    or current_index.path != contract["path"]
+                    or current_index.created_at_utc != contract["created_at_utc"]
+                    or current_index.source_refs != contract["source_refs"]
+                    or current_index.refs != contract["refs"]
+                )
+                if needs_rebuild:
                     session.merge(
                         ReceiptIndex(
                             receipt_id=manifest.receipt_id,
-                            kind=str(payload.get("kind") or batch.source_kind),
-                            path=manifest.receipt_ref,
-                            created_at_utc=batch.as_of_utc,
-                            source_refs=[manifest.receipt_ref, batch.source_id],
-                            refs=[batch.source_id],
+                            kind=cast(str, contract["kind"]),
+                            path=cast(str, contract["path"]),
+                            created_at_utc=cast(str, contract["created_at_utc"]),
+                            source_refs=cast(list[str], contract["source_refs"]),
+                            refs=cast(list[str], contract["refs"]),
                         )
                     )
                     actions.append(f"rebuilt_receipt_index:{manifest.receipt_id}")

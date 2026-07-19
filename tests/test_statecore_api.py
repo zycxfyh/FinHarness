@@ -70,19 +70,19 @@ class StateCoreApiTest(unittest.TestCase):
             snapshot_id="snap_before",
             kind="portfolio",
             as_of_utc="2026-06-17T09:00:00+00:00",
-            payload={"source": "broker_read"},
+            payload={"source": "test_fixture"},
             source_refs=["data/receipts/before.json"],
         )
         after = Snapshot(
             snapshot_id="snap_after",
             kind="portfolio",
             as_of_utc="2026-06-17T10:00:00+00:00",
-            payload={"source": "broker_read"},
+            payload={"source": "test_fixture"},
             source_refs=["data/receipts/after.json"],
         )
         receipt = ReceiptIndex(
             receipt_id="receipt_after",
-            kind="broker_read",
+            kind="test_fixture",
             path="data/receipts/after.json",
             created_at_utc="2026-06-17T10:00:00+00:00",
             source_refs=["data/receipts/after.json"],
