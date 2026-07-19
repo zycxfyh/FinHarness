@@ -108,11 +108,16 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="broker-read-receipt",
     ),
     CapitalImportExposureSpec(
+        exposure_id="function-capital-import-recovery-replay",
+        exposure_kind="function",
+        exposure_ref="finharness.capital_import_recovery._replay_receipt",
+        adapter_id="broker-read-receipt",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="function-broker-receipt-compat",
         exposure_kind="function",
         exposure_ref=(
-            "finharness.statecore.snapshot_ingest."
-            "ingest_portfolio_snapshot_from_receipt"
+            "finharness.statecore.snapshot_ingest.ingest_portfolio_snapshot_from_receipt"
         ),
         adapter_id="broker-read-receipt",
     ),
@@ -125,8 +130,7 @@ PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES = frozenset(
     spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 )
 _MATERIALIZED_SOURCE_BY_SOURCE_KIND = {
-    spec.source_kind: spec.materialized_source
-    for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
+    spec.source_kind: spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 }
 
 
@@ -136,6 +140,34 @@ def materialized_source_for(source_kind: str) -> str:
         return _MATERIALIZED_SOURCE_BY_SOURCE_KIND[source_kind]
     except KeyError as exc:
         raise ValueError(f"unregistered production import source kind: {source_kind}") from exc
+
+
+def receipt_index_contract_fields(
+    *,
+    source_kind: str,
+    receipt_ref: str,
+    source_artifact_id: str,
+    time_semantics: dict[str, object],
+    receipt_payload: dict[str, object],
+) -> dict[str, object]:
+    """Derive the canonical ReceiptIndex mirror from immutable import evidence."""
+    raw_source_ref = receipt_payload.get("source_ref")
+    if not isinstance(raw_source_ref, str) or not raw_source_ref:
+        raise ValueError("canonical import receipt has no source_ref")
+    raw_upstream = receipt_payload.get("upstream_receipt_id")
+    upstream_ref = (
+        raw_upstream if isinstance(raw_upstream, str) and raw_upstream else raw_source_ref
+    )
+    raw_ingested_at = time_semantics.get("ingested_at_utc")
+    if not isinstance(raw_ingested_at, str) or not raw_ingested_at:
+        raise ValueError("canonical import batch has no ingested_at_utc")
+    return {
+        "kind": materialized_source_for(source_kind),
+        "path": receipt_ref,
+        "created_at_utc": raw_ingested_at,
+        "source_refs": list(dict.fromkeys((receipt_ref, raw_source_ref))),
+        "refs": list(dict.fromkeys((upstream_ref, source_artifact_id))),
+    }
 
 
 def registry_projection() -> dict[str, object]:
