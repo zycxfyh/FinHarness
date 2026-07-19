@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,18 @@ def replace_once(path: Path, old: str, new: str) -> None:
         raise RuntimeError(f"{path}: expected one match, found {text.count(old)}")
     path.write_text(text.replace(old, new), encoding="utf-8")
 
+
+core = ROOT / "scripts" / "_patch_373_core.py"
+text = core.read_text(encoding="utf-8")
+start = text.index('replace_once(\n    "src/finharness/capital_import_registry.py"')
+end = text.index('replace_once(\n    "src/finharness/statecore/store.py"', start)
+core.write_text(text[:start] + text[end:], encoding="utf-8")
+subprocess.run(["python", str(core)], cwd=ROOT, check=True)
+subprocess.run(
+    ["python", str(ROOT / "scripts" / "_patch_373_recovery_lint.py")],
+    cwd=ROOT,
+    check=True,
+)
 
 checker = ROOT / "scripts" / "check_capital_import_entrypoints.py"
 replace_once(
