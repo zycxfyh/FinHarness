@@ -30,3 +30,8 @@ text = text.replace(
     1,
 )
 path.write_text(text, encoding="utf-8")
+
+receipt_patch = Path("scripts/_patch_373_receipt_type.py")
+namespace = {"__name__": "__main__", "__file__": str(receipt_patch)}
+exec(compile(receipt_patch.read_text(encoding="utf-8"), str(receipt_patch), "exec"), namespace)
+receipt_patch.unlink()
