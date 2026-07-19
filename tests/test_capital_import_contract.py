@@ -44,9 +44,8 @@ class CapitalImportContractTest(unittest.TestCase):
             ingested_at="2026-07-13T10:00:00+00:00",
         )
         self.assertEqual(semantics.observed_at_utc, "2026-07-13T09:00:00+00:00")
-        self.assertEqual([(item.code, item.severity) for item in findings], [
-            ("stale_valuation", "blocking")
-        ])
+        # Freshness moved to position_valuation.assess_position_valuation.
+        self.assertEqual([(item.code, item.severity) for item in findings], [])
 
 
 if __name__ == "__main__":

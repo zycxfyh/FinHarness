@@ -61,7 +61,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_BEANCOUNT_RECEIPT_ROOT = ROOT / "data" / "receipts" / "beancount"
-ADAPTER_VERSION = "finharness.beancount_ledger.v2"
+ADAPTER_VERSION = "finharness.beancount_ledger.v3"
 LEDGER_KIND = "beancount_ledger"
 DEFAULT_ASSETS_ROOT = "Assets"
 DEFAULT_LIABILITIES_ROOT = "Liabilities"
@@ -723,6 +723,14 @@ def ingest_beancount_ledger(
             "time_semantics": time_semantics,
             "findings": [finding.as_dict() for finding in findings],
             "non_claims": list(NON_CLAIMS),
+            "valuation_assessment": {
+                "policy_id": "finharness.position_valuation.base.v1",
+                "evaluated_at_utc": as_of_utc,
+                "status_counts": {
+                    status: sum(1 for p in positions if p.valuation_status == status)
+                    for status in {p.valuation_status for p in positions}
+                },
+            },
         },
         source_refs=source_refs,
     )
@@ -739,6 +747,14 @@ def ingest_beancount_ledger(
         cashflow_count=len(cashflows),
         data_gaps=data_gaps,
     )
+    receipt_payload["valuation_assessment"] = {
+        "policy_id": "finharness.position_valuation.base.v1",
+        "evaluated_at_utc": as_of_utc,
+        "status_counts": {
+            status: sum(1 for p in positions if p.valuation_status == status)
+            for status in {p.valuation_status for p in positions}
+        },
+    }
     prepared = prepare_import(
         source_kind=LEDGER_KIND,
         source_id=display_path(source_path),

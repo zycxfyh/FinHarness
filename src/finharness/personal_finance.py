@@ -44,6 +44,7 @@ from finharness.import_provenance import (
     prepare_import,
 )
 from finharness.position_valuation import (
+    ValuationAssessment,
     ValuationEvidence,
     assess_position_valuation,
 )
@@ -78,7 +79,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
-ADAPTER_VERSION = "finharness.personal_finance_export.v3"
+ADAPTER_VERSION = "finharness.personal_finance_export.v4"
 EXPORT_KIND = "personal_finance_export"
 POSITION_COLUMNS = {
     "account_id",
@@ -739,6 +740,7 @@ def _finalize_valuation_on_records(
         for key in ("delta_base_batch_id", "materialized_position_count")
         if original_snap is not None and key in (original_snap.payload or {})
     }
+    final_position_count = len(status_by_id)
     for record in rewritten:
         if not isinstance(record, Snapshot):
             continue
@@ -752,6 +754,13 @@ def _finalize_valuation_on_records(
         payload.update(prior_delta)
         payload["completeness_status"] = status
         payload["findings"] = [finding.as_dict() for finding in final_findings]
+        payload["record_counts"] = payload.get("record_counts", {})
+        payload["record_counts"]["position"] = final_position_count
+        payload["valuation_assessment"] = {
+            "policy_id": "finharness.position_valuation.base.v1",
+            "evaluated_at_utc": observed_at_utc,
+            "status_counts": dict(_status_counts(assessments)),
+        }
         record.payload = payload
     return rewritten, final_findings, status
 
@@ -762,6 +771,15 @@ def _position_identity(position: Position) -> tuple[str, str]:
         position.account_id,
         position.instrument_id or f"legacy-symbol:{position.symbol.upper()}",
     )
+
+
+def _status_counts(
+    assessments: list[ValuationAssessment],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for a in assessments:
+        counts[a.status.value] = counts.get(a.status.value, 0) + 1
+    return counts
 
 
 def _latest_source_positions(
@@ -1025,6 +1043,23 @@ def ingest_personal_finance_export(
     final_position_count = sum(1 for record in records if isinstance(record, Position))
     record_counts = {**record_counts, "position": final_position_count}
     receipt_payload["record_counts"] = record_counts
+    # Compute status counts for valuation_assessment.
+    position_statuses = {
+        record.valuation_status
+        for record in records
+        if isinstance(record, Position)
+    }
+    receipt_payload["valuation_assessment"] = {
+        "policy_id": "finharness.position_valuation.base.v1",
+        "evaluated_at_utc": as_of_utc,
+        "status_counts": {
+            status: sum(
+                1 for record in records
+                if isinstance(record, Position) and record.valuation_status == status
+            )
+            for status in position_statuses
+        },
+    }
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,

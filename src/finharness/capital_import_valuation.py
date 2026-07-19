@@ -151,7 +151,7 @@ def observed_at_from_batch(batch: ImportBatch) -> str:
     return str(observed)
 
 
-def validate_import_valuation_contract(
+def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreement checks
     *,
     source: str,
     batch: ImportBatch,
@@ -252,4 +252,40 @@ def validate_import_valuation_contract(
             "valuation_completeness_mismatch: "
             f"batch={batch.completeness_status} snapshot={snap_completeness} "
             f"receipt={receipt_completeness} expected={expected_completeness}"
+        )
+    # Verify valuation assessment policy identity.
+    snap_assessment = (snapshot.payload or {}).get("valuation_assessment") or {}
+    receipt_assessment = receipt_payload.get("valuation_assessment") or {}
+    canonical_policy = BASE_VALUATION_POLICY_V1.policy_id
+    for label, source_assessment in [
+        ("snapshot", snap_assessment),
+        ("receipt", receipt_assessment),
+    ]:
+        if source_assessment.get("policy_id") != canonical_policy:
+            raise StateCoreStoreError(
+                "valuation_policy_mismatch: "
+                f"{label} policy={source_assessment.get('policy_id')} "
+                f"expected={canonical_policy}"
+            )
+        if source_assessment.get("evaluated_at_utc") != observed:
+            raise StateCoreStoreError(
+                "valuation_policy_mismatch: "
+                f"{label} evaluated_at="
+                f"{source_assessment.get('evaluated_at_utc')} "
+                f"expected={observed}"
+            )
+    # Verify record counts across surfaces (batch, manifest, receipt, snapshot).
+    snap_record_counts = (snapshot.payload or {}).get("record_counts") or {}
+    expected_position_count = snap_record_counts.get("position", 0)
+    if batch.record_counts.get("position") != expected_position_count:
+        raise StateCoreStoreError(
+            "valuation_record_count_mismatch: "
+            f"batch.position={batch.record_counts.get('position')} "
+            f"snapshot.position={expected_position_count}"
+        )
+    if receipt_payload.get("record_counts", {}).get("position") != expected_position_count:
+        raise StateCoreStoreError(
+            "valuation_record_count_mismatch: "
+            f"receipt.position={receipt_payload.get('record_counts', {}).get('position')} "
+            f"snapshot.position={expected_position_count}"
         )

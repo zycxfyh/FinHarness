@@ -51,7 +51,7 @@ from finharness.statecore.store import (
 
 BROKER_READ_SOURCE_KIND = "broker_read"
 BROKER_READ_MATERIALIZED_SOURCE = "broker_read_import"
-BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v1"
+BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v2"
 DEFAULT_BROKER_IMPORT_RECEIPT_ROOT = (
     ROOT / "data" / "receipts" / "capital-imports" / "broker-read"
 )
@@ -523,6 +523,16 @@ def _portfolio_records_with_identities(
                 "Cost basis is omitted unless directly disclosed by the source.",
             ],
             "execution_allowed": False,
+            "valuation_assessment": {
+                "policy_id": "finharness.position_valuation.base.v1",
+                "evaluated_at_utc": as_of_utc,
+                "status_counts": {
+                    status: sum(
+                        1 for p in position_records if p.valuation_status == status
+                    )
+                    for status in {p.valuation_status for p in position_records}
+                },
+            },
         },
         source_refs=[source_ref],
     )
@@ -643,6 +653,17 @@ def _ingest_broker_read_receipt_with_snapshot(
         "record_counts": record_counts,
         "non_claims": list(BROKER_IMPORT_NON_CLAIMS),
         "execution_allowed": False,
+    }
+    position_statuses = {
+        p.valuation_status for p in positions
+    }
+    receipt_payload["valuation_assessment"] = {
+        "policy_id": "finharness.position_valuation.base.v1",
+        "evaluated_at_utc": snapshot.as_of_utc,
+        "status_counts": {
+            status: sum(1 for p in positions if p.valuation_status == status)
+            for status in position_statuses
+        },
     }
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,

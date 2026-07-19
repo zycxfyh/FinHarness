@@ -252,13 +252,15 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
         evaluated_at = datetime.fromisoformat(
             evaluated_at_utc.strip().replace("Z", "+00:00")
         )
-        evaluated_at = (
-            None
-            if evaluated_at.utcoffset() is None
-            else evaluated_at.astimezone(UTC)
-        )
     except (TypeError, ValueError):
-        evaluated_at = None
+        raise PositionValuationError(
+            f"invalid evaluated_at_utc: {evaluated_at_utc!r}"
+        ) from None
+    if evaluated_at.utcoffset() is None:
+        raise PositionValuationError(
+            f"timezone-naive evaluated_at_utc: {evaluated_at_utc!r}"
+        )
+    evaluated_at = evaluated_at.astimezone(UTC)
 
     valued_at_dt: datetime | None = None
     if evidence.valued_at_utc:
@@ -289,7 +291,7 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                 )
             else:
                 valued_at_dt = raw.astimezone(UTC)
-                if evaluated_at is not None and valued_at_dt > evaluated_at:
+                if valued_at_dt > evaluated_at:
                     timestamp_findings.append(
                         _finding(
                             "valued_at_after_evaluation",
@@ -329,7 +331,7 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                 )
             else:
                 fx_as_of_dt = raw_fx.astimezone(UTC)
-                if evaluated_at is not None and fx_as_of_dt > evaluated_at:
+                if fx_as_of_dt > evaluated_at:
                     timestamp_findings.append(
                         _finding(
                             "fx_as_of_after_evaluation",
@@ -340,29 +342,40 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                         )
                     )
 
+    fx_valid = (
+        evidence.fx_rate is not None
+        and evidence.fx_rate > 0
+        and evidence.fx_as_of_utc
+        and evidence.fx_source_ref
+    )
+
     if (
         evidence.market_value is not None
         and evidence.unit_price is not None
         and evidence.valuation_currency
         and evidence.price_currency
     ):
-        expected = evidence.quantity * evidence.unit_price
-        if cross and evidence.fx_rate is not None and evidence.fx_rate > 0:
-            expected *= evidence.fx_rate
-        if abs(expected - evidence.market_value) > policy.reconciliation_tolerance:
-            recon_findings.append(
-                _finding(
-                    "valuation_components_do_not_reconcile",
-                    "market_value does not reconcile with quantity * unit_price [* fx]",
-                    record_id=record_id,
-                    record_number=record_number,
-                    field="market_value",
+        if cross and not fx_valid:
+            # Cross-currency reconciliation requires complete FX evidence.
+            pass
+        else:
+            expected = evidence.quantity * evidence.unit_price
+            if cross and fx_valid:
+                expected *= evidence.fx_rate
+            if abs(expected - evidence.market_value) > policy.reconciliation_tolerance:
+                recon_findings.append(
+                    _finding(
+                        "valuation_components_do_not_reconcile",
+                        "market_value does not reconcile with quantity * unit_price [* fx]",
+                        record_id=record_id,
+                        record_number=record_number,
+                        field="market_value",
+                    )
                 )
-            )
 
     price_stale = False
     fx_stale = False
-    if check_freshness and evaluated_at is not None:
+    if check_freshness:
         if valued_at_dt is not None and evaluated_at - valued_at_dt > policy.max_price_age:
             price_stale = True
             freshness_findings.append(

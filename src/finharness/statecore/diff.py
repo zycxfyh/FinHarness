@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -242,8 +243,20 @@ def diff_snapshots(
             or before_positions[key].market_value != after_positions[key].market_value
         )
     )
-    before_totals = reconcile_position_totals(before_rows)
-    after_totals = reconcile_position_totals(after_rows)
+    before_totals = reconcile_position_totals(
+        before_rows,
+        evaluated_at=(
+            datetime.fromisoformat(before_snapshot.as_of_utc)
+            if before_snapshot.as_of_utc else None
+        ),
+    )
+    after_totals = reconcile_position_totals(
+        after_rows,
+        evaluated_at=(
+            datetime.fromisoformat(after_snapshot.as_of_utc)
+            if after_snapshot.as_of_utc else None
+        ),
+    )
     base_currency = (
         before_totals.base_currency
         if before_totals.base_currency == after_totals.base_currency
