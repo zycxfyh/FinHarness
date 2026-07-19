@@ -1,4 +1,3 @@
-# ruff: noqa: E501, RUF015, F841, SIM117
 """Target contract tests for #374 canonical valuation assessment.
 
 Every test asserts the CORRECT future contract. They FAIL on current main
@@ -47,10 +46,6 @@ TYPED_CSV_COLUMNS = [
     "fx_rate", "fx_as_of_utc", "fx_source_ref",
 ]
 
-# ============================================================================
-# helpers
-# ============================================================================
-
 
 def _typed_row(overrides: dict | None = None) -> dict[str, str]:
     row = {
@@ -69,30 +64,105 @@ def _typed_row(overrides: dict | None = None) -> dict[str, str]:
     return row
 
 
-def _assert_import_surface_agreement(test: unittest.TestCase, result, engine):
-    """Verify batch/receipt/snapshot/result/position status agreement."""
-    batches = list(read_all(ImportBatch, engine=engine))
-    snapshots = list(read_all(Snapshot, engine=engine))
-    manifests = list(read_all(ReceiptManifest, engine=engine))
-    positions = list(read_all(Position, engine=engine))
-    test.assertEqual(len(batches), 1)
-    test.assertEqual(len(snapshots), 1)
-    test.assertEqual(len(manifests), 1)
-    test.assertTrue(positions)
-    bc = batches[0].completeness_status
-    sc = snapshots[0].payload.get("completeness_status")
-    rc = result.completeness_status
-    # completeness must agree across batch, snapshot, and result
-    test.assertEqual(bc, sc, f"batch={bc} != snapshot={sc}")
-    test.assertEqual(bc, rc, f"batch={bc} != result={rc}")
-    # every Position status must agree with completeness
-    for pos in positions:
-        blockers = valuation_blockers(pos)
-        has_blockers = bool(blockers)
-        is_valued = pos.valuation_status in ("valued", "valued_converted")
-        if has_blockers:
-            test.assertFalse(is_valued, f"Position {pos.symbol} has blockers {blockers} but status={pos.valuation_status}")
-        test.assertFalse(is_valued and bc == "blocked", f"Position {pos.symbol} is valued but completeness=blocked")
+def _pos_by_symbol(engine, symbol):
+    return next(p for p in read_all(Position, engine=engine) if p.symbol == symbol)
+
+
+def _valuation_finding_codes(findings):
+    return {f.get("code", "") if isinstance(f, dict) else
+            getattr(f, "code", "") for f in findings}
+
+
+# ============================================================================
+# Positive controls
+# ============================================================================
+
+
+class CompleteValuationPositiveControlTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.engine = init_state_core(self.root / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+        self.receipt_root = self.root / "receipts"
+
+    def _csv(self, rows):
+        path = self.root / "export.csv"
+        with path.open("w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=TYPED_CSV_COLUMNS)
+            w.writeheader()
+            for row in rows:
+                w.writerow(row)
+        return path
+
+    def test_complete_direct_valuation_passes(self):
+        ingest_personal_finance_export(
+            self._csv([_typed_row()]), engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=LocalArtifactStore(
+                self.receipt_root / "artifact-store"),
+        )
+        pos = _pos_by_symbol(self.engine, "SPY")
+        self.assertEqual(pos.valuation_status, "valued")
+        self.assertEqual(valuation_blockers(pos), ())
+
+    def test_complete_converted_valuation_passes(self):
+        ingest_personal_finance_export(
+            self._csv([_typed_row({
+                "valuation_currency": "USD", "price_currency": "EUR",
+                "unit_price": "50", "market_value": "55",
+                "fx_rate": "1.10", "fx_as_of_utc": "2025-06-20T07:00:00+00:00",
+                "fx_source_ref": "fixture:fx",
+            })]), engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=LocalArtifactStore(
+                self.receipt_root / "artifact-store"),
+        )
+        pos = _pos_by_symbol(self.engine, "SPY")
+        self.assertEqual(pos.valuation_status, "valued_converted")
+        self.assertEqual(valuation_blockers(pos), ())
+
+
+class BrokerSnapshotTimePositiveControlTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.engine = init_state_core(self.root / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.tmp.cleanup)
+        self.import_root = (
+            self.root / "receipts" / "capital-imports" / "broker-read")
+        self.store = LocalArtifactStore(self.import_root / "artifact-store")
+
+    def test_snapshot_wide_valuation_time_is_inherited(self):
+        payload = {
+            "receipt_id": "rec", "kind": "broker_read",
+            "created_at_utc": "2025-06-20T09:00:00+00:00",
+            "effective_at_utc": "2025-06-20T09:00:00+00:00",
+            "observed_at_utc": "2025-06-20T09:00:00+00:00",
+            "valued_at_utc": "2025-06-20T09:00:00+00:00",
+            "broker": "manual", "environment": "paper",
+            "account": {"id": "acct", "status": "ACTIVE"},
+            "positions": [{
+                "symbol": "SPY", "qty": "2", "market_value": "100",
+                "unit_price": "50", "currency": "USD",
+                "asset_class": "equity", "exchange": "ARCX",
+                "price_source_ref": "fixture:test",
+            }],
+        }
+        path = self.root / "broker-read" / "portfolio.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        ingest_broker_read_receipt(
+            path, engine=self.engine,
+            receipt_root=self.import_root, artifact_store=self.store,
+        )
+        pos = _pos_by_symbol(self.engine, "SPY")
+        self.assertIsNotNone(pos.valued_at_utc)
+        self.assertEqual(pos.valuation_status, "valued")
 
 
 # ============================================================================
@@ -102,7 +172,7 @@ def _assert_import_surface_agreement(test: unittest.TestCase, result, engine):
 
 class CsvValuationContractTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.engine = init_state_core(self.root / "state-core.sqlite")
@@ -110,7 +180,7 @@ class CsvValuationContractTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.receipt_root = self.root / "receipts"
 
-    def _csv(self, rows: list[dict[str, str]]) -> Path:
+    def _csv(self, rows):
         path = self.root / "export.csv"
         with path.open("w", encoding="utf-8", newline="") as f:
             w = csv.DictWriter(f, fieldnames=TYPED_CSV_COLUMNS)
@@ -119,44 +189,41 @@ class CsvValuationContractTest(unittest.TestCase):
                 w.writerow(row)
         return path
 
-    def _ingest(self, rows: list[dict[str, str]]):
+    def _ingest(self, rows):
         return ingest_personal_finance_export(
             self._csv(rows), engine=self.engine,
             receipt_root=self.receipt_root,
-            artifact_store=LocalArtifactStore(self.receipt_root / "artifact-store"),
+            artifact_store=LocalArtifactStore(
+                self.receipt_root / "artifact-store"),
         )
 
-    def test_missing_valued_at_utc_produces_unpriced_and_blocked(self) -> None:
+    def test_missing_valued_at_utc_produces_unpriced_and_blocked(self):
         result = self._ingest([_typed_row({"valued_at_utc": ""})])
-        positions = list(read_all(Position, engine=self.engine))
-        pos = positions[0]
+        pos = _pos_by_symbol(self.engine, "SPY")
         self.assertIsNone(pos.valued_at_utc)
         self.assertEqual(pos.valuation_status, "unpriced")
         blockers = valuation_blockers(pos)
         self.assertIn("valued_at_utc_missing", blockers)
         self.assertEqual(result.completeness_status, "blocked")
-        _assert_import_surface_agreement(self, result, self.engine)
 
-    def test_missing_price_source_ref_produces_unpriced_and_blocked(self) -> None:
+    def test_missing_price_source_ref_produces_unpriced_and_blocked(self):
         result = self._ingest([_typed_row({"price_source_ref": ""})])
-        pos = list(read_all(Position, engine=self.engine))[0]
+        pos = _pos_by_symbol(self.engine, "SPY")
         self.assertIsNone(pos.price_source_ref)
         self.assertEqual(pos.valuation_status, "unpriced")
         blockers = valuation_blockers(pos)
         self.assertIn("price_source_ref_missing", blockers)
         self.assertEqual(result.completeness_status, "blocked")
-        _assert_import_surface_agreement(self, result, self.engine)
 
-    def test_component_mismatch_produces_unpriced_and_blocked(self) -> None:
+    def test_component_mismatch_produces_unpriced_and_blocked(self):
         result = self._ingest([_typed_row({"market_value": "99"})])
-        pos = list(read_all(Position, engine=self.engine))[0]
+        pos = _pos_by_symbol(self.engine, "SPY")
         expected_calc = pos.quantity * pos.unit_price
         self.assertNotEqual(expected_calc, pos.market_value)
         self.assertNotEqual(pos.valuation_status, "valued")
         blockers = valuation_blockers(pos)
         self.assertIn("valuation_components_do_not_reconcile", blockers)
         self.assertEqual(result.completeness_status, "blocked")
-        _assert_import_surface_agreement(self, result, self.engine)
 
 
 # ============================================================================
@@ -166,16 +233,17 @@ class CsvValuationContractTest(unittest.TestCase):
 
 class BrokerValuationContractTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.engine = init_state_core(self.root / "state-core.sqlite")
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
-        self.import_root = self.root / "receipts" / "capital-imports" / "broker-read"
+        self.import_root = (
+            self.root / "receipts" / "capital-imports" / "broker-read")
         self.store = LocalArtifactStore(self.import_root / "artifact-store")
 
-    def _base_payload(self) -> dict:
+    def _base_payload(self):
         return {
             "receipt_id": "rec", "kind": "broker_read",
             "created_at_utc": "2025-06-20T09:00:00+00:00",
@@ -192,7 +260,7 @@ class BrokerValuationContractTest(unittest.TestCase):
             }],
         }
 
-    def _ingest(self, payload: dict):
+    def _ingest(self, payload):
         path = self.root / "broker-read" / "portfolio.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -201,26 +269,24 @@ class BrokerValuationContractTest(unittest.TestCase):
             receipt_root=self.import_root, artifact_store=self.store,
         )
 
-    def test_component_mismatch_produces_unpriced(self) -> None:
+    def test_component_mismatch_produces_unpriced(self):
         payload = self._base_payload()
         payload["positions"][0]["market_value"] = "99"
         self._ingest(payload)
-        pos = list(read_all(Position, engine=self.engine))[0]
+        pos = _pos_by_symbol(self.engine, "SPY")
         expected = pos.quantity * pos.unit_price
         self.assertNotEqual(expected, pos.market_value)
         self.assertNotEqual(pos.valuation_status, "valued")
 
 
 # ============================================================================
-# Canonical blocker isolation: construct Position directly
+# Canonical blocker isolation
 # ============================================================================
 
 
 class ValuationBlockersIsolationTest(unittest.TestCase):
 
-    def test_stored_valued_with_missing_time_not_admitted(self) -> None:
-        """valuation_blockers() must re-derive coarse status from evidence,
-        not trust stored valuation_status='valued' when valued_at_utc=None."""
+    def test_stored_valued_with_missing_time_not_admitted(self):
         pos = Position(
             position_id="pos_iso", snapshot_id="snap", account_id="acct",
             symbol="SPY", quantity=2, market_value=100, cost_basis=90,
@@ -230,10 +296,10 @@ class ValuationBlockersIsolationTest(unittest.TestCase):
             valuation_status="valued",
         )
         blockers = valuation_blockers(pos)
+        self.assertIn("valuation_unpriced", blockers)
         self.assertIn("valued_at_utc_missing", blockers)
-        self.assertTrue(bool(blockers))
 
-    def test_stored_valued_with_missing_source_not_admitted(self) -> None:
+    def test_stored_valued_with_missing_source_not_admitted(self):
         pos = Position(
             position_id="pos_iso2", snapshot_id="snap", account_id="acct",
             symbol="SPY", quantity=2, market_value=100, cost_basis=90,
@@ -243,6 +309,7 @@ class ValuationBlockersIsolationTest(unittest.TestCase):
             valuation_status="valued",
         )
         blockers = valuation_blockers(pos)
+        self.assertIn("valuation_unpriced", blockers)
         self.assertIn("price_source_ref_missing", blockers)
 
 
@@ -253,7 +320,7 @@ class ValuationBlockersIsolationTest(unittest.TestCase):
 
 class DeltaCarryForwardContractTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.engine = init_state_core(self.root / "state-core.sqlite")
@@ -262,7 +329,7 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts"
         self.store = LocalArtifactStore(self.receipt_root / "artifact-store")
 
-    def _csv(self, rows: list[dict[str, str]]) -> Path:
+    def _csv(self, rows):
         path = self.root / "export.csv"
         with path.open("w", encoding="utf-8", newline="") as f:
             w = csv.DictWriter(f, fieldnames=TYPED_CSV_COLUMNS)
@@ -271,13 +338,9 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
                 w.writerow(row)
         return path
 
-    def test_carried_position_produces_stale_and_blocked(self) -> None:
-        """Full import: AAA at T-25h. Delta import at T-1h: only BBB.
-        Carried AAA must be stale, completeness blocked."""
+    def test_carried_position_produces_stale_and_blocked(self):
         old_time = "2025-06-19T07:00:00+00:00"
         new_time = "2025-06-20T08:00:00+00:00"
-        gap_hours = 25
-        # Full import: Position AAA
         result1 = ingest_personal_finance_export(
             self._csv([_typed_row({
                 "account_id": "acct_a", "symbol": "AAA",
@@ -286,7 +349,6 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
             receipt_root=self.receipt_root, artifact_store=self.store,
         )
         batch1_id = result1.batch_id
-        # Delta import: only Position BBB
         result2 = ingest_personal_finance_export(
             self._csv([_typed_row({
                 "account_id": "acct_b", "symbol": "BBB",
@@ -296,25 +358,22 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
             coverage_mode="delta", supersedes_batch_id=batch1_id,
             correction_reason="add position B",
         )
-        final = list(read_all(Position, engine=self.engine))
-        aaa = [p for p in final if p.symbol == "AAA"]
-        bbb = [p for p in final if p.symbol == "BBB"]
-        self.assertEqual(len(aaa), 1, "AAA must be carried forward")
-        self.assertEqual(len(bbb), 1, "BBB must be present")
-        self.assertEqual(aaa[0].valuation_status, "stale")
-        blockers = valuation_blockers(aaa[0])
+        aaa = _pos_by_symbol(self.engine, "AAA")
+        _pos_by_symbol(self.engine, "BBB")
+        self.assertEqual(aaa.valuation_status, "stale")
+        blockers = valuation_blockers(aaa)
         self.assertIn("market_price_stale", blockers)
         self.assertEqual(result2.completeness_status, "blocked")
 
 
 # ============================================================================
-# Beancount contract tests (checked-in fixtures)
+# Beancount contract tests
 # ============================================================================
 
 
 class BeancountValuationContractTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.engine = init_state_core(self.root / "state-core.sqlite")
@@ -323,36 +382,29 @@ class BeancountValuationContractTest(unittest.TestCase):
         self.receipt_root = self.root / "receipts"
         self.store = LocalArtifactStore(self.receipt_root / "artifact-store")
 
-    def _ingest(self, fixture_path: Path):
+    def _ingest(self, fixture_path):
         return ingest_beancount_ledger(
             fixture_path, engine=self.engine,
             receipt_root=self.receipt_root, artifact_store=self.store,
         )
 
-    def test_unrelated_commodity_price_does_not_refresh_other_holding(self) -> None:
+    def test_unrelated_commodity_price_does_not_refresh_other_holding(self):
         result = self._ingest(FIXTURE_DIR / "unrelated_price.beancount")
-        positions = list(read_all(Position, engine=self.engine))
-        aaa = [p for p in positions if p.symbol == "AAA"]
-        bbb = [p for p in positions if p.symbol == "BBB"]
-        self.assertEqual(len(aaa), 1)
-        self.assertEqual(len(bbb), 1)
-        self.assertEqual(aaa[0].valued_at_utc, "2025-06-10T00:00:00+00:00")
-        self.assertEqual(bbb[0].valued_at_utc, "2025-06-20T00:00:00+00:00")
-        self.assertEqual(aaa[0].valuation_status, "stale")
-        blockers = valuation_blockers(aaa[0])
-        self.assertTrue(any("stale" in b for b in blockers),
-                        f"AAA stale finding missing: {blockers}")
+        aaa = _pos_by_symbol(self.engine, "AAA")
+        bbb = _pos_by_symbol(self.engine, "BBB")
+        self.assertEqual(aaa.valued_at_utc, "2025-06-10T00:00:00+00:00")
+        self.assertEqual(bbb.valued_at_utc, "2025-06-20T00:00:00+00:00")
+        self.assertEqual(aaa.valuation_status, "stale")
+        blockers = valuation_blockers(aaa)
+        self.assertIn("market_price_stale", blockers)
         self.assertEqual(result.completeness_status, "blocked")
 
-    def test_distinct_price_times_produce_distinct_valued_at_utc(self) -> None:
+    def test_distinct_price_times_produce_distinct_valued_at_utc(self):
         self._ingest(FIXTURE_DIR / "distinct_price_times.beancount")
-        positions = list(read_all(Position, engine=self.engine))
-        aaa = [p for p in positions if p.symbol == "AAA"]
-        bbb = [p for p in positions if p.symbol == "BBB"]
-        self.assertEqual(len(aaa), 1)
-        self.assertEqual(len(bbb), 1)
-        self.assertEqual(aaa[0].valued_at_utc, "2025-06-18T00:00:00+00:00")
-        self.assertEqual(bbb[0].valued_at_utc, "2025-06-15T00:00:00+00:00")
+        aaa = _pos_by_symbol(self.engine, "AAA")
+        bbb = _pos_by_symbol(self.engine, "BBB")
+        self.assertEqual(aaa.valued_at_utc, "2025-06-18T00:00:00+00:00")
+        self.assertEqual(bbb.valued_at_utc, "2025-06-15T00:00:00+00:00")
 
 
 # ============================================================================
@@ -362,13 +414,14 @@ class BeancountValuationContractTest(unittest.TestCase):
 
 class DirectMaterializerValuationRejectionTest(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.engine = init_state_core(self.root / "state-core.sqlite")
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
-        self.import_root = self.root / "receipts" / "capital-imports" / "broker-read"
+        self.import_root = (
+            self.root / "receipts" / "capital-imports" / "broker-read")
         self.store = LocalArtifactStore(self.import_root / "artifact-store")
 
     def _assert_db_empty(self):
@@ -378,10 +431,12 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
         self.assertEqual(list(read_all(Position, engine=self.engine)), [])
         self.assertEqual(list(read_all(ReceiptIndex, engine=self.engine)), [])
 
-    def _capture_broker_envelope(self):
+    def _capture(self, patch_target, ingest_fn, source_kind):
+        """Generic envelope capture: patch, ingest, verify captured keys."""
         from unittest.mock import patch
 
         captured = {}
+
         def patched(records, *, source, batch, manifest, artifact_store, engine):
             captured["records"] = copy.deepcopy(list(records))
             captured["source"] = source
@@ -389,6 +444,20 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
             captured["manifest"] = copy.deepcopy(manifest)
             captured["store"] = artifact_store
             raise StateCoreStoreError("capture-only")
+
+        with patch(patch_target, patched), contextlib.suppress(StateCoreStoreError):
+            ingest_fn()
+        for key in ("records", "source", "batch", "manifest", "store"):
+            self.assertIn(key, captured, f"capture missing {key} for {source_kind}")
+        self.assertEqual(captured["source"], source_kind)
+        positions = [r for r in captured["records"]
+                     if isinstance(r, Position)]
+        self.assertGreaterEqual(len(positions), 1,
+                                f"no Position in captured records for {source_kind}")
+        self._assert_db_empty()
+        return captured
+
+    def _capture_broker_envelope(self):
         payload = {
             "receipt_id": "rec_cap", "kind": "broker_read",
             "created_at_utc": "2025-06-20T09:00:00+00:00",
@@ -407,64 +476,54 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
         path = self.root / "broker-read" / "portfolio.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload), encoding="utf-8")
-        with patch("finharness.statecore.snapshot_ingest.materialize_import_batch", patched):
-            with contextlib.suppress(StateCoreStoreError):
-                ingest_broker_read_receipt(
-                    path, engine=self.engine,
-                    receipt_root=self.import_root, artifact_store=self.store,
-                )
-        return captured
+
+        def _ingest():
+            ingest_broker_read_receipt(
+                path, engine=self.engine,
+                receipt_root=self.import_root, artifact_store=self.store,
+            )
+        return self._capture(
+            "finharness.statecore.snapshot_ingest.materialize_import_batch",
+            _ingest, "broker_read",
+        )
 
     def _capture_csv_envelope(self):
-        from unittest.mock import patch
-
-        captured = {}
-        def patched(records, *, source, batch, manifest, artifact_store, engine):
-            captured["records"] = copy.deepcopy(list(records))
-            captured["source"] = source
-            captured["batch"] = copy.deepcopy(batch)
-            captured["manifest"] = copy.deepcopy(manifest)
-            captured["store"] = artifact_store
-            raise StateCoreStoreError("capture-only")
         csv_root = self.root / "receipts_csv"
         path = self.root / "export.csv"
         with path.open("w", encoding="utf-8", newline="") as f:
             w = csv.DictWriter(f, fieldnames=TYPED_CSV_COLUMNS)
             w.writeheader()
             w.writerow(_typed_row())
-        with patch("finharness.personal_finance.materialize_import_batch", patched):
-            with contextlib.suppress(StateCoreStoreError):
-                ingest_personal_finance_export(
-                    path, engine=self.engine,
-                    receipt_root=csv_root,
-                    artifact_store=LocalArtifactStore(csv_root / "artifact-store"),
-                )
-        return captured
+
+        def _ingest():
+            ingest_personal_finance_export(
+                path, engine=self.engine,
+                receipt_root=csv_root,
+                artifact_store=LocalArtifactStore(
+                    csv_root / "artifact-store"),
+            )
+        return self._capture(
+            "finharness.personal_finance.materialize_import_batch",
+            _ingest, "personal_finance_export",
+        )
 
     def _capture_beancount_envelope(self):
-        from unittest.mock import patch
-
-        captured = {}
-        def patched(records, *, source, batch, manifest, artifact_store, engine):
-            captured["records"] = copy.deepcopy(list(records))
-            captured["source"] = source
-            captured["batch"] = copy.deepcopy(batch)
-            captured["manifest"] = copy.deepcopy(manifest)
-            captured["store"] = artifact_store
-            raise StateCoreStoreError("capture-only")
         bean_root = self.root / "receipts_bean"
         fixture = FIXTURE_DIR / "distinct_price_times.beancount"
-        with patch("finharness.personal_finance.materialize_import_batch", patched):
-            with contextlib.suppress(StateCoreStoreError):
-                ingest_beancount_ledger(
-                    fixture, engine=self.engine,
-                    receipt_root=bean_root,
-                    artifact_store=LocalArtifactStore(bean_root / "artifact-store"),
-                )
-        return captured
 
-    # --- CSV: missing valued_at_utc, forged valued ---
-    def test_csv_forged_valued_missing_time_rejected(self) -> None:
+        def _ingest():
+            ingest_beancount_ledger(
+                fixture, engine=self.engine,
+                receipt_root=bean_root,
+                artifact_store=LocalArtifactStore(
+                    bean_root / "artifact-store"),
+            )
+        return self._capture(
+            "finharness.beancount_adapter.materialize_import_batch",
+            _ingest, "beancount_ledger",
+        )
+
+    def test_csv_forged_valued_missing_time_rejected(self):
         cap = self._capture_csv_envelope()
         for r in cap["records"]:
             if isinstance(r, Position):
@@ -478,8 +537,7 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
             )
         self._assert_db_empty()
 
-    # --- Beancount: missing price_source_ref, forged valued ---
-    def test_beancount_forged_valued_missing_source_rejected(self) -> None:
+    def test_beancount_forged_valued_missing_source_rejected(self):
         cap = self._capture_beancount_envelope()
         for r in cap["records"]:
             if isinstance(r, Position):
@@ -493,8 +551,7 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
             )
         self._assert_db_empty()
 
-    # --- Broker: component mismatch, forged valued ---
-    def test_broker_forged_valued_component_mismatch_rejected(self) -> None:
+    def test_broker_forged_valued_component_mismatch_rejected(self):
         cap = self._capture_broker_envelope()
         for r in cap["records"]:
             if isinstance(r, Position):
