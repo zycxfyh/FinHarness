@@ -1,0 +1,85 @@
+name: patch-373-independent-audit
+
+on:
+  push:
+    branches:
+      - agent/373-capital-import-manifest
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.10.9"
+
+      - name: Install locked environment
+        run: uv sync --frozen
+
+      - name: Apply independent audit repairs
+        run: |
+          python scripts/_patch_373_core.py
+          python scripts/_patch_373_checker.py
+          python scripts/_patch_373_tests.py
+          PYTHONPATH=src python - <<'PY'
+          import json
+          from pathlib import Path
+          from finharness.capital_import_registry import registry_projection
+
+          target = Path("docs/governance/capital-import-entrypoints.json")
+          target.write_text(
+              json.dumps(registry_projection(), ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          rm scripts/_patch_373_core.py
+          rm scripts/_patch_373_checker.py
+          rm scripts/_patch_373_tests.py
+
+      - name: Format and lint repaired surface
+        run: |
+          uv run ruff format \
+            scripts/check_capital_import_entrypoints.py \
+            src/finharness/capital_import_registry.py \
+            src/finharness/capital_import_recovery.py \
+            src/finharness/personal_finance.py \
+            src/finharness/beancount_adapter.py \
+            src/finharness/statecore/__init__.py \
+            src/finharness/statecore/store.py \
+            tests/test_capital_import_entrypoints.py
+          uv run ruff check --fix \
+            scripts/check_capital_import_entrypoints.py \
+            src/finharness/capital_import_registry.py \
+            src/finharness/capital_import_recovery.py \
+            src/finharness/personal_finance.py \
+            src/finharness/beancount_adapter.py \
+            src/finharness/statecore/__init__.py \
+            src/finharness/statecore/store.py \
+            tests/test_capital_import_entrypoints.py
+
+      - name: Run focused semantic verification
+        run: |
+          PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
+          PYTHONPATH=src uv run python -m unittest \
+            tests.test_capital_import_entrypoints \
+            tests.test_statecore_snapshot_ingest \
+            tests.test_capital_import_recovery \
+            tests.test_daily_change_brief
+
+      - name: Commit repaired implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "ASSURE-CAP-01: close independent audit blockers"
+          git push origin HEAD:agent/373-capital-import-manifest
