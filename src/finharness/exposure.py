@@ -148,6 +148,21 @@ def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
     ).first()
 
 
+def _parse_snapshot_clock(snapshot: Snapshot) -> datetime | None:
+    """Parse and validate snapshot.as_of_utc; None if missing or invalid."""
+    raw = snapshot.as_of_utc
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if dt.utcoffset() is None:
+        return None
+    return dt.astimezone(UTC)
+
+
+
 def _holdings(
     positions: list[Position],
     data_gaps: list[str],
@@ -418,7 +433,16 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     cash_total_verified = snapshot is not None
     if not cash_total_verified:
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
-    position_totals = reconcile_position_totals(positions)
+    # Propagate exact snapshot clock to valuation checks.
+    snapshot_evaluated_at = (
+        _parse_snapshot_clock(snapshot)
+        if snapshot is not None
+        else None
+    )
+    position_totals = reconcile_position_totals(
+        positions,
+        evaluated_at=snapshot_evaluated_at,
+    )
     asset_blockers = list(position_totals.blockers)
     if snapshot is None:
         asset_blockers.append("portfolio_snapshot_missing")
@@ -469,7 +493,8 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     )
 
     admitted_positions = [
-        position for position in positions if not valuation_blockers(position)
+        position for position in positions
+        if not valuation_blockers(position, evaluated_at=snapshot_evaluated_at)
     ]
     cash_total = (
         sum(

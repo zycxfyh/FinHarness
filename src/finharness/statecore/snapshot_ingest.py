@@ -24,6 +24,7 @@ from finharness.capital_import_contract import (
 from finharness.capital_import_valuation import (
     assess_positions,
     merge_valuation_findings,
+    valuation_assessment_summary,
 )
 from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
@@ -523,16 +524,10 @@ def _portfolio_records_with_identities(
                 "Cost basis is omitted unless directly disclosed by the source.",
             ],
             "execution_allowed": False,
-            "valuation_assessment": {
-                "policy_id": "finharness.position_valuation.base.v1",
-                "evaluated_at_utc": as_of_utc,
-                "status_counts": {
-                    status: sum(
-                        1 for p in position_records if p.valuation_status == status
-                    )
-                    for status in {p.valuation_status for p in position_records}
-                },
-            },
+            "valuation_assessment": valuation_assessment_summary(
+                position_records,
+                evaluated_at_utc=as_of_utc,
+            ),
         },
         source_refs=[source_ref],
     )
@@ -654,17 +649,10 @@ def _ingest_broker_read_receipt_with_snapshot(
         "non_claims": list(BROKER_IMPORT_NON_CLAIMS),
         "execution_allowed": False,
     }
-    position_statuses = {
-        p.valuation_status for p in positions
-    }
-    receipt_payload["valuation_assessment"] = {
-        "policy_id": "finharness.position_valuation.base.v1",
-        "evaluated_at_utc": snapshot.as_of_utc,
-        "status_counts": {
-            status: sum(1 for p in positions if p.valuation_status == status)
-            for status in position_statuses
-        },
-    }
+    receipt_payload["valuation_assessment"] = valuation_assessment_summary(
+        positions,
+        evaluated_at_utc=snapshot.as_of_utc,
+    )
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,
         source_id=source_ref,

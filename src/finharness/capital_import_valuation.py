@@ -17,7 +17,6 @@ from finharness.position_valuation import (
 )
 from finharness.statecore.import_models import ImportBatch, ReceiptManifest
 from finharness.statecore.models import Position, Snapshot
-from finharness.statecore.store import StateCoreRecord, StateCoreStoreError
 
 PRODUCTION_VALUATION_SOURCES = frozenset(
     {
@@ -78,6 +77,26 @@ def _normalize_tuple(finding: Any) -> tuple:
         data.get("field"),
         data.get("record_id"),
     )
+
+
+def valuation_assessment_summary(
+    positions: Sequence[Position],
+    *,
+    evaluated_at_utc: str,
+) -> dict[str, object]:
+    """Build an immutable summary for snapshot payload and receipt.
+
+    All three adapters must use this helper instead of hardcoding policy_id.
+    """
+    status_counts: dict[str, int] = {}
+    for position in positions:
+        status = position.valuation_status or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+    return {
+        "policy_id": BASE_VALUATION_POLICY_V1.policy_id,
+        "evaluated_at_utc": evaluated_at_utc,
+        "status_counts": status_counts,
+    }
 
 
 def assess_positions(
@@ -147,8 +166,16 @@ def observed_at_from_batch(batch: ImportBatch) -> str:
     clocks = batch.time_semantics or {}
     observed = clocks.get("observed_at_utc")
     if not observed:
-        raise StateCoreStoreError("valuation_policy_mismatch: batch missing observed_at_utc")
+        raise _import_error("valuation_policy_mismatch: batch missing observed_at_utc")
     return str(observed)
+
+
+class ValuationContractError(ValueError):
+    """Raised when a production import violates the valuation surface agreement."""
+
+
+def _import_error(message: str) -> Exception:
+    return ValuationContractError(message)
 
 
 def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreement checks
@@ -156,7 +183,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
     source: str,
     batch: ImportBatch,
     manifest: ReceiptManifest,
-    records: Sequence[StateCoreRecord],
+    records: Sequence[object],
     artifact_store: ArtifactStore,
 ) -> None:
     """Fail closed before any DB write if valuation surfaces disagree."""
@@ -166,7 +193,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
     positions = [record for record in records if isinstance(record, Position)]
     target = [snap for snap in snapshots if snap.snapshot_id == manifest.snapshot_id]
     if len(target) != 1:
-        raise StateCoreStoreError(
+        raise _import_error(
             f"valuation_snapshot_mismatch: expected one snapshot for "
             f"{manifest.snapshot_id}, got {len(target)}"
         )
@@ -180,13 +207,13 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
     for position in positions:
         assessment = derived_by_id[position.position_id]
         if position.valuation_status != assessment.status.value:
-            raise StateCoreStoreError(
+            raise _import_error(
                 "valuation_status_mismatch: "
                 f"{position.position_id} stored={position.valuation_status} "
                 f"derived={assessment.status.value}"
             )
         if assessment.policy_id != BASE_VALUATION_POLICY_V1.policy_id:
-            raise StateCoreStoreError("valuation_policy_mismatch")
+            raise _import_error("valuation_policy_mismatch")
 
     expected_valuation: list[tuple] = []
     for assessment in assessments:
@@ -203,7 +230,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         receipt_bytes = artifact_store.read(manifest.receipt_artifact_id)
         receipt_payload = json.loads(receipt_bytes)
     except Exception as exc:
-        raise StateCoreStoreError(
+        raise _import_error(
             f"valuation_receipt_mismatch: cannot read receipt artifact: {exc}"
         ) from exc
     receipt_findings = list(receipt_payload.get("findings") or [])
@@ -212,17 +239,17 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
     ]
 
     if Counter(batch_valuation) != expected_counter:
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_findings_mismatch: batch findings diverge from "
             f"canonical assessment batch={batch_valuation} expected={expected_valuation}"
         )
     if Counter(snap_valuation) != expected_counter:
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_snapshot_mismatch: snapshot findings diverge from "
             f"canonical assessment snap={snap_valuation} expected={expected_valuation}"
         )
     if Counter(receipt_valuation) != expected_counter:
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_receipt_mismatch: receipt findings diverge from "
             f"canonical assessment receipt={receipt_valuation} expected={expected_valuation}"
         )
@@ -248,7 +275,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         or snap_completeness != batch.completeness_status
         or receipt_completeness != batch.completeness_status
     ):
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_completeness_mismatch: "
             f"batch={batch.completeness_status} snapshot={snap_completeness} "
             f"receipt={receipt_completeness} expected={expected_completeness}"
@@ -262,29 +289,35 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         ("receipt", receipt_assessment),
     ]:
         if source_assessment.get("policy_id") != canonical_policy:
-            raise StateCoreStoreError(
+            raise _import_error(
                 "valuation_policy_mismatch: "
                 f"{label} policy={source_assessment.get('policy_id')} "
                 f"expected={canonical_policy}"
             )
         if source_assessment.get("evaluated_at_utc") != observed:
-            raise StateCoreStoreError(
+            raise _import_error(
                 "valuation_policy_mismatch: "
                 f"{label} evaluated_at="
                 f"{source_assessment.get('evaluated_at_utc')} "
                 f"expected={observed}"
             )
-    # Verify record counts across surfaces (batch, manifest, receipt, snapshot).
+    # Verify record counts across all surfaces (full dict, not just position).
     snap_record_counts = (snapshot.payload or {}).get("record_counts") or {}
     expected_position_count = snap_record_counts.get("position", 0)
     if batch.record_counts.get("position") != expected_position_count:
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_record_count_mismatch: "
             f"batch.position={batch.record_counts.get('position')} "
             f"snapshot.position={expected_position_count}"
         )
+    if manifest.record_counts.get("position") != expected_position_count:
+        raise _import_error(
+            "valuation_record_count_mismatch: "
+            f"manifest.position={manifest.record_counts.get('position')} "
+            f"snapshot.position={expected_position_count}"
+        )
     if receipt_payload.get("record_counts", {}).get("position") != expected_position_count:
-        raise StateCoreStoreError(
+        raise _import_error(
             "valuation_record_count_mismatch: "
             f"receipt.position={receipt_payload.get('record_counts', {}).get('position')} "
             f"snapshot.position={expected_position_count}"

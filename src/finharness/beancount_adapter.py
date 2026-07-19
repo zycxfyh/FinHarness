@@ -35,6 +35,7 @@ from finharness.capital_import_contract import (
 from finharness.capital_import_valuation import (
     assess_positions,
     merge_valuation_findings,
+    valuation_assessment_summary,
 )
 from finharness.import_provenance import persist_source_evidence, prepare_import
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
@@ -723,14 +724,10 @@ def ingest_beancount_ledger(
             "time_semantics": time_semantics,
             "findings": [finding.as_dict() for finding in findings],
             "non_claims": list(NON_CLAIMS),
-            "valuation_assessment": {
-                "policy_id": "finharness.position_valuation.base.v1",
-                "evaluated_at_utc": as_of_utc,
-                "status_counts": {
-                    status: sum(1 for p in positions if p.valuation_status == status)
-                    for status in {p.valuation_status for p in positions}
-                },
-            },
+            "valuation_assessment": valuation_assessment_summary(
+                positions,
+                evaluated_at_utc=as_of_utc,
+            ),
         },
         source_refs=source_refs,
     )
@@ -747,14 +744,10 @@ def ingest_beancount_ledger(
         cashflow_count=len(cashflows),
         data_gaps=data_gaps,
     )
-    receipt_payload["valuation_assessment"] = {
-        "policy_id": "finharness.position_valuation.base.v1",
-        "evaluated_at_utc": as_of_utc,
-        "status_counts": {
-            status: sum(1 for p in positions if p.valuation_status == status)
-            for status in {p.valuation_status for p in positions}
-        },
-    }
+    receipt_payload["valuation_assessment"] = valuation_assessment_summary(
+        positions,
+        evaluated_at_utc=as_of_utc,
+    )
     prepared = prepare_import(
         source_kind=LEDGER_KIND,
         source_id=display_path(source_path),

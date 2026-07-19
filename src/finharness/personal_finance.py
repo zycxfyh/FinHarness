@@ -37,6 +37,7 @@ from finharness.capital_import_contract import (
 from finharness.capital_import_valuation import (
     assess_positions,
     merge_valuation_findings,
+    valuation_assessment_summary,
 )
 from finharness.import_provenance import (
     derive_import_batch_id,
@@ -756,11 +757,10 @@ def _finalize_valuation_on_records(
         payload["findings"] = [finding.as_dict() for finding in final_findings]
         payload["record_counts"] = payload.get("record_counts", {})
         payload["record_counts"]["position"] = final_position_count
-        payload["valuation_assessment"] = {
-            "policy_id": "finharness.position_valuation.base.v1",
-            "evaluated_at_utc": observed_at_utc,
-            "status_counts": dict(_status_counts(assessments)),
-        }
+        payload["valuation_assessment"] = valuation_assessment_summary(
+            [record for record in rewritten if isinstance(record, Position)],
+            evaluated_at_utc=observed_at_utc,
+        )
         record.payload = payload
     return rewritten, final_findings, status
 
@@ -1044,22 +1044,10 @@ def ingest_personal_finance_export(
     record_counts = {**record_counts, "position": final_position_count}
     receipt_payload["record_counts"] = record_counts
     # Compute status counts for valuation_assessment.
-    position_statuses = {
-        record.valuation_status
-        for record in records
-        if isinstance(record, Position)
-    }
-    receipt_payload["valuation_assessment"] = {
-        "policy_id": "finharness.position_valuation.base.v1",
-        "evaluated_at_utc": as_of_utc,
-        "status_counts": {
-            status: sum(
-                1 for record in records
-                if isinstance(record, Position) and record.valuation_status == status
-            )
-            for status in position_statuses
-        },
-    }
+    receipt_payload["valuation_assessment"] = valuation_assessment_summary(
+        [record for record in records if isinstance(record, Position)],
+        evaluated_at_utc=as_of_utc,
+    )
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,

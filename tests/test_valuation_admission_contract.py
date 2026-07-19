@@ -16,6 +16,7 @@ import tempfile
 import unittest
 from collections import Counter
 from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -562,7 +563,10 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
         aaa = _pos_by_symbol(self.engine, "AAA")
         _pos_by_symbol(self.engine, "BBB")
         self.assertEqual(aaa.valuation_status, "stale")
-        blockers = valuation_blockers(aaa)
+        blockers = valuation_blockers(
+            aaa,
+            evaluated_at=datetime.fromisoformat(aaa.as_of_utc),
+        )
         self.assertIn("market_price_stale", blockers)
         self.assertEqual(result2.completeness_status, "blocked")
         _assert_import_surface_agreement(
@@ -602,7 +606,10 @@ class BeancountValuationContractTest(unittest.TestCase):
         self.assertEqual(aaa.valued_at_utc, "2025-06-10T00:00:00+00:00")
         self.assertEqual(bbb.valued_at_utc, "2025-06-20T00:00:00+00:00")
         self.assertEqual(aaa.valuation_status, "stale")
-        blockers = valuation_blockers(aaa)
+        blockers = valuation_blockers(
+            aaa,
+            evaluated_at=datetime.fromisoformat(aaa.as_of_utc),
+        )
         self.assertIn("market_price_stale", blockers)
         self.assertEqual(result.completeness_status, "blocked")
         _assert_import_surface_agreement(

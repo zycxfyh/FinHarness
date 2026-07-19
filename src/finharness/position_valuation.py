@@ -487,17 +487,15 @@ def valuation_blockers(
 ) -> tuple[str, ...]:
     """Return stable blocker codes via the canonical assessor.
 
-    Does not trust stored ``valuation_status`` as business input. Optional
-    ``evaluated_at`` / ``max_age`` enable freshness checks for time-sensitive uses.
-    When ``evaluated_at`` is omitted, ``position.as_of_utc`` is used when present
-    so import-time freshness remains re-derivable without a wall clock.
+    Does not trust stored ``valuation_status`` as business input. Only performs
+    freshness checks when ``evaluated_at`` is explicitly provided; callers such
+    as the materializer, snapshot diff, and Exposure must pass the exact snapshot
+    clock. Without an explicit clock, structural checks (missing fields,
+    currencies, reconciliation) still fire but stale detection is skipped.
     """
     evidence = evidence_from_position(position)
     if evaluated_at is not None:
         evaluated_at_utc = evaluated_at.astimezone(UTC).isoformat()
-        check_freshness = True
-    elif getattr(position, "as_of_utc", None):
-        evaluated_at_utc = str(position.as_of_utc)
         check_freshness = True
     else:
         evaluated_at_utc = position.valued_at_utc or "1970-01-01T00:00:00+00:00"
