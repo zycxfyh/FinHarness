@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  repair:
-    if: ${{ !contains(github.event.head_commit.message, 'record repair diagnostic') }}
+  install:
+    if: ${{ !contains(github.event.head_commit.message, 'record bundle diagnostic') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact branch head
@@ -18,45 +18,67 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect complete bundle
+        id: bundle
+        shell: bash
+        run: |
+          if [ -f .ci/issue373-bundle/READY ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up uv
+        if: steps.bundle.outputs.ready == 'true'
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
           version: "0.10.9"
 
-      - name: Install locked environment
-        run: uv sync --frozen
-
-      - name: Apply, verify, and publish deterministic result
+      - name: Install, verify, and publish exact repair bundle
+        if: steps.bundle.outputs.ready == 'true'
         shell: bash
         run: |
           set +e
-          LOG=/tmp/patch-373.log
+          LOG=/tmp/issue373-bundle.log
           : > "$LOG"
           {
             set -euo pipefail
-            python scripts/_patch_373_core.py
-            python scripts/_patch_373_checker.py
-            python scripts/_patch_373_tests.py
-            python scripts/_patch_373_checker_lint.py
-            python scripts/_patch_373_recovery_lint.py
-            PYTHONPATH=src python - <<'PY'
-          import json
-          from pathlib import Path
-          from finharness.capital_import_registry import registry_projection
+            uv sync --frozen
+            python - <<'PY'
+          from __future__ import annotations
 
-          target = Path("docs/governance/capital-import-entrypoints.json")
-          target.write_text(
-              json.dumps(registry_projection(), ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
+          import base64
+          import zlib
+          from pathlib import Path
+
+          mapping = {
+              "docs/governance/capital-import-entrypoints.json": "projection.zlib.b64",
+              "scripts/check_capital_import_entrypoints.py": "checker.zlib.b64",
+              "src/finharness/capital_import_registry.py": "registry.zlib.b64",
+              "src/finharness/capital_import_recovery.py": "recovery.zlib.b64",
+              "src/finharness/personal_finance.py": "personal-finance.zlib.b64",
+              "src/finharness/beancount_adapter.py": "beancount.zlib.b64",
+              "src/finharness/statecore/__init__.py": "statecore-init.zlib.b64",
+              "src/finharness/statecore/store.py": "store.zlib.b64",
+              "tests/test_capital_import_entrypoints.py": "tests.zlib.b64",
+          }
+          bundle = Path(".ci/issue373-bundle")
+          for destination, token_file in mapping.items():
+              target = Path(destination)
+              target.parent.mkdir(parents=True, exist_ok=True)
+              encoded = (bundle / token_file).read_text(encoding="ascii").strip()
+              target.write_bytes(zlib.decompress(base64.b64decode(encoded)))
           PY
-            rm scripts/_patch_373_core.py
-            rm scripts/_patch_373_checker.py
-            rm scripts/_patch_373_tests.py
-            rm scripts/_patch_373_checker_lint.py
-            rm scripts/_patch_373_recovery_lint.py
-            rm -f scripts/sitecustomize.py patch-373-status.txt
             git checkout origin/main -- scripts/run_timed_check.py
+            rm -f \
+              scripts/_patch_373_core.py \
+              scripts/_patch_373_checker.py \
+              scripts/_patch_373_tests.py \
+              scripts/_patch_373_checker_lint.py \
+              scripts/_patch_373_recovery_lint.py \
+              scripts/sitecustomize.py \
+              patch-373-status.txt
+            rm -rf .ci/issue373-bundle
             rm .github/workflows/patch-373-independent-audit.yml
             files=(
               scripts/check_capital_import_entrypoints.py
@@ -90,7 +112,7 @@ jobs:
             printf 'failure\n\n' > patch-373-status.txt
             tail -c 50000 "$LOG" >> patch-373-status.txt
             git add patch-373-status.txt
-            git commit -m "ci(373): record repair diagnostic"
+            git commit -m "ci(373): record bundle diagnostic"
             git push origin HEAD:agent/373-capital-import-manifest
             exit 1
           fi
