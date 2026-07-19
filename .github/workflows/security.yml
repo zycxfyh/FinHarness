@@ -21,12 +21,12 @@ jobs:
         with:
           version: "0.10.9"
 
-      - name: Capture exact repair diagnostic
+      - name: Capture Snapshot binding diagnostic
         shell: bash
         run: |
           set +e
           mkdir -p .artifacts
-          LOG=.artifacts/issue373-repair.log
+          LOG=.artifacts/issue373-snapshot-binding.log
           : > "$LOG"
           {
             set -x
@@ -46,35 +46,71 @@ jobs:
           PY
             python scripts/_patch_373_core.py
             python scripts/_patch_373_recovery_lint.py
+            python - <<'PY'
+          from pathlib import Path
+
+          checker = Path("scripts/check_capital_import_entrypoints.py")
+          text = checker.read_text(encoding="utf-8")
+          text = text.replace(
+              '''            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                if marker := _assignment_marker(node):
+                    markers.add(marker)
+''',
+              '''            elif isinstance(node, (ast.Assign, ast.AnnAssign)) and (
+                marker := _assignment_marker(node)
+            ):
+                markers.add(marker)
+''',
+              1,
+          )
+          checker.write_text(text, encoding="utf-8")
+
+          store = Path("src/finharness/statecore/store.py")
+          text = store.read_text(encoding="utf-8")
+          text = text.replace(
+              '''    if any(snapshot.payload.get(key) != value for key, value in expected_payload.items()):
+        raise StateCoreStoreError("snapshot does not bind the canonical import envelope")
+''',
+              '''    mismatches = {
+        key: {"actual": snapshot.payload.get(key), "expected": value}
+        for key, value in expected_payload.items()
+        if snapshot.payload.get(key) != value
+    }
+    if mismatches:
+        raise StateCoreStoreError(
+            f"snapshot does not bind the canonical import envelope: {mismatches}"
+        )
+''',
+              1,
+          )
+          store.write_text(text, encoding="utf-8")
+          PY
+            rm -f \
+              scripts/_patch_373_core.py \
+              scripts/_patch_373_checker.py \
+              scripts/_patch_373_tests.py \
+              scripts/_patch_373_checker_lint.py \
+              scripts/_patch_373_recovery_lint.py \
+              scripts/sitecustomize.py
+            rm -rf .ci/issue373-bundle
             uv sync --frozen
-            files=(
-              scripts/check_capital_import_entrypoints.py
-              src/finharness/capital_import_registry.py
-              src/finharness/capital_import_recovery.py
-              src/finharness/personal_finance.py
-              src/finharness/beancount_adapter.py
-              src/finharness/statecore/__init__.py
+            uv run ruff format \
+              scripts/check_capital_import_entrypoints.py \
+              src/finharness/capital_import_recovery.py \
+              src/finharness/personal_finance.py \
+              src/finharness/beancount_adapter.py \
               src/finharness/statecore/store.py
-              tests/test_capital_import_entrypoints.py
-            )
-            uv run ruff format "${files[@]}"
-            uv run ruff check --fix "${files[@]}"
-            uv run ruff check "${files[@]}"
-            PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
             PYTHONPATH=src uv run python -m unittest \
-              tests.test_capital_import_entrypoints \
-              tests.test_statecore_snapshot_ingest \
-              tests.test_capital_import_recovery \
-              tests.test_daily_change_brief
+              tests.test_capital_import_recovery.CapitalImportRecoveryTest.test_clean_materialization_is_verified
           } >> "$LOG" 2>&1
           STATUS=$?
           printf '\nexit_status=%s\n' "$STATUS" >> "$LOG"
           exit 0
 
-      - name: Upload exact repair diagnostic
+      - name: Upload Snapshot binding diagnostic
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: issue373-repair-diagnostic
-          path: .artifacts/issue373-repair.log
+          name: issue373-snapshot-binding
+          path: .artifacts/issue373-snapshot-binding.log
           if-no-files-found: error
           retention-days: 3
