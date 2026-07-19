@@ -361,7 +361,9 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
         else:
             expected = evidence.quantity * evidence.unit_price
             if cross and fx_valid:
-                expected *= evidence.fx_rate
+                fx_rate = evidence.fx_rate
+                if fx_rate is not None:
+                    expected *= fx_rate
             if abs(expected - evidence.market_value) > policy.reconciliation_tolerance:
                 recon_findings.append(
                     _finding(

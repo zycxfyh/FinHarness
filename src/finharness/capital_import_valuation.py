@@ -129,7 +129,7 @@ def merge_valuation_findings(
         kept.append(
             ImportFinding(
                 code=str(data.get("code") or ""),
-                severity=data.get("severity") or "partial",  # type: ignore[arg-type]
+                severity=data.get("severity") or "partial",
                 message=str(data.get("message") or ""),
                 record_type=data.get("record_type"),
                 record_number=data.get("record_number"),
@@ -188,7 +188,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         if assessment.policy_id != BASE_VALUATION_POLICY_V1.policy_id:
             raise StateCoreStoreError("valuation_policy_mismatch")
 
-    expected_valuation = []
+    expected_valuation: list[tuple] = []
     for assessment in assessments:
         expected_valuation.extend(_normalize_tuple(f) for f in assessment.findings)
     expected_counter = Counter(expected_valuation)
@@ -231,7 +231,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         [
             ImportFinding(
                 code=str(_as_finding_dict(f).get("code") or ""),
-                severity=_as_finding_dict(f).get("severity") or "partial",  # type: ignore[arg-type]
+                severity=_as_finding_dict(f).get("severity") or "partial",
                 message=str(_as_finding_dict(f).get("message") or ""),
                 record_type=_as_finding_dict(f).get("record_type"),
                 record_number=_as_finding_dict(f).get("record_number"),
