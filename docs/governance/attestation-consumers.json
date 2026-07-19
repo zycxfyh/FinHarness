@@ -1463,8 +1463,8 @@
       "consumer_id": "ATT-CONS-052",
       "path": "src/finharness/statecore/store.py",
       "symbol": "Attestation ProposalVersion schema migration",
-      "line_start": 480,
-      "line_end": 520,
+      "line_start": 483,
+      "line_end": 523,
       "match_terms": [
         "attestations"
       ],
@@ -1664,13 +1664,13 @@
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 38,
+      "match_line": 41,
       "term": "Attestation",
       "reason": "StateCoreRecord union import. Persistence infrastructure."
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 101,
+      "match_line": 104,
       "term": "Attestation",
       "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
     },

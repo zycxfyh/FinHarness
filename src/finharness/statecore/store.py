@@ -14,6 +14,9 @@ from sqlalchemy import Connection, Engine, delete, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, col, create_engine, select
 
+from finharness.capital_import_registry import (
+    PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES as _REGISTRY_MATERIALIZED_SOURCES,
+)
 from finharness.project_paths import ROOT
 from finharness.statecore.execution_models import (
     ApprovalRecord,
@@ -653,7 +656,7 @@ def upsert_records(
     return saved
 
 
-_PRODUCTION_IMPORT_KINDS = {"personal_finance_export", "beancount_ledger"}
+_PRODUCTION_IMPORT_KINDS = set(_REGISTRY_MATERIALIZED_SOURCES)
 
 
 def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -> None:

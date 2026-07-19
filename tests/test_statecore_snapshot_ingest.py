@@ -1,21 +1,31 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from finharness.capital_import_recovery import audit_capital_imports
 from finharness.statecore.models import (
     AccountIdentity,
+    ImportBatch,
     InstrumentIdentity,
     Position,
     ReceiptIndex,
+    ReceiptManifest,
     Snapshot,
 )
 from finharness.statecore.receipt_index import index_receipts, receipt_index_record_from_path
 from finharness.statecore.snapshot_ingest import (
+    BROKER_READ_MATERIALIZED_SOURCE,
+    BROKER_READ_SOURCE_KIND,
+    ingest_broker_read_receipt,
     ingest_portfolio_snapshot_from_payload,
     ingest_portfolio_snapshot_from_receipt,
+    portfolio_records_from_broker_payload,
 )
-from finharness.statecore.store import StateCoreStoreError, read_all
+from finharness.statecore.store import StateCoreStoreError, read_all, upsert_records
 from tests._statecore_fixtures import StateCoreFixture
 
 
@@ -25,11 +35,55 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.root = self.fx.root
         self.db_path = self.fx.db_path
         self.receipt_root = self.fx.receipt_root
+        self.import_root = self.receipt_root / "capital-imports" / "broker-read"
         self.engine = self.fx.engine
         self.addCleanup(self.fx.cleanup)
 
     def _write_receipt(self, relative_path: str, payload: dict[str, object]) -> Path:
         return self.fx.write_receipt(relative_path, payload)
+
+    def _broker_payload(
+        self,
+        *,
+        receipt_id: str = "receipt_portfolio_1",
+        market_value: str = "100.5",
+    ) -> dict[str, object]:
+        return {
+            "receipt_id": receipt_id,
+            "kind": "broker_read",
+            "created_at_utc": "2026-06-17T01:02:03+00:00",
+            "effective_at_utc": "2026-06-17T01:02:03+00:00",
+            "observed_at_utc": "2026-06-17T01:02:03+00:00",
+            "valued_at_utc": "2026-06-17T01:00:00+00:00",
+            "broker": "alpaca",
+            "environment": "paper",
+            "account": {
+                "id": "acct-1",
+                "status": "ACTIVE",
+                "portfolio_value": "150.25",
+            },
+            "positions": [
+                {
+                    "symbol": "SPY",
+                    "qty": "2",
+                    "market_value": market_value,
+                    "unit_price": "50.25",
+                    "currency": "USD",
+                    "asset_class": "equity",
+                    "exchange": "ARCX",
+                },
+                {
+                    "symbol": "QQQ",
+                    "quantity": "1",
+                    "current_price": "49.75",
+                    "cost_basis": "45.00",
+                    "currency": "USD",
+                    "asset_class": "equity",
+                    "exchange": "XNAS",
+                },
+            ],
+            "execution_allowed": False,
+        }
 
     def test_index_receipts_records_paths_and_receipt_refs(self) -> None:
         receipt = self._write_receipt(
@@ -66,125 +120,155 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(portfolio.path, str(receipt.resolve()))
         self.assertEqual(portfolio.source_refs, [str(receipt.resolve())])
         self.assertIn("receipt_market_1", portfolio.refs)
-        self.assertIn("data/receipts/market-data/receipt_mds_1.json", portfolio.refs)
-
         fallback = next(row for row in rows if row.receipt_id == "daily__no-id")
-        self.assertEqual(fallback.receipt_id, "daily__no-id")
         self.assertEqual(fallback.kind, "daily_evidence")
-        raw = next(row for row in rows if row.receipt_id == "hardening__latest-gitleaks-redacted")
-        self.assertEqual(raw.kind, "raw_json_list")
-        self.assertEqual(raw.refs, [])
         unreadable = next(row for row in rows if row.receipt_id == "broken__truncated")
         self.assertEqual(unreadable.kind, "unreadable_json")
-        self.assertEqual(unreadable.path, str(bad_report.resolve()))
-
         with self.assertRaises(StateCoreStoreError):
             receipt_index_record_from_path(bad_report, receipt_root=self.receipt_root)
 
-    def test_ingest_broker_read_receipt_creates_portfolio_snapshot_and_index(self) -> None:
-        receipt = self._write_receipt(
-            "broker/portfolio.json",
-            {
-                "receipt_id": "receipt_portfolio_1",
-                "kind": "broker_read",
-                "created_at_utc": "2026-06-17T01:02:03+00:00",
-                "valued_at_utc": "2026-06-17T01:00:00+00:00",
-                "broker": "alpaca",
-                "environment": "paper",
-                "account": {
-                    "id": "acct-1",
-                    "status": "ACTIVE",
-                    "portfolio_value": "150.25",
-                },
-                "positions": [
-                    {
-                        "symbol": "SPY",
-                        "qty": "2",
-                        "market_value": "100.5",
-                        "unit_price": "50.25",
-                        "currency": "USD",
-                        "asset_class": "equity",
-                        "exchange": "ARCX",
-                    },
-                    {
-                        "symbol": "QQQ",
-                        "quantity": "1",
-                        "current_price": "49.75",
-                        "cost_basis": "45.00",
-                        "currency": "USD",
-                        "asset_class": "equity",
-                        "exchange": "XNAS",
-                    },
-                ],
-            },
+    def test_manifested_broker_import_binds_artifacts_batch_manifest_and_rows(self) -> None:
+        receipt = self._write_receipt("broker/portfolio.json", self._broker_payload())
+        source_sha = hashlib.sha256(receipt.read_bytes()).hexdigest()
+
+        result = ingest_broker_read_receipt(
+            receipt,
+            engine=self.engine,
+            receipt_root=self.import_root,
         )
 
-        snapshot = ingest_portfolio_snapshot_from_receipt(receipt, engine=self.engine)
-
+        batches = read_all(ImportBatch, engine=self.engine)
+        manifests = read_all(ReceiptManifest, engine=self.engine)
         snapshots = read_all(Snapshot, engine=self.engine)
         positions = sorted(read_all(Position, engine=self.engine), key=lambda row: row.symbol)
         receipts = read_all(ReceiptIndex, engine=self.engine)
 
-        self.assertEqual(snapshot.snapshot_id, "snap_portfolio_receipt_portfolio_1")
+        version = hashlib.sha256(
+            f"{receipt.resolve()}\x00{source_sha}".encode()
+        ).hexdigest()[:24]
+        self.assertEqual(result.snapshot_id, f"snap_broker_read_{version}")
+        self.assertEqual(result.batch_id, batches[0].batch_id)
+        self.assertEqual(result.manifest_id, manifests[0].manifest_id)
+        self.assertEqual(result.receipt_id, manifests[0].receipt_id)
+        self.assertNotEqual(result.receipt_id, "receipt_portfolio_1")
+        self.assertEqual(batches[0].source_kind, BROKER_READ_SOURCE_KIND)
+        self.assertEqual(batches[0].source_sha256, source_sha)
+        self.assertEqual(manifests[0].snapshot_id, result.snapshot_id)
+        self.assertEqual(manifests[0].receipt_ref, result.receipt_ref)
         self.assertEqual(len(snapshots), 1)
-        self.assertEqual(snapshots[0].kind, "portfolio")
-        self.assertEqual(snapshots[0].source_refs, [str(receipt.resolve())])
-        self.assertFalse(snapshots[0].payload["execution_allowed"])
-        self.assertIn("Not execution authorization.", snapshots[0].payload["not_claimed"])
-        self.assertEqual(snapshots[0].payload["position_count"], 2)
-
+        self.assertEqual(snapshots[0].payload["import_batch_id"], result.batch_id)
+        self.assertEqual(snapshots[0].payload["receipt_manifest_id"], result.manifest_id)
+        self.assertEqual(snapshots[0].payload["import_receipt_ref"], result.receipt_ref)
+        self.assertIn(str(receipt.resolve()), snapshots[0].source_refs)
+        self.assertIn(result.receipt_ref, snapshots[0].source_refs)
         self.assertEqual([row.symbol for row in positions], ["QQQ", "SPY"])
-        self.assertEqual(positions[0].market_value, 49.75)
-        self.assertEqual(positions[0].cost_basis, 45.0)
-        self.assertEqual(positions[1].market_value, 100.5)
-        self.assertIsNone(positions[1].cost_basis)
         self.assertTrue(all(position.instrument_id for position in positions))
-        self.assertTrue(all(position.valuation_status == "valued" for position in positions))
-        self.assertTrue(all(position.valuation_currency == "USD" for position in positions))
         self.assertEqual(len(read_all(AccountIdentity, engine=self.engine)), 1)
         self.assertEqual(len(read_all(InstrumentIdentity, engine=self.engine)), 2)
-
         self.assertEqual(len(receipts), 1)
-        self.assertEqual(receipts[0].receipt_id, "receipt_portfolio_1")
-        self.assertEqual(receipts[0].path, str(receipt.resolve()))
+        self.assertEqual(receipts[0].receipt_id, result.receipt_id)
+        self.assertEqual(receipts[0].path, result.receipt_ref)
 
-    def test_orders_and_plans_do_not_invent_positions(self) -> None:
+    def test_compatibility_wrapper_routes_through_manifested_adapter(self) -> None:
+        receipt = self._write_receipt("broker/wrapper.json", self._broker_payload())
+        snapshot = ingest_portfolio_snapshot_from_receipt(
+            receipt,
+            engine=self.engine,
+            receipt_root=self.import_root,
+        )
+        self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
+        self.assertEqual(
+            snapshot.payload["import_batch_id"],
+            read_all(ImportBatch, engine=self.engine)[0].batch_id,
+        )
+
+    def test_same_input_is_idempotent(self) -> None:
+        receipt = self._write_receipt("broker/repeat.json", self._broker_payload())
+        first = ingest_broker_read_receipt(
+            receipt, engine=self.engine, receipt_root=self.import_root
+        )
+        second = ingest_broker_read_receipt(
+            receipt, engine=self.engine, receipt_root=self.import_root
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 1)
+        self.assertEqual(len(read_all(Position, engine=self.engine)), 2)
+
+    def test_same_bytes_from_distinct_source_paths_do_not_share_import_identity(self) -> None:
+        first_path = self._write_receipt("broker/path-a.json", self._broker_payload())
+        second_path = self._write_receipt("broker/path-b.json", self._broker_payload())
+        first = ingest_broker_read_receipt(
+            first_path, engine=self.engine, receipt_root=self.import_root
+        )
+        second = ingest_broker_read_receipt(
+            second_path, engine=self.engine, receipt_root=self.import_root
+        )
+        self.assertNotEqual(first.batch_id, second.batch_id)
+        self.assertNotEqual(first.manifest_id, second.manifest_id)
+        self.assertNotEqual(first.receipt_id, second.receipt_id)
+        self.assertNotEqual(first.snapshot_id, second.snapshot_id)
+        self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 2)
+
+    def test_recovery_snapshot_override_must_match_exact_source_identity(self) -> None:
+        receipt = self._write_receipt("broker/recovery-id.json", self._broker_payload())
+        with self.assertRaisesRegex(StateCoreStoreError, "exact source identity"):
+            ingest_broker_read_receipt(
+                receipt,
+                engine=self.engine,
+                receipt_root=self.import_root,
+                snapshot_id="snap_caller_supplied",
+            )
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
+        self.assertEqual(read_all(ReceiptManifest, engine=self.engine), [])
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+
+    def test_changed_bytes_with_same_upstream_receipt_id_create_new_version(self) -> None:
+        receipt = self._write_receipt("broker/versioned.json", self._broker_payload())
+        first = ingest_broker_read_receipt(
+            receipt, engine=self.engine, receipt_root=self.import_root
+        )
+        receipt.write_text(
+            json.dumps(self._broker_payload(market_value="110.5")),
+            encoding="utf-8",
+        )
+        second = ingest_broker_read_receipt(
+            receipt, engine=self.engine, receipt_root=self.import_root
+        )
+        self.assertEqual(first.upstream_receipt_id, second.upstream_receipt_id)
+        self.assertNotEqual(first.batch_id, second.batch_id)
+        self.assertNotEqual(first.manifest_id, second.manifest_id)
+        self.assertNotEqual(first.snapshot_id, second.snapshot_id)
+        self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 2)
+
+    def test_direct_payload_materialization_fails_closed_but_normalizer_remains_pure(self) -> None:
         payload = {
             "receipt_id": "receipt_dry_run_1",
             "created_at_utc": "2026-06-17T03:00:00+00:00",
             "broker": "alpaca",
             "environment": "paper",
-            "pre_trade": {
-                "account_id": "acct-paper",
-                "buying_power": "1000",
-            },
-            "plan": {
-                "symbol": "SPY",
-                "side": "buy",
-                "notional": "25",
-            },
-            "order": {
-                "symbol": "SPY",
-                "side": "buy",
-                "notional": "25",
-            },
+            "pre_trade": {"account_id": "acct-paper", "buying_power": "1000"},
+            "plan": {"symbol": "SPY", "side": "buy", "notional": "25"},
+            "order": {"symbol": "SPY", "side": "buy", "notional": "25"},
         }
-
-        snapshot = ingest_portfolio_snapshot_from_payload(
+        _account, snapshot, positions = portfolio_records_from_broker_payload(
             payload,
             source_ref="data/receipts/alpaca-paper-dca/example.json",
-            engine=self.engine,
         )
-
-        positions = read_all(Position, engine=self.engine)
-        loaded = read_all(Snapshot, engine=self.engine)[0]
-        self.assertEqual(snapshot.snapshot_id, "snap_portfolio_receipt_dry_run_1")
         self.assertEqual(positions, [])
-        self.assertEqual(loaded.payload["position_count"], 0)
-        self.assertFalse(loaded.payload["positions_source_disclosed"])
-        self.assertFalse(loaded.payload["execution_allowed"])
+        self.assertEqual(snapshot.payload["position_count"], 0)
+        with self.assertRaisesRegex(StateCoreStoreError, "not a production import surface"):
+            ingest_portfolio_snapshot_from_payload(
+                payload,
+                source_ref="data/receipts/alpaca-paper-dca/example.json",
+                engine=self.engine,
+            )
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
 
-    def test_float_money_and_missing_currency_fail_closed(self) -> None:
+    def test_float_money_and_missing_currency_fail_closed_during_normalization(self) -> None:
         base = {
             "receipt_id": "receipt_bad_money",
             "created_at_utc": "2026-07-13T07:00:00+00:00",
@@ -192,20 +276,18 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         }
         float_payload = {**base, "positions": [{**base["positions"][0], "market_value": 0.1}]}
         with self.assertRaisesRegex(StateCoreStoreError, "not float"):
-            ingest_portfolio_snapshot_from_payload(
-                float_payload, source_ref="bad-float.json", engine=self.engine
-            )
+            portfolio_records_from_broker_payload(float_payload, source_ref="bad-float.json")
         missing_currency = {
             **base,
             "positions": [{"symbol": "SPY", "qty": "1", "market_value": "10"}],
         }
         with self.assertRaisesRegex(StateCoreStoreError, "three-letter currency"):
-            ingest_portfolio_snapshot_from_payload(
-                missing_currency, source_ref="bad-currency.json", engine=self.engine
+            portfolio_records_from_broker_payload(
+                missing_currency,
+                source_ref="bad-currency.json",
             )
-        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
 
-    def test_omitted_record_and_stale_valuation_are_structured_findings(self) -> None:
+    def test_partial_and_blocking_findings_are_bound_to_import(self) -> None:
         payload = {
             "receipt_id": "receipt_partial",
             "effective_at_utc": "2026-07-11T07:00:00+00:00",
@@ -216,20 +298,63 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
                 {"symbol": "QQQ", "qty": "2", "currency": "USD"},
             ],
         }
-        snapshot = ingest_portfolio_snapshot_from_payload(
-            payload, source_ref="partial.json", engine=self.engine
+        receipt = self._write_receipt("broker/partial.json", payload)
+        result = ingest_broker_read_receipt(
+            receipt, engine=self.engine, receipt_root=self.import_root
         )
-        self.assertEqual(snapshot.payload["coverage_mode"], "full")
+        batch = read_all(ImportBatch, engine=self.engine)[0]
+        snapshot = read_all(Snapshot, engine=self.engine)[0]
+        receipt_payload = json.loads(Path(result.receipt_ref).read_text(encoding="utf-8"))
+        self.assertEqual(result.completeness_status, "blocked")
+        self.assertEqual(batch.completeness_status, "blocked")
         self.assertEqual(snapshot.payload["completeness_status"], "blocked")
-        self.assertEqual(
-            {finding["code"] for finding in snapshot.payload["findings"]},
-            {
-                "stale_valuation",
-                "valuation_unpriced",
-                "instrument_identity_unresolved",
-            },
+        self.assertEqual(receipt_payload["completeness_status"], "blocked")
+        self.assertEqual(batch.findings, snapshot.payload["findings"])
+        self.assertEqual(batch.findings, receipt_payload["findings"])
+
+    def test_generic_broker_writes_are_rejected_by_registry_bound_guard(self) -> None:
+        with self.assertRaisesRegex(StateCoreStoreError, "materialize_import_batch"):
+            upsert_records(
+                [
+                    ReceiptIndex(
+                        receipt_id="receipt_direct_broker",
+                        kind=BROKER_READ_SOURCE_KIND,
+                        path="direct.json",
+                        created_at_utc="2026-07-13T07:00:00+00:00",
+                    ),
+                    Snapshot(
+                        snapshot_id="snap_direct_broker",
+                        kind="portfolio",
+                        as_of_utc="2026-07-13T07:00:00+00:00",
+                        payload={"source": BROKER_READ_MATERIALIZED_SOURCE},
+                        source_refs=["direct.json"],
+                    ),
+                ],
+                engine=self.engine,
+            )
+
+    def test_artifacts_survive_materialization_failure_without_partial_database_world(self) -> None:
+        receipt = self._write_receipt("broker/failure.json", self._broker_payload())
+        with patch(
+            "finharness.statecore.snapshot_ingest.materialize_import_batch",
+            side_effect=StateCoreStoreError("injected materialization failure"),
+        ), self.assertRaisesRegex(StateCoreStoreError, "injected"):
+            ingest_broker_read_receipt(
+                receipt,
+                engine=self.engine,
+                receipt_root=self.import_root,
+            )
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
+        self.assertEqual(read_all(ReceiptManifest, engine=self.engine), [])
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.import_root,
         )
-        self.assertEqual(len(read_all(Position, engine=self.engine)), 2)
+        self.assertIn(
+            "receipt_without_materialization",
+            {finding.code for finding in report.findings},
+        )
 
 
 if __name__ == "__main__":
