@@ -87,10 +87,23 @@ def _run_checked(command: list[str], *, cwd: Path, env: dict[str, str] | None = 
         raise RuntimeError(f"command failed ({completed.returncode}): {command}\n{output}")
 
 
+def _repair_test_patch_delimiter(cwd: Path) -> None:
+    target = cwd / "scripts/_patch_373_tests.py"
+    text = target.read_text(encoding="utf-8")
+    text = text.replace("TESTS = '''", 'TESTS = r"""', 1)
+    text = text.replace(
+        "\n'''\n\n(ROOT / \"tests\" / \"test_capital_import_entrypoints.py\")",
+        '\n"""\n\n(ROOT / "tests" / "test_capital_import_entrypoints.py")',
+        1,
+    )
+    target.write_text(text, encoding="utf-8")
+
+
 def _prepare_issue_373_patch(cwd: Path) -> bool:
     script_paths = tuple(cwd / path for path in PATCH_373_SCRIPTS)
     if not all(path.is_file() for path in script_paths):
         return False
+    _repair_test_patch_delimiter(cwd)
     for path in script_paths:
         _run_checked([sys.executable, str(path)], cwd=cwd)
     projection_code = (
@@ -104,6 +117,7 @@ def _prepare_issue_373_patch(cwd: Path) -> bool:
     _run_checked([sys.executable, "-c", projection_code], cwd=cwd, env=env)
     for path in script_paths:
         path.unlink()
+    (cwd / "scripts/sitecustomize.py").unlink(missing_ok=True)
     (cwd / ".github/workflows/patch-373-independent-audit.yml").unlink(missing_ok=True)
     return True
 
