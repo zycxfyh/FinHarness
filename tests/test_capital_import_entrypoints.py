@@ -8,8 +8,6 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
-from sqlmodel import Session
-
 from finharness.artifact_store import LocalArtifactStore
 from finharness.capital_import_recovery import audit_capital_imports, recover_capital_imports
 from finharness.capital_import_registry import (
@@ -33,6 +31,7 @@ from finharness.statecore.snapshot_ingest import (
 )
 from finharness.statecore.store import (
     StateCoreStoreError,
+    immediate_state_core_session,
     init_state_core,
     read_all,
     upsert_records,
@@ -219,11 +218,10 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
             receipt_root=self.import_root,
             artifact_store=self.store,
         )
-        with Session(self.engine) as session:
+        with immediate_state_core_session(self.engine) as session:
             index = session.get(ReceiptIndex, result.receipt_id)
             self.assertIsNotNone(index)
             session.delete(index)
-            session.commit()
 
         before = audit_capital_imports(
             engine=self.engine,
