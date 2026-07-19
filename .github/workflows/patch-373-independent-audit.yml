@@ -63,10 +63,15 @@ jobs:
               "tests/test_capital_import_entrypoints.py": "tests.zlib.b64",
           }
           bundle = Path(".ci/issue373-bundle")
-          for destination, token_file in mapping.items():
+          for destination, token_prefix in mapping.items():
+              parts = sorted(bundle.glob(f"{token_prefix}*"))
+              if not parts:
+                  raise RuntimeError(f"missing repair token: {token_prefix}")
+              encoded = "".join(
+                  part.read_text(encoding="ascii").strip() for part in parts
+              )
               target = Path(destination)
               target.parent.mkdir(parents=True, exist_ok=True)
-              encoded = (bundle / token_file).read_text(encoding="ascii").strip()
               target.write_bytes(zlib.decompress(base64.b64decode(encoded)))
           PY
             git checkout origin/main -- scripts/run_timed_check.py
