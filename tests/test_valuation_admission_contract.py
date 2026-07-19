@@ -68,9 +68,70 @@ def _pos_by_symbol(engine, symbol):
     return next(p for p in read_all(Position, engine=engine) if p.symbol == symbol)
 
 
-def _valuation_finding_codes(findings):
-    return {f.get("code", "") if isinstance(f, dict) else
-            getattr(f, "code", "") for f in findings}
+VALUATION_CODES = frozenset({
+    "valuation_unpriced", "valuation_fx_missing", "valuation_stale",
+    "valued_at_utc_missing", "price_source_ref_missing",
+    "valuation_components_do_not_reconcile",
+    "market_price_stale", "fx_stale",
+})
+
+
+def _normalize_finding(f):
+    """Return (code, severity) tuple from a finding dict or object."""
+    if isinstance(f, dict):
+        return (f.get("code", ""), f.get("severity", ""))
+    return (getattr(f, "code", ""), getattr(f, "severity", ""))
+
+
+def _valuation_codes(findings, select_codes=None):
+    codes = set()
+    for f in findings or ():
+        cd, _ = _normalize_finding(f)
+        if cd and (select_codes is None or cd in select_codes):
+            codes.add(cd)
+    return codes
+
+
+def _assert_import_surface_agreement(
+    test, result, engine, artifact_store, *,
+    symbol, expected_status, expected_completeness,
+    expected_codes,
+):
+    """Verify batch/snapshot/receipt/result agreement for target Position."""
+    batches = list(read_all(ImportBatch, engine=engine))
+    manifests = list(read_all(ReceiptManifest, engine=engine))
+    snapshots = list(read_all(Snapshot, engine=engine))
+    test.assertEqual(len(batches), 1)
+    test.assertEqual(len(manifests), 1)
+    test.assertEqual(len(snapshots), 1)
+    batch = batches[0]
+    manifest = manifests[0]
+    snapshot = snapshots[0]
+    pos = _pos_by_symbol(engine, symbol)
+    test.assertEqual(pos.valuation_status, expected_status,
+                     f"{symbol} status: {pos.valuation_status} != {expected_status}")
+    bc = batch.completeness_status
+    sc = snapshot.payload.get("completeness_status")
+    test.assertEqual(bc, expected_completeness)
+    test.assertEqual(sc, expected_completeness)
+    test.assertEqual(result.completeness_status, expected_completeness)
+    receipt_bytes = artifact_store.read(manifest.receipt_artifact_id)
+    receipt_payload = json.loads(receipt_bytes)
+    rc = receipt_payload.get("completeness_status")
+    test.assertEqual(rc, expected_completeness)
+    batch_codes = _valuation_codes(
+        getattr(batch, "findings", None), VALUATION_CODES)
+    snap_codes = _valuation_codes(
+        snapshot.payload.get("findings"), VALUATION_CODES)
+    receipt_codes = _valuation_codes(
+        receipt_payload.get("findings"), VALUATION_CODES)
+    test.assertEqual(batch_codes, snap_codes,
+                     f"batch={batch_codes} != snapshot={snap_codes}")
+    test.assertEqual(batch_codes, receipt_codes,
+                     f"batch={batch_codes} != receipt={receipt_codes}")
+    for code in expected_codes:
+        test.assertIn(code, batch_codes,
+                      f"{code} missing from batch findings: {batch_codes}")
 
 
 # ============================================================================
@@ -112,7 +173,7 @@ class CompleteValuationPositiveControlTest(unittest.TestCase):
         ingest_personal_finance_export(
             self._csv([_typed_row({
                 "valuation_currency": "USD", "price_currency": "EUR",
-                "unit_price": "50", "market_value": "55",
+                "unit_price": "50", "market_value": "110",
                 "fx_rate": "1.10", "fx_as_of_utc": "2025-06-20T07:00:00+00:00",
                 "fx_source_ref": "fixture:fx",
             })]), engine=self.engine,
@@ -161,8 +222,9 @@ class BrokerSnapshotTimePositiveControlTest(unittest.TestCase):
             receipt_root=self.import_root, artifact_store=self.store,
         )
         pos = _pos_by_symbol(self.engine, "SPY")
-        self.assertIsNotNone(pos.valued_at_utc)
+        self.assertEqual(pos.valued_at_utc, "2025-06-20T09:00:00+00:00")
         self.assertEqual(pos.valuation_status, "valued")
+        self.assertEqual(valuation_blockers(pos), ())
 
 
 # ============================================================================
@@ -179,6 +241,7 @@ class CsvValuationContractTest(unittest.TestCase):
         self.addCleanup(self.engine.dispose)
         self.addCleanup(self.tmp.cleanup)
         self.receipt_root = self.root / "receipts"
+        self.store = LocalArtifactStore(self.receipt_root / "artifact-store")
 
     def _csv(self, rows):
         path = self.root / "export.csv"
@@ -193,8 +256,7 @@ class CsvValuationContractTest(unittest.TestCase):
         return ingest_personal_finance_export(
             self._csv(rows), engine=self.engine,
             receipt_root=self.receipt_root,
-            artifact_store=LocalArtifactStore(
-                self.receipt_root / "artifact-store"),
+            artifact_store=self.store,
         )
 
     def test_missing_valued_at_utc_produces_unpriced_and_blocked(self):
@@ -205,6 +267,12 @@ class CsvValuationContractTest(unittest.TestCase):
         blockers = valuation_blockers(pos)
         self.assertIn("valued_at_utc_missing", blockers)
         self.assertEqual(result.completeness_status, "blocked")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="unpriced",
+            expected_completeness="blocked",
+            expected_codes={"valued_at_utc_missing"},
+        )
 
     def test_missing_price_source_ref_produces_unpriced_and_blocked(self):
         result = self._ingest([_typed_row({"price_source_ref": ""})])
@@ -214,6 +282,12 @@ class CsvValuationContractTest(unittest.TestCase):
         blockers = valuation_blockers(pos)
         self.assertIn("price_source_ref_missing", blockers)
         self.assertEqual(result.completeness_status, "blocked")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="unpriced",
+            expected_completeness="blocked",
+            expected_codes={"price_source_ref_missing"},
+        )
 
     def test_component_mismatch_produces_unpriced_and_blocked(self):
         result = self._ingest([_typed_row({"market_value": "99"})])
@@ -224,6 +298,12 @@ class CsvValuationContractTest(unittest.TestCase):
         blockers = valuation_blockers(pos)
         self.assertIn("valuation_components_do_not_reconcile", blockers)
         self.assertEqual(result.completeness_status, "blocked")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="SPY", expected_status="unpriced",
+            expected_completeness="blocked",
+            expected_codes={"valuation_components_do_not_reconcile"},
+        )
 
 
 # ============================================================================
@@ -364,6 +444,12 @@ class DeltaCarryForwardContractTest(unittest.TestCase):
         blockers = valuation_blockers(aaa)
         self.assertIn("market_price_stale", blockers)
         self.assertEqual(result2.completeness_status, "blocked")
+        _assert_import_surface_agreement(
+            self, result2, self.engine, self.store,
+            symbol="AAA", expected_status="stale",
+            expected_completeness="blocked",
+            expected_codes={"market_price_stale"},
+        )
 
 
 # ============================================================================
@@ -398,6 +484,12 @@ class BeancountValuationContractTest(unittest.TestCase):
         blockers = valuation_blockers(aaa)
         self.assertIn("market_price_stale", blockers)
         self.assertEqual(result.completeness_status, "blocked")
+        _assert_import_surface_agreement(
+            self, result, self.engine, self.store,
+            symbol="AAA", expected_status="stale",
+            expected_completeness="blocked",
+            expected_codes={"market_price_stale"},
+        )
 
     def test_distinct_price_times_produce_distinct_valued_at_utc(self):
         self._ingest(FIXTURE_DIR / "distinct_price_times.beancount")
