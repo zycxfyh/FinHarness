@@ -64,9 +64,12 @@ class BrokerReadImportResult:
     snapshot_id: str
     receipt_id: str
     receipt_ref: str
+    source_artifact_id: str
     upstream_receipt_id: str | None
     account_count: int
     position_count: int
+    record_counts: dict[str, int]
+    findings: list[dict[str, Any]]
     as_of_utc: str
     completeness_status: str
     execution_allowed: bool = False
@@ -660,16 +663,25 @@ def _ingest_broker_read_receipt_with_snapshot(
         "import_receipt_ref": import_receipt_ref,
         "source_artifact_id": prepared.batch.source_artifact_id,
     }
+    from typing import cast
+
+    from finharness.capital_import_registry import receipt_index_contract_fields
+
+    contract = receipt_index_contract_fields(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        receipt_ref=import_receipt_ref,
+        created_at_utc=source_descriptor.created_at_utc,
+        source_ref=source_ref,
+        upstream_receipt_id=cast(str | None, receipt_payload.get("upstream_receipt_id")),
+        source_artifact_id=prepared.batch.source_artifact_id,
+    )
     receipt_index = ReceiptIndex(
         receipt_id=import_receipt_id,
-        kind=BROKER_READ_MATERIALIZED_SOURCE,
-        path=import_receipt_ref,
-        created_at_utc=source_descriptor.created_at_utc,
-        source_refs=lineage_refs,
-        refs=[
-            str(payload.get("receipt_id") or source_ref),
-            prepared.batch.source_artifact_id,
-        ],
+        kind=cast(str, contract["kind"]),
+        path=cast(str, contract["path"]),
+        created_at_utc=cast(str, contract["created_at_utc"]),
+        source_refs=cast(list[str], contract["source_refs"]),
+        refs=cast(list[str], contract["refs"]),
     )
     materialize_import_batch(
         [receipt_index, *all_records],
@@ -685,11 +697,14 @@ def _ingest_broker_read_receipt_with_snapshot(
         snapshot_id=active_snapshot_id,
         receipt_id=import_receipt_id,
         receipt_ref=import_receipt_ref,
+        source_artifact_id=prepared.batch.source_artifact_id,
         upstream_receipt_id=(
             str(payload["receipt_id"]) if payload.get("receipt_id") is not None else None
         ),
         account_count=1,
         position_count=len(positions),
+        record_counts=dict(record_counts),
+        findings=list(snapshot.payload["findings"]),
         as_of_utc=snapshot.as_of_utc,
         completeness_status=str(snapshot.payload["completeness_status"]),
         execution_allowed=False,

@@ -53,6 +53,7 @@ class DailyChangeBriefResult:
     observation_count: int
     capital_import_batch_id: str
     capital_import_manifest_id: str
+    capital_import_receipt_id: str
     capital_import_receipt_ref: str
     execution_allowed: bool = False
 
@@ -197,6 +198,7 @@ def _brief_receipt_payload(
     source_refs: list[str],
     capital_import_batch_id: str,
     capital_import_manifest_id: str,
+    capital_import_receipt_id: str,
     capital_import_receipt_ref: str,
 ) -> dict[str, Any]:
     return {
@@ -208,6 +210,7 @@ def _brief_receipt_payload(
         "before_snapshot_id": before_snapshot.snapshot_id if before_snapshot else None,
         "capital_import_batch_id": capital_import_batch_id,
         "capital_import_manifest_id": capital_import_manifest_id,
+        "capital_import_receipt_id": capital_import_receipt_id,
         "capital_import_receipt_ref": capital_import_receipt_ref,
         "diff": diff.as_dict() if diff else None,
         "observations": _observation_dicts(observations),
@@ -340,10 +343,11 @@ def run_daily_change_brief(
         thresholds=active_thresholds,
         proposal=proposal,
         markdown_ref=markdown_ref,
-        source_refs=source_refs,
         capital_import_batch_id=capital_import.batch_id,
         capital_import_manifest_id=capital_import.manifest_id,
+        capital_import_receipt_id=capital_import.receipt_id,
         capital_import_receipt_ref=capital_import.receipt_ref,
+        source_refs=source_refs,
     )
     atomic_write_json(brief_receipt_path, brief_payload)
     brief_receipt_ref = _display_path(brief_receipt_path)
@@ -382,6 +386,7 @@ def run_daily_change_brief(
         observation_count=len(observations),
         capital_import_batch_id=capital_import.batch_id,
         capital_import_manifest_id=capital_import.manifest_id,
+        capital_import_receipt_id=capital_import.receipt_id,
         capital_import_receipt_ref=capital_import.receipt_ref,
         execution_allowed=False,
     )

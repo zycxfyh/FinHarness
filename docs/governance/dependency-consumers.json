@@ -421,6 +421,7 @@
         "tests/test_agent_authority_grants.py",
         "tests/test_authenticated_review_actors.py",
         "tests/test_autonomy_statecore_adapter.py",
+        "tests/test_capital_import_entrypoints.py",
         "tests/test_capital_import_recovery.py",
         "tests/test_durable_identity_mutations.py",
         "tests/test_execution_adapter_boundary.py",

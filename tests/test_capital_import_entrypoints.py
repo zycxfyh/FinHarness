@@ -156,17 +156,40 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
         )
 
     def test_legacy_broker_evidence_index_is_not_an_import_mirror(self) -> None:
-        upsert_records(
-            [
-                ReceiptIndex(
-                    receipt_id="receipt_legacy_broker_evidence",
-                    kind="broker_read",
-                    path="legacy-broker.json",
-                    created_at_utc="2026-07-18T09:00:00+00:00",
-                )
-            ],
-            engine=self.engine,
-        )
+        # Generic upsert_records rejects broker_read ReceiptIndex — it's a
+        # production source kind now guarded by the registry-bound store.
+        with self.assertRaisesRegex(StateCoreStoreError, "materialize_import_batch"):
+            upsert_records(
+                [
+                    ReceiptIndex(
+                        receipt_id="receipt_legacy_broker_evidence",
+                        kind="broker_read",
+                        path="legacy-broker.json",
+                        created_at_utc="2026-07-18T09:00:00+00:00",
+                    )
+                ],
+                engine=self.engine,
+            )
+        # History compat: legacy broker_read ReceiptIndex inserted via
+        # low-level Session is still readable and audit does not delete it.
+        from sqlmodel import Session
+
+        with Session(self.engine) as session:
+            legacy = ReceiptIndex(
+                receipt_id="receipt_legacy_history",
+                kind="broker_read",
+                path="legacy-broker.json",
+                created_at_utc="2025-01-01T00:00:00+00:00",
+            )
+            session.add(legacy)
+            session.commit()
+            session.refresh(legacy)
+        # Verify readable
+        with Session(self.engine) as session:
+            found = session.get(ReceiptIndex, "receipt_legacy_history")
+            self.assertIsNotNone(found)
+            self.assertEqual(found.kind, "broker_read")  # type: ignore[union-attr]
+        # Audit does not remove it
         report = audit_capital_imports(
             engine=self.engine,
             receipt_root=self.import_root,

@@ -62,14 +62,14 @@ class StateCoreVerticalReconstructionTest(unittest.TestCase):
             snapshot_id="snap_before",
             kind="portfolio",
             as_of_utc="2026-06-17T09:00:00+00:00",
-            payload={"source": "broker_read"},
+            payload={"source": "test_fixture"},
             source_refs=["data/receipts/before.json"],
         )
         after = Snapshot(
             snapshot_id="snap_after",
             kind="portfolio",
             as_of_utc="2026-06-17T10:00:00+00:00",
-            payload={"source": "broker_read"},
+            payload={"source": "test_fixture"},
             source_refs=["data/receipts/after.json"],
         )
         positions = [

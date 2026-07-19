@@ -93,6 +93,13 @@
       "exposure_ref": "finharness.statecore.snapshot_ingest.ingest_portfolio_snapshot_from_receipt",
       "adapter_id": "broker-read-receipt",
       "production": true
+    },
+    {
+      "exposure_id": "function-recover-capital-imports",
+      "exposure_kind": "function",
+      "exposure_ref": "finharness.capital_import_recovery.recover_capital_imports",
+      "adapter_id": "broker-read-receipt",
+      "production": true
     }
   ],
   "empty_surface_claims": {

@@ -90,7 +90,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
             "broker/portfolio.json",
             {
                 "receipt_id": "receipt_portfolio_1",
-                "kind": "broker_read",
+                "kind": "broker_read_portfolio",
                 "created_at_utc": "2026-06-17T01:02:03+00:00",
                 "receipt_refs": ["receipt_market_1"],
                 "snapshot": {"receipt_ref": "data/receipts/market-data/receipt_mds_1.json"},
@@ -116,7 +116,7 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         self.assertEqual(len(indexed), 4)
         self.assertEqual(len(rows), 4)
         portfolio = next(row for row in rows if row.receipt_id == "receipt_portfolio_1")
-        self.assertEqual(portfolio.kind, "broker_read")
+        self.assertEqual(portfolio.kind, "broker_read_portfolio")
         self.assertEqual(portfolio.path, str(receipt.resolve()))
         self.assertEqual(portfolio.source_refs, [str(receipt.resolve())])
         self.assertIn("receipt_market_1", portfolio.refs)

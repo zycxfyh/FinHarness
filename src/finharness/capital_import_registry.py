@@ -116,6 +116,12 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         ),
         adapter_id="broker-read-receipt",
     ),
+    CapitalImportExposureSpec(
+        exposure_id="function-recover-capital-imports",
+        exposure_kind="function",
+        exposure_ref="finharness.capital_import_recovery.recover_capital_imports",
+        adapter_id="broker-read-receipt",
+    ),
 )
 
 PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS = frozenset(
@@ -136,6 +142,33 @@ def materialized_source_for(source_kind: str) -> str:
         return _MATERIALIZED_SOURCE_BY_SOURCE_KIND[source_kind]
     except KeyError as exc:
         raise ValueError(f"unregistered production import source kind: {source_kind}") from exc
+
+
+def receipt_index_contract_fields(
+    *,
+    source_kind: str,
+    receipt_ref: str,
+    created_at_utc: str,
+    source_ref: str,
+    upstream_receipt_id: str | None,
+    source_artifact_id: str,
+) -> dict[str, object]:
+    """Return the canonical ReceiptIndex fields shared by ingestion, audit, and recovery.
+
+    Every creation/mutation of a production capital-import ReceiptIndex must conform
+    to the output of this function for the declared source_kind.
+    """
+    kind = materialized_source_for(source_kind)
+    return {
+        "kind": kind,
+        "path": receipt_ref,
+        "created_at_utc": created_at_utc,
+        "source_refs": [receipt_ref, source_ref],
+        "refs": [
+            upstream_receipt_id or source_ref,
+            source_artifact_id,
+        ],
+    }
 
 
 def registry_projection() -> dict[str, object]:

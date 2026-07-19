@@ -237,6 +237,7 @@ def _audit_manifest_mirror(
     snapshot: Snapshot | None,
 ) -> list[CapitalImportFinding]:
     findings: list[CapitalImportFinding] = []
+    expected_kind = materialized_source_for(batch.source_kind)
     if index is None or index.path != manifest.receipt_ref:
         findings.append(
             _finding(
@@ -248,6 +249,41 @@ def _audit_manifest_mirror(
                 recovery_action="rebuild_receipt_index",
             )
         )
+    elif index.kind != expected_kind:
+        findings.append(
+            _finding(
+                "receipt_index_kind_drift",
+                batch_id=batch.batch_id,
+                receipt_id=manifest.receipt_id,
+                message=f"kind {index.kind!r} != expected {expected_kind!r}",
+                recoverable=True,
+                recovery_action="rebuild_receipt_index",
+            )
+        )
+    if index is not None and index.path != manifest.receipt_ref:
+        findings.append(
+            _finding(
+                "receipt_index_path_drift",
+                batch_id=batch.batch_id,
+                receipt_id=manifest.receipt_id,
+                path=index.path,
+                message=f"path {index.path!r} != manifest ref {manifest.receipt_ref!r}",
+                recoverable=True,
+                recovery_action="rebuild_receipt_index",
+            )
+        )
+    if index is not None:
+        expected_source_refs = [manifest.receipt_ref, batch.source_id]
+        if index.source_refs != expected_source_refs:
+            findings.append(
+                _finding(
+                    "receipt_index_source_refs_drift",
+                    batch_id=batch.batch_id,
+                    receipt_id=manifest.receipt_id,
+                    recoverable=True,
+                    recovery_action="rebuild_receipt_index",
+                )
+            )
     if snapshot is None:
         findings.append(
             _finding(
@@ -573,14 +609,26 @@ def recover_capital_imports(
                 if current_index is None or current_index.path != manifest.receipt_ref:
                     payload = json.loads(content)
                     batch = batches[manifest.batch_id]
+                    source_ref = str(payload.get("source_ref") or batch.source_id)
+                    upstream_id = payload.get("upstream_receipt_id")
+                    from finharness.capital_import_registry import receipt_index_contract_fields
+
+                    contract = receipt_index_contract_fields(
+                        source_kind=batch.source_kind,
+                        receipt_ref=manifest.receipt_ref,
+                        created_at_utc=batch.as_of_utc,
+                        source_ref=source_ref,
+                        upstream_receipt_id=upstream_id,
+                        source_artifact_id=manifest.receipt_artifact_id,
+                    )
                     session.merge(
                         ReceiptIndex(
                             receipt_id=manifest.receipt_id,
-                            kind=materialized_source_for(batch.source_kind),
-                            path=manifest.receipt_ref,
-                            created_at_utc=batch.as_of_utc,
-                            source_refs=[manifest.receipt_ref, batch.source_id],
-                            refs=[batch.source_id],
+                            kind=cast(str, contract["kind"]),
+                            path=cast(str, contract["path"]),
+                            created_at_utc=cast(str, contract["created_at_utc"]),
+                            source_refs=cast(list[str], contract["source_refs"]),
+                            refs=cast(list[str], contract["refs"]),
                         )
                     )
                     actions.append(f"rebuilt_receipt_index:{manifest.receipt_id}")
