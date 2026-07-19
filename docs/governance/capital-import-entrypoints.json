@@ -88,6 +88,13 @@
       "production": true
     },
     {
+      "exposure_id": "function-capital-import-recovery-replay",
+      "exposure_kind": "function",
+      "exposure_ref": "finharness.capital_import_recovery._replay_receipt",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    },
+    {
       "exposure_id": "function-broker-receipt-compat",
       "exposure_kind": "function",
       "exposure_ref": "finharness.statecore.snapshot_ingest.ingest_portfolio_snapshot_from_receipt",
