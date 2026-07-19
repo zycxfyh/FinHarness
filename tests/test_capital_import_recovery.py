@@ -1,3 +1,4 @@
+# ruff: noqa: E501, E402
 """Acceptance coverage for receipt/database reconciliation and safe recovery."""
 
 from __future__ import annotations
@@ -256,3 +257,92 @@ class CapitalImportRecoveryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+
+
+class RecoveryDriftMatrixTest(unittest.TestCase):
+    """Part F: every ReceiptIndex drift is detected, blocks verification, and is repaired."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.engine = init_state_core(self.root / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.import_root = self.root / "receipts" / "capital-imports" / "broker-read"
+        self.store = LocalArtifactStore(self.import_root / "artifact-store")
+        self.source = self.root / "broker-read" / "portfolio.json"
+        self.source.parent.mkdir(parents=True, exist_ok=True)
+        self.source.write_text(json.dumps({
+            "receipt_id": "receipt_drift", "kind": "broker_read",
+            "created_at_utc": "2026-07-18T09:00:00+00:00",
+            "effective_at_utc": "2026-07-18T09:00:00+00:00",
+            "observed_at_utc": "2026-07-18T09:00:00+00:00",
+            "valued_at_utc": "2026-07-18T09:00:00+00:00",
+            "broker": "manual", "environment": "paper",
+            "account": {"id": "acct_drift", "status": "ACTIVE"},
+            "positions": [{"symbol": "SPY", "qty": "2", "market_value": "100",
+                           "unit_price": "50", "currency": "USD",
+                           "asset_class": "equity", "exchange": "ARCX",
+                           "price_source_ref": "fixture:drift"}],
+        }), encoding="utf-8")
+        self.result = ingest_broker_read_receipt(
+            self.source, engine=self.engine,
+            receipt_root=self.import_root, artifact_store=self.store,
+        )
+
+    def _mutate_and_verify(self, mutate, expected_code):
+        with Session(self.engine) as session:
+            index = session.get(ReceiptIndex, self.result.receipt_id)
+            self.assertIsNotNone(index)
+            mutate(index)
+            session.commit()
+        before = audit_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        codes = {f.code for f in before.findings}
+        self.assertIn(expected_code, codes, f"missing {expected_code} in {codes}")
+        self.assertFalse(batch_is_verified(self.result.batch_id, engine=self.engine, receipt_root=self.import_root, artifact_store=self.store))
+        recovery = recover_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        actions = [a for a in recovery.actions if "rebuilt_receipt_index" in a]
+        self.assertTrue(actions, f"no rebuild: {recovery.actions}")
+        self.assertTrue(recovery.after.ok, recovery.after)
+        self.assertTrue(batch_is_verified(self.result.batch_id, engine=self.engine, receipt_root=self.import_root, artifact_store=self.store))
+
+    def test_kind_drift(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "kind", "wrong_kind"), "manifest_receipt_index_missing_or_stale")
+    def test_path_drift(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "path", "wrong_path"), "receipt_index_path_drift")
+    def test_created_at_drift(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "created_at_utc", "2000-01-01T00:00:00+00:00"), "receipt_index_created_at_drift")
+    def test_source_refs_drift(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "source_refs", ["wrong"]), "receipt_index_source_refs_drift")
+    def test_refs_upstream_drift(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "refs", ["wu", "ws"]), "receipt_index_refs_drift")
+    def test_refs_source_artifact_drift(self) -> None:
+        first = "ri" if not hasattr(self, 'result') else (self.result.receipt_id or "")
+        self._mutate_and_verify(lambda i: setattr(i, "refs", [first, "wrong_artifact"]), "receipt_index_refs_drift")
+    def test_refs_receipt_artifact_substituted(self) -> None:
+        self._mutate_and_verify(lambda i: setattr(i, "refs", ["ri", "receipt_artifact_instead"]), "receipt_index_refs_drift")
+    def test_missing_index(self) -> None:
+        with Session(self.engine) as session:
+            index = session.get(ReceiptIndex, self.result.receipt_id)
+            session.delete(index)
+            session.commit()
+        before = audit_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        codes = {f.code for f in before.findings}
+        self.assertIn("manifest_receipt_index_missing_or_stale", codes, str(codes))
+        recovery = recover_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        self.assertTrue(recovery.after.ok, recovery.after)
+        self.assertTrue(batch_is_verified(self.result.batch_id, engine=self.engine, receipt_root=self.import_root, artifact_store=self.store))
+    def test_legacy_broker_read_evidence_preserved(self) -> None:
+        with Session(self.engine) as session:
+            session.add(ReceiptIndex(receipt_id="receipt_legacy_drift", kind="broker_read", path="legacy.json", created_at_utc="2025-01-01T00:00:00+00:00"))
+            session.commit()
+        before = audit_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        self.assertTrue(before.ok, before)
+        recover_capital_imports(engine=self.engine, receipt_root=self.import_root, artifact_store=self.store)
+        with Session(self.engine) as session:
+            legacy = session.get(ReceiptIndex, "receipt_legacy_drift")
+            self.assertIsNotNone(legacy)
+            self.assertEqual(legacy.kind, "broker_read")

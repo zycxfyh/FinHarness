@@ -1,3 +1,4 @@
+# ruff: noqa: E501, E402, SIM117
 from __future__ import annotations
 
 import hashlib
@@ -359,3 +360,178 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+import copy
+import tempfile
+
+from finharness.artifact_store import LocalArtifactStore
+from finharness.statecore.store import (
+    init_state_core,
+    materialize_import_batch,
+)
+
+
+class MaterializerNegativeMatrixTest(unittest.TestCase):
+    """Part E: materializer corruption tests — every mutation fails before DB write."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.engine = init_state_core(self.root / "state-core.sqlite")
+        self.addCleanup(self.engine.dispose)
+        self.import_root = self.root / "receipts" / "capital-imports" / "broker-read"
+        self.store = LocalArtifactStore(self.import_root / "artifact-store")
+        self.source = self.root / "broker-read" / "portfolio.json"
+        self.source.parent.mkdir(parents=True, exist_ok=True)
+        self.source.write_text(json.dumps({
+            "receipt_id": "receipt_matrix",
+            "kind": "broker_read",
+            "created_at_utc": "2026-07-18T09:00:00+00:00",
+            "effective_at_utc": "2026-07-18T09:00:00+00:00",
+            "observed_at_utc": "2026-07-18T09:00:00+00:00",
+            "valued_at_utc": "2026-07-18T09:00:00+00:00",
+            "broker": "manual", "environment": "paper",
+            "account": {"id": "acct_matrix", "status": "ACTIVE"},
+            "positions": [{
+                "symbol": "SPY", "qty": "2", "market_value": "100",
+                "unit_price": "50", "currency": "USD",
+                "asset_class": "equity", "exchange": "ARCX",
+                "price_source_ref": "fixture:matrix",
+            }],
+        }), encoding="utf-8")
+
+    def _capture_envelope(self):
+        captured = {}
+        _orig = materialize_import_batch
+
+        def patched(records, *, source, batch, manifest, artifact_store, engine):
+            captured["records"] = copy.deepcopy(list(records))
+            captured["source"] = source
+            captured["batch"] = copy.deepcopy(batch)
+            captured["manifest"] = copy.deepcopy(manifest)
+            captured["store"] = artifact_store
+            raise StateCoreStoreError("capture-only")
+        with patch("finharness.statecore.snapshot_ingest.materialize_import_batch", patched):
+            with self.assertRaises(StateCoreStoreError):
+                ingest_broker_read_receipt(
+                    self.source, engine=self.engine,
+                    receipt_root=self.import_root, artifact_store=self.store,
+                )
+        return captured
+
+    def _assert_db_empty(self):
+        self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
+        self.assertEqual(read_all(ReceiptManifest, engine=self.engine), [])
+        self.assertEqual(read_all(ReceiptIndex, engine=self.engine), [])
+        self.assertEqual(read_all(Snapshot, engine=self.engine), [])
+
+    def _corrupt_and_assert(self, mutate_fn, expected_msg_contains=""):
+        cap = self._capture_envelope()
+        mutate_fn(cap)
+        with self.assertRaisesRegex(StateCoreStoreError, expected_msg_contains):
+            materialize_import_batch(
+                cap["records"], source=cap["source"],
+                batch=cap["batch"], manifest=cap["manifest"],
+                artifact_store=cap["store"], engine=self.engine,
+            )
+        self._assert_db_empty()
+
+    def _corrupt_snapshot_payload(self, key, new_value=None, *, remove=False):
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, Snapshot):
+                    if remove:
+                        del r.payload[key]
+                    else:
+                        r.payload[key] = new_value
+        msg = "missing required import binding" if remove else "binding mismatch"
+        self._corrupt_and_assert(mutate, msg)
+
+    # --- Snapshot binding: missing ---
+    def test_missing_import_batch_id(self) -> None:
+        self._corrupt_snapshot_payload("import_batch_id", remove=True)
+    def test_missing_receipt_manifest_id(self) -> None:
+        self._corrupt_snapshot_payload("receipt_manifest_id", remove=True)
+    def test_missing_import_receipt_id(self) -> None:
+        self._corrupt_snapshot_payload("import_receipt_id", remove=True)
+    def test_missing_import_receipt_ref(self) -> None:
+        self._corrupt_snapshot_payload("import_receipt_ref", remove=True)
+    def test_missing_source_artifact_id(self) -> None:
+        self._corrupt_snapshot_payload("source_artifact_id", remove=True)
+    def test_missing_record_counts(self) -> None:
+        self._corrupt_snapshot_payload("record_counts", remove=True)
+    def test_missing_completeness_status(self) -> None:
+        self._corrupt_snapshot_payload("completeness_status", remove=True)
+    def test_missing_findings(self) -> None:
+        self._corrupt_snapshot_payload("findings", remove=True)
+
+    # --- Snapshot binding: wrong ---
+    def test_wrong_import_batch_id(self) -> None:
+        self._corrupt_snapshot_payload("import_batch_id", "wrong")
+    def test_wrong_receipt_manifest_id(self) -> None:
+        self._corrupt_snapshot_payload("receipt_manifest_id", "wrong")
+    def test_wrong_import_receipt_id(self) -> None:
+        self._corrupt_snapshot_payload("import_receipt_id", "wrong")
+    def test_wrong_import_receipt_ref(self) -> None:
+        self._corrupt_snapshot_payload("import_receipt_ref", "wrong")
+    def test_wrong_source_artifact_id(self) -> None:
+        self._corrupt_snapshot_payload("source_artifact_id", "wrong")
+    def test_wrong_record_counts(self) -> None:
+        self._corrupt_snapshot_payload("record_counts", {"x": 1})
+    def test_wrong_completeness_status(self) -> None:
+        self._corrupt_snapshot_payload("completeness_status", "wrong")
+    def test_wrong_findings(self) -> None:
+        self._corrupt_snapshot_payload("findings", [{"code": "wrong"}])
+
+    # --- ReceiptIndex contract ---
+    def test_wrong_receipt_index_kind(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, ReceiptIndex):
+                    r.kind = "wrong_kind"
+        self._corrupt_and_assert(mutate, "receipt index kind|does not match the receipt manifest|contract mismatch")
+    def test_wrong_receipt_index_path(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, ReceiptIndex):
+                    r.path = "wrong_path"
+        self._corrupt_and_assert(mutate, "receipt index kind|does not match the receipt manifest|contract mismatch")
+    def test_wrong_created_at_utc(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, ReceiptIndex):
+                    r.created_at_utc = "2000-01-01T00:00:00+00:00"
+        self._corrupt_and_assert(mutate, "receipt index kind|does not match the receipt manifest|contract mismatch")
+    def test_wrong_source_refs(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, ReceiptIndex):
+                    r.source_refs = ["wrong"]
+        self._corrupt_and_assert(mutate, "receipt index kind|does not match the receipt manifest|contract mismatch")
+    def test_wrong_refs(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, ReceiptIndex):
+                    r.refs = ["wrong_ref"]
+        self._corrupt_and_assert(mutate, "receipt index kind|does not match the receipt manifest|contract mismatch")
+
+    # --- Snapshot cardinality ---
+    def test_zero_snapshots(self) -> None:
+        def mutate(cap):
+            cap["records"] = [r for r in cap["records"] if not isinstance(r, Snapshot)]
+        self._corrupt_and_assert(mutate, "found 0 snapshots")
+    def test_wrong_snapshot_id(self) -> None:
+        def mutate(cap):
+            for r in cap["records"]:
+                if isinstance(r, Snapshot):
+                    r.snapshot_id = "wrong_snap"
+        self._corrupt_and_assert(mutate, "snapshot id")
+    def test_extra_snapshot(self) -> None:
+        def mutate(cap):
+            extra = Snapshot(
+                snapshot_id="extra", kind="portfolio",
+                as_of_utc="2026-07-18T09:00:00+00:00",
+                payload={"source": "broker_read_import"},
+            )
+            cap["records"] = [*list(cap["records"]), extra]
+        self._corrupt_and_assert(mutate, "found 2 snapshots")

@@ -122,6 +122,18 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         exposure_ref="finharness.capital_import_recovery.recover_capital_imports",
         adapter_id="broker-read-receipt",
     ),
+    CapitalImportExposureSpec(
+        exposure_id="script-reconcile-capital-imports",
+        exposure_kind="script",
+        exposure_ref="scripts/reconcile_capital_imports.py",
+        adapter_id="broker-read-receipt",
+    ),
+    CapitalImportExposureSpec(
+        exposure_id="task-reconcile-capital-imports",
+        exposure_kind="task",
+        exposure_ref="capital:reconcile",
+        adapter_id="broker-read-receipt",
+    ),
 )
 
 PRODUCTION_CAPITAL_IMPORT_SOURCE_KINDS = frozenset(

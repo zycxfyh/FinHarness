@@ -1,7 +1,9 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,8 +48,6 @@ def _load_checker() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
 def _broker_payload(*, receipt_id: str, as_of_utc: str) -> dict[str, object]:
     return {
         "receipt_id": receipt_id,
@@ -73,8 +73,6 @@ def _broker_payload(*, receipt_id: str, as_of_utc: str) -> dict[str, object]:
         ],
         "execution_allowed": False,
     }
-
-
 class CapitalImportEntrypointInventoryTest(unittest.TestCase):
     def test_registry_has_exact_current_production_kinds(self) -> None:
         self.assertEqual(
@@ -110,8 +108,6 @@ class CapitalImportEntrypointInventoryTest(unittest.TestCase):
         source = '''
 from finharness.statecore.models import Snapshot
 from finharness.statecore.store import upsert_records
-
-
 def ingest_synthetic_import(*, engine):
     source_kind = "synthetic_capital_import"
     upsert_records(
@@ -132,8 +128,6 @@ def ingest_synthetic_import(*, engine):
         self.assertEqual(findings[0]["code"], "unregistered_production_capital_import")
         self.assertEqual(findings[0]["function"], "ingest_synthetic_import")
         self.assertEqual(findings[0]["writers"], ["upsert_records"])
-
-
 class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -304,7 +298,145 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
             brief["capital_import_receipt_ref"],
             result.capital_import_receipt_ref,
         )
-
-
 if __name__ == "__main__":
     unittest.main()
+
+class SyntheticFullRepositoryValidatorTest(unittest.TestCase):
+    """Part D: synthetic temp repo with unregistered surfaces must fail full validator."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        src_dir = self.root / "src"
+        shutil.copytree(ROOT / "src", src_dir, dirs_exist_ok=True)
+        scripts_dir = self.root / "scripts"
+        shutil.copytree(ROOT / "scripts", scripts_dir, dirs_exist_ok=True)
+        gov_dir = self.root / "docs" / "governance"
+        gov_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            ROOT / "docs" / "governance" / "capital-import-entrypoints.json",
+            gov_dir / "capital-import-entrypoints.json",
+        )
+        shutil.copy2(ROOT / "Taskfile.yml", self.root / "Taskfile.yml")
+        shutil.copy2(ROOT / "pyproject.toml", self.root / "pyproject.toml")
+        synth_dir = self.root / "src" / "finharness"
+        synth_dir.mkdir(parents=True, exist_ok=True)
+        (synth_dir / "__init__.py").write_text("", encoding="utf-8")
+        (synth_dir / "synthetic_capital_surface.py").write_text("""\
+from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+from finharness.statecore.models import Snapshot
+from finharness.statecore.store import upsert_records
+
+router = type("Router", (), {"post": staticmethod(lambda *a, **kw: lambda f: f)})()
+app = type("App", (), {"tool": staticmethod(lambda f: f)})()
+tool = lambda f: f  # noqa: E731
+def import_capital_snapshot(path, *, engine):
+    return ingest_broker_read_receipt(path, engine=engine)
+def direct_registered_marker_write(*, engine):
+    upsert_records(
+        [
+            Snapshot(
+                snapshot_id="synthetic",
+                kind="portfolio",
+                as_of_utc="2026-07-19T00:00:00+00:00",
+                payload={"source": "broker_read"},
+            )
+        ],
+        engine=engine,
+    )
+@router.post("/capital/import")
+def import_capital_api(path, *, engine):
+    return ingest_broker_read_receipt(path, engine=engine)
+@tool
+def import_capital_tool(path, *, engine):
+    return ingest_broker_read_receipt(path, engine=engine)
+""", encoding="utf-8")
+        (self.root / "scripts" / "import_synthetic_capital.py").write_text("""\
+from finharness.synthetic_capital_surface import import_capital_snapshot
+
+def main():
+    import_capital_snapshot("/dev/null", engine=None)
+""", encoding="utf-8")
+        tf = self.root / "Taskfile.yml"
+        tf.write_text(tf.read_text(encoding="utf-8") + "\n  synthetic:capital-import:\n    cmds:\n      - python scripts/import_synthetic_capital.py\n", encoding="utf-8")
+
+    def test_full_validator_rejects_all_unregistered_surfaces(self) -> None:
+        checker = _load_checker()
+        report = checker.validate_capital_import_entrypoints(
+            root=self.root,
+            projection_path=self.root / "docs" / "governance" / "capital-import-entrypoints.json",
+        )
+        self.assertFalse(report["ok"], f"should reject: {report}")
+        codes = {f["code"] for f in report["findings"]}
+        expected = {
+            "unregistered_function_capital_import_exposure",
+            "unregistered_script_capital_import_exposure",
+            "unregistered_task_capital_import_exposure",
+            "unregistered_api_capital_import_exposure",
+            "unregistered_agent_capital_import_exposure",
+            "registered_production_import_generic_write",
+        }
+        missing = expected - codes
+        self.assertEqual(missing, set(), f"missing: {missing}")
+class AdapterContractReachableHelperTest(unittest.TestCase):
+    """Part D6: reachable helper write detected, module-wide calls rejected."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "src" / "finharness").mkdir(parents=True, exist_ok=True)
+        (self.root / "src" / "finharness" / "__init__.py").write_text("", encoding="utf-8")
+
+    def test_reachable_helper_generic_write_is_detected(self) -> None:
+        (self.root / "src" / "finharness" / "example_adapter.py").write_text("""\
+from finharness.statecore.store import upsert_records
+
+def ingest_example(path, *, engine):
+    return _persist(path, engine)
+
+def _persist(path, engine):
+    upsert_records([], engine=engine)
+""", encoding="utf-8")
+        checker = _load_checker()
+        findings = checker._adapter_contract_findings(
+            type("FakeSpec", (), {
+                "adapter_id": "fake", "module": "finharness.example_adapter",
+                "symbol": "ingest_example", "result_type": "FakeResult",
+            })(),
+            root=self.root,
+        )
+        codes = {f["code"] for f in findings}
+        self.assertIn("adapter_direct_generic_write", codes, f"not detected: {findings}")
+
+    def test_module_wide_calls_dont_satisfy_adapter_contract(self) -> None:
+        (self.root / "src" / "finharness" / "example_adapter2.py").write_text("""\
+from finharness.import_provenance import prepare_import
+from finharness.statecore.store import materialize_import_batch
+
+def ingest_example(path, *, engine):
+    return None
+
+def unrelated():
+    prepare_import(source_kind="test", source_id="x",
+                   source_content=b"", source_sha256="a"*64,
+                   adapter_version="v1", coverage_mode="full",
+                   record_counts={}, snapshot_id="s", receipt_id="r",
+                   receipt_root=".", receipt_ref="r", artifact_store=None,
+                   receipt_payload={}, created_at_utc="", completeness_status="complete",
+                   time_semantics={}, findings=[], covered_domains=[],
+                   corporate_action_status="not_applicable")
+    materialize_import_batch([], source="test", batch=None, manifest=None,
+                             artifact_store=None, engine=None)
+""", encoding="utf-8")
+        checker = _load_checker()
+        findings = checker._adapter_contract_findings(
+            type("FakeSpec2", (), {
+                "adapter_id": "fake2", "module": "finharness.example_adapter2",
+                "symbol": "ingest_example", "result_type": "FakeResult2",
+            })(),
+            root=self.root,
+        )
+        codes = {f["code"] for f in findings}
+        self.assertIn("adapter_missing_canonical_envelope", codes, f"should not pass: {findings}")

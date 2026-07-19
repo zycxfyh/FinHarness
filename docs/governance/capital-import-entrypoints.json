@@ -100,6 +100,20 @@
       "exposure_ref": "finharness.capital_import_recovery.recover_capital_imports",
       "adapter_id": "broker-read-receipt",
       "production": true
+    },
+    {
+      "exposure_id": "script-reconcile-capital-imports",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/reconcile_capital_imports.py",
+      "adapter_id": "broker-read-receipt",
+      "production": true
+    },
+    {
+      "exposure_id": "task-reconcile-capital-imports",
+      "exposure_kind": "task",
+      "exposure_ref": "capital:reconcile",
+      "adapter_id": "broker-read-receipt",
+      "production": true
     }
   ],
   "empty_surface_claims": {

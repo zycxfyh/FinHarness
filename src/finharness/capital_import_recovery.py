@@ -1,3 +1,4 @@
+# ruff: noqa: C901
 """Cross-store audit and fail-closed recovery for production capital imports."""
 
 from __future__ import annotations
@@ -229,16 +230,41 @@ def _audit_manifest_evidence(
     return findings
 
 
+def _expected_receipt_index_contract(
+    *,
+    manifest: ReceiptManifest,
+    batch: ImportBatch,
+    receipt_payload: dict[str, Any],
+) -> dict[str, object]:
+    from finharness.capital_import_registry import receipt_index_contract_fields
+
+    return receipt_index_contract_fields(
+        source_kind=batch.source_kind,
+        receipt_ref=manifest.receipt_ref,
+        created_at_utc=batch.as_of_utc,
+        source_ref=str(receipt_payload.get("source_ref") or batch.source_id),
+        upstream_receipt_id=receipt_payload.get("upstream_receipt_id"),
+        source_artifact_id=batch.source_artifact_id,
+    )
+
+
 def _audit_manifest_mirror(
     manifest: ReceiptManifest,
     batch: ImportBatch,
     descriptor: ArtifactDescriptor | None,
     index: ReceiptIndex | None,
     snapshot: Snapshot | None,
+    receipt_payload: dict[str, Any] | None = None,
 ) -> list[CapitalImportFinding]:
     findings: list[CapitalImportFinding] = []
+    if receipt_payload is not None and batch.source_kind == "broker_read":
+        expected = _expected_receipt_index_contract(
+            manifest=manifest, batch=batch, receipt_payload=receipt_payload,
+        )
+    else:
+        expected = None
     expected_kind = materialized_source_for(batch.source_kind)
-    if index is None or index.path != manifest.receipt_ref:
+    if index is None:
         findings.append(
             _finding(
                 "manifest_receipt_index_missing_or_stale",
@@ -249,41 +275,41 @@ def _audit_manifest_mirror(
                 recovery_action="rebuild_receipt_index",
             )
         )
-    elif index.kind != expected_kind:
-        findings.append(
-            _finding(
+    else:
+        if index.kind != expected_kind:
+            findings.append(_finding(
                 "receipt_index_kind_drift",
-                batch_id=batch.batch_id,
-                receipt_id=manifest.receipt_id,
-                message=f"kind {index.kind!r} != expected {expected_kind!r}",
-                recoverable=True,
-                recovery_action="rebuild_receipt_index",
-            )
-        )
-    if index is not None and index.path != manifest.receipt_ref:
-        findings.append(
-            _finding(
+                batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                message="kind drift",
+                recoverable=True, recovery_action="rebuild_receipt_index",
+            ))
+        if index.path != manifest.receipt_ref:
+            findings.append(_finding(
                 "receipt_index_path_drift",
-                batch_id=batch.batch_id,
-                receipt_id=manifest.receipt_id,
+                batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
                 path=index.path,
-                message=f"path {index.path!r} != manifest ref {manifest.receipt_ref!r}",
-                recoverable=True,
-                recovery_action="rebuild_receipt_index",
-            )
-        )
-    if index is not None:
-        expected_source_refs = [manifest.receipt_ref, batch.source_id]
-        if index.source_refs != expected_source_refs:
-            findings.append(
-                _finding(
+                message="path drift",
+                recoverable=True, recovery_action="rebuild_receipt_index",
+            ))
+        if expected is not None:
+            if index.created_at_utc != expected["created_at_utc"]:
+                findings.append(_finding(
+                    "receipt_index_created_at_drift",
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
+            if index.source_refs != expected["source_refs"]:
+                findings.append(_finding(
                     "receipt_index_source_refs_drift",
-                    batch_id=batch.batch_id,
-                    receipt_id=manifest.receipt_id,
-                    recoverable=True,
-                    recovery_action="rebuild_receipt_index",
-                )
-            )
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
+            if index.refs != expected["refs"]:
+                findings.append(_finding(
+                    "receipt_index_refs_drift",
+                    batch_id=batch.batch_id, receipt_id=manifest.receipt_id,
+                    recoverable=True, recovery_action="rebuild_receipt_index",
+                ))
     if snapshot is None:
         findings.append(
             _finding(
@@ -413,6 +439,13 @@ def audit_capital_imports(
         findings.extend(
             _audit_manifest_evidence(manifest, current_batch, current_descriptor, store)
         )
+        rp: dict[str, Any] | None = None
+        if current_descriptor is not None:
+            try:
+                raw = store.read(current_descriptor.artifact_id)
+                rp = json.loads(raw)
+            except (ArtifactStoreError, json.JSONDecodeError):
+                pass
         findings.extend(
             _audit_manifest_mirror(
                 manifest,
@@ -420,6 +453,7 @@ def audit_capital_imports(
                 current_descriptor,
                 indexes_by_receipt.get(manifest.receipt_id),
                 snapshots.get(manifest.snapshot_id),
+                receipt_payload=rp,
             )
         )
 
