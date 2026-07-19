@@ -19,6 +19,10 @@ from finharness.artifact_store import (
     ArtifactStoreError,
     LocalArtifactStore,
 )
+from finharness.capital_import_registry import (
+    PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
+    materialized_source_for,
+)
 from finharness.import_provenance import RECEIPT_ARTIFACT_SCHEMA, canonical_json_bytes
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
@@ -32,7 +36,7 @@ from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_jso
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
 CAPITAL_IMPORT_RECOVERY_SCHEMA = "finharness.capital_import_recovery.v1"
 CAPITAL_IMPORT_RECOVERY_ARTIFACT_SCHEMA = "finharness.capital_import_recovery_receipt"
-PRODUCTION_IMPORT_KINDS = {"personal_finance_export", "beancount_ledger"}
+PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES)
 
 
 class CapitalImportRecoveryError(RuntimeError):
@@ -498,6 +502,16 @@ def _replay_receipt(
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
         )
+    elif kind == "broker_read":
+        from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+
+        ingest_broker_read_receipt(
+            source_path,
+            engine=engine,
+            receipt_root=receipt_root,
+            artifact_store=store,
+            snapshot_id=str(payload["snapshot_id"]),
+        )
     else:
         raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")
     return f"replayed:{descriptor.artifact_id}"
@@ -562,7 +576,7 @@ def recover_capital_imports(
                     session.merge(
                         ReceiptIndex(
                             receipt_id=manifest.receipt_id,
-                            kind=str(payload.get("kind") or batch.source_kind),
+                            kind=materialized_source_for(batch.source_kind),
                             path=manifest.receipt_ref,
                             created_at_utc=batch.as_of_utc,
                             source_refs=[manifest.receipt_ref, batch.source_id],

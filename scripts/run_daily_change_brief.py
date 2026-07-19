@@ -112,6 +112,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             portfolio_receipt=Path(args.portfolio_receipt),
             engine=engine,
             thresholds=_thresholds(args),
+            broker_import_receipt_root=receipt_root / "capital-imports" / "broker-read",
             state_core_receipt_root=receipt_root / "state-core",
             brief_receipt_root=receipt_root / "daily-change-brief",
             markdown_path=Path(args.markdown_path),
