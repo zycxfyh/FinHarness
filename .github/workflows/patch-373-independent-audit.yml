@@ -25,12 +25,18 @@ jobs:
       - name: Install locked environment
         run: uv sync --frozen
 
-      - name: Apply independent audit repairs
+      - name: Apply, verify, and persist deterministic result
+        shell: bash
         run: |
-          python scripts/_patch_373_core.py
-          python scripts/_patch_373_checker.py
-          python scripts/_patch_373_tests.py
-          PYTHONPATH=src python - <<'PY'
+          set +e
+          LOG=/tmp/patch-373.log
+          : > "$LOG"
+          {
+            set -e
+            python scripts/_patch_373_core.py
+            python scripts/_patch_373_checker.py
+            python scripts/_patch_373_tests.py
+            PYTHONPATH=src python - <<'PY'
           import json
           from pathlib import Path
           from finharness.capital_import_registry import registry_projection
@@ -41,45 +47,72 @@ jobs:
               encoding="utf-8",
           )
           PY
-          rm scripts/_patch_373_core.py
-          rm scripts/_patch_373_checker.py
-          rm scripts/_patch_373_tests.py
+            rm scripts/_patch_373_core.py
+            rm scripts/_patch_373_checker.py
+            rm scripts/_patch_373_tests.py
+            uv run ruff format \
+              scripts/check_capital_import_entrypoints.py \
+              src/finharness/capital_import_registry.py \
+              src/finharness/capital_import_recovery.py \
+              src/finharness/personal_finance.py \
+              src/finharness/beancount_adapter.py \
+              src/finharness/statecore/__init__.py \
+              src/finharness/statecore/store.py \
+              tests/test_capital_import_entrypoints.py
+            uv run ruff check --fix \
+              scripts/check_capital_import_entrypoints.py \
+              src/finharness/capital_import_registry.py \
+              src/finharness/capital_import_recovery.py \
+              src/finharness/personal_finance.py \
+              src/finharness/beancount_adapter.py \
+              src/finharness/statecore/__init__.py \
+              src/finharness/statecore/store.py \
+              tests/test_capital_import_entrypoints.py
+            uv run ruff check \
+              scripts/check_capital_import_entrypoints.py \
+              src/finharness/capital_import_registry.py \
+              src/finharness/capital_import_recovery.py \
+              src/finharness/personal_finance.py \
+              src/finharness/beancount_adapter.py \
+              src/finharness/statecore/__init__.py \
+              src/finharness/statecore/store.py \
+              tests/test_capital_import_entrypoints.py
+            PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
+            PYTHONPATH=src uv run python -m unittest \
+              tests.test_capital_import_entrypoints \
+              tests.test_statecore_snapshot_ingest \
+              tests.test_capital_import_recovery \
+              tests.test_daily_change_brief
+            git diff --check
+          } >> "$LOG" 2>&1
+          STATUS=$?
 
-      - name: Format and lint repaired surface
-        run: |
-          uv run ruff format \
-            scripts/check_capital_import_entrypoints.py \
-            src/finharness/capital_import_registry.py \
-            src/finharness/capital_import_recovery.py \
-            src/finharness/personal_finance.py \
-            src/finharness/beancount_adapter.py \
-            src/finharness/statecore/__init__.py \
-            src/finharness/statecore/store.py \
-            tests/test_capital_import_entrypoints.py
-          uv run ruff check --fix \
-            scripts/check_capital_import_entrypoints.py \
-            src/finharness/capital_import_registry.py \
-            src/finharness/capital_import_recovery.py \
-            src/finharness/personal_finance.py \
-            src/finharness/beancount_adapter.py \
-            src/finharness/statecore/__init__.py \
-            src/finharness/statecore/store.py \
-            tests/test_capital_import_entrypoints.py
+          if [ "$STATUS" -ne 0 ]; then
+            git reset --hard HEAD
+            printf 'failure\n\n' > patch-373-status.txt
+            tail -c 30000 "$LOG" >> patch-373-status.txt
+            MESSAGE="ci(373): record independent-audit repair failure"
+          else
+            printf 'success\n\n' > patch-373-status.txt
+            tail -c 12000 "$LOG" >> patch-373-status.txt
+            MESSAGE="ASSURE-CAP-01: close independent audit blockers"
+          fi
 
-      - name: Run focused semantic verification
-        run: |
-          PYTHONPATH=src uv run python scripts/check_capital_import_entrypoints.py
-          PYTHONPATH=src uv run python -m unittest \
-            tests.test_capital_import_entrypoints \
-            tests.test_statecore_snapshot_ingest \
-            tests.test_capital_import_recovery \
-            tests.test_daily_change_brief
-
-      - name: Commit repaired implementation
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -A patch-373-status.txt \
+            docs/governance/capital-import-entrypoints.json \
+            scripts/check_capital_import_entrypoints.py \
+            scripts/_patch_373_core.py \
+            scripts/_patch_373_checker.py \
+            scripts/_patch_373_tests.py \
+            src/finharness/capital_import_registry.py \
+            src/finharness/capital_import_recovery.py \
+            src/finharness/personal_finance.py \
+            src/finharness/beancount_adapter.py \
+            src/finharness/statecore/__init__.py \
+            src/finharness/statecore/store.py \
+            tests/test_capital_import_entrypoints.py
           git diff --cached --check
-          git commit -m "ASSURE-CAP-01: close independent audit blockers"
+          git commit -m "$MESSAGE"
           git push origin HEAD:agent/373-capital-import-manifest
