@@ -935,8 +935,9 @@
       "path": "tests/test_statecore_api.py",
       "symbol": "dashboard attestation aggregation tests",
       "line_start": 339,
-      "line_end": 511,
+      "line_end": 1720,
       "match_terms": [
+        "/proposals/{proposal_id}/attest",
         "Attestation",
         "attestation_id",
         "attestations"
@@ -955,8 +956,10 @@
         "Dashboard open counts distinguish stale from current revision attestations."
       ],
       "evidence": [
-        "test_statecore_api.py:339-486"
-      ]
+        "test_statecore_api.py:339-486",
+        "test_statecore_api.py:500-1720"
+      ],
+      "wide_range_justification": "test_statecore_api.py exercises attestation across the full API surface (dashboard, proposals, history, attest); splitting would produce >20 narrow entries with no actionable difference"
     },
     {
       "consumer_id": "ATT-CONS-035",
