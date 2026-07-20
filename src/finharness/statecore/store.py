@@ -1012,7 +1012,7 @@ def _validate_existing_import_lineage(
     tombstones: Sequence[ImportTombstone],
 ) -> None:
     if any(
-        tombstone.batch_id != batch.batch_id or tombstone.source_kind != source
+        tombstone.batch_id != batch.batch_id or tombstone.source_kind != batch.source_kind
         for tombstone in tombstones
     ):
         raise StateCoreStoreError("import tombstone does not bind the import batch")
@@ -1043,6 +1043,7 @@ def materialize_import_batch(
     records: Iterable[StateCoreRecord],
     *,
     source: str,
+    source_id_for_ownership: str | None = None,
     batch: ImportBatch,
     manifest: ReceiptManifest,
     artifact_store: ArtifactStore,
@@ -1103,12 +1104,13 @@ def materialize_import_batch(
                     tombstone.tombstone_id: tombstone
                     for tombstone in [*automatic_tombstones, *explicit_tombstones]
                 }
+                ownership_scope = source_id_for_ownership or source
                 if batch.coverage_mode == "full":
                     _delete_covered_source_records(
-                        session, source=source, covered_domains=batch.covered_domains
+                        session, source=ownership_scope, covered_domains=batch.covered_domains
                     )
                 _apply_explicit_tombstones(
-                    session, source=source, tombstones=list(tombstones_by_id.values())
+                    session, source=ownership_scope, tombstones=list(tombstones_by_id.values())
                 )
                 non_tombstone_records = [
                     record for record in materialized if not isinstance(record, ImportTombstone)

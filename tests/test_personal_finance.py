@@ -820,7 +820,8 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
         liabilities = read_all(Liability, engine=self.engine)
         self.assertEqual({row.liability_id for row in liabilities}, {"liab_a"})
         self.assertEqual(liabilities[0].balance, Decimal("150"))
-        self.assertEqual(liabilities[0].source, "personal_finance_export")
+        self.assertTrue(liabilities[0].source.endswith(".csv"),
+                        f"source should be a file path, got {liabilities[0].source!r}")
         # Positions/snapshots accumulate as history: two imports -> two snapshots.
         self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 2)
 

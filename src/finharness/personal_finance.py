@@ -664,6 +664,7 @@ def _records_from_rows(
     snapshot_id: str,
     as_of_utc: str,
     source_path: Path,
+    source_id: str,
     time_semantics: dict[str, str | None],
     findings: list[ImportFinding],
     coverage_mode: str,
@@ -684,7 +685,7 @@ def _records_from_rows(
     # Tag source-owned rows so a re-import replaces exactly this adapter's rows.
     for record in built:
         if isinstance(record, SourcedStateCoreBase):
-            record.source = EXPORT_KIND
+            record.source = source_id
     # Only stamp a portfolio snapshot when holdings are present; otherwise a
     # liabilities-only (or goals-only) export would shadow the latest real
     # holdings snapshot and zero out the cockpit's positions view.
@@ -1006,6 +1007,13 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         record_counts=record_counts,
     )
+    deletion_plan = {
+        "explicit": [asdict(tombstone) for tombstone in tombstones],
+        "automatic": [],
+        "domain": "personal_finance",
+        "covered_domains": resolved_covered_domains,
+    }
+    receipt_payload["deletion_plan"] = deletion_plan
     receipt_payload["deletions"] = [asdict(tombstone) for tombstone in tombstones]
     receipt_ref = display_path(receipt_path)
     batch_id = derive_import_batch_id(
@@ -1025,6 +1033,7 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
         source_path=source_path,
+        source_id=source_id,
         time_semantics=time_semantics,
         findings=list(findings),
         coverage_mode=coverage_mode,
@@ -1101,6 +1110,7 @@ def ingest_personal_finance_export(
     materialize_import_batch(
         [receipt_index, *records, *deletion_records],
         source=EXPORT_KIND,
+        source_id_for_ownership=source_id,
         batch=prepared.batch,
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,

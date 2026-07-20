@@ -321,7 +321,10 @@ class ZeroRowImportGapTest(unittest.TestCase):
 
         captured = {}
 
-        def _capture(records, *, source, batch, manifest, artifact_store, engine):
+        def _capture(
+            records, *, source, source_id_for_ownership=None,
+            batch, manifest, artifact_store, engine,
+        ):
             captured.update({
                 "records": copy.deepcopy(list(records)),
                 "source": source, "batch": copy.deepcopy(batch),
