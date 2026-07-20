@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
-from finharness.position_valuation import reconcile_position_totals
+from finharness.position_valuation import (
+    parse_valuation_evaluation_clock,
+    reconcile_position_totals,
+)
 from finharness.statecore.models import ImportBatch, Position, ReceiptManifest, Snapshot
 from finharness.statecore.store import StateCoreStoreError
 
@@ -246,14 +248,14 @@ def diff_snapshots(
     before_totals = reconcile_position_totals(
         before_rows,
         evaluated_at=(
-            datetime.fromisoformat(before_snapshot.as_of_utc)
+            parse_valuation_evaluation_clock(before_snapshot.as_of_utc)
             if before_snapshot.as_of_utc else None
         ),
     )
     after_totals = reconcile_position_totals(
         after_rows,
         evaluated_at=(
-            datetime.fromisoformat(after_snapshot.as_of_utc)
+            parse_valuation_evaluation_clock(after_snapshot.as_of_utc)
             if after_snapshot.as_of_utc else None
         ),
     )

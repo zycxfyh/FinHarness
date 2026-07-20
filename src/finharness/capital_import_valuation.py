@@ -178,6 +178,20 @@ def _import_error(message: str) -> Exception:
     return ValuationContractError(message)
 
 
+# Mapping from batch.record_counts keys to Python class names.
+_RECORD_COUNT_KEY_TO_CLASS: dict[str, str] = {
+    "position": "Position",
+    "account": "Account",
+    "snapshot": "Snapshot",
+    "cashflow": "CashflowEvent",
+    "liability": "Liability",
+    "tax_event": "TaxEvent",
+    "insurance": "InsurancePolicy",
+    "financial_goal": "FinancialGoal",
+    "document_ref": "DocumentRef",
+}
+
+
 def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreement checks
     *,
     source: str,
@@ -191,6 +205,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         return
     snapshots = [record for record in records if isinstance(record, Snapshot)]
     positions = [record for record in records if isinstance(record, Position)]
+    # Find the snapshot matching manifest (exactly one required).
     target = [snap for snap in snapshots if snap.snapshot_id == manifest.snapshot_id]
     if len(target) != 1:
         raise _import_error(
@@ -215,6 +230,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         if assessment.policy_id != BASE_VALUATION_POLICY_V1.policy_id:
             raise _import_error("valuation_policy_mismatch")
 
+    # --- Findings agreement ---
     expected_valuation: list[tuple] = []
     for assessment in assessments:
         expected_valuation.extend(_normalize_tuple(f) for f in assessment.findings)
@@ -254,6 +270,7 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
             f"canonical assessment receipt={receipt_valuation} expected={expected_valuation}"
         )
 
+    # --- Completeness agreement ---
     expected_completeness = completeness_status(
         [
             ImportFinding(
@@ -280,7 +297,75 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
             f"batch={batch.completeness_status} snapshot={snap_completeness} "
             f"receipt={receipt_completeness} expected={expected_completeness}"
         )
-    # Verify valuation assessment policy identity.
+
+    # --- Record-count consistency (all four surfaces, full dict) ---
+    batch_counts = dict(batch.record_counts)
+    manifest_counts = dict(manifest.record_counts)
+    snap_counts = dict((snapshot.payload or {}).get("record_counts") or {})
+    receipt_counts = dict(receipt_payload.get("record_counts") or {})
+
+    if manifest_counts != batch_counts:
+        raise _import_error(
+            "valuation_record_count_mismatch: manifest counts "
+            f"{manifest_counts} != batch {batch_counts}"
+        )
+    if snap_counts != batch_counts:
+        raise _import_error(
+            "valuation_record_count_mismatch: snapshot payload counts "
+            f"{snap_counts} != batch {batch_counts}"
+        )
+    if receipt_counts != batch_counts:
+        raise _import_error(
+            "valuation_record_count_mismatch: receipt payload counts "
+            f"{receipt_counts} != batch {batch_counts}"
+        )
+
+    # Verify position count from records matches declared count.
+    actual_position_count = len(positions)
+    if batch_counts.get("position", 0) != actual_position_count:
+        raise _import_error(
+            f"valuation_position_count: batch declares "
+            f"{batch_counts.get('position', 0)} positions but {actual_position_count} present"
+        )
+
+    # Verify exactly one Snapshot present (all production sources).
+    if len(snapshots) != 1:
+        raise _import_error(
+            "valuation_snapshot_count: expected exactly one Snapshot "
+            f"for source {source}, got {len(snapshots)}"
+        )
+
+    # Verify declared record_counts against actual records for known class keys.
+    actual_by_class: dict[str, int] = {}
+    for record in records:
+        cls_name = type(record).__name__
+        actual_by_class[cls_name] = actual_by_class.get(cls_name, 0) + 1
+    for key, cls_name in _RECORD_COUNT_KEY_TO_CLASS.items():
+        if key in batch_counts:
+            actual = actual_by_class.get(cls_name, 0)
+            if batch_counts[key] != actual:
+                raise _import_error(
+                    f"valuation_record_count_mismatch: batch.{key}="
+                    f"{batch_counts[key]} actual={actual} (class {cls_name})"
+                )
+
+    # Verify every Position binds the manifest snapshot.
+    wrong_binding = [
+        p.position_id for p in positions
+        if p.snapshot_id != manifest.snapshot_id
+    ]
+    if wrong_binding:
+        raise _import_error(
+            "valuation_snapshot_binding: positions bound to wrong snapshot "
+            f"expected={manifest.snapshot_id} wrong={wrong_binding}"
+        )
+
+    # --- Valuation assessment surface agreement (policy, clock, status_counts) ---
+    canonical_status_counts: dict[str, int] = {}
+    for assessment in assessments:
+        s = assessment.status.value
+        canonical_status_counts[s] = canonical_status_counts.get(s, 0) + 1
+
     snap_assessment = (snapshot.payload or {}).get("valuation_assessment") or {}
     receipt_assessment = receipt_payload.get("valuation_assessment") or {}
     canonical_policy = BASE_VALUATION_POLICY_V1.policy_id
@@ -301,24 +386,9 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
                 f"{source_assessment.get('evaluated_at_utc')} "
                 f"expected={observed}"
             )
-    # Verify record counts across all surfaces (full dict, not just position).
-    snap_record_counts = (snapshot.payload or {}).get("record_counts") or {}
-    expected_position_count = snap_record_counts.get("position", 0)
-    if batch.record_counts.get("position") != expected_position_count:
-        raise _import_error(
-            "valuation_record_count_mismatch: "
-            f"batch.position={batch.record_counts.get('position')} "
-            f"snapshot.position={expected_position_count}"
-        )
-    if manifest.record_counts.get("position") != expected_position_count:
-        raise _import_error(
-            "valuation_record_count_mismatch: "
-            f"manifest.position={manifest.record_counts.get('position')} "
-            f"snapshot.position={expected_position_count}"
-        )
-    if receipt_payload.get("record_counts", {}).get("position") != expected_position_count:
-        raise _import_error(
-            "valuation_record_count_mismatch: "
-            f"receipt.position={receipt_payload.get('record_counts', {}).get('position')} "
-            f"snapshot.position={expected_position_count}"
-        )
+        if source_assessment.get("status_counts") != canonical_status_counts:
+            raise _import_error(
+                "valuation_status_counts_mismatch: "
+                f"{label} status_counts={source_assessment.get('status_counts')} "
+                f"canonical={canonical_status_counts}"
+            )

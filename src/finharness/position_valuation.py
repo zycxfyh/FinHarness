@@ -85,6 +85,27 @@ class PositionValuationError(ValueError):
     """Raised when a position cannot support a monetary use case."""
 
 
+def parse_valuation_evaluation_clock(raw: str) -> datetime:
+    """Validate ISO-8601, require timezone-aware, normalize to UTC.
+
+    Used by both the canonical assessor and consumer wrappers (Exposure, diff)
+    so every clock-dependent path fails closed on invalid or naive input.
+    """
+    if not raw:
+        raise PositionValuationError("evaluation clock is empty")
+    try:
+        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        raise PositionValuationError(
+            f"invalid evaluation clock: {raw!r}"
+        ) from None
+    if dt.utcoffset() is None:
+        raise PositionValuationError(
+            f"timezone-naive evaluation clock: {raw!r}"
+        )
+    return dt.astimezone(UTC)
+
+
 @dataclass(frozen=True)
 class ValuationTotals:
     base_currency: str | None
@@ -249,18 +270,9 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
             fx_incomplete = True
 
     try:
-        evaluated_at = datetime.fromisoformat(
-            evaluated_at_utc.strip().replace("Z", "+00:00")
-        )
-    except (TypeError, ValueError):
-        raise PositionValuationError(
-            f"invalid evaluated_at_utc: {evaluated_at_utc!r}"
-        ) from None
-    if evaluated_at.utcoffset() is None:
-        raise PositionValuationError(
-            f"timezone-naive evaluated_at_utc: {evaluated_at_utc!r}"
-        )
-    evaluated_at = evaluated_at.astimezone(UTC)
+        evaluated_at = parse_valuation_evaluation_clock(evaluated_at_utc)
+    except PositionValuationError:
+        raise
 
     valued_at_dt: datetime | None = None
     if evidence.valued_at_utc:
@@ -309,7 +321,7 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                 evidence.fx_as_of_utc.strip().replace("Z", "+00:00")
             )
         except (TypeError, ValueError):
-            timestamp_findings.append(
+            fx_findings.append(
                 _finding(
                     "fx_as_of_invalid",
                     "fx_as_of_utc is not a valid ISO-8601 timestamp",
@@ -318,9 +330,10 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                     field="fx_as_of_utc",
                 )
             )
+            fx_incomplete = True
         else:
             if raw_fx.utcoffset() is None:
-                timestamp_findings.append(
+                fx_findings.append(
                     _finding(
                         "fx_as_of_not_timezone_aware",
                         "fx_as_of_utc must include a UTC offset",
@@ -329,10 +342,11 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                         field="fx_as_of_utc",
                     )
                 )
+                fx_incomplete = True
             else:
                 fx_as_of_dt = raw_fx.astimezone(UTC)
                 if fx_as_of_dt > evaluated_at:
-                    timestamp_findings.append(
+                    fx_findings.append(
                         _finding(
                             "fx_as_of_after_evaluation",
                             "fx_as_of_utc cannot follow evaluation time",
@@ -341,6 +355,7 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                             field="fx_as_of_utc",
                         )
                     )
+                    fx_incomplete = True
 
     fx_valid = (
         evidence.fx_rate is not None

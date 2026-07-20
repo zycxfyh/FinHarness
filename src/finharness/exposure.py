@@ -22,7 +22,12 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
-from finharness.position_valuation import reconcile_position_totals, valuation_blockers
+from finharness.position_valuation import (
+    PositionValuationError,
+    parse_valuation_evaluation_clock,
+    reconcile_position_totals,
+    valuation_blockers,
+)
 from finharness.statecore.models import (
     CashflowEvent,
     InsurancePolicy,
@@ -149,17 +154,15 @@ def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
 
 
 def _parse_snapshot_clock(snapshot: Snapshot) -> datetime | None:
-    """Parse and validate snapshot.as_of_utc; None if missing or invalid."""
+    """Validate and normalize snapshot.as_of_utc; None if missing.
+
+    Raises PositionValuationError on invalid or timezone-naive values so the
+    consumer fails closed rather than silently disabling freshness checks.
+    """
     raw = snapshot.as_of_utc
     if not raw:
         return None
-    try:
-        dt = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    if dt.utcoffset() is None:
-        return None
-    return dt.astimezone(UTC)
+    return parse_valuation_evaluation_clock(raw)
 
 
 
@@ -434,11 +437,12 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     if not cash_total_verified:
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
     # Propagate exact snapshot clock to valuation checks.
-    snapshot_evaluated_at = (
-        _parse_snapshot_clock(snapshot)
-        if snapshot is not None
-        else None
-    )
+    snapshot_evaluated_at: datetime | None = None
+    if snapshot is not None:
+        try:
+            snapshot_evaluated_at = _parse_snapshot_clock(snapshot)
+        except PositionValuationError:
+            snapshot_evaluated_at = None
     position_totals = reconcile_position_totals(
         positions,
         evaluated_at=snapshot_evaluated_at,

@@ -22,26 +22,26 @@
     ]
   },
   "summary": {
-    "total_consumers": 57,
+    "total_consumers": 60,
     "by_role": {
-      "api_contract": 6,
+      "schema_model": 4,
       "compatibility_link": 3,
       "documentation_claim": 8,
-      "frontend_surface": 3,
-      "read_projection": 4,
+      "write_surface": 3,
       "receipt_writer": 2,
-      "schema_model": 4,
+      "api_contract": 6,
       "state_gate": 10,
-      "test_contract": 15,
-      "write_surface": 2
+      "read_projection": 5,
+      "frontend_surface": 3,
+      "test_contract": 16
     },
     "by_disposition": {
+      "preserve": 34,
+      "remove_canonical_claim": 4,
       "deprecate_after_replacement": 3,
-      "dual_read_transition": 6,
-      "investigate": 3,
       "migrate_to_decision_validity": 10,
-      "preserve": 31,
-      "remove_canonical_claim": 4
+      "dual_read_transition": 6,
+      "investigate": 3
     },
     "high_or_critical_count": 22
   },
@@ -935,7 +935,7 @@
       "path": "tests/test_statecore_api.py",
       "symbol": "dashboard attestation aggregation tests",
       "line_start": 339,
-      "line_end": 1720,
+      "line_end": 515,
       "match_terms": [
         "/proposals/{proposal_id}/attest",
         "Attestation",
@@ -956,10 +956,8 @@
         "Dashboard open counts distinguish stale from current revision attestations."
       ],
       "evidence": [
-        "test_statecore_api.py:339-486",
-        "test_statecore_api.py:500-1720"
-      ],
-      "wide_range_justification": "test_statecore_api.py exercises attestation across the full API surface (dashboard, proposals, history, attest); splitting would produce >20 narrow entries with no actionable difference"
+        "test_statecore_api.py:339-515"
+      ]
     },
     {
       "consumer_id": "ATT-CONS-035",
@@ -1637,6 +1635,89 @@
       ],
       "evidence": [
         "docs/adr/2026-07-18-version-bound-governed-review-writes.md"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-058",
+      "path": "tests/test_statecore_api.py",
+      "symbol": "attestation write API test",
+      "line_start": 1115,
+      "line_end": 1170,
+      "match_terms": [
+        "/proposals/{proposal_id}/attest",
+        "Attestation",
+        "attestations"
+      ],
+      "role": "write_surface",
+      "current_behavior": "Tests POST /proposals/{proposal_id}/attest endpoint: requires reason, creates attestation record, writes receipt.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_version_bound",
+      "authority_effect": "writes attestation decision of record",
+      "risk": "medium",
+      "disposition": "preserve",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Retain coverage when attestation write contract or proposal lifecycle changes.",
+      "test_implications": [
+        "Attestation creation must record attester, reason, and receipt."
+      ],
+      "evidence": [
+        "test_statecore_api.py:1115-1170"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-059",
+      "path": "tests/test_statecore_api.py",
+      "symbol": "attestation proposal detail/review API test",
+      "line_start": 1195,
+      "line_end": 1215,
+      "match_terms": [
+        "/proposals/{proposal_id}/attest",
+        "attestations"
+      ],
+      "role": "read_projection",
+      "current_behavior": "Tests that attested proposals expose attestation data in detail endpoint and filter correctly in list endpoint.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_version_bound",
+      "authority_effect": "",
+      "risk": "low",
+      "disposition": "preserve",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Retain coverage when proposal detail response shape changes.",
+      "test_implications": [
+        "Proposal detail must include attestations with decision field."
+      ],
+      "evidence": [
+        "test_statecore_api.py:1195-1215"
+      ]
+    },
+    {
+      "consumer_id": "ATT-CONS-060",
+      "path": "tests/test_statecore_api.py",
+      "symbol": "attestation failure recovery test",
+      "line_start": 1273,
+      "line_end": 1305,
+      "match_terms": [
+        "/proposals/{proposal_id}/attest",
+        "Attestation",
+        "attestations"
+      ],
+      "role": "test_contract",
+      "current_behavior": "Tests that attestation DB failure cleans new receipt but preserves proposal receipt; zero attestation rows survive.",
+      "decision_semantics": "review_completion_proxy",
+      "version_binding": "proposal_version_bound",
+      "authority_effect": "writes attestation (rolled back on failure)",
+      "risk": "medium",
+      "disposition": "preserve",
+      "target_owner": "Test maintainer",
+      "prerequisites": [],
+      "recommended_change": "Retain failure-path coverage when attestation write path changes.",
+      "test_implications": [
+        "Attestation failure must not leave orphan receipt files or partial DB rows."
+      ],
+      "evidence": [
+        "test_statecore_api.py:1273-1305"
       ]
     }
   ],
@@ -2416,108 +2497,6 @@
       "reason": "Hit outside consumer range in file with existing consumers. create_governed_attestation at line 80."
     },
     {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 19,
-      "term": "Attestation",
-      "reason": "Model import outside the dashboard aggregation test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 611,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "OpenAPI route allowlist entry, not attestation decision logic."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 871,
-      "term": "Attestation",
-      "reason": "OpenAPI schema allowlist entry, not attestation decision logic."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1124,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "Attestation endpoint contract covered by its dedicated API test."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1132,
-      "term": "Attestation",
-      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1136,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "Attestation endpoint contract covered by its dedicated API test."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1153,
-      "term": "Attestation",
-      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1153,
-      "term": "attestations",
-      "reason": "Attestation endpoint persistence assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1155,
-      "term": "attestations",
-      "reason": "Attestation endpoint row-count assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1157,
-      "term": "attestations",
-      "reason": "Attestation endpoint revision-binding assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1191,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "Proposal detail endpoint contract outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1208,
-      "term": "attestations",
-      "reason": "Proposal detail response assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1288,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "Attestation failure-path endpoint contract outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1298,
-      "term": "Attestation",
-      "reason": "Attestation failure-path persistence assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1299,
-      "term": "attestations",
-      "reason": "Attestation failure-path receipt assertion outside the dashboard test consumer."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1402,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "HTTP mutation policy table entry, not attestation decision logic."
-    },
-    {
-      "path": "tests/test_statecore_api.py",
-      "match_line": 1505,
-      "term": "/proposals/{proposal_id}/attest",
-      "reason": "HTTP write-guard table entry, not attestation decision logic."
-    },
-    {
       "path": "tests/test_statecore_store.py",
       "match_line": 52,
       "term": "attestations",
@@ -2822,6 +2801,36 @@
       "match_line": 17,
       "term": "Attestation",
       "reason": "Model import only; ATT-CONS-037 covers the executable risk-classification consumer."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 19,
+      "term": "Attestation",
+      "reason": "Model import of Attestation class; not a runtime consumer."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 615,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "OpenAPI route allowlist entry validating route registration; not attestation decision logic."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 875,
+      "term": "Attestation",
+      "reason": "OpenAPI schema allowlist entry listing model names; not attestation decision logic."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 1406,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "HTTP mutation policy table entry enumerating state-changing routes; not attestation decision logic."
+    },
+    {
+      "path": "tests/test_statecore_api.py",
+      "match_line": 1509,
+      "term": "/proposals/{proposal_id}/attest",
+      "reason": "HTTP write-guard table entry enumerating gated routes; not attestation decision logic."
     }
   ],
   "unclassified_hits": []
