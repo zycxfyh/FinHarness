@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import csv
+import hashlib
 import json
 import re
 import tempfile
@@ -778,6 +779,56 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
                 r.market_value = r.quantity * r.unit_price + 1
                 r.valuation_status = "valued"
         with self.assertRaisesRegex(StateCoreStoreError, "valuation_"):
+            materialize_import_batch(
+                cap["records"], source=cap["source"],
+                batch=cap["batch"], manifest=cap["manifest"],
+                artifact_store=cap["store"], engine=self.engine,
+            )
+        self._assert_db_empty()
+
+    # --- P0 regression: forged record counts ---
+
+    def _forged_count_envelope(self, cap):
+        batch = cap["batch"]
+        batch.record_counts = dict(batch.record_counts)
+        batch.record_counts["goal"] = 9
+        batch.record_counts["document"] = 9
+        manifest = cap["manifest"]
+        manifest.record_counts = dict(batch.record_counts)
+        store = cap["store"]
+        receipt_id = manifest.receipt_artifact_id
+        old_payload = json.loads(store.read(receipt_id))
+        old_payload["record_counts"] = dict(batch.record_counts)
+        new_bytes = json.dumps(old_payload, indent=2).encode("utf-8")
+        content_hash = hashlib.sha256(new_bytes).hexdigest()
+        obj_path = store.root / "objects" / content_hash[:2] / (content_hash + ".bin")
+        obj_path.parent.mkdir(parents=True, exist_ok=True)
+        obj_path.write_bytes(new_bytes)
+        desc_path = store.root / "descriptors" / (receipt_id + ".json")
+        desc = json.loads(desc_path.read_text())
+        desc["content_sha256"] = content_hash
+        desc["content_length"] = len(new_bytes)
+        desc_path.write_text(json.dumps(desc, indent=2))
+        manifest.receipt_sha256 = content_hash
+        # Update snapshot payload in records for broker (envelope binding check).
+        for r in cap["records"]:
+            if hasattr(r, "payload") and isinstance(r.payload, dict):
+                r.payload["record_counts"] = dict(batch.record_counts)
+        return cap
+
+    def test_csv_forged_goal_document_counts_rejected(self):
+        cap = self._forged_count_envelope(self._capture_csv_envelope())
+        with self.assertRaisesRegex(StateCoreStoreError, "valuation_record_count"):
+            materialize_import_batch(
+                cap["records"], source=cap["source"],
+                batch=cap["batch"], manifest=cap["manifest"],
+                artifact_store=cap["store"], engine=self.engine,
+            )
+        self._assert_db_empty()
+
+    def test_broker_forged_goal_document_counts_rejected(self):
+        cap = self._forged_count_envelope(self._capture_broker_envelope())
+        with self.assertRaisesRegex(StateCoreStoreError, "valuation_record_count"):
             materialize_import_batch(
                 cap["records"], source=cap["source"],
                 batch=cap["batch"], manifest=cap["manifest"],

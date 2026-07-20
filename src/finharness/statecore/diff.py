@@ -247,17 +247,11 @@ def diff_snapshots(
     )
     before_totals = reconcile_position_totals(
         before_rows,
-        evaluated_at=(
-            parse_valuation_evaluation_clock(before_snapshot.as_of_utc)
-            if before_snapshot.as_of_utc else None
-        ),
+        evaluated_at=parse_valuation_evaluation_clock(before_snapshot.as_of_utc),
     )
     after_totals = reconcile_position_totals(
         after_rows,
-        evaluated_at=(
-            parse_valuation_evaluation_clock(after_snapshot.as_of_utc)
-            if after_snapshot.as_of_utc else None
-        ),
+        evaluated_at=parse_valuation_evaluation_clock(after_snapshot.as_of_utc),
     )
     base_currency = (
         before_totals.base_currency

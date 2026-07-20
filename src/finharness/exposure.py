@@ -154,14 +154,13 @@ def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
 
 
 def _parse_snapshot_clock(snapshot: Snapshot) -> datetime | None:
-    """Validate and normalize snapshot.as_of_utc; None if missing.
+    """Validate and normalize snapshot.as_of_utc.
 
-    Raises PositionValuationError on invalid or timezone-naive values so the
-    consumer fails closed rather than silently disabling freshness checks.
+    Raises PositionValuationError on empty, invalid, or timezone-naive values
+    so the consumer fails closed rather than silently disabling freshness checks.
+    Returns None only when the snapshot itself is None (caller-side guard).
     """
     raw = snapshot.as_of_utc
-    if not raw:
-        return None
     return parse_valuation_evaluation_clock(raw)
 
 
@@ -442,6 +441,7 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
         try:
             snapshot_evaluated_at = _parse_snapshot_clock(snapshot)
         except PositionValuationError:
+            data_gaps.append("snapshot_time_invalid: snapshot as_of_utc is empty or malformed")
             snapshot_evaluated_at = None
     position_totals = reconcile_position_totals(
         positions,

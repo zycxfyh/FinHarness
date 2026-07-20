@@ -187,8 +187,8 @@ _RECORD_COUNT_KEY_TO_CLASS: dict[str, str] = {
     "liability": "Liability",
     "tax_event": "TaxEvent",
     "insurance": "InsurancePolicy",
-    "financial_goal": "FinancialGoal",
-    "document_ref": "DocumentRef",
+    "goal": "FinancialGoal",
+    "document": "DocumentRef",
 }
 
 

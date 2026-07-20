@@ -358,10 +358,12 @@ def assess_position_valuation(  # noqa: C901 -- single ordered valuation state m
                     fx_incomplete = True
 
     fx_valid = (
-        evidence.fx_rate is not None
+        not fx_incomplete
+        and fx_as_of_dt is not None
+        and evidence.fx_rate is not None
         and evidence.fx_rate > 0
-        and evidence.fx_as_of_utc
-        and evidence.fx_source_ref
+        and bool(evidence.fx_as_of_utc)
+        and bool(evidence.fx_source_ref)
     )
 
     if (
