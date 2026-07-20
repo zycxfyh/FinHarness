@@ -79,6 +79,30 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest}"
 
 
+def derive_import_batch_id(
+    *,
+    source_kind: str,
+    source_id: str,
+    source_sha256: str,
+    adapter_version: str,
+    coverage_mode: str,
+    supersedes_batch_id: str | None = None,
+    correction_reason: str | None = None,
+) -> str:
+    """Deterministic ImportBatch identity shared by adapters and prepare_import."""
+    return _stable_id(
+        "import_batch",
+        source_kind,
+        source_id,
+        source_sha256,
+        adapter_version,
+        IMPORT_MANIFEST_SCHEMA_VERSION,
+        coverage_mode,
+        supersedes_batch_id or "",
+        correction_reason or "",
+    )
+
+
 def _put_or_verify(
     store: ArtifactStore,
     *,
@@ -189,16 +213,14 @@ def prepare_import(
     resolved_corporate_action_gaps = sorted(set(corporate_action_gaps or []))
     if corporate_action_status == "unsupported_gap" and not resolved_corporate_action_gaps:
         resolved_corporate_action_gaps = ["corporate_action_semantics_not_supported"]
-    batch_id = _stable_id(
-        "import_batch",
-        source_kind,
-        source_id,
-        source_sha256,
-        adapter_version,
-        IMPORT_MANIFEST_SCHEMA_VERSION,
-        coverage_mode,
-        supersedes_batch_id or "",
-        correction_reason or "",
+    batch_id = derive_import_batch_id(
+        source_kind=source_kind,
+        source_id=source_id,
+        source_sha256=source_sha256,
+        adapter_version=adapter_version,
+        coverage_mode=coverage_mode,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
     )
     source_descriptor = persist_source_evidence(
         source_kind=source_kind,

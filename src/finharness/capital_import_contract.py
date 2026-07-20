@@ -18,6 +18,7 @@ class ImportFinding:
     record_type: str | None = None
     record_number: int | None = None
     field: str | None = None
+    record_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -153,9 +154,16 @@ def build_time_semantics(
     valued_at: str | datetime | None,
     ingested_at: str | datetime,
     recorded_at: str | datetime | None = None,
-    valuation_max_age: timedelta = timedelta(hours=24),
+    valuation_max_age: timedelta | None = None,
 ) -> tuple[ImportTimeSemantics, tuple[ImportFinding, ...]]:
-    """Build ordered clocks and surface stale valuation as a blocking finding."""
+    """Build ordered capital clocks.
+
+    Freshness of per-position market/FX evidence is owned by
+    ``position_valuation.assess_position_valuation``; this helper only normalizes
+    and orders import clocks. ``valuation_max_age`` is accepted for call-site
+    compatibility and ignored.
+    """
+    del valuation_max_age  # per-position owner: position_valuation
     effective = canonical_utc(effective_at, field="effective_at_utc")
     observed = canonical_utc(observed_at, field="observed_at_utc")
     valued = canonical_utc(valued_at, field="valued_at_utc") if valued_at else None
@@ -176,23 +184,13 @@ def build_time_semantics(
         raise _blocking("invalid_time_order", "observed_at_utc cannot follow ingested_at_utc")
     if parsed["ingested"] > parsed["recorded"]:
         raise _blocking("invalid_time_order", "ingested_at_utc cannot follow recorded_at_utc")
-    findings: list[ImportFinding] = []
     if valued is not None:
         valued_dt = datetime.fromisoformat(valued)
         if valued_dt > parsed["observed"]:
             raise _blocking("invalid_time_order", "valued_at_utc cannot follow observed_at_utc")
-        if parsed["observed"] - valued_dt > valuation_max_age:
-            findings.append(
-                ImportFinding(
-                    "stale_valuation",
-                    "blocking",
-                    "valuation is older than the admitted 24-hour import window",
-                    field="valued_at_utc",
-                )
-            )
     return (
         ImportTimeSemantics(effective, observed, valued, ingested, recorded),
-        tuple(findings),
+        (),
     )
 
 

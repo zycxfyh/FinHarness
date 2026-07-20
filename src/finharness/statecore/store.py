@@ -1064,6 +1064,22 @@ def materialize_import_batch(
         records=materialized,
         artifact_store=artifact_store,
     )
+    from finharness.capital_import_valuation import (
+        ValuationContractError,
+        validate_import_valuation_contract,
+    )
+    from finharness.position_valuation import PositionValuationError
+
+    try:
+        validate_import_valuation_contract(
+            source=source,
+            batch=batch,
+            manifest=manifest,
+            records=materialized,
+            artifact_store=artifact_store,
+        )
+    except (PositionValuationError, ValuationContractError) as exc:
+        raise StateCoreStoreError(str(exc)) from exc
     saved: list[StateCoreRecord] = []
     try:
         with Session(engine) as session:

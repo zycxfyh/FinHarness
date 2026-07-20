@@ -22,7 +22,12 @@ from pydantic import BaseModel
 from sqlalchemy import Engine, desc
 from sqlmodel import Session, select
 
-from finharness.position_valuation import reconcile_position_totals, valuation_blockers
+from finharness.position_valuation import (
+    PositionValuationError,
+    parse_valuation_evaluation_clock,
+    reconcile_position_totals,
+    valuation_blockers,
+)
 from finharness.statecore.models import (
     CashflowEvent,
     InsurancePolicy,
@@ -146,6 +151,18 @@ def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
         .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
         .limit(1)
     ).first()
+
+
+def _parse_snapshot_clock(snapshot: Snapshot) -> datetime | None:
+    """Validate and normalize snapshot.as_of_utc.
+
+    Raises PositionValuationError on empty, invalid, or timezone-naive values
+    so the consumer fails closed rather than silently disabling freshness checks.
+    Returns None only when the snapshot itself is None (caller-side guard).
+    """
+    raw = snapshot.as_of_utc
+    return parse_valuation_evaluation_clock(raw)
+
 
 
 def _holdings(
@@ -418,8 +435,23 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     cash_total_verified = snapshot is not None
     if not cash_total_verified:
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
-    position_totals = reconcile_position_totals(positions)
+    # Propagate exact snapshot clock to valuation checks.
+    snapshot_evaluated_at: datetime | None = None
+    snapshot_clock_invalid = False
+    if snapshot is not None:
+        try:
+            snapshot_evaluated_at = _parse_snapshot_clock(snapshot)
+        except PositionValuationError:
+            data_gaps.append("snapshot_time_invalid: snapshot as_of_utc is empty or malformed")
+            snapshot_evaluated_at = None
+            snapshot_clock_invalid = True
+    position_totals = reconcile_position_totals(
+        positions,
+        evaluated_at=snapshot_evaluated_at,
+    )
     asset_blockers = list(position_totals.blockers)
+    if snapshot_clock_invalid:
+        asset_blockers.append("snapshot_time_invalid")
     if snapshot is None:
         asset_blockers.append("portfolio_snapshot_missing")
     elif not positions:
@@ -469,7 +501,8 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     )
 
     admitted_positions = [
-        position for position in positions if not valuation_blockers(position)
+        position for position in positions
+        if not valuation_blockers(position, evaluated_at=snapshot_evaluated_at)
     ]
     cash_total = (
         sum(

@@ -5,6 +5,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from finharness.position_valuation import (
+    ValuationEvidence,
+    ValuationStatus,
+    assess_position_valuation,
     reconcile_position_totals,
     valuation_blockers,
 )
@@ -28,6 +31,7 @@ def position(position_id: str, **overrides: object) -> Position:
         "valued_at_utc": "2026-07-13T11:00:00+00:00",
         "price_source_ref": "receipt:prices",
         "valuation_status": "valued",
+        "as_of_utc": NOW.isoformat(),
     }
     values.update(overrides)
     return Position(**values)  # type: ignore[arg-type]
@@ -55,8 +59,9 @@ class PositionValuationTest(unittest.TestCase):
         totals = reconcile_position_totals([position("spy"), eur])
 
         self.assertIsNone(totals.unified_total)
-        self.assertIn("eur:valuation_fx_missing", totals.blockers)
+        self.assertIn("eur:valuation_unpriced", totals.blockers)
         self.assertIn("eur:market_value_missing", totals.blockers)
+        self.assertIn("eur:fx_rate_missing", totals.blockers)
 
     def test_converted_fx_requires_evidence_and_reconciles(self) -> None:
         converted = position(
@@ -116,6 +121,57 @@ class PositionValuationTest(unittest.TestCase):
         bad = position("bad", market_value=Decimal("99"))
 
         self.assertIn("valuation_components_do_not_reconcile", valuation_blockers(bad))
+
+    # --- P1 regression: invalid FX time + mismatched market_value → fx_missing ---
+
+    def _cross_evidence(self, **overrides: object) -> ValuationEvidence:
+        values: dict[str, object] = {
+            "quantity": Decimal("2"),
+            "market_value": Decimal("121"),         # mismatched: 2*50*1.10 = 110
+            "valuation_currency": "USD",
+            "unit_price": Decimal("50"),
+            "price_currency": "EUR",
+            "valued_at_utc": "2026-01-15T10:00:00+00:00",
+            "price_source_ref": "src:t",
+            "fx_rate": Decimal("1.10"),
+            "fx_as_of_utc": "2026-01-15T10:00:00+00:00",
+            "fx_source_ref": "src:f",
+        }
+        values.update(overrides)
+        return ValuationEvidence(**values)  # type: ignore[arg-type]
+
+    def test_invalid_fx_time_with_mismatched_market_value_yields_fx_missing(self) -> None:
+        assessment = assess_position_valuation(
+            self._cross_evidence(fx_as_of_utc="not-a-date"),
+            record_id="p1", record_number=1,
+            evaluated_at_utc="2026-01-16T10:00:00+00:00",
+        )
+        self.assertEqual(assessment.status, ValuationStatus.FX_MISSING)
+        codes = {f.code for f in assessment.findings}
+        self.assertIn("fx_as_of_invalid", codes)
+        self.assertNotIn("valuation_components_do_not_reconcile", codes)
+
+    def test_naive_fx_time_with_mismatched_market_value_yields_fx_missing(self) -> None:
+        assessment = assess_position_valuation(
+            self._cross_evidence(fx_as_of_utc="2026-01-15T10:00:00"),
+            record_id="p2", record_number=2,
+            evaluated_at_utc="2026-01-16T10:00:00+00:00",
+        )
+        self.assertEqual(assessment.status, ValuationStatus.FX_MISSING)
+        codes = {f.code for f in assessment.findings}
+        self.assertIn("fx_as_of_not_timezone_aware", codes)
+        self.assertNotIn("valuation_components_do_not_reconcile", codes)
+
+    def test_future_fx_time_with_mismatched_market_value_yields_fx_missing(self) -> None:
+        assessment = assess_position_valuation(
+            self._cross_evidence(fx_as_of_utc="2026-01-17T10:00:00+00:00"),
+            record_id="p3", record_number=3,
+            evaluated_at_utc="2026-01-16T10:00:00+00:00",
+        )
+        self.assertEqual(assessment.status, ValuationStatus.FX_MISSING)
+        codes = {f.code for f in assessment.findings}
+        self.assertIn("fx_as_of_after_evaluation", codes)
+        self.assertNotIn("valuation_components_do_not_reconcile", codes)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,10 @@ from typing import Literal
 from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
-from finharness.position_valuation import reconcile_position_totals
+from finharness.position_valuation import (
+    parse_valuation_evaluation_clock,
+    reconcile_position_totals,
+)
 from finharness.statecore.models import ImportBatch, Position, ReceiptManifest, Snapshot
 from finharness.statecore.store import StateCoreStoreError
 
@@ -242,8 +245,14 @@ def diff_snapshots(
             or before_positions[key].market_value != after_positions[key].market_value
         )
     )
-    before_totals = reconcile_position_totals(before_rows)
-    after_totals = reconcile_position_totals(after_rows)
+    before_totals = reconcile_position_totals(
+        before_rows,
+        evaluated_at=parse_valuation_evaluation_clock(before_snapshot.as_of_utc),
+    )
+    after_totals = reconcile_position_totals(
+        after_rows,
+        evaluated_at=parse_valuation_evaluation_clock(after_snapshot.as_of_utc),
+    )
     base_currency = (
         before_totals.base_currency
         if before_totals.base_currency == after_totals.base_currency

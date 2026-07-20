@@ -21,7 +21,13 @@ from finharness.capital_import_contract import (
     currency_code,
     exact_decimal,
 )
+from finharness.capital_import_valuation import (
+    assess_positions,
+    merge_valuation_findings,
+    valuation_assessment_summary,
+)
 from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
@@ -46,7 +52,7 @@ from finharness.statecore.store import (
 
 BROKER_READ_SOURCE_KIND = "broker_read"
 BROKER_READ_MATERIALIZED_SOURCE = "broker_read_import"
-BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v1"
+BROKER_READ_ADAPTER_VERSION = "finharness.broker_read_receipt.v2"
 DEFAULT_BROKER_IMPORT_RECEIPT_ROOT = (
     ROOT / "data" / "receipts" / "capital-imports" / "broker-read"
 )
@@ -250,20 +256,7 @@ def _position_records(
         fx_rate = _first_decimal("fx_rate", raw.get("fx_rate"))
         fx_as_of_utc = _string(raw.get("fx_as_of_utc")) or None
         fx_source_ref = _string(raw.get("fx_source_ref")) or None
-        if market_value is None or unit_price is None or valued_at_utc is None:
-            valuation_status = "unpriced"
-        elif valuation_currency != price_currency:
-            valuation_status = (
-                "valued_converted"
-                if valuation_currency
-                and price_currency
-                and fx_rate is not None
-                and fx_as_of_utc
-                and fx_source_ref
-                else "fx_missing"
-            )
-        else:
-            valuation_status = "valued"
+        position_id = _safe_id(f"pos_{snapshot_id}_{index}_{symbol}")
         instrument_type = _string(raw.get("instrument_type") or raw.get("asset_class"))
         instrument_venue = _string(raw.get("instrument_venue") or raw.get("exchange"))
         instrument_id: str | None = None
@@ -297,6 +290,27 @@ def _position_records(
                     field=finding.field,
                 )
             )
+        evidence = ValuationEvidence(
+            quantity=quantity,
+            market_value=market_value,
+            valuation_currency=valuation_currency,
+            unit_price=unit_price,
+            price_currency=price_currency,
+            valued_at_utc=valued_at_utc,
+            price_source_ref=price_source_ref,
+            fx_rate=fx_rate,
+            fx_as_of_utc=fx_as_of_utc,
+            fx_source_ref=fx_source_ref,
+        )
+        provisional = assess_position_valuation(
+            evidence,
+            record_id=position_id,
+            record_number=index + 1,
+            evaluated_at_utc=as_of_utc,
+            check_freshness=False,
+            allow_unknown_legacy=False,
+        )
+        valuation_status = provisional.status.value
         normalized.append(
             {
                 "symbol": symbol,
@@ -319,7 +333,7 @@ def _position_records(
         )
         records.append(
             Position(
-                position_id=_safe_id(f"pos_{snapshot_id}_{index}_{symbol}"),
+                position_id=position_id,
                 snapshot_id=snapshot_id,
                 account_id=account_id,
                 instrument_id=instrument_id,
@@ -340,17 +354,6 @@ def _position_records(
                 source_refs=[source_ref],
             )
         )
-        if valuation_status not in {"valued", "valued_converted"}:
-            findings.append(
-                ImportFinding(
-                    f"valuation_{valuation_status}",
-                    "blocking",
-                    f"{symbol} lacks an admitted typed valuation",
-                    record_type="position",
-                    record_number=index + 1,
-                    field="valuation_status",
-                )
-            )
     return records, list(identities.values()), list(aliases.values()), normalized, findings
 
 
@@ -463,6 +466,24 @@ def _portfolio_records_with_identities(
     except CapitalImportContractError as exc:
         raise StateCoreStoreError(str(exc)) from exc
     findings.extend(position_findings)
+    # Canonical assessment over the final position set before any freeze.
+    assessments = assess_positions(position_records, evaluated_at_utc=as_of_utc)
+    # Replace with copies carrying derived status (avoid mutating SQLModel
+    # instances in-place which triggers ObjectDereferencedError).
+    status_map = {}
+    for position, assessment in zip(position_records, assessments, strict=True):
+        p = Position(**position.model_dump())
+        p.valuation_status = assessment.status.value
+        status_map[position.position_id] = p
+    position_records = [status_map[p.position_id] for p in position_records]
+    findings = merge_valuation_findings(findings, assessments)
+    # Keep normalized payload status aligned with assessed Position rows.
+    status_by_id = {
+        position.position_id: position.valuation_status for position in position_records
+    }
+    for index, position in enumerate(position_records):
+        if index < len(normalized_positions):
+            normalized_positions[index]["valuation_status"] = status_by_id[position.position_id]
     record_counts = {"account": 1, "position": len(position_records)}
     account = Account(
         account_id=account_id,
@@ -503,6 +524,10 @@ def _portfolio_records_with_identities(
                 "Cost basis is omitted unless directly disclosed by the source.",
             ],
             "execution_allowed": False,
+            "valuation_assessment": valuation_assessment_summary(
+                position_records,
+                evaluated_at_utc=as_of_utc,
+            ),
         },
         source_refs=[source_ref],
     )
@@ -624,6 +649,10 @@ def _ingest_broker_read_receipt_with_snapshot(
         "non_claims": list(BROKER_IMPORT_NON_CLAIMS),
         "execution_allowed": False,
     }
+    receipt_payload["valuation_assessment"] = valuation_assessment_summary(
+        positions,
+        evaluated_at_utc=snapshot.as_of_utc,
+    )
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,
         source_id=source_ref,
