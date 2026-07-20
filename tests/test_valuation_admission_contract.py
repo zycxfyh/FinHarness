@@ -661,7 +661,10 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
 
         captured = {}
 
-        def patched(records, *, source, source_id_for_ownership=None, batch, manifest, artifact_store, engine):
+        def patched(
+            records, *, source, source_id_for_ownership=None,
+            batch, manifest, artifact_store, engine,
+        ):
             captured["records"] = copy.deepcopy(list(records))
             captured["source"] = source
             captured["batch"] = copy.deepcopy(batch)
