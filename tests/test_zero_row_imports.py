@@ -16,37 +16,26 @@ main (cb42d46) because:
 
 from __future__ import annotations
 
-import csv
 import contextlib
 import copy
-import hashlib
+import csv
 import json
 import tempfile
 import unittest
-from collections import Counter
 from collections.abc import Iterable
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 
 from finharness.artifact_store import LocalArtifactStore
-from finharness.personal_finance import ingest_personal_finance_export
-from finharness.personal_finance import PersonalFinanceExportError
-from finharness.position_valuation import valuation_blockers
+from finharness.personal_finance import PersonalFinanceExportError, ingest_personal_finance_export
 from finharness.statecore.models import (
-    DocumentRef,
-    FinancialGoal,
     ImportBatch,
     Liability,
     Position,
-    ReceiptIndex,
     ReceiptManifest,
-    Snapshot,
 )
 from finharness.statecore.store import (
     StateCoreStoreError,
     init_state_core,
-    materialize_import_batch,
     read_all,
 )
 
@@ -261,7 +250,7 @@ class ZeroRowImportGapTest(unittest.TestCase):
             w = csv.DictWriter(f, fieldnames=TYPED_CSV_COLUMNS)
             w.writeheader()
             w.writerow(self._liability_row("loan-a"))
-        result_a = ingest_personal_finance_export(
+        _ = ingest_personal_finance_export(
             path_a, engine=self.engine,
             receipt_root=self.root / "receipts_a_liab",
             artifact_store=self.store, coverage_mode="full",
@@ -297,7 +286,7 @@ class ZeroRowImportGapTest(unittest.TestCase):
         path = self.root / "same.csv"
         _write_csv(path, [_typed_row()])
 
-        r1 = ingest_personal_finance_export(
+        _r1 = ingest_personal_finance_export(
             path, engine=self.engine,
             receipt_root=self.root / "r1",
             artifact_store=LocalArtifactStore(self.root / "r1" / "artifact-store"),
@@ -324,6 +313,7 @@ class ZeroRowImportGapTest(unittest.TestCase):
         self._seed_position()
 
         from unittest.mock import patch
+
         from finharness.statecore.import_models import ImportTombstone
 
         path = self.root / "different_position.csv"
@@ -394,7 +384,7 @@ class ZeroRowImportGapTest(unittest.TestCase):
             m for m in read_all(ReceiptManifest, engine=self.engine)
             if m.batch_id == result.batch_id
         )
-        batch = exactly_one(
+        _batch = exactly_one(
             b for b in read_all(ImportBatch, engine=self.engine)
             if b.batch_id == result.batch_id
         )
