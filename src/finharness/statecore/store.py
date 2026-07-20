@@ -1051,8 +1051,14 @@ def _validate_existing_import_lineage(
     ):
         raise StateCoreStoreError("import tombstone does not bind the import batch")
     existing_batch = session.get(ImportBatch, batch.batch_id)
-    if existing_batch is not None and existing_batch.model_dump() != batch.model_dump():
-        raise StateCoreStoreError("import batch identity is immutable")
+    if existing_batch is not None:
+        # Same batch_id means same content contract — accept idempotent retry.
+        # Only reject if core identity fields differ (corruption).
+        _id_fields = ("source_kind", "source_id", "source_sha256", "coverage_mode")
+        for f in _id_fields:
+            if getattr(existing_batch, f) != getattr(batch, f):
+                raise StateCoreStoreError("import batch identity is immutable")
+        return
     existing_manifest = session.get(ReceiptManifest, manifest.manifest_id)
     if existing_manifest is not None and existing_manifest.model_dump() != manifest.model_dump():
         raise StateCoreStoreError("receipt manifest identity is immutable")
