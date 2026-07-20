@@ -7,10 +7,8 @@ the post-#375 target behavior.
 
 from __future__ import annotations
 
-import csv
-import contextlib
 import copy
-import hashlib
+import csv
 import json
 import tempfile
 import unittest
@@ -20,8 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from finharness.artifact_store import LocalArtifactStore
-from finharness.personal_finance import ingest_personal_finance_export
-from finharness.personal_finance import PersonalFinanceExportError
+from finharness.personal_finance import PersonalFinanceExportError, ingest_personal_finance_export
 from finharness.statecore.import_models import ImportTombstone
 from finharness.statecore.models import (
     ImportBatch,
@@ -179,20 +176,20 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     # ── target 3: zero-row delta with base preserves prior positions ──
 
     def test_zero_row_delta_with_base_preserves_positions(self):
-        path_seed = self.root / "seed.csv"
-        _write_csv(path_seed, [_typed_row()])
+        path = self.root / "positions.csv"
+        _write_csv(path, [_typed_row()])
         ingest_personal_finance_export(
-            path_seed, engine=self.engine,
+            path, engine=self.engine,
             receipt_root=self._receipt_root("seed"),
             artifact_store=self.store, coverage_mode="full",
             covered_domains=["position"],
         )
         self.assertEqual(len(list(read_all(Position, engine=self.engine))), 1)
 
-        path_delta = self.root / "delta.csv"
-        _write_csv(path_delta, [])
+        # Overwrite same file with zero rows for delta
+        _write_csv(path, [])
         result = ingest_personal_finance_export(
-            path_delta, engine=self.engine,
+            path, engine=self.engine,
             receipt_root=self._receipt_root("delta"),
             artifact_store=self.store,
             coverage_mode="delta",
@@ -208,7 +205,7 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     def test_zero_row_delta_without_base_fails_closed(self):
         path = self.root / "delta.csv"
         _write_csv(path, [])
-        with self.assertRaises(StateCoreStoreError):
+        with self.assertRaises(PersonalFinanceExportError):
             ingest_personal_finance_export(
                 path, engine=self.engine,
                 receipt_root=self._receipt_root("delta"),
@@ -399,15 +396,14 @@ class ZeroRowImportTargetTest(unittest.TestCase):
 
         with patch(
             "finharness.personal_finance.materialize_import_batch", _patched
-        ):
-            with self.assertRaises(StateCoreStoreError):
-                ingest_personal_finance_export(
-                    path, engine=self.engine,
-                    receipt_root=self._receipt_root("forged"),
-                    artifact_store=self.store,
-                    coverage_mode="full",
-                    covered_domains=["position"],
-                )
+        ), self.assertRaises(StateCoreStoreError):
+            ingest_personal_finance_export(
+                path, engine=self.engine,
+                receipt_root=self._receipt_root("forged"),
+                artifact_store=self.store,
+                coverage_mode="full",
+                covered_domains=["position"],
+            )
         self.assertEqual(len(list(read_all(ImportBatch, engine=self.engine))), 0)
 
     # ── target 10: same bytes different coverage → different batch IDs ──
@@ -462,8 +458,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     # ── target 12: generic upsert cannot bypass scoped production ownership ──
 
     def test_generic_upsert_cannot_bypass_ownership(self):
-        from finharness.statecore.store import write_records
         from finharness.statecore.models import Liability
+        from finharness.statecore.store import write_records
 
         liab = Liability(
             liability_id="bypass-1", name="Bypassed",

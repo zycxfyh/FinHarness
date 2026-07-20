@@ -199,15 +199,18 @@ def _import_contract_fragment(
     source_id: str,
     source_hash: str,
     coverage_mode: str,
+    covered_domains: list[str] | None,
     supersedes_batch_id: str | None,
     correction_reason: str | None,
 ) -> str:
+    domains = sorted(set(covered_domains or []))
     return hashlib.sha256(
         "\x00".join(
             (
                 source_id,
                 source_hash,
                 coverage_mode,
+                *domains,
                 supersedes_batch_id or "",
                 correction_reason or "",
             )
@@ -691,9 +694,9 @@ def _records_from_rows(
             record.source = owner_key
     # When position is in covered_domains, this batch declares portfolio state.
     # Full N->0 must produce an empty portfolio Snapshot; delta zero-row with
-    # base carries prior positions and produces a portfolio Snapshot.
+    # delta zero-row with base carries prior positions and produces a portfolio Snapshot.
     has_portfolio_domain = "position" in (covered_domains or ())
-    has_positions = any(isinstance(record, Position) for record in built)
+    _has_positions = any(isinstance(record, Position) for record in built)
     snapshot_kind = (
         "portfolio" if has_portfolio_domain
         else "personal_finance"
@@ -1011,6 +1014,7 @@ def ingest_personal_finance_export(
             source_id=source_id,
             source_hash=source_hash,
             coverage_mode=coverage_mode,
+            covered_domains=resolved_covered_domains,
             supersedes_batch_id=supersedes_batch_id,
             correction_reason=correction_reason,
         )
