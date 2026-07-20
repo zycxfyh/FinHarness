@@ -86,10 +86,12 @@ def derive_import_batch_id(
     source_sha256: str,
     adapter_version: str,
     coverage_mode: str,
+    covered_domains: list[str] | None = None,
     supersedes_batch_id: str | None = None,
     correction_reason: str | None = None,
 ) -> str:
     """Deterministic ImportBatch identity shared by adapters and prepare_import."""
+    domains = sorted(set(covered_domains or []))
     return _stable_id(
         "import_batch",
         source_kind,
@@ -98,6 +100,7 @@ def derive_import_batch_id(
         adapter_version,
         IMPORT_MANIFEST_SCHEMA_VERSION,
         coverage_mode,
+        *domains,
         supersedes_batch_id or "",
         correction_reason or "",
     )
@@ -219,6 +222,7 @@ def prepare_import(
         source_sha256=source_sha256,
         adapter_version=adapter_version,
         coverage_mode=coverage_mode,
+        covered_domains=resolved_domains,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
     )

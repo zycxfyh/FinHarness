@@ -322,11 +322,17 @@ def _optional_currency(row: dict[str, str], column: str, *, row_number: int) -> 
         raise PersonalFinanceExportError(str(exc), findings=exc.findings) from exc
 
 
-def _single_as_of(rows: list[dict[str, str]]) -> str:
+def _single_as_of(rows: list[dict[str, str]], *, fallback: str = "") -> str:
     as_of_values = {
         _required_text(row, "as_of_utc", row_number=index)
         for index, row in enumerate(rows, start=1)
     }
+    if not as_of_values:
+        if not fallback:
+            raise PersonalFinanceExportError(
+                "zero-row import requires an explicit observed_at_utc"
+            )
+        return fallback
     if len(as_of_values) != 1:
         raise PersonalFinanceExportError(
             "personal-finance export must contain exactly one as_of_utc value"
@@ -347,9 +353,9 @@ def _single_clock(rows: list[dict[str, str]], column: str, fallback: str) -> str
 
 
 def _time_contract(
-    rows: list[dict[str, str]], *, ingested_at_utc: str
+    rows: list[dict[str, str]], *, ingested_at_utc: str, fallback_observed: str = ""
 ) -> tuple[dict[str, str | None], list[ImportFinding]]:
-    as_of = _single_as_of(rows)
+    as_of = _single_as_of(rows, fallback=fallback_observed)
     explicit_fields = ("effective_at_utc", "observed_at_utc", "valued_at_utc")
     findings: list[ImportFinding] = []
     if any(not any((row.get(field) or "").strip() for row in rows) for field in explicit_fields):
@@ -926,6 +932,7 @@ def ingest_personal_finance_export(
     correction_reason: str | None = None,
     tombstones: Sequence[ImportDeletion] = (),
     covered_domains: Sequence[str] | None = None,
+    observed_at_utc: str | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -937,8 +944,11 @@ def ingest_personal_finance_export(
     if coverage_mode not in {"full", "delta"}:
         raise PersonalFinanceExportError("coverage_mode must be full or delta")
     rows = _read_rows(source_path)
-    if not rows:
-        raise PersonalFinanceExportError("personal-finance export has no rows")
+    if not rows and covered_domains is None:
+        raise PersonalFinanceExportError(
+            "personal-finance export has no rows and no explicit covered_domains; "
+            "zero-row imports require explicit covered_domains"
+        )
     deletion_domains: set[str] = set()
     for tombstone in tombstones:
         domain = DELETION_RECORD_DOMAINS.get(tombstone.record_type)
@@ -969,7 +979,8 @@ def ingest_personal_finance_export(
         created_at_utc=datetime.now(UTC).isoformat(),
     )
     time_semantics, findings = _time_contract(
-        rows, ingested_at_utc=source_descriptor.created_at_utc
+        rows, ingested_at_utc=source_descriptor.created_at_utc,
+        fallback_observed=observed_at_utc or "",
     )
     findings.extend(_identity_findings(rows))
     as_of_utc = str(time_semantics["observed_at_utc"])
@@ -1003,6 +1014,7 @@ def ingest_personal_finance_export(
         source_sha256=source_hash,
         adapter_version=ADAPTER_VERSION,
         coverage_mode=coverage_mode,
+        covered_domains=resolved_covered_domains,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
     )
