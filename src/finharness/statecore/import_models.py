@@ -43,12 +43,8 @@ class ImportBatch(StateCoreBase, table=True):
         ),
         UniqueConstraint(
             "source_kind",
-            "source_id",
             "source_sha256",
-            "adapter_version",
-            "import_schema_version",
-            "coverage_mode",
-            "supersedes_batch_id",
+            "contract_digest",
             name="uq_import_batches_content_contract",
         ),
     )
@@ -61,6 +57,7 @@ class ImportBatch(StateCoreBase, table=True):
     source_artifact_id: str
     adapter_version: str
     import_schema_version: str
+    contract_digest: str = ""
     record_counts: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
     covered_domains: list[str] = Field(default_factory=list, sa_column=json_list_column())
     supersedes_batch_id: str | None = Field(default=None, index=True)

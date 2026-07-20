@@ -414,6 +414,29 @@ def _migrate_add_import_correction_semantics(connection: Connection) -> None:
         "CREATE INDEX IF NOT EXISTS ix_import_batches_supersedes_batch_id "
         "ON import_batches (supersedes_batch_id)"
     )
+    if "contract_digest" not in columns:
+        connection.exec_driver_sql(
+            "ALTER TABLE import_batches ADD COLUMN contract_digest VARCHAR NOT NULL DEFAULT ''"
+        )
+    # Rebuild the content-contract unique constraint to use contract_digest
+    # instead of the broad (source_kind, source_id, ...) tuple so different
+    # coverage scopes on the same source bytes can coexist.
+    _rebuild_import_batches_unique(connection)
+
+
+def _rebuild_import_batches_unique(connection: Connection) -> None:
+    """Replace the old content-contract unique constraint with contract_digest.
+
+    SQLite cannot ALTER TABLE DROP CONSTRAINT, so we rebuild the table's unique
+    indexes.  The old constraint columns (source_id, adapter_version, etc.) are
+    relaxed because contract_digest already captures the full contract including
+    covered_domains, deletions, and clocks.
+    """
+    # Create a unique index that mirrors the new SQLModel UniqueConstraint.
+    connection.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_import_batches_content_contract_v2 "
+        "ON import_batches (source_kind, source_sha256, contract_digest)"
+    )
 
 
 def _migrate_add_canonical_identities(connection: Connection) -> None:
@@ -662,6 +685,17 @@ def upsert_records(
 _PRODUCTION_SOURCE_KINDS = set(_REGISTRY_SOURCE_KINDS)
 _PRODUCTION_MATERIALIZED_SOURCES = set(_REGISTRY_MATERIALIZED_SOURCES)
 _PRODUCTION_IMPORT_KINDS = _PRODUCTION_SOURCE_KINDS | _PRODUCTION_MATERIALIZED_SOURCES
+
+
+def source_owner_key(source_kind: str, source_id: str) -> str:
+    """Canonical ownership key for scoped production-import records.
+
+    All source-owned records, tombstones, and deletion queries MUST use this
+    key, never raw ``source_kind`` or ``source_id`` alone.  Stable source
+    registration belongs to #394; this Issue derives the key from the
+    path-based ``source_id``.
+    """
+    return f"{source_kind}::{source_id}"
 
 
 def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -> None:
@@ -1043,7 +1077,6 @@ def materialize_import_batch(
     records: Iterable[StateCoreRecord],
     *,
     source: str,
-    source_id_for_ownership: str | None = None,
     batch: ImportBatch,
     manifest: ReceiptManifest,
     artifact_store: ArtifactStore,
@@ -1057,6 +1090,7 @@ def materialize_import_batch(
     database transaction as the queryable records; callers cannot make an import
     current by supplying only direct state payloads.
     """
+    ownership_scope = source_owner_key(batch.source_kind, batch.source_id)
     materialized = list(records)
     _validate_import_envelope(
         source=source,
@@ -1104,7 +1138,6 @@ def materialize_import_batch(
                     tombstone.tombstone_id: tombstone
                     for tombstone in [*automatic_tombstones, *explicit_tombstones]
                 }
-                ownership_scope = source_id_for_ownership or source
                 if batch.coverage_mode == "full":
                     _delete_covered_source_records(
                         session, source=ownership_scope, covered_domains=batch.covered_domains

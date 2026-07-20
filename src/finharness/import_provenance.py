@@ -267,6 +267,17 @@ def prepare_import(
     )
     receipt_path = resolve_under(receipt_root, f"{receipt_id}.json")
     atomic_write_bytes(receipt_path, receipt_bytes)
+    contract_parts = [
+        coverage_mode,
+        *resolved_domains,
+        supersedes_batch_id or "",
+        correction_reason or "",
+        corporate_action_status,
+    ]
+    contract_digest = hashlib.sha256(
+        "|".join(contract_parts).encode("utf-8")
+    ).hexdigest()[:32]
+
     batch = ImportBatch(
         batch_id=batch_id,
         source_kind=source_kind,
@@ -276,6 +287,7 @@ def prepare_import(
         source_artifact_id=source_artifact_id,
         adapter_version=adapter_version,
         import_schema_version=IMPORT_MANIFEST_SCHEMA_VERSION,
+        contract_digest=contract_digest,
         record_counts=record_counts,
         covered_domains=resolved_domains,
         supersedes_batch_id=supersedes_batch_id,

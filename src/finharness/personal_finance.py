@@ -665,6 +665,7 @@ def _records_from_rows(
     as_of_utc: str,
     source_path: Path,
     source_id: str,
+    covered_domains: list[str] | None,
     time_semantics: dict[str, str | None],
     findings: list[ImportFinding],
     coverage_mode: str,
@@ -682,17 +683,24 @@ def _records_from_rows(
     built: list[StateCoreRecord] = [
         _ROW_BUILDERS[_row_type(row)](row, index, ctx) for index, row in enumerate(rows, start=1)
     ]
-    # Tag source-owned rows so a re-import replaces exactly this adapter's rows.
+    from finharness.statecore.store import source_owner_key
+
+    owner_key = source_owner_key(EXPORT_KIND, source_id)
     for record in built:
         if isinstance(record, SourcedStateCoreBase):
-            record.source = source_id
-    # Only stamp a portfolio snapshot when holdings are present; otherwise a
-    # liabilities-only (or goals-only) export would shadow the latest real
-    # holdings snapshot and zero out the cockpit's positions view.
+            record.source = owner_key
+    # When position is in covered_domains, this batch declares portfolio state.
+    # Full N->0 must produce an empty portfolio Snapshot; delta zero-row with
+    # base carries prior positions and produces a portfolio Snapshot.
+    has_portfolio_domain = "position" in (covered_domains or ())
     has_positions = any(isinstance(record, Position) for record in built)
+    snapshot_kind = (
+        "portfolio" if has_portfolio_domain
+        else "personal_finance"
+    )
     snapshot = Snapshot(
         snapshot_id=snapshot_id,
-        kind="portfolio" if has_positions else "personal_finance",
+        kind=snapshot_kind,
         as_of_utc=as_of_utc,
         authority_level="read_only",
         payload=_payload_for_snapshot(
@@ -958,10 +966,23 @@ def ingest_personal_finance_export(
                 f"unsupported import deletion record type: {tombstone.record_type}"
             )
         deletion_domains.add(domain)
-    resolved_covered_domains = sorted(
-        (set(covered_domains) if covered_domains is not None else {_row_type(row) for row in rows})
-        | deletion_domains
-    )
+    # Legacy CSV (no record_type column): adapter auto-declares position coverage.
+    # Typed CSV (has record_type): full requires explicit covered_domains.
+    with source_path.open("r", encoding="utf-8", newline="") as f:
+        is_typed = ROW_TYPE_COLUMN in (csv.DictReader(f).fieldnames or ())
+    if covered_domains is not None:
+        resolved_covered_domains = sorted(set(covered_domains) | deletion_domains)
+    elif is_typed and coverage_mode == "full":
+        raise PersonalFinanceExportError(
+            "typed multi-domain full import requires explicit covered_domains"
+        )
+    elif is_typed:
+        resolved_covered_domains = sorted(
+            {_row_type(row) for row in rows} | deletion_domains
+        )
+    else:
+        # Legacy position-only CSV
+        resolved_covered_domains = sorted({"position"} | deletion_domains)
     if not resolved_covered_domains or not set(resolved_covered_domains) <= set(
         RECORD_TYPE_COLUMNS
     ):
@@ -1034,6 +1055,7 @@ def ingest_personal_finance_export(
         as_of_utc=as_of_utc,
         source_path=source_path,
         source_id=source_id,
+        covered_domains=resolved_covered_domains,
         time_semantics=time_semantics,
         findings=list(findings),
         coverage_mode=coverage_mode,
@@ -1110,7 +1132,6 @@ def ingest_personal_finance_export(
     materialize_import_batch(
         [receipt_index, *records, *deletion_records],
         source=EXPORT_KIND,
-        source_id_for_ownership=source_id,
         batch=prepared.batch,
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
