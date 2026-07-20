@@ -437,17 +437,21 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
         data_gaps.append("no portfolio snapshot on record; cash total not verified")
     # Propagate exact snapshot clock to valuation checks.
     snapshot_evaluated_at: datetime | None = None
+    snapshot_clock_invalid = False
     if snapshot is not None:
         try:
             snapshot_evaluated_at = _parse_snapshot_clock(snapshot)
         except PositionValuationError:
             data_gaps.append("snapshot_time_invalid: snapshot as_of_utc is empty or malformed")
             snapshot_evaluated_at = None
+            snapshot_clock_invalid = True
     position_totals = reconcile_position_totals(
         positions,
         evaluated_at=snapshot_evaluated_at,
     )
     asset_blockers = list(position_totals.blockers)
+    if snapshot_clock_invalid:
+        asset_blockers.append("snapshot_time_invalid")
     if snapshot is None:
         asset_blockers.append("portfolio_snapshot_missing")
     elif not positions:

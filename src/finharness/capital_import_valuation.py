@@ -191,6 +191,14 @@ _RECORD_COUNT_KEY_TO_CLASS: dict[str, str] = {
     "document": "DocumentRef",
 }
 
+# Source-domain keys whose counts must always be verified against actual records.
+# Infrastructure keys (Account, Snapshot) are only verified when present in
+# batch_counts because their count semantics vary across adapters.
+_DIRECT_SOURCE_DOMAIN_KEYS: frozenset[str] = frozenset({
+    "position", "cashflow", "liability", "tax_event",
+    "insurance", "goal", "document",
+})
+
 
 def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreement checks
     *,
@@ -341,13 +349,18 @@ def validate_import_valuation_contract(  # noqa: C901 -- ordered surface agreeme
         cls_name = type(record).__name__
         actual_by_class[cls_name] = actual_by_class.get(cls_name, 0) + 1
     for key, cls_name in _RECORD_COUNT_KEY_TO_CLASS.items():
-        if key in batch_counts:
-            actual = actual_by_class.get(cls_name, 0)
-            if batch_counts[key] != actual:
-                raise _import_error(
-                    f"valuation_record_count_mismatch: batch.{key}="
-                    f"{batch_counts[key]} actual={actual} (class {cls_name})"
-                )
+        actual = actual_by_class.get(cls_name, 0)
+        if key in _DIRECT_SOURCE_DOMAIN_KEYS:
+            declared = batch_counts.get(key, 0)
+        else:
+            if key not in batch_counts:
+                continue
+            declared = batch_counts[key]
+        if declared != actual:
+            raise _import_error(
+                f"valuation_record_count_mismatch: batch.{key}="
+                f"{declared} actual={actual} (class {cls_name})"
+            )
 
     # Verify every Position binds the manifest snapshot.
     wrong_binding = [

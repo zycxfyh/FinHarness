@@ -353,6 +353,44 @@ class ExposureTest(unittest.TestCase):
             report.net_worth_blockers,
         )
 
+    # --- P0 regression: empty/invalid/naive Snapshot clock blocks exposure ---
+
+    def _snapshot_with_clock(self, clock: str) -> None:
+        account = Account(account_id="brk", kind="broker", venue="m", display_name="Brk")
+        snapshot = Snapshot(snapshot_id="s", kind="portfolio", as_of_utc=clock)
+        position = self._valued_position(
+            position_id="p", snapshot_id="s", account_id="brk",
+            symbol="SPY", quantity="1", market_value="100",
+        )
+        write_records([account, snapshot, position], engine=self.engine)
+
+    def test_empty_snapshot_clock_blocks_asset_admission(self) -> None:
+        self._snapshot_with_clock("")
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_assets)
+        self.assertIsNone(report.net_worth)
+        self.assertIn("snapshot_time_invalid", report.asset_valuation_blockers)
+
+    def test_garbage_snapshot_clock_blocks_asset_admission(self) -> None:
+        self._snapshot_with_clock("not-a-date")
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_assets)
+        self.assertIsNone(report.net_worth)
+        self.assertIn("snapshot_time_invalid", report.asset_valuation_blockers)
+
+    def test_naive_snapshot_clock_blocks_asset_admission(self) -> None:
+        self._snapshot_with_clock("2026-06-19T00:00:00")
+        report = compute_exposure(self.engine, as_of_date=date(2026, 6, 20))
+        self.assertFalse(report.asset_valuation_admitted)
+        self.assertFalse(report.net_worth_admitted)
+        self.assertIsNone(report.total_assets)
+        self.assertIsNone(report.net_worth)
+        self.assertIn("snapshot_time_invalid", report.asset_valuation_blockers)
+
 
 if __name__ == "__main__":
     unittest.main()

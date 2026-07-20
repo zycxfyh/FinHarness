@@ -18,6 +18,7 @@ import unittest
 from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from finharness.personal_finance import ingest_personal_finance_export
 from finharness.position_valuation import valuation_blockers
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
+    DocumentRef,
+    FinancialGoal,
     ImportBatch,
     Position,
     ReceiptIndex,
@@ -788,11 +791,11 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
 
     # --- P0 regression: forged record counts ---
 
-    def _forged_count_envelope(self, cap):
+    def _forged_count_envelope(self, cap, overrides):
+        """Incrementally update all four surfaces with overrides dict."""
         batch = cap["batch"]
         batch.record_counts = dict(batch.record_counts)
-        batch.record_counts["goal"] = 9
-        batch.record_counts["document"] = 9
+        batch.record_counts.update(overrides)
         manifest = cap["manifest"]
         manifest.record_counts = dict(batch.record_counts)
         store = cap["store"]
@@ -816,8 +819,8 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
                 r.payload["record_counts"] = dict(batch.record_counts)
         return cap
 
-    def test_csv_forged_goal_document_counts_rejected(self):
-        cap = self._forged_count_envelope(self._capture_csv_envelope())
+    def _forge_and_assert_rejected(self, cap, overrides):
+        cap = self._forged_count_envelope(cap, overrides)
         with self.assertRaisesRegex(StateCoreStoreError, "valuation_record_count"):
             materialize_import_batch(
                 cap["records"], source=cap["source"],
@@ -826,8 +829,77 @@ class DirectMaterializerValuationRejectionTest(unittest.TestCase):
             )
         self._assert_db_empty()
 
-    def test_broker_forged_goal_document_counts_rejected(self):
-        cap = self._forged_count_envelope(self._capture_broker_envelope())
+    # --- inflated count: declared > actual ---
+
+    def test_csv_forged_goal_count_inflated_rejected(self):
+        cap = self._capture_csv_envelope()
+        self._forge_and_assert_rejected(cap, {"goal": 9})
+
+    def test_csv_forged_document_count_inflated_rejected(self):
+        cap = self._capture_csv_envelope()
+        self._forge_and_assert_rejected(cap, {"document": 9})
+
+    def test_broker_forged_goal_count_inflated_rejected(self):
+        cap = self._capture_broker_envelope()
+        self._forge_and_assert_rejected(cap, {"goal": 9})
+
+    def test_broker_forged_document_count_inflated_rejected(self):
+        cap = self._capture_broker_envelope()
+        self._forge_and_assert_rejected(cap, {"document": 9})
+
+    # --- omitted key: actual > 0, key missing from all surfaces ---
+
+    def _inject_and_omit_key(self, cap, record, key_to_remove):
+        """Inject a record and remove its count key from all four surfaces."""
+        cap["records"].append(record)
+        batch = cap["batch"]
+        batch.record_counts = {k: v for k, v in batch.record_counts.items()
+                               if k != key_to_remove}
+        manifest = cap["manifest"]
+        manifest.record_counts = dict(batch.record_counts)
+        store = cap["store"]
+        receipt_id = manifest.receipt_artifact_id
+        old_payload = json.loads(store.read(receipt_id))
+        old_payload["record_counts"] = dict(batch.record_counts)
+        new_bytes = json.dumps(old_payload, indent=2).encode("utf-8")
+        content_hash = hashlib.sha256(new_bytes).hexdigest()
+        obj_path = store.root / "objects" / content_hash[:2] / (content_hash + ".bin")
+        obj_path.parent.mkdir(parents=True, exist_ok=True)
+        obj_path.write_bytes(new_bytes)
+        desc_path = store.root / "descriptors" / (receipt_id + ".json")
+        desc = json.loads(desc_path.read_text())
+        desc["content_sha256"] = content_hash
+        desc["content_length"] = len(new_bytes)
+        desc_path.write_text(json.dumps(desc, indent=2))
+        manifest.receipt_sha256 = content_hash
+        for r in cap["records"]:
+            if hasattr(r, "payload") and isinstance(r.payload, dict):
+                r.payload["record_counts"] = dict(batch.record_counts)
+        return cap
+
+    def test_csv_goal_key_omitted_actual_present_rejected(self):
+        cap = self._capture_csv_envelope()
+        goal = FinancialGoal(
+            goal_id="goal-1", name="Test Goal",
+            target_amount=Decimal("0"), current_amount=Decimal("0"),
+            currency="USD",
+        )
+        cap = self._inject_and_omit_key(cap, goal, "goal")
+        with self.assertRaisesRegex(StateCoreStoreError, "valuation_record_count"):
+            materialize_import_batch(
+                cap["records"], source=cap["source"],
+                batch=cap["batch"], manifest=cap["manifest"],
+                artifact_store=cap["store"], engine=self.engine,
+            )
+        self._assert_db_empty()
+
+    def test_csv_document_key_omitted_actual_present_rejected(self):
+        cap = self._capture_csv_envelope()
+        doc = DocumentRef(
+            document_id="doc-1", document_type="statement",
+            title="Test Doc", path="/tmp/test.pdf",
+        )
+        cap = self._inject_and_omit_key(cap, doc, "document")
         with self.assertRaisesRegex(StateCoreStoreError, "valuation_record_count"):
             materialize_import_batch(
                 cap["records"], source=cap["source"],
