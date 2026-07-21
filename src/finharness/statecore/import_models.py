@@ -43,7 +43,10 @@ class ImportBatch(StateCoreBase, table=True):
         ),
         UniqueConstraint(
             "source_kind",
+            "source_id",
             "source_sha256",
+            "adapter_version",
+            "import_schema_version",
             "contract_digest",
             name="uq_import_batches_content_contract",
         ),

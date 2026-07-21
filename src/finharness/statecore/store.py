@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -212,7 +212,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 13
+CURRENT_STATE_CORE_USER_VERSION = 14
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -418,25 +418,166 @@ def _migrate_add_import_correction_semantics(connection: Connection) -> None:
         connection.exec_driver_sql(
             "ALTER TABLE import_batches ADD COLUMN contract_digest VARCHAR NOT NULL DEFAULT ''"
         )
-    # Rebuild the content-contract unique constraint to use contract_digest
-    # instead of the broad (source_kind, source_id, ...) tuple so different
-    # coverage scopes on the same source bytes can coexist.
-    _rebuild_import_batches_unique(connection)
+
+
+_IMPORT_BATCH_CONTRACT_COLUMNS = (
+    "source_kind",
+    "source_id",
+    "source_sha256",
+    "adapter_version",
+    "import_schema_version",
+    "contract_digest",
+)
+
+
+def _legacy_import_contract_digest(row: Mapping[str, Any]) -> str:
+    existing = str(row.get("contract_digest") or "").strip()
+    if existing:
+        return existing
+    payload = {
+        "batch_id": row.get("batch_id"),
+        "source_kind": row.get("source_kind"),
+        "source_id": row.get("source_id"),
+        "source_sha256": row.get("source_sha256"),
+        "adapter_version": row.get("adapter_version"),
+        "import_schema_version": row.get("import_schema_version"),
+        "coverage_mode": row.get("coverage_mode"),
+        "covered_domains": row.get("covered_domains"),
+        "supersedes_batch_id": row.get("supersedes_batch_id"),
+        "correction_reason": row.get("correction_reason"),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()[:32]
+    return f"legacy:{digest}"
+
+
+def _import_batch_contract_is_current(connection: Connection) -> bool:
+    inspector = inspect(connection)
+    if "import_batches" not in set(inspector.get_table_names()):
+        return True
+    columns = {column["name"] for column in inspector.get_columns("import_batches")}
+    if "contract_digest" not in columns:
+        return False
+    constraints = {
+        item["name"]: tuple(item["column_names"])
+        for item in inspector.get_unique_constraints("import_batches")
+        if item.get("name")
+    }
+    indexes = {item["name"] for item in inspector.get_indexes("import_batches")}
+    return (
+        constraints.get("uq_import_batches_content_contract") == _IMPORT_BATCH_CONTRACT_COLUMNS
+        and "uq_import_batches_content_contract_v2" not in indexes
+    )
 
 
 def _rebuild_import_batches_unique(connection: Connection) -> None:
-    """Replace the old content-contract unique constraint with contract_digest.
+    """Migration 14: rebuild ImportBatch with its complete content identity."""
+    inspector = inspect(connection)
+    if "import_batches" not in set(inspector.get_table_names()):
+        SQLModel.metadata.tables["import_batches"].create(connection)
+        return
+    if _import_batch_contract_is_current(connection):
+        return
+    rows = [
+        dict(row) for row in connection.execute(text("SELECT * FROM import_batches")).mappings()
+    ]
+    current_table = SQLModel.metadata.tables["import_batches"]
+    current_columns = set(current_table.columns.keys())
+    migrated: list[dict[str, Any]] = []
+    json_defaults: dict[str, object] = {
+        "record_counts": {},
+        "covered_domains": [],
+        "corporate_action_gaps": [],
+        "time_semantics": {},
+        "findings": [],
+    }
+    for row in rows:
+        projected = {key: value for key, value in row.items() if key in current_columns}
+        for field, default in json_defaults.items():
+            value = projected.get(field, default)
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError as exc:
+                    raise StateCoreStoreError(
+                        f"legacy import batch has invalid JSON in {field}"
+                    ) from exc
+            projected[field] = value
+        projected["contract_digest"] = _legacy_import_contract_digest(row)
+        migrated.append(projected)
+    connection.execute(text("DROP TABLE import_batches"))
+    current_table.create(connection)
+    if migrated:
+        connection.execute(current_table.insert(), migrated)
 
-    SQLite cannot ALTER TABLE DROP CONSTRAINT, so we rebuild the table's unique
-    indexes.  The old constraint columns (source_id, adapter_version, etc.) are
-    relaxed because contract_digest already captures the full contract including
-    covered_domains, deletions, and clocks.
-    """
-    # Create a unique index that mirrors the new SQLModel UniqueConstraint.
-    connection.exec_driver_sql(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_import_batches_content_contract_v2 "
-        "ON import_batches (source_kind, source_sha256, contract_digest)"
+
+_IMPORT_BATCH_FOREIGN_KEY_CHILDREN = (
+    "import_tombstones",
+    "receipt_manifests",
+)
+
+
+def _import_batch_foreign_key_violations(
+    connection: Connection,
+) -> frozenset[tuple[object, ...]]:
+    """Snapshot import-batch child violations for migration delta checks."""
+    tables = set(inspect(connection).get_table_names())
+    violations: set[tuple[object, ...]] = set()
+    for table in _IMPORT_BATCH_FOREIGN_KEY_CHILDREN:
+        if table not in tables:
+            continue
+        violations.update(
+            tuple(row)
+            for row in connection.exec_driver_sql(
+                f"PRAGMA foreign_key_check({table})"
+            ).all()
+        )
+    return frozenset(violations)
+
+
+def _run_foreign_key_parent_migration(
+    connection: Connection,
+    *,
+    version: int,
+    step: Callable[[Connection], None],
+) -> None:
+    """Run a parent-table rebuild atomically with foreign keys temporarily off."""
+    foreign_keys = int(
+        connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
     )
+    connection.rollback()
+    baseline = (
+        _import_batch_foreign_key_violations(connection)
+        if version == 14
+        else frozenset()
+    )
+    connection.rollback()
+    try:
+        connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        connection.commit()
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            step(connection)
+            if version == 14:
+                after = _import_batch_foreign_key_violations(connection)
+                introduced = after - baseline
+                if introduced:
+                    ordered = sorted(introduced, key=repr)
+                    raise StateCoreStoreError(
+                        "state-core import migration produced foreign-key "
+                        f"violations: {ordered}"
+                    )
+            connection.exec_driver_sql(f"PRAGMA user_version = {version}")
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+    finally:
+        if connection.in_transaction():
+            connection.rollback()
+        connection.exec_driver_sql(f"PRAGMA foreign_keys = {foreign_keys}")
+        connection.commit()
 
 
 def _migrate_add_canonical_identities(connection: Connection) -> None:
@@ -558,6 +699,7 @@ def migrate_state_core(engine: Engine) -> None:
         (11, _migrate_add_import_correction_semantics),
         (12, _migrate_add_agent_authority_currency_bindings),
         (13, _migrate_add_version_binding_columns),
+        (14, _rebuild_import_batches_unique),
     )
     try:
         with engine.connect() as connection:
@@ -568,15 +710,16 @@ def migrate_state_core(engine: Engine) -> None:
             for version, step in migrations:
                 if version <= current:
                     continue
-                if version == 10:
-                    connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
-                    connection.commit()
+                if version in {10, 14}:
+                    _run_foreign_key_parent_migration(
+                        connection,
+                        version=version,
+                        step=step,
+                    )
+                    continue
                 with connection.begin():
                     step(connection)
                     connection.exec_driver_sql(f"PRAGMA user_version = {version}")
-                if version == 10:
-                    connection.exec_driver_sql("PRAGMA foreign_keys = ON")
-                    connection.commit()
     except (SQLAlchemyError, OSError) as exc:
         raise StateCoreStoreError(f"state-core migration failed: {exc}") from exc
 
