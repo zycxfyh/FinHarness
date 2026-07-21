@@ -84,6 +84,7 @@ from finharness.statecore.store import (
     latest_source_manifest_for_domain,
     materialize_import_batch,
     plan_full_import_deletions,
+    recovery_materialization_options,
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
@@ -1158,8 +1159,10 @@ def ingest_personal_finance_export(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        recovery_replay=_recovery_replay,
-        recovery_projection_domains=_recovery_projection_domains,
+        **recovery_materialization_options(
+            recovery_replay=_recovery_replay,
+            recovery_projection_domains=_recovery_projection_domains,
+        ),
     )
     return PersonalFinanceImportResult(
         batch_id=prepared.batch.batch_id,

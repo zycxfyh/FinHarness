@@ -1142,19 +1142,6 @@ def _validate_import_envelope(  # noqa: C901
                     f"snapshot payload {key!r} binding mismatch: "
                     f"{snapshot_payload[key]!r} != {expected!r}"
                 )
-    try:
-        expected_identities = normalize_materialized_record_identities(
-            receipt_payload.get(MATERIALIZED_RECORD_IDENTITIES_FIELD)
-        )
-        actual_identities = materialized_record_identities(
-            record for record in records if not isinstance(record, ImportTombstone)
-        )
-    except MaterializedRecordIdentityError as exc:
-        raise StateCoreStoreError(str(exc)) from exc
-    if actual_identities != expected_identities:
-        raise StateCoreStoreError(
-            "materialized records do not match the immutable receipt identity proof"
-        )
     if source == "broker_read":
         from finharness.capital_import_registry import receipt_index_contract_fields
 
@@ -1178,6 +1165,40 @@ def _validate_import_envelope(  # noqa: C901
             raise StateCoreStoreError("receipt index refs contract mismatch")
     return receipt_payload
 
+
+
+def _validate_materialized_identity_contract(
+    records: Sequence[StateCoreRecord],
+    *,
+    receipt_payload: Mapping[str, Any],
+) -> None:
+    try:
+        expected_identities = normalize_materialized_record_identities(
+            receipt_payload.get(MATERIALIZED_RECORD_IDENTITIES_FIELD)
+        )
+        actual_identities = materialized_record_identities(
+            record for record in records if not isinstance(record, ImportTombstone)
+        )
+    except MaterializedRecordIdentityError as exc:
+        raise StateCoreStoreError(str(exc)) from exc
+    if actual_identities != expected_identities:
+        raise StateCoreStoreError(
+            "materialized records do not match the immutable receipt identity proof"
+        )
+
+
+def recovery_materialization_options(
+    *,
+    recovery_replay: bool,
+    recovery_projection_domains: Sequence[str] | None,
+) -> dict[str, Any]:
+    """Keep ordinary adapter calls signature-compatible with capture harnesses."""
+    if not recovery_replay:
+        return {}
+    return {
+        "recovery_replay": True,
+        "recovery_projection_domains": recovery_projection_domains,
+    }
 
 def _validate_import_contract_fields(
     *, source: str, batch: ImportBatch, manifest: ReceiptManifest
@@ -1791,6 +1812,10 @@ def materialize_import_batch(  # noqa: C901
         )
     except (PositionValuationError, ValuationContractError) as exc:
         raise StateCoreStoreError(str(exc)) from exc
+    _validate_materialized_identity_contract(
+        materialized,
+        receipt_payload=receipt_payload,
+    )
     saved: list[StateCoreRecord] = []
     try:
         with Session(engine) as session:

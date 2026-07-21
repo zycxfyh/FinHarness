@@ -66,6 +66,7 @@ from finharness.statecore.models import (
 )
 from finharness.statecore.store import (
     materialize_import_batch,
+    recovery_materialization_options,
     source_owner_key,
 )
 
@@ -834,8 +835,10 @@ def ingest_beancount_ledger(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        recovery_replay=_recovery_replay,
-        recovery_projection_domains=_recovery_projection_domains,
+        **recovery_materialization_options(
+            recovery_replay=_recovery_replay,
+            recovery_projection_domains=_recovery_projection_domains,
+        ),
     )
     return BeancountImportResult(
         batch_id=prepared.batch.batch_id,

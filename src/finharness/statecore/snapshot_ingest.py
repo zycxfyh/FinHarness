@@ -49,6 +49,7 @@ from finharness.statecore.store import (
     StateCoreRecord,
     StateCoreStoreError,
     materialize_import_batch,
+    recovery_materialization_options,
 )
 
 BROKER_READ_SOURCE_KIND = "broker_read"
@@ -726,8 +727,10 @@ def _ingest_broker_read_receipt_with_snapshot(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        recovery_replay=recovery_replay,
-        recovery_projection_domains=recovery_projection_domains,
+        **recovery_materialization_options(
+            recovery_replay=recovery_replay,
+            recovery_projection_domains=recovery_projection_domains,
+        ),
     )
     result = BrokerReadImportResult(
         batch_id=prepared.batch.batch_id,
