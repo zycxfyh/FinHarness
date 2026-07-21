@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import Engine
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from finharness.artifact_store import ArtifactStore, LocalArtifactStore
 from finharness.capital_import_contract import (
@@ -72,13 +72,13 @@ from finharness.statecore.models import (
     Liability,
     Position,
     ReceiptIndex,
-    ReceiptManifest,
     Snapshot,
     SourcedStateCoreBase,
     TaxEvent,
 )
 from finharness.statecore.store import (
     StateCoreRecord,
+    latest_source_manifest_for_domain,
     materialize_import_batch,
     plan_full_import_deletions,
 )
@@ -784,19 +784,13 @@ def _latest_source_positions(
     *, engine: Engine, source_id: str, exclude_batch_id: str
 ) -> tuple[str | None, list[Position]]:
     with Session(engine) as session:
-        manifest = session.exec(
-            select(ReceiptManifest)
-            .join(ImportBatch, col(ImportBatch.batch_id) == ReceiptManifest.batch_id)
-            .where(
-                ImportBatch.source_kind == EXPORT_KIND,
-                ImportBatch.source_id == source_id,
-                ImportBatch.batch_id != exclude_batch_id,
-            )
-            .order_by(
-                col(ReceiptManifest.materialized_at_utc).desc(),
-                col(ReceiptManifest.manifest_id).desc(),
-            )
-        ).first()
+        manifest = latest_source_manifest_for_domain(
+            session,
+            source_kind=EXPORT_KIND,
+            source_id=source_id,
+            domain="position",
+            exclude_batch_id=exclude_batch_id,
+        )
         if manifest is None:
             return None, []
         positions = session.exec(
@@ -931,31 +925,26 @@ def ingest_personal_finance_export(
             "personal-finance export has no rows and no explicit covered_domains; "
             "zero-row imports require explicit covered_domains"
         )
-    deletion_domains: set[str] = set()
     for tombstone in tombstones:
-        domain = DELETION_RECORD_DOMAINS.get(tombstone.record_type)
-        if domain is None:
+        if DELETION_RECORD_DOMAINS.get(tombstone.record_type) is None:
             raise PersonalFinanceExportError(
                 f"unsupported import deletion record type: {tombstone.record_type}"
             )
-        deletion_domains.add(domain)
     # Legacy CSV (no record_type column): adapter auto-declares position coverage.
     # Typed CSV (has record_type): full requires explicit covered_domains.
     with source_path.open("r", encoding="utf-8", newline="") as f:
         is_typed = ROW_TYPE_COLUMN in (csv.DictReader(f).fieldnames or ())
     if covered_domains is not None:
-        resolved_covered_domains = sorted(set(covered_domains) | deletion_domains)
+        resolved_covered_domains = sorted(set(covered_domains))
     elif is_typed and coverage_mode == "full":
         raise PersonalFinanceExportError(
             "typed multi-domain full import requires explicit covered_domains"
         )
     elif is_typed:
-        resolved_covered_domains = sorted(
-            {_row_type(row) for row in rows} | deletion_domains
-        )
+        resolved_covered_domains = sorted({_row_type(row) for row in rows})
     else:
         # Legacy position-only CSV
-        resolved_covered_domains = sorted({"position"} | deletion_domains)
+        resolved_covered_domains = ["position"]
     if not resolved_covered_domains or not set(resolved_covered_domains) <= set(
         RECORD_TYPE_COLUMNS
     ):
@@ -1023,7 +1012,7 @@ def ingest_personal_finance_export(
         coverage_mode=coverage_mode,
     )
     delta_base_batch_id: str | None = None
-    if coverage_mode == "delta":
+    if coverage_mode == "delta" and "position" in resolved_covered_domains:
         records, delta_base_batch_id = _materialize_delta_positions(
             records,
             engine=engine,
@@ -1034,7 +1023,9 @@ def ingest_personal_finance_export(
             exclude_batch_id=batch_id,
         )
         if delta_base_batch_id is None:
-            raise PersonalFinanceExportError("delta import requires a materialized base import")
+            raise PersonalFinanceExportError(
+                "position delta import requires a materialized position base import"
+            )
     records, final_findings, final_completeness = _finalize_valuation_on_records(
         records,
         base_findings=list(findings),

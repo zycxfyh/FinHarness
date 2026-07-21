@@ -1190,16 +1190,17 @@ def _deletion_spec_key(item: Mapping[str, str]) -> tuple[str, str, str]:
     return (item["record_type"], item["record_id"], item["reason"])
 
 
-def _previous_source_snapshot(
+def latest_source_manifest_for_domain(
     session: Session,
     *,
     source_kind: str,
     source_id: str,
+    domain: str,
     exclude_batch_id: str,
-) -> Snapshot | None:
-    statement = (
-        select(Snapshot)
-        .join(ReceiptManifest, col(ReceiptManifest.snapshot_id) == Snapshot.snapshot_id)
+) -> ReceiptManifest | None:
+    """Return the latest manifest that actually declared one covered domain."""
+    manifests = session.exec(
+        select(ReceiptManifest)
         .join(ImportBatch, col(ImportBatch.batch_id) == ReceiptManifest.batch_id)
         .where(
             ImportBatch.source_kind == source_kind,
@@ -1210,8 +1211,29 @@ def _previous_source_snapshot(
             col(ReceiptManifest.materialized_at_utc).desc(),
             col(ReceiptManifest.manifest_id).desc(),
         )
+    ).all()
+    for manifest in manifests:
+        batch = session.get(ImportBatch, manifest.batch_id)
+        if batch is not None and domain in batch.covered_domains:
+            return manifest
+    return None
+
+
+def _previous_source_snapshot(
+    session: Session,
+    *,
+    source_kind: str,
+    source_id: str,
+    exclude_batch_id: str,
+) -> Snapshot | None:
+    manifest = latest_source_manifest_for_domain(
+        session,
+        source_kind=source_kind,
+        source_id=source_id,
+        domain="position",
+        exclude_batch_id=exclude_batch_id,
     )
-    return session.exec(statement).first()
+    return session.get(Snapshot, manifest.snapshot_id) if manifest is not None else None
 
 
 def _automatic_full_deletion_specs(
