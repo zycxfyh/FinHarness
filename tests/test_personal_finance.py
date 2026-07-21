@@ -371,7 +371,12 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             ],
             columns=columns,
         )
-        ingest_personal_finance_export(base, engine=self.engine, receipt_root=self.receipt_root)
+        ingest_personal_finance_export(
+            base,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            covered_domains=["liability"],
+        )
         delta = self.write_export(
             [
                 {
@@ -595,6 +600,15 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             export,
             engine=self.engine,
             receipt_root=self.receipt_root,
+            covered_domains=[
+                "position",
+                "liability",
+                "goal",
+                "cashflow",
+                "tax_event",
+                "insurance",
+                "document",
+            ],
         )
 
         self.assertEqual(result.account_count, 1)
@@ -801,7 +815,12 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             ],
             columns=columns,
         )
-        ingest_personal_finance_export(first, engine=self.engine, receipt_root=self.receipt_root)
+        ingest_personal_finance_export(
+            first,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            covered_domains=["position", "liability"],
+        )
         self.assertEqual(
             {row.liability_id for row in read_all(Liability, engine=self.engine)},
             {"liab_a", "liab_b"},
@@ -815,7 +834,12 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             ],
             columns=columns,
         )
-        ingest_personal_finance_export(second, engine=self.engine, receipt_root=self.receipt_root)
+        ingest_personal_finance_export(
+            second,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            covered_domains=["position", "liability"],
+        )
 
         liabilities = read_all(Liability, engine=self.engine)
         self.assertEqual({row.liability_id for row in liabilities}, {"liab_a"})

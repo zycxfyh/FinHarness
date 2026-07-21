@@ -19,6 +19,7 @@ from finharness.capital_import_recovery import (
     recover_capital_imports,
 )
 from finharness.personal_finance import ingest_personal_finance_export
+from finharness.statecore.import_models import ImportTombstone
 from finharness.statecore.models import Position, ReceiptIndex, ReceiptManifest, Snapshot
 from finharness.statecore.store import (
     StateCoreStoreError,
@@ -75,6 +76,56 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             receipt_root=self.receipt_root,
             artifact_store=self.store,
         )
+
+    def ingest_liability_deletion(self):
+        fieldnames = [
+            "record_type",
+            "liability_id",
+            "name",
+            "liability_type",
+            "balance",
+            "currency",
+            "as_of_utc",
+        ]
+        with self.source.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "record_type": "liability",
+                    "liability_id": "loan-recovery",
+                    "name": "Recovery Loan",
+                    "liability_type": "loan",
+                    "balance": "100",
+                    "currency": "USD",
+                    "as_of_utc": "2026-07-13T00:00:00+00:00",
+                }
+            )
+        ingest_personal_finance_export(
+            self.source,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        with self.source.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+        result = ingest_personal_finance_export(
+            self.source,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+            observed_at_utc="2026-07-14T00:00:00+00:00",
+        )
+        with Session(self.engine) as session:
+            tombstone = session.exec(
+                select(ImportTombstone).where(ImportTombstone.batch_id == result.batch_id)
+            ).one()
+        return result, tombstone
 
     def test_clean_materialization_is_verified(self) -> None:
         result = self.ingest()
@@ -164,6 +215,119 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         )
         self.assertTrue(replay.after.ok)
         self.assertFalse(any(action.startswith("replayed:") for action in replay.actions))
+
+    def test_missing_tombstone_fails_audit_and_recovery_restores_it(self) -> None:
+        result, tombstone = self.ingest_liability_deletion()
+        with Session(self.engine) as session:
+            persisted = session.get(ImportTombstone, tombstone.tombstone_id)
+            assert persisted is not None
+            session.delete(persisted)
+            session.commit()
+
+        before = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(before.ok)
+        self.assertIn("import_tombstone_missing", {item.code for item in before.findings})
+        self.assertNotIn(result.batch_id, before.verified_batch_ids)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok)
+        with Session(self.engine) as session:
+            restored = session.get(ImportTombstone, tombstone.tombstone_id)
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored.reason, "absent_from_full_import")
+
+    def test_tombstone_contract_drift_fails_audit_and_is_repaired(self) -> None:
+        result, tombstone = self.ingest_liability_deletion()
+        with Session(self.engine) as session:
+            persisted = session.get(ImportTombstone, tombstone.tombstone_id)
+            assert persisted is not None
+            persisted.reason = "forged_reason"
+            session.commit()
+
+        before = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(before.ok)
+        self.assertIn(
+            "import_tombstone_contract_mismatch",
+            {item.code for item in before.findings},
+        )
+        self.assertNotIn(result.batch_id, before.verified_batch_ids)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok)
+        with Session(self.engine) as session:
+            restored = session.get(ImportTombstone, tombstone.tombstone_id)
+        assert restored is not None
+        self.assertEqual(restored.reason, "absent_from_full_import")
+
+    def test_receipt_undeclared_extra_tombstone_fails_closed(self) -> None:
+        result, tombstone = self.ingest_liability_deletion()
+        with Session(self.engine) as session:
+            session.add(
+                ImportTombstone(
+                    tombstone_id="extra-undeclared-tombstone",
+                    batch_id=result.batch_id,
+                    source_kind=tombstone.source_kind,
+                    record_type="Liability",
+                    record_id="undeclared-record",
+                    reason="not_in_receipt_plan",
+                    source_refs=list(tombstone.source_refs),
+                    as_of_utc=tombstone.as_of_utc,
+                    authority_level=tombstone.authority_level,
+                )
+            )
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(report.ok)
+        self.assertIn("import_tombstone_extra", {item.code for item in report.findings})
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+
+    def test_missing_snapshot_requires_recovery_not_ordinary_retry(self) -> None:
+        result = self.ingest()
+        with Session(self.engine) as session:
+            for position in session.exec(
+                select(Position).where(Position.snapshot_id == result.snapshot_id)
+            ).all():
+                session.delete(position)
+            snapshot = session.get(Snapshot, result.snapshot_id)
+            assert snapshot is not None
+            session.delete(snapshot)
+            session.commit()
+
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            self.ingest()
+        with Session(self.engine) as session:
+            self.assertIsNone(session.get(Snapshot, result.snapshot_id))
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok)
+        with Session(self.engine) as session:
+            self.assertIsNotNone(session.get(Snapshot, result.snapshot_id))
 
     def test_db_rows_without_immutable_receipt_bytes_never_verify(self) -> None:
         result = self.ingest()

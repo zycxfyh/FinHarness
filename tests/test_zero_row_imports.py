@@ -581,29 +581,62 @@ class ZeroRowImportTargetTest(unittest.TestCase):
 
     def test_same_bytes_different_observed_clocks_different_batch_ids(self):
         path = self.root / "clock.csv"
-        _write_csv(path, [_typed_row()])
+        _write_csv(path, [])
+        source_bytes = path.read_bytes()
 
-        r1 = ingest_personal_finance_export(
+        first = ingest_personal_finance_export(
             path,
             engine=self.engine,
-            receipt_root=self._receipt_root("c1"),
-            artifact_store=self._fresh_artifact_store("c1"),
+            receipt_root=self._receipt_root("clock-first"),
+            artifact_store=self.store,
             coverage_mode="full",
             covered_domains=["position"],
+            observed_at_utc=OBSERVED,
         )
-        # Same CSV, different observed clock — empty rows = header-only
-        path2 = self.root / "clock2.csv"
-        _write_csv(path2, [])
-        r2 = ingest_personal_finance_export(
-            path2,
+        self.assertEqual(path.read_bytes(), source_bytes)
+
+        try:
+            second = ingest_personal_finance_export(
+                path,
+                engine=self.engine,
+                receipt_root=self._receipt_root("clock-second"),
+                artifact_store=self.store,
+                coverage_mode="full",
+                covered_domains=["position"],
+                observed_at_utc="2025-07-20T08:00:00+00:00",
+            )
+        except StateCoreStoreError as exc:
+            self.fail(f"distinct zero-row observation was treated as an immutable retry: {exc}")
+
+        self.assertEqual(path.read_bytes(), source_bytes)
+        self.assertNotEqual(first.batch_id, second.batch_id)
+        self.assertEqual(len(list(read_all(ImportBatch, engine=self.engine))), 2)
+
+    def test_same_header_bytes_same_observed_clock_retry_is_idempotent(self):
+        path = self.root / "clock-retry.csv"
+        _write_csv(path, [])
+
+        first = ingest_personal_finance_export(
+            path,
             engine=self.engine,
-            receipt_root=self._receipt_root("c2"),
-            artifact_store=self._fresh_artifact_store("c2"),
+            receipt_root=self._receipt_root("clock-retry-first"),
+            artifact_store=self.store,
             coverage_mode="full",
             covered_domains=["position"],
-            observed_at_utc="2025-07-20T08:00:00+00:00",
+            observed_at_utc=OBSERVED,
         )
-        self.assertNotEqual(r1.batch_id, r2.batch_id)
+        second = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("clock-retry-second"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["position"],
+            observed_at_utc=OBSERVED,
+        )
+
+        self.assertEqual(first.batch_id, second.batch_id)
+        self.assertEqual(len(list(read_all(ImportBatch, engine=self.engine))), 1)
 
     # ── target 12: generic upsert cannot bypass scoped production ownership ──
 

@@ -5,10 +5,12 @@ import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 from sqlalchemy import inspect, text
 from sqlmodel import Session
 
+from finharness.statecore.import_models import ImportTombstone
 from finharness.statecore.models import (
     Account,
     ImportBatch,
@@ -37,6 +39,37 @@ class StateCoreStoreTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp.name) / "state-core.sqlite"
         self.addCleanup(self.tmp.cleanup)
+
+    @staticmethod
+    def _create_v13_import_batches(connection, *, batch_id: str | None = "batch-v13") -> None:
+        connection.exec_driver_sql(
+            "CREATE TABLE import_batches ("
+            "schema_version VARCHAR NOT NULL, as_of_utc VARCHAR NOT NULL, "
+            "authority_level VARCHAR NOT NULL, batch_id VARCHAR PRIMARY KEY, "
+            "source_kind VARCHAR NOT NULL, source_id VARCHAR NOT NULL, "
+            "coverage_mode VARCHAR NOT NULL, source_sha256 VARCHAR NOT NULL, "
+            "source_artifact_id VARCHAR NOT NULL, adapter_version VARCHAR NOT NULL, "
+            "import_schema_version VARCHAR NOT NULL, record_counts JSON NOT NULL, "
+            "covered_domains JSON NOT NULL, supersedes_batch_id VARCHAR, "
+            "correction_reason VARCHAR, corporate_action_status VARCHAR NOT NULL, "
+            "corporate_action_gaps JSON NOT NULL, completeness_status VARCHAR NOT NULL, "
+            "time_semantics JSON NOT NULL, findings JSON NOT NULL, "
+            "CONSTRAINT uq_import_batches_content_contract UNIQUE ("
+            "source_kind, source_id, source_sha256, adapter_version, "
+            "import_schema_version, coverage_mode, supersedes_batch_id))"
+        )
+        if batch_id is not None:
+            connection.execute(
+                text(
+                    "INSERT INTO import_batches VALUES ("
+                    "'finharness.state_core.v1','2026-07-20T00:00:00+00:00',"
+                    "'read_only',:batch_id,'personal_finance_export','source-a','full',"
+                    "'same-hash','artifact-a','adapter-v4','manifest-v3','{}',"
+                    "'[\"liability\"]',NULL,NULL,'not_applicable','[]','complete','{}','[]')"
+                ),
+                {"batch_id": batch_id},
+            )
+        connection.exec_driver_sql("PRAGMA user_version = 13")
 
     def test_init_creates_six_tables_and_wal_mode(self) -> None:
         engine = init_state_core(self.db_path)
@@ -431,6 +464,18 @@ class StateCoreStoreTest(unittest.TestCase):
 
         migrate_state_core(engine)
 
+        migrated_batch = read_all(ImportBatch, engine=engine)[0]
+        self.assertIsInstance(migrated_batch.record_counts, dict)
+        self.assertIsInstance(migrated_batch.covered_domains, list)
+        self.assertIsInstance(migrated_batch.corporate_action_gaps, list)
+        self.assertIsInstance(migrated_batch.time_semantics, dict)
+        self.assertIsInstance(migrated_batch.findings, list)
+        self.assertEqual(migrated_batch.record_counts, {})
+        self.assertEqual(migrated_batch.covered_domains, ["liability"])
+        self.assertEqual(migrated_batch.corporate_action_gaps, [])
+        self.assertEqual(migrated_batch.time_semantics, {})
+        self.assertEqual(migrated_batch.findings, [])
+
         inspector = inspect(engine)
         columns = {column["name"] for column in inspector.get_columns("import_batches")}
         self.assertIn("contract_digest", columns)
@@ -475,6 +520,108 @@ class StateCoreStoreTest(unittest.TestCase):
         self.assertTrue(str(digest).startswith("legacy:"))
         self.assertEqual(len(read_all(ImportBatch, engine=engine)), 2)
         migrate_state_core(engine)
+
+    def test_v14_migration_preserves_preexisting_import_fk_violations(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+            connection.commit()
+            with connection.begin():
+                self._create_v13_import_batches(connection, batch_id=None)
+                ImportTombstone.__table__.create(connection)
+                connection.execute(
+                    ImportTombstone.__table__.insert(),
+                    {
+                        "schema_version": "finharness.state_core.v1",
+                        "as_of_utc": "2026-07-20T00:00:00+00:00",
+                        "authority_level": "read_only",
+                        "tombstone_id": "orphan-before-v14",
+                        "batch_id": "missing-before-v14",
+                        "source_kind": "personal_finance_export",
+                        "record_type": "Liability",
+                        "record_id": "legacy-orphan",
+                        "reason": "legacy_orphan",
+                        "source_refs": [],
+                    },
+                )
+            connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+            connection.commit()
+
+        try:
+            migrate_state_core(engine)
+        except StateCoreStoreError as exc:
+            self.fail(f"v14 rejected a foreign-key violation that predated migration: {exc}")
+
+        with engine.connect() as connection:
+            version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+            violations = connection.exec_driver_sql(
+                "PRAGMA foreign_key_check(import_tombstones)"
+            ).all()
+        self.assertEqual(version, 14)
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0][2], "import_batches")
+
+    def test_v14_migration_new_fk_violation_rolls_back_atomically(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys = OFF")
+            connection.commit()
+            with connection.begin():
+                self._create_v13_import_batches(connection)
+                ImportTombstone.__table__.create(connection)
+                connection.execute(
+                    ImportTombstone.__table__.insert(),
+                    {
+                        "schema_version": "finharness.state_core.v1",
+                        "as_of_utc": "2026-07-20T00:00:00+00:00",
+                        "authority_level": "read_only",
+                        "tombstone_id": "valid-before-v14",
+                        "batch_id": "batch-v13",
+                        "source_kind": "personal_finance_export",
+                        "record_type": "Liability",
+                        "record_id": "legacy-valid",
+                        "reason": "legacy_valid",
+                        "source_refs": [],
+                    },
+                )
+            connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+            connection.commit()
+
+        from finharness.statecore import store as store_module
+
+        original = store_module._rebuild_import_batches_unique
+
+        def inject_new_violation(connection) -> None:
+            original(connection)
+            connection.execute(
+                text("DELETE FROM import_batches WHERE batch_id = 'batch-v13'")
+            )
+
+        with (
+            patch.object(
+                store_module,
+                "_rebuild_import_batches_unique",
+                inject_new_violation,
+            ),
+            self.assertRaisesRegex(StateCoreStoreError, "foreign-key violations"),
+        ):
+            migrate_state_core(engine)
+
+        with engine.connect() as connection:
+            version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+            foreign_keys = int(connection.execute(text("PRAGMA foreign_keys")).scalar_one())
+            batch_count = int(
+                connection.execute(
+                    text("SELECT COUNT(*) FROM import_batches WHERE batch_id='batch-v13'")
+                ).scalar_one()
+            )
+            violations = connection.exec_driver_sql(
+                "PRAGMA foreign_key_check(import_tombstones)"
+            ).all()
+        self.assertEqual(version, 13)
+        self.assertEqual(foreign_keys, 1)
+        self.assertEqual(batch_count, 1)
+        self.assertEqual(violations, [])
 
     def test_migration_adds_identity_bindings_without_forging_legacy_identity(self) -> None:
         engine = open_state_core(self.db_path, create=True)
