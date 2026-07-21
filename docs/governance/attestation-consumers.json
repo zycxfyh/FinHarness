@@ -1464,8 +1464,8 @@
       "consumer_id": "ATT-CONS-052",
       "path": "src/finharness/statecore/store.py",
       "symbol": "Attestation ProposalVersion schema migration",
-      "line_start": 681,
-      "line_end": 691,
+      "line_start": 740,
+      "line_end": 750,
       "match_terms": [
         "attestations"
       ],
