@@ -7,6 +7,7 @@ import csv
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,13 +17,16 @@ from sqlmodel import Session, select
 from finharness.artifact_store import LocalArtifactStore
 from finharness.beancount_adapter import ingest_beancount_ledger
 from finharness.capital_import_recovery import (
+    _temporarily_restore_replay_sources,
     audit_capital_imports,
     batch_is_verified,
     recover_capital_imports,
 )
 from finharness.personal_finance import ingest_personal_finance_export
-from finharness.statecore.import_models import ImportDomainHead, ImportTombstone
+from finharness.statecore.import_models import ImportBatch, ImportDomainHead, ImportTombstone
 from finharness.statecore.models import (
+    Account,
+    AccountIdentity,
     Liability,
     Position,
     ReceiptIndex,
@@ -193,7 +197,7 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         )
         self.assertTrue(second.after.ok)
 
-    def test_receipt_without_materialization_replays_idempotently(self) -> None:
+    def test_receipt_without_materialization_remains_fail_closed(self) -> None:
         with (
             patch(
                 "finharness.personal_finance.materialize_import_batch",
@@ -216,15 +220,16 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             receipt_root=self.receipt_root,
             artifact_store=self.store,
         )
-        self.assertTrue(recovered.after.ok)
-        self.assertTrue(any(action.startswith("replayed:") for action in recovered.actions))
-        replay = recover_capital_imports(
-            engine=self.engine,
-            receipt_root=self.receipt_root,
-            artifact_store=self.store,
+        self.assertFalse(recovered.after.ok)
+        self.assertIn(
+            "import_domain_head_missing",
+            {item.code for item in recovered.after.findings},
         )
-        self.assertTrue(replay.after.ok)
-        self.assertFalse(any(action.startswith("replayed:") for action in replay.actions))
+        with Session(self.engine) as session:
+            self.assertEqual(list(session.exec(select(ImportDomainHead)).all()), [])
+            self.assertEqual(list(session.exec(select(Account)).all()), [])
+            self.assertEqual(list(session.exec(select(Position)).all()), [])
+
 
     def test_missing_tombstone_fails_audit_and_recovery_restores_it(self) -> None:
         result, tombstone = self.ingest_liability_deletion()
@@ -738,6 +743,329 @@ class CapitalImportRecoveryTest(unittest.TestCase):
                 artifact_store=self.store,
             )
         )
+
+
+    def test_runtime_recovery_preserves_valid_head_when_clocks_run_backward(self) -> None:
+        later_clock = "2026-07-14T00:00:00+00:00"
+        earlier_clock = "2026-07-13T00:00:00+00:00"
+        self._write_liability_export("loan-a", balance="100", observed_at=later_clock)
+        with patch("finharness.personal_finance.datetime") as clock:
+            clock.now.return_value = datetime.fromisoformat(later_clock)
+            first = self._ingest_liability(later_clock)
+        self._write_liability_export("loan-b", balance="200", observed_at=earlier_clock)
+        with patch("finharness.personal_finance.datetime") as clock:
+            clock.now.return_value = datetime.fromisoformat(earlier_clock)
+            second = self._ingest_liability(earlier_clock)
+        with Session(self.engine) as session:
+            head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
+            ).one()
+            self.assertEqual(head.batch_id, second.batch_id)
+            snapshot = session.get(Snapshot, first.snapshot_id)
+            assert snapshot is not None
+            session.delete(snapshot)
+            session.commit()
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
+            ).one()
+            liabilities = list(session.exec(select(Liability)).all())
+        self.assertEqual(head.batch_id, second.batch_id)
+        self.assertEqual([item.liability_id for item in liabilities], ["loan-b"])
+        self.assertEqual(str(liabilities[0].balance), "200")
+
+    def test_receipt_without_batch_never_gains_projection_authority_from_clock(self) -> None:
+        current_time = "2026-07-13T00:00:00+00:00"
+        orphan_time = "2026-07-14T00:00:00+00:00"
+        self._write_liability_export("loan-current", balance="200", observed_at=current_time)
+        current = self._ingest_liability(current_time)
+        self._write_liability_export("loan-orphan", balance="999", observed_at=orphan_time)
+        with (
+            patch(
+                "finharness.personal_finance.materialize_import_batch",
+                side_effect=StateCoreStoreError("crash before database commit"),
+            ),
+            self.assertRaises(StateCoreStoreError),
+        ):
+            self._ingest_liability(orphan_time)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
+            ).one()
+            liabilities = list(session.exec(select(Liability)).all())
+            batches = list(session.exec(select(ImportBatch)).all())
+        self.assertEqual(head.batch_id, current.batch_id)
+        self.assertEqual([item.liability_id for item in liabilities], ["loan-current"])
+        self.assertEqual(str(liabilities[0].balance), "200")
+        self.assertEqual(len(batches), 2)
+
+    def test_multifile_replay_prepare_failure_restores_every_changed_file(self) -> None:
+        main = self.root / "ledger.beancount"
+        included = self.root / "included.beancount"
+        main.write_bytes(b"current-main")
+        included.write_bytes(b"current-include")
+        from finharness import capital_import_recovery as recovery_module
+
+        original_write = recovery_module.atomic_write_bytes
+        calls = 0
+
+        def fail_second_write(path: Path, content: bytes) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("injected second replay write failure")
+            original_write(path, content)
+
+        with (
+            patch(
+                "finharness.capital_import_recovery.atomic_write_bytes",
+                side_effect=fail_second_write,
+            ),
+            self.assertRaises(OSError),_temporarily_restore_replay_sources(
+            [(main, b"historical-main"), (included, b"historical-include")]
+        )
+        ):
+            self.fail("replay context must not be entered")
+
+        self.assertEqual(main.read_bytes(), b"current-main")
+        self.assertEqual(included.read_bytes(), b"current-include")
+
+    def test_same_identity_liability_content_drift_requires_recovery(self) -> None:
+        observed = "2026-07-13T00:00:00+00:00"
+        self._write_liability_export("loan-content", balance="100", observed_at=observed)
+        result = self._ingest_liability(observed)
+        with Session(self.engine) as session:
+            liability = session.get(Liability, "loan-content")
+            assert liability is not None
+            liability.balance = "999999"
+            liability.currency = "EUR"
+            liability.source_refs = ["forged:source"]
+            session.add(liability)
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertIn(
+            "materialized_record_content_mismatch",
+            {item.code for item in report.findings},
+        )
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            self._ingest_liability(observed)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            liability = session.get(Liability, "loan-content")
+        assert liability is not None
+        self.assertEqual(str(liability.balance), "100")
+        self.assertEqual(liability.currency, "USD")
+        self.assertNotEqual(liability.source_refs, ["forged:source"])
+
+    def test_same_identity_position_content_drift_requires_recovery(self) -> None:
+        result = self.ingest()
+        with Session(self.engine) as session:
+            position = session.exec(
+                select(Position).where(Position.snapshot_id == result.snapshot_id)
+            ).one()
+            original_quantity = str(position.quantity)
+            original_market_value = str(position.market_value)
+            original_valued_at_utc = position.valued_at_utc
+            position.quantity = "999"
+            position.market_value = "999999"
+            position.valued_at_utc = "1999-01-01T00:00:00+00:00"
+            session.add(position)
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertIn(
+            "materialized_record_content_mismatch",
+            {item.code for item in report.findings},
+        )
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            self.ingest()
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            position = session.exec(
+                select(Position).where(Position.snapshot_id == result.snapshot_id)
+            ).one()
+        self.assertEqual(str(position.quantity), original_quantity)
+        self.assertEqual(str(position.market_value), original_market_value)
+        self.assertEqual(position.valued_at_utc, original_valued_at_utc)
+
+
+    def test_receipt_only_recovery_without_any_head_stays_fail_closed(self) -> None:
+        observed = "2026-07-14T00:00:00+00:00"
+        self._write_liability_export("loan-orphan", balance="999", observed_at=observed)
+        with (
+            patch(
+                "finharness.personal_finance.materialize_import_batch",
+                side_effect=StateCoreStoreError("crash before database commit"),
+            ),
+            self.assertRaises(StateCoreStoreError),
+        ):
+            self._ingest_liability(observed)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(recovered.after.ok)
+        self.assertIn(
+            "import_domain_head_missing",
+            {item.code for item in recovered.after.findings},
+        )
+        with Session(self.engine) as session:
+            self.assertEqual(list(session.exec(select(ImportDomainHead)).all()), [])
+            self.assertEqual(list(session.exec(select(Liability)).all()), [])
+            self.assertEqual(len(list(session.exec(select(ImportBatch)).all())), 1)
+
+    def test_historical_replay_does_not_rewrite_shared_identity_registry(self) -> None:
+        first = self.ingest()
+        first_native_id = "Assets:Cash"
+        with Session(self.engine) as session:
+            first_identity = session.exec(
+                select(AccountIdentity).where(
+                    AccountIdentity.source_native_id == first_native_id
+                )
+            ).one()
+            first_identity_id = first_identity.canonical_account_id
+
+        fieldnames = [
+            "account_id",
+            "account_name",
+            "account_kind",
+            "venue",
+            "symbol",
+            "quantity",
+            "market_value",
+            "cost_basis",
+            "currency",
+            "as_of_utc",
+        ]
+        with self.source.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "account_id": "Assets:Broker",
+                    "account_name": "Broker",
+                    "account_kind": "broker",
+                    "venue": "manual",
+                    "symbol": "USD",
+                    "quantity": "200",
+                    "market_value": "200",
+                    "cost_basis": "",
+                    "currency": "USD",
+                    "as_of_utc": "2026-07-14T00:00:00+00:00",
+                }
+            )
+        second = self.ingest()
+        with Session(self.engine) as session:
+            historical_identity = session.get(AccountIdentity, first_identity_id)
+            assert historical_identity is not None
+            historical_identity.source_refs = ["forged:historical-registry"]
+            session.add(historical_identity)
+            for position in session.exec(
+                select(Position).where(Position.snapshot_id == first.snapshot_id)
+            ).all():
+                session.delete(position)
+            snapshot = session.get(Snapshot, first.snapshot_id)
+            assert snapshot is not None
+            session.delete(snapshot)
+            session.commit()
+
+        before = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        first_codes = {
+            item.code for item in before.findings if item.batch_id == first.batch_id
+        }
+        self.assertIn("materialized_record_missing", first_codes)
+        self.assertNotIn("materialized_record_content_mismatch", first_codes)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            historical_identity = session.get(AccountIdentity, first_identity_id)
+            head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "position")
+            ).one()
+        assert historical_identity is not None
+        self.assertEqual(
+            historical_identity.source_refs,
+            ["forged:historical-registry"],
+        )
+        self.assertEqual(head.batch_id, second.batch_id)
+
+    def test_current_shared_identity_content_drift_requires_recovery(self) -> None:
+        result = self.ingest()
+        with Session(self.engine) as session:
+            identity = session.exec(select(AccountIdentity)).one()
+            original_refs = list(identity.source_refs)
+            identity.source_refs = ["forged:current-registry"]
+            session.add(identity)
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertIn(
+            "materialized_record_content_mismatch",
+            {item.code for item in report.findings},
+        )
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            identity = session.exec(select(AccountIdentity)).one()
+        self.assertEqual(identity.source_refs, original_refs)
 
 
 if __name__ == "__main__":

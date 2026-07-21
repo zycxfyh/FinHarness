@@ -21,7 +21,10 @@ from finharness.capital_import_registry import (
 from finharness.daily_change_brief import run_daily_change_brief
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
+    Account,
     ImportBatch,
+    ImportDomainHead,
+    Position,
     Proposal,
     ReceiptIndex,
     ReceiptManifest,
@@ -222,11 +225,14 @@ class BrokerImportVerticalAcceptanceTest(unittest.TestCase):
             receipt_root=self.import_root,
             artifact_store=self.store,
         )
-        self.assertTrue(recovery.after.ok, recovery.after)
-        self.assertTrue(any(action.startswith("replayed:") for action in recovery.actions))
-        self.assertEqual(len(read_all(ImportBatch, engine=self.engine)), 1)
-        self.assertEqual(len(read_all(ReceiptManifest, engine=self.engine)), 1)
-        self.assertEqual(len(read_all(Snapshot, engine=self.engine)), 1)
+        self.assertFalse(recovery.after.ok)
+        self.assertIn(
+            "import_domain_head_missing",
+            {finding.code for finding in recovery.after.findings},
+        )
+        self.assertEqual(read_all(ImportDomainHead, engine=self.engine), [])
+        self.assertEqual(read_all(Account, engine=self.engine), [])
+        self.assertEqual(read_all(Position, engine=self.engine), [])
 
     def test_missing_import_index_rebuilds_with_materialized_marker(self) -> None:
         result = ingest_broker_read_receipt(
