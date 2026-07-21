@@ -20,10 +20,17 @@ from finharness.capital_import_recovery import (
 )
 from finharness.personal_finance import ingest_personal_finance_export
 from finharness.statecore.import_models import ImportTombstone
-from finharness.statecore.models import Position, ReceiptIndex, ReceiptManifest, Snapshot
+from finharness.statecore.models import (
+    Liability,
+    Position,
+    ReceiptIndex,
+    ReceiptManifest,
+    Snapshot,
+)
 from finharness.statecore.store import (
     StateCoreStoreError,
     init_state_core,
+    source_owner_key,
 )
 
 
@@ -452,6 +459,154 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         )
         recovery_path = self.receipt_root / "recovery" / f"{recovered.recovery_id}.json"
         self.assertTrue(recovery_path.is_file())
+
+
+    def _write_liability_export(
+        self,
+        liability_id: str,
+        *,
+        balance: str,
+        observed_at: str,
+    ) -> None:
+        fieldnames = [
+            "record_type",
+            "liability_id",
+            "name",
+            "liability_type",
+            "balance",
+            "currency",
+            "as_of_utc",
+        ]
+        with self.source.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "record_type": "liability",
+                    "liability_id": liability_id,
+                    "name": liability_id,
+                    "liability_type": "loan",
+                    "balance": balance,
+                    "currency": "USD",
+                    "as_of_utc": observed_at,
+                }
+            )
+
+    def _ingest_liability(self, observed_at: str):
+        return ingest_personal_finance_export(
+            self.source,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+            observed_at_utc=observed_at,
+        )
+
+    def test_missing_current_materialized_record_blocks_retry_then_recovers(self) -> None:
+        observed = "2026-07-13T00:00:00+00:00"
+        self._write_liability_export("loan-current", balance="100", observed_at=observed)
+        result = self._ingest_liability(observed)
+        with Session(self.engine) as session:
+            row = session.get(Liability, "loan-current")
+            assert row is not None
+            session.delete(row)
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertIn("materialized_record_missing", {item.code for item in report.findings})
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            self._ingest_liability(observed)
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            restored = session.get(Liability, "loan-current")
+        self.assertIsNotNone(restored)
+
+    def test_extra_current_owner_scoped_record_fails_materialization_proof(self) -> None:
+        observed = "2026-07-13T00:00:00+00:00"
+        self._write_liability_export("loan-expected", balance="100", observed_at=observed)
+        result = self._ingest_liability(observed)
+        with Session(self.engine) as session:
+            session.add(
+                Liability(
+                    liability_id="loan-extra",
+                    name="loan-extra",
+                    liability_type="loan",
+                    balance="9",
+                    currency="USD",
+                    source=source_owner_key("personal_finance_export", str(self.source)),
+                    source_refs=[result.receipt_ref, str(self.source)],
+                )
+            )
+            session.commit()
+
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertIn("materialized_record_extra", {item.code for item in report.findings})
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+
+    def test_historical_recovery_never_restores_superseded_current_projection(self) -> None:
+        first_time = "2026-07-13T00:00:00+00:00"
+        second_time = "2026-07-14T00:00:00+00:00"
+        self._write_liability_export("loan-a", balance="100", observed_at=first_time)
+        first = self._ingest_liability(first_time)
+        self._write_liability_export("loan-b", balance="200", observed_at=second_time)
+        second = self._ingest_liability(second_time)
+
+        with Session(self.engine) as session:
+            first_snapshot = session.get(Snapshot, first.snapshot_id)
+            assert first_snapshot is not None
+            session.delete(first_snapshot)
+            session.commit()
+
+        before = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        historical = [
+            item
+            for item in before.findings
+            if item.batch_id == first.batch_id and item.code == "materialized_record_missing"
+        ]
+        self.assertTrue(historical, before)
+        self.assertEqual(
+            {item.recovery_action for item in historical},
+            {"restore_historical_evidence"},
+        )
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        with Session(self.engine) as session:
+            liabilities = list(session.exec(select(Liability)).all())
+            restored_snapshot = session.get(Snapshot, first.snapshot_id)
+        self.assertEqual([item.liability_id for item in liabilities], ["loan-b"])
+        self.assertEqual(str(liabilities[0].balance), "200")
+        self.assertIsNotNone(restored_snapshot)
+        self.assertTrue(batch_is_verified(
+            second.batch_id,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        ))
 
 
 if __name__ == "__main__":
