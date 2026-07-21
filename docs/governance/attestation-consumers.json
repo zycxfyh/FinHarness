@@ -1464,8 +1464,8 @@
       "consumer_id": "ATT-CONS-052",
       "path": "src/finharness/statecore/store.py",
       "symbol": "Attestation ProposalVersion schema migration",
-      "line_start": 486,
-      "line_end": 526,
+      "line_start": 681,
+      "line_end": 691,
       "match_terms": [
         "attestations"
       ],
@@ -1748,13 +1748,13 @@
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 44,
+      "match_line": 45,
       "term": "Attestation",
       "reason": "StateCoreRecord union import. Persistence infrastructure."
     },
     {
       "path": "src/finharness/statecore/store.py",
-      "match_line": 107,
+      "match_line": 108,
       "term": "Attestation",
       "reason": "StateCoreRecord union type annotation. Persistence infrastructure."
     },
@@ -2498,15 +2498,15 @@
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 52,
+      "match_line": 85,
       "term": "attestations",
-      "reason": "Non-semantic hit: attestations table-name assertion at line 51. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestations table-name assertion at line 85. Not a direct Attestation consumer."
     },
     {
       "path": "tests/test_statecore_store.py",
-      "match_line": 476,
+      "match_line": 698,
       "term": "attestation_ref",
-      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 476. Not a direct Attestation consumer."
+      "reason": "Non-semantic hit: attestation_ref in a legacy review_events DDL fixture at line 698. Not a direct Attestation consumer."
     },
     {
       "path": "src/finharness/decision_ontology.py",
