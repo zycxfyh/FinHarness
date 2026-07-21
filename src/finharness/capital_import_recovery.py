@@ -24,10 +24,17 @@ from finharness.capital_import_registry import (
     PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
     materialized_source_for,
 )
-from finharness.import_provenance import RECEIPT_ARTIFACT_SCHEMA, canonical_json_bytes
+from finharness.import_provenance import (
+    RECEIPT_ARTIFACT_SCHEMA,
+    ImportProvenanceError,
+    build_import_tombstone,
+    canonical_json_bytes,
+    normalize_import_deletions,
+)
 from finharness.project_paths import ROOT
 from finharness.statecore.models import (
     ImportBatch,
+    ImportTombstone,
     ReceiptIndex,
     ReceiptManifest,
     Snapshot,
@@ -133,6 +140,153 @@ def _receipt_payload(store: ArtifactStore, descriptor: ArtifactDescriptor) -> di
             f"receipt artifact is not an object: {descriptor.artifact_id}"
         )
     return payload
+
+
+_TOMBSTONE_CONTRACT_FIELDS = (
+    "tombstone_id",
+    "batch_id",
+    "source_kind",
+    "record_type",
+    "record_id",
+    "reason",
+    "source_refs",
+    "as_of_utc",
+    "authority_level",
+)
+
+
+def _tombstone_identity(tombstone: ImportTombstone) -> tuple[str, str]:
+    return tombstone.record_type, tombstone.record_id
+
+
+def _tombstone_contract(tombstone: ImportTombstone) -> dict[str, Any]:
+    return {
+        field: getattr(tombstone, field)
+        for field in _TOMBSTONE_CONTRACT_FIELDS
+    }
+
+
+def _receipt_bound_tombstones(
+    receipt_payload: dict[str, Any],
+    *,
+    batch: ImportBatch,
+) -> tuple[ImportTombstone, ...] | None:
+    raw_plan = receipt_payload.get("deletion_plan")
+    if raw_plan is None:
+        return None
+    if not isinstance(raw_plan, dict):
+        raise CapitalImportRecoveryError("receipt deletion_plan is not an object")
+    try:
+        explicit = normalize_import_deletions(raw_plan.get("explicit", []))
+        automatic = normalize_import_deletions(raw_plan.get("automatic", []))
+    except ImportProvenanceError as exc:
+        raise CapitalImportRecoveryError(str(exc)) from exc
+    if sorted(set(raw_plan.get("covered_domains", []))) != batch.covered_domains:
+        raise CapitalImportRecoveryError(
+            "receipt deletion_plan coverage does not match the import batch"
+        )
+    if (
+        batch.source_kind == "personal_finance_export"
+        and raw_plan.get("domain") != "personal_finance"
+    ):
+        raise CapitalImportRecoveryError(
+            "personal-finance receipt has the wrong deletion_plan domain"
+        )
+    if batch.coverage_mode == "delta" and automatic:
+        raise CapitalImportRecoveryError(
+            "delta receipt cannot declare automatic deletions"
+        )
+    combined = [*explicit, *automatic]
+    identities = {
+        (item["record_type"], item["record_id"])
+        for item in combined
+    }
+    if len(identities) != len(combined):
+        raise CapitalImportRecoveryError(
+            "receipt deletion_plan contains conflicting record identities"
+        )
+    return tuple(
+        build_import_tombstone(batch=batch, **item)
+        for item in combined
+    )
+
+
+def _audit_tombstone_mirror(
+    *,
+    batch: ImportBatch,
+    receipt_id: str,
+    receipt_payload: dict[str, Any],
+    persisted: tuple[ImportTombstone, ...],
+) -> list[CapitalImportFinding]:
+    try:
+        expected = _receipt_bound_tombstones(receipt_payload, batch=batch)
+    except CapitalImportRecoveryError as exc:
+        return [
+            _finding(
+                "receipt_deletion_plan_invalid",
+                batch_id=batch.batch_id,
+                receipt_id=receipt_id,
+                recoverable=False,
+                recovery_action="restore_matching_evidence",
+                message=str(exc),
+            )
+        ]
+    if expected is None:
+        return []
+    expected_by_identity = {
+        _tombstone_identity(item): item
+        for item in expected
+    }
+    actual_by_identity = {
+        _tombstone_identity(item): item
+        for item in persisted
+    }
+    findings: list[CapitalImportFinding] = []
+    for identity, expected_item in expected_by_identity.items():
+        actual_item = actual_by_identity.get(identity)
+        if actual_item is None:
+            findings.append(
+                _finding(
+                    "import_tombstone_missing",
+                    batch_id=batch.batch_id,
+                    receipt_id=receipt_id,
+                    recoverable=True,
+                    recovery_action="restore_receipt_bound_tombstone",
+                    message=(
+                        "receipt-bound tombstone is missing: "
+                        f"{identity[0]}:{identity[1]}"
+                    ),
+                )
+            )
+        elif _tombstone_contract(actual_item) != _tombstone_contract(expected_item):
+            findings.append(
+                _finding(
+                    "import_tombstone_contract_mismatch",
+                    batch_id=batch.batch_id,
+                    receipt_id=receipt_id,
+                    recoverable=True,
+                    recovery_action="restore_receipt_bound_tombstone",
+                    message=(
+                        "persisted tombstone diverges from immutable receipt: "
+                        f"{identity[0]}:{identity[1]}"
+                    ),
+                )
+            )
+    for identity in sorted(actual_by_identity.keys() - expected_by_identity.keys()):
+        findings.append(
+            _finding(
+                "import_tombstone_extra",
+                batch_id=batch.batch_id,
+                receipt_id=receipt_id,
+                recoverable=False,
+                recovery_action="quarantine_and_review_tombstone",
+                message=(
+                    "database contains a tombstone not declared by the receipt: "
+                    f"{identity[0]}:{identity[1]}"
+                ),
+            )
+        )
+    return findings
 
 
 def _audit_manifest_evidence(
@@ -382,11 +536,15 @@ def audit_capital_imports(
                 select(ReceiptIndex).where(col(ReceiptIndex.kind).in_(PRODUCTION_IMPORT_KINDS))
             ).all()
         )
+        tombstones = list(session.exec(select(ImportTombstone)).all())
         snapshots = {item.snapshot_id: item for item in session.exec(select(Snapshot)).all()}
     batches_by_id = {item.batch_id: item for item in batches}
     manifests_by_batch = {item.batch_id: item for item in manifests}
     manifests_by_receipt = {item.receipt_id: item for item in manifests}
     indexes_by_receipt = {item.receipt_id: item for item in receipt_indexes}
+    tombstones_by_batch: dict[str, list[ImportTombstone]] = {}
+    for tombstone in tombstones:
+        tombstones_by_batch.setdefault(tombstone.batch_id, []).append(tombstone)
 
     for batch in batches:
         if batch.batch_id not in manifests_by_batch:
@@ -443,8 +601,10 @@ def audit_capital_imports(
         if current_descriptor is not None:
             try:
                 raw = store.read(current_descriptor.artifact_id)
-                rp = json.loads(raw)
-            except (ArtifactStoreError, json.JSONDecodeError):
+                decoded = json.loads(raw)
+                if isinstance(decoded, dict):
+                    rp = decoded
+            except (ArtifactStoreError, UnicodeDecodeError, json.JSONDecodeError):
                 pass
         findings.extend(
             _audit_manifest_mirror(
@@ -456,6 +616,15 @@ def audit_capital_imports(
                 receipt_payload=rp,
             )
         )
+        if rp is not None:
+            findings.extend(
+                _audit_tombstone_mirror(
+                    batch=current_batch,
+                    receipt_id=manifest.receipt_id,
+                    receipt_payload=rp,
+                    persisted=tuple(tombstones_by_batch.get(current_batch.batch_id, ())),
+                )
+            )
 
     for receipt_index in receipt_indexes:
         if receipt_index.receipt_id not in manifests_by_receipt:
@@ -605,6 +774,73 @@ def _repair_artifact_index(
     return ["rebuilt_artifact_index"]
 
 
+def _repair_receipt_bound_tombstones(
+    *,
+    engine: Engine,
+    store: ArtifactStore,
+) -> list[str]:
+    """Restore missing or drifted tombstone mirrors from trusted receipt bytes."""
+    actions: list[str] = []
+    with Session(engine) as session:
+        manifests = list(session.exec(select(ReceiptManifest)).all())
+        batches = {
+            item.batch_id: item
+            for item in session.exec(select(ImportBatch)).all()
+        }
+        for manifest in manifests:
+            batch = batches.get(manifest.batch_id)
+            if batch is None:
+                continue
+            try:
+                content = store.read(manifest.receipt_artifact_id)
+                payload = json.loads(content)
+            except (ArtifactStoreError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if (
+                hashlib.sha256(content).hexdigest() != manifest.receipt_sha256
+                or not isinstance(payload, dict)
+                or payload.get("import_batch_id") != batch.batch_id
+                or payload.get("receipt_manifest_id") != manifest.manifest_id
+                or payload.get("source_artifact_id") != batch.source_artifact_id
+                or payload.get("receipt_id") != manifest.receipt_id
+            ):
+                continue
+            try:
+                expected = _receipt_bound_tombstones(payload, batch=batch)
+            except CapitalImportRecoveryError:
+                continue
+            if expected is None:
+                continue
+            persisted = session.exec(
+                select(ImportTombstone).where(
+                    ImportTombstone.batch_id == batch.batch_id
+                )
+            ).all()
+            actual_by_identity = {
+                _tombstone_identity(item): item
+                for item in persisted
+            }
+            for expected_item in expected:
+                identity = _tombstone_identity(expected_item)
+                actual_item = actual_by_identity.get(identity)
+                if (
+                    actual_item is not None
+                    and _tombstone_contract(actual_item)
+                    == _tombstone_contract(expected_item)
+                ):
+                    continue
+                if actual_item is not None:
+                    session.delete(actual_item)
+                    session.flush()
+                session.merge(expected_item)
+                actions.append(
+                    "restored_receipt_bound_tombstone:"
+                    f"{batch.batch_id}:{identity[0]}:{identity[1]}"
+                )
+        session.commit()
+    return actions
+
+
 def recover_capital_imports(
     *,
     engine: Engine,
@@ -676,6 +912,12 @@ def recover_capital_imports(
                     actions.append(f"rebuilt_receipt_index:{manifest.receipt_id}")
             session.commit()
 
+        actions.extend(
+            _repair_receipt_bound_tombstones(
+                engine=engine,
+                store=store,
+            )
+        )
         refreshed = audit_capital_imports(
             engine=engine, receipt_root=root, artifact_store=store
         )

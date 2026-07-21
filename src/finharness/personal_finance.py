@@ -40,6 +40,8 @@ from finharness.capital_import_valuation import (
     valuation_assessment_summary,
 )
 from finharness.import_provenance import (
+    ImportProvenanceError,
+    build_import_tombstone,
     derive_import_batch_id,
     normalize_import_deletions,
     persist_source_evidence,
@@ -78,6 +80,7 @@ from finharness.statecore.models import (
 from finharness.statecore.store import (
     StateCoreRecord,
     materialize_import_batch,
+    plan_full_import_deletions,
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
@@ -858,29 +861,18 @@ def _import_tombstones(
     batch: ImportBatch,
     deletions: Sequence[ImportDeletion],
 ) -> list[ImportTombstone]:
-    records: list[ImportTombstone] = []
-    for deletion in deletions:
-        if not deletion.record_type or not deletion.record_id or not deletion.reason.strip():
-            raise PersonalFinanceExportError(
-                "import deletion requires record_type, record_id, and a non-empty reason"
-            )
-        digest = hashlib.sha256(
-            "\x00".join((batch.batch_id, deletion.record_type, deletion.record_id)).encode("utf-8")
-        ).hexdigest()[:24]
-        records.append(
-            ImportTombstone(
-                tombstone_id=f"import_tombstone_{digest}",
-                batch_id=batch.batch_id,
-                source_kind=batch.source_kind,
+    try:
+        return [
+            build_import_tombstone(
+                batch=batch,
                 record_type=deletion.record_type,
                 record_id=deletion.record_id,
-                reason=deletion.reason.strip(),
-                source_refs=[batch.source_artifact_id],
-                as_of_utc=batch.as_of_utc,
-                authority_level="read_only",
+                reason=deletion.reason,
             )
-        )
-    return records
+            for deletion in deletions
+        ]
+    except ImportProvenanceError as exc:
+        raise PersonalFinanceExportError(str(exc)) from exc
 
 
 def _identity_findings(rows: list[dict[str, str]]) -> list[ImportFinding]:
@@ -1015,14 +1007,6 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         record_counts=record_counts,
     )
-    deletion_plan = {
-        "explicit": explicit_deletions,
-        "automatic": [],
-        "domain": "personal_finance",
-        "covered_domains": resolved_covered_domains,
-    }
-    receipt_payload["deletion_plan"] = deletion_plan
-    receipt_payload["deletions"] = explicit_deletions
     receipt_ref = display_path(receipt_path)
     source_refs = [receipt_ref, display_path(source_path)]
     records = _records_from_rows(
@@ -1068,6 +1052,26 @@ def ingest_personal_finance_export(
         [record for record in records if isinstance(record, Position)],
         evaluated_at_utc=as_of_utc,
     )
+    automatic_deletions = (
+        plan_full_import_deletions(
+            engine=engine,
+            source_kind=EXPORT_KIND,
+            source_id=source_id,
+            covered_domains=resolved_covered_domains,
+            records=records,
+            batch_id=batch_id,
+            explicit_deletions=explicit_deletions,
+        )
+        if coverage_mode == "full"
+        else []
+    )
+    receipt_payload["deletion_plan"] = {
+        "explicit": explicit_deletions,
+        "automatic": automatic_deletions,
+        "domain": "personal_finance",
+        "covered_domains": resolved_covered_domains,
+    }
+    receipt_payload["deletions"] = explicit_deletions
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,
@@ -1087,7 +1091,6 @@ def ingest_personal_finance_export(
         time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in final_findings],
         covered_domains=resolved_covered_domains,
-        identity_deletions=explicit_deletions,
         identity_time_semantics=time_semantics,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,

@@ -20,6 +20,7 @@ from finharness.artifact_store import (
 from finharness.statecore.import_models import (
     IMPORT_COMPLETENESS_STATUSES,
     ImportBatch,
+    ImportTombstone,
     ReceiptManifest,
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
@@ -80,17 +81,10 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest}"
 
 
-_IMPORT_IDENTITY_TIME_FIELDS = (
-    "effective_at_utc",
-    "observed_at_utc",
-    "valued_at_utc",
-)
-
-
 def normalize_import_deletions(
     deletions: Sequence[Mapping[str, Any]] | None,
 ) -> list[dict[str, str]]:
-    """Return a deterministic, closed explicit-deletion contract."""
+    """Return a deterministic, closed deletion-contract representation."""
     normalized: list[dict[str, str]] = []
     for item in deletions or ():
         entry = {
@@ -107,6 +101,56 @@ def normalize_import_deletions(
     if len({tuple(item.values()) for item in normalized}) != len(normalized):
         raise ImportProvenanceError("import deletion plan contains duplicate entries")
     return normalized
+
+
+def derive_import_tombstone_id(
+    batch_id: str,
+    record_type: str,
+    record_id: str,
+) -> str:
+    """Return the canonical identity for one receipt-bound deletion fact."""
+    return _stable_id("import_tombstone", batch_id, record_type, record_id)
+
+
+def build_import_tombstone(
+    *,
+    batch: ImportBatch,
+    record_type: str,
+    record_id: str,
+    reason: str,
+) -> ImportTombstone:
+    """Construct the exact database mirror of one immutable deletion spec."""
+    normalized = normalize_import_deletions(
+        (
+            {
+                "record_type": record_type,
+                "record_id": record_id,
+                "reason": reason,
+            },
+        )
+    )[0]
+    return ImportTombstone(
+        tombstone_id=derive_import_tombstone_id(
+            batch.batch_id,
+            normalized["record_type"],
+            normalized["record_id"],
+        ),
+        batch_id=batch.batch_id,
+        source_kind=batch.source_kind,
+        record_type=normalized["record_type"],
+        record_id=normalized["record_id"],
+        reason=normalized["reason"],
+        source_refs=[batch.source_artifact_id],
+        as_of_utc=batch.as_of_utc,
+        authority_level="read_only",
+    )
+
+
+_IMPORT_IDENTITY_TIME_FIELDS = (
+    "effective_at_utc",
+    "observed_at_utc",
+    "valued_at_utc",
+)
 
 
 def canonical_import_contract_payload(
@@ -282,7 +326,6 @@ def prepare_import(
     time_semantics: dict[str, Any],
     findings: list[dict[str, Any]],
     covered_domains: list[str] | None = None,
-    identity_deletions: Sequence[Mapping[str, Any]] | None = None,
     identity_time_semantics: Mapping[str, Any] | None = None,
     supersedes_batch_id: str | None = None,
     correction_reason: str | None = None,
@@ -314,6 +357,31 @@ def prepare_import(
     if corporate_action_status not in {"not_applicable", "unsupported_gap"}:
         raise ImportProvenanceError("corporate_action_status is outside the closed set")
     resolved_domains = sorted(set(covered_domains or record_counts))
+    raw_deletion_plan = receipt_payload.get("deletion_plan")
+    if raw_deletion_plan is not None and not isinstance(raw_deletion_plan, dict):
+        raise ImportProvenanceError("deletion_plan must be an object")
+    explicit_deletions = normalize_import_deletions(
+        raw_deletion_plan.get("explicit", []) if raw_deletion_plan else []
+    )
+    automatic_deletions = normalize_import_deletions(
+        raw_deletion_plan.get("automatic", []) if raw_deletion_plan else []
+    )
+    if raw_deletion_plan is not None:
+        planned_domains = sorted(set(raw_deletion_plan.get("covered_domains", [])))
+        if planned_domains != resolved_domains:
+            raise ImportProvenanceError(
+                "deletion_plan covered_domains do not match import coverage"
+            )
+        receipt_payload = {
+            **receipt_payload,
+            "deletions": explicit_deletions,
+            "deletion_plan": {
+                "explicit": explicit_deletions,
+                "automatic": automatic_deletions,
+                "domain": str(raw_deletion_plan.get("domain") or "").strip(),
+                "covered_domains": resolved_domains,
+            },
+        }
     resolved_corporate_action_gaps = sorted(set(corporate_action_gaps or []))
     if corporate_action_status == "unsupported_gap" and not resolved_corporate_action_gaps:
         resolved_corporate_action_gaps = ["corporate_action_semantics_not_supported"]
@@ -324,7 +392,7 @@ def prepare_import(
         adapter_version=adapter_version,
         coverage_mode=coverage_mode,
         covered_domains=resolved_domains,
-        deletions=identity_deletions,
+        deletions=explicit_deletions,
         identity_time_semantics=identity_time_semantics,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
@@ -373,7 +441,7 @@ def prepare_import(
     contract_digest = derive_import_contract_digest(
         coverage_mode=coverage_mode,
         covered_domains=resolved_domains,
-        deletions=identity_deletions,
+        deletions=explicit_deletions,
         identity_time_semantics=identity_time_semantics,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
