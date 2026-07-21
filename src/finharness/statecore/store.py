@@ -222,7 +222,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 14
+CURRENT_STATE_CORE_USER_VERSION = 15
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -590,6 +590,65 @@ def _run_foreign_key_parent_migration(
         connection.commit()
 
 
+def _json_string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _migrate_normalize_legacy_source_ownership(connection: Connection) -> None:
+    """Migration 15: normalize only uniquely provable legacy source ownership.
+
+    Historical importers stored the raw production source kind on source-owned
+    rows. A row can move to ``source_kind::source_id`` only when its immutable
+    ``source_refs`` match exactly one known ImportBatch source id. Ambiguous or
+    unowned rows remain raw so future destructive full imports fail closed
+    rather than guessing ownership.
+    """
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    if "import_batches" not in tables:
+        return
+    source_ids_by_kind: dict[str, set[str]] = {}
+    for source_kind, source_id in connection.execute(
+        text("SELECT DISTINCT source_kind, source_id FROM import_batches")
+    ).all():
+        if source_kind in _PRODUCTION_SOURCE_KINDS and source_id:
+            source_ids_by_kind.setdefault(str(source_kind), set()).add(str(source_id))
+    for _model, id_field, table, _domain in _SOURCE_OWNED_MODELS:
+        if table not in tables:
+            continue
+        columns = {item["name"] for item in inspector.get_columns(table)}
+        if not {id_field, "source", "source_refs"} <= columns:
+            continue
+        table_model = SQLModel.metadata.tables[table]
+        id_column = table_model.c[id_field]
+        for source_kind, source_ids in source_ids_by_kind.items():
+            rows = connection.execute(
+                select(id_column, table_model.c.source_refs).where(
+                    table_model.c.source == source_kind
+                )
+            ).all()
+            for record_id, raw_refs in rows:
+                refs = set(_json_string_list(raw_refs))
+                candidates = sorted(source_id for source_id in source_ids if source_id in refs)
+                if len(candidates) != 1:
+                    continue
+                connection.execute(
+                    table_model.update()
+                    .where(
+                        id_column == record_id,
+                        table_model.c.source == source_kind,
+                    )
+                    .values(source=source_owner_key(source_kind, candidates[0]))
+                )
+
+
 def _migrate_add_canonical_identities(connection: Connection) -> None:
     """Add nullable identity bindings without inventing identity for legacy rows."""
     for table in ("account_identities", "instrument_identities", "identity_aliases"):
@@ -708,6 +767,7 @@ def migrate_state_core(engine: Engine) -> None:
         (12, _migrate_add_agent_authority_currency_bindings),
         (13, _migrate_add_version_binding_columns),
         (14, _rebuild_import_batches_unique),
+        (15, _migrate_normalize_legacy_source_ownership),
     )
     try:
         with engine.connect() as connection:
@@ -1478,6 +1538,26 @@ def _existing_import_stops_materialization(
     return disposition is ImportMaterializationDisposition.IDEMPOTENT_RETRY
 
 
+def _reject_ambiguous_legacy_source_ownership(
+    session: Session, *, batch: ImportBatch
+) -> None:
+    """Block destructive full replacement while raw ownership remains ambiguous."""
+    ambiguous: list[str] = []
+    for model, id_field, table, domain in _SOURCE_OWNED_MODELS:
+        if domain not in batch.covered_domains:
+            continue
+        record = session.exec(
+            select(model).where(col(model.source) == batch.source_kind)
+        ).first()
+        if record is not None:
+            ambiguous.append(f"{table}:{getattr(record, id_field)}")
+    if ambiguous:
+        raise StateCoreStoreError(
+            "legacy source ownership is ambiguous for destructive full import: "
+            + ", ".join(sorted(ambiguous))
+        )
+
+
 def _delete_covered_source_records(
     session: Session, *, source: str, covered_domains: Sequence[str]
 ) -> None:
@@ -1610,6 +1690,7 @@ def materialize_import_batch(
                 ):
                     return materialized
                 if batch.coverage_mode == "full":
+                    _reject_ambiguous_legacy_source_ownership(session, batch=batch)
                     _delete_covered_source_records(
                         session, source=ownership_scope, covered_domains=batch.covered_domains
                     )

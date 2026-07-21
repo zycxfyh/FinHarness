@@ -516,7 +516,7 @@ class StateCoreStoreTest(unittest.TestCase):
                 {"digest": digest},
             )
             connection.commit()
-        self.assertEqual(version, 14)
+        self.assertEqual(version, CURRENT_STATE_CORE_USER_VERSION)
         self.assertTrue(str(digest).startswith("legacy:"))
         self.assertEqual(len(read_all(ImportBatch, engine=engine)), 2)
         migrate_state_core(engine)
@@ -557,7 +557,7 @@ class StateCoreStoreTest(unittest.TestCase):
             violations = connection.exec_driver_sql(
                 "PRAGMA foreign_key_check(import_tombstones)"
             ).all()
-        self.assertEqual(version, 14)
+        self.assertEqual(version, CURRENT_STATE_CORE_USER_VERSION)
         self.assertEqual(len(violations), 1)
         self.assertEqual(violations[0][2], "import_batches")
 
