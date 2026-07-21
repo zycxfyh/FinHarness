@@ -840,21 +840,41 @@ def source_owner_key(source_kind: str, source_id: str) -> str:
     """Canonical ownership key for scoped production-import records.
 
     All source-owned records, tombstones, and deletion queries MUST use this
-    key, never raw ``source_kind`` or ``source_id`` alone.  Stable source
+    key, never raw ``source_kind`` or ``source_id`` alone. Stable source
     registration belongs to #394; this Issue derives the key from the
     path-based ``source_id``.
     """
     return f"{source_kind}::{source_id}"
 
 
+def production_source_kind_from_owner(value: str) -> str | None:
+    """Resolve raw or owner-scoped production source representations.
+
+    The owner key is a storage identity, not an admission credential. Generic
+    writes must reject both the historical raw source kind and every canonical
+    ``source_kind::source_id`` representation produced from it.
+    """
+    for source_kind in sorted(_PRODUCTION_SOURCE_KINDS, key=len, reverse=True):
+        if value == source_kind or value.startswith(f"{source_kind}::"):
+            return source_kind
+    return None
+
+
+def _is_production_import_source(value: object) -> bool:
+    return isinstance(value, str) and (
+        value in _PRODUCTION_MATERIALIZED_SOURCES
+        or production_source_kind_from_owner(value) is not None
+    )
+
+
 def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -> None:
     """Keep generic store helpers from bypassing W0 for known production adapters."""
     for record in records:
-        if isinstance(record, ReceiptIndex) and record.kind in _PRODUCTION_IMPORT_KINDS:
+        if isinstance(record, ReceiptIndex) and _is_production_import_source(record.kind):
             raise StateCoreStoreError("production import receipts require materialize_import_batch")
         if (
             isinstance(record, Snapshot)
-            and record.payload.get("source") in _PRODUCTION_IMPORT_KINDS
+            and _is_production_import_source(record.payload.get("source"))
         ):
             raise StateCoreStoreError(
                 "production import snapshots require materialize_import_batch"
@@ -871,7 +891,7 @@ def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -
                     DocumentRef,
                 ),
             )
-            and record.source in _PRODUCTION_IMPORT_KINDS
+            and _is_production_import_source(record.source)
         ):
             raise StateCoreStoreError("production import state requires materialize_import_batch")
 
