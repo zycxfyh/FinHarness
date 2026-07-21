@@ -573,6 +573,7 @@ def ingest_beancount_ledger(
     snapshot_id: str | None = None,
     assets_root: str = DEFAULT_ASSETS_ROOT,
     liabilities_root: str = DEFAULT_LIABILITIES_ROOT,
+    _recovery_replay: bool = False,
 ) -> BeancountImportResult:
     """Mirror a real Beancount ledger's holdings and liabilities into state core."""
     source_path = Path(ledger_path)
@@ -799,6 +800,7 @@ def ingest_beancount_ledger(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
+        **({"recovery_replay": True} if _recovery_replay else {}),
     )
     return BeancountImportResult(
         batch_id=prepared.batch.batch_id,

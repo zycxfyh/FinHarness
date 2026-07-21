@@ -224,6 +224,19 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             session.delete(persisted)
             session.commit()
 
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            ingest_personal_finance_export(
+                self.source,
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+                artifact_store=self.store,
+                coverage_mode="full",
+                covered_domains=["liability"],
+                observed_at_utc="2026-07-14T00:00:00+00:00",
+            )
+        with Session(self.engine) as session:
+            self.assertIsNone(session.get(ImportTombstone, tombstone.tombstone_id))
+
         before = audit_capital_imports(
             engine=self.engine,
             receipt_root=self.receipt_root,
@@ -302,6 +315,28 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("import_tombstone_extra", {item.code for item in report.findings})
         self.assertNotIn(result.batch_id, report.verified_batch_ids)
+
+    def test_missing_receipt_index_requires_recovery_not_ordinary_retry(self) -> None:
+        result = self.ingest()
+        with Session(self.engine) as session:
+            receipt_index = session.get(ReceiptIndex, result.receipt_id)
+            assert receipt_index is not None
+            session.delete(receipt_index)
+            session.commit()
+
+        with self.assertRaisesRegex(StateCoreStoreError, "recovery"):
+            self.ingest()
+        with Session(self.engine) as session:
+            self.assertIsNone(session.get(ReceiptIndex, result.receipt_id))
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok)
+        with Session(self.engine) as session:
+            self.assertIsNotNone(session.get(ReceiptIndex, result.receipt_id))
 
     def test_missing_snapshot_requires_recovery_not_ordinary_retry(self) -> None:
         result = self.ingest()

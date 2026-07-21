@@ -914,6 +914,7 @@ def ingest_personal_finance_export(
     tombstones: Sequence[ImportDeletion] = (),
     covered_domains: Sequence[str] | None = None,
     observed_at_utc: str | None = None,
+    _recovery_replay: bool = False,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -1060,6 +1061,7 @@ def ingest_personal_finance_export(
             covered_domains=resolved_covered_domains,
             records=records,
             batch_id=batch_id,
+            artifact_store=active_artifact_store,
             explicit_deletions=explicit_deletions,
         )
         if coverage_mode == "full"
@@ -1118,6 +1120,7 @@ def ingest_personal_finance_export(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
+        **({"recovery_replay": True} if _recovery_replay else {}),
     )
     return PersonalFinanceImportResult(
         batch_id=prepared.batch.batch_id,

@@ -719,6 +719,13 @@ def _replay_receipt(
                 f"receipt has invalid coverage_mode: {raw_coverage_mode}"
             )
         coverage_mode = cast(Literal["full", "delta"], raw_coverage_mode)
+        raw_time_semantics = payload.get("time_semantics")
+        observed_at_utc = (
+            str(raw_time_semantics.get("observed_at_utc"))
+            if isinstance(raw_time_semantics, dict)
+            and raw_time_semantics.get("observed_at_utc")
+            else None
+        )
         ingest_personal_finance_export(
             source_path,
             engine=engine,
@@ -730,6 +737,8 @@ def _replay_receipt(
             correction_reason=payload.get("correction_reason"),
             tombstones=deletions,
             covered_domains=payload.get("covered_domains"),
+            observed_at_utc=observed_at_utc,
+            _recovery_replay=True,
         )
     elif kind == "beancount_ledger":
         from finharness.beancount_adapter import ingest_beancount_ledger
@@ -740,6 +749,7 @@ def _replay_receipt(
             receipt_root=receipt_root,
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
+            _recovery_replay=True,
         )
     elif kind == "broker_read":
         from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
@@ -750,6 +760,7 @@ def _replay_receipt(
             receipt_root=receipt_root,
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
+            _recovery_replay=True,
         )
     else:
         raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")

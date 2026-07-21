@@ -7,6 +7,7 @@ import json
 import os
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -127,6 +128,15 @@ if TYPE_CHECKING:
 
 class StateCoreStoreError(RuntimeError):
     """Raised when state-core storage cannot be trusted."""
+
+
+class ImportMaterializationDisposition(StrEnum):
+    """Closed classification for new imports, retries, and controlled recovery."""
+
+    NEW = "new"
+    IDEMPOTENT_RETRY = "idempotent_retry"
+    RECOVERY_REQUIRED = "recovery_required"
+    RECOVERY_REPLAY = "recovery_replay"
 
 
 def state_core_db_path(path: str | Path | None = None) -> Path:
@@ -1184,6 +1194,7 @@ def plan_full_import_deletions(
     covered_domains: Sequence[str],
     records: Sequence[StateCoreRecord],
     batch_id: str,
+    artifact_store: ArtifactStore,
     explicit_deletions: Sequence[Mapping[str, Any]] = (),
 ) -> list[dict[str, str]]:
     """Plan deterministic full-import deletions before receipt bytes are frozen."""
@@ -1192,7 +1203,47 @@ def plan_full_import_deletions(
     explicit = normalize_import_deletions(explicit_deletions)
     explicit_record_keys = {(item["record_type"], item["record_id"]) for item in explicit}
     with Session(engine) as session:
-        if session.get(ImportBatch, batch_id) is not None:
+        existing_batch = session.get(ImportBatch, batch_id)
+        if existing_batch is not None:
+            manifest = session.exec(
+                select(ReceiptManifest).where(ReceiptManifest.batch_id == batch_id)
+            ).one_or_none()
+            if manifest is None:
+                raise StateCoreStoreError(
+                    "import recovery required: existing batch has no receipt manifest"
+                )
+            from finharness.artifact_store import ArtifactStoreError
+
+            try:
+                source_descriptor = artifact_store.descriptor(
+                    existing_batch.source_artifact_id
+                )
+                receipt_descriptor = artifact_store.descriptor(
+                    manifest.receipt_artifact_id
+                )
+                receipt_content = artifact_store.read(manifest.receipt_artifact_id)
+            except ArtifactStoreError as exc:
+                raise StateCoreStoreError(
+                    "import recovery required: immutable receipt evidence is unavailable"
+                ) from exc
+            receipt_payload = _validate_receipt_binding(
+                receipt_content=receipt_content,
+                source_schema=source_descriptor.artifact_schema,
+                receipt_schema=receipt_descriptor.artifact_schema,
+                batch=existing_batch,
+                manifest=manifest,
+            )
+            frozen_plan = _receipt_deletion_plan(
+                receipt_payload,
+                batch=existing_batch,
+            )
+            if frozen_plan is not None:
+                frozen_explicit, frozen_automatic = frozen_plan
+                if frozen_explicit != explicit:
+                    raise StateCoreStoreError(
+                        "import batch identity is immutable: explicit deletion plan drift"
+                    )
+                return frozen_automatic
             persisted = session.exec(
                 select(ImportTombstone).where(ImportTombstone.batch_id == batch_id)
             ).all()
@@ -1317,19 +1368,24 @@ def _apply_explicit_tombstones(
         )
 
 
-def _validate_existing_import_lineage(
+def _existing_import_disposition(
     session: Session,
     *,
     batch: ImportBatch,
     manifest: ReceiptManifest,
-) -> bool:
+    recovery_replay: bool,
+) -> ImportMaterializationDisposition:
     existing_batch = session.get(ImportBatch, batch.batch_id)
     existing_manifest = session.get(ReceiptManifest, manifest.manifest_id)
     if existing_batch is not None:
         if existing_batch.model_dump(mode="json") != batch.model_dump(mode="json"):
             raise StateCoreStoreError("import batch identity is immutable")
         if existing_manifest is None:
-            raise StateCoreStoreError("receipt manifest identity is immutable")
+            return (
+                ImportMaterializationDisposition.RECOVERY_REPLAY
+                if recovery_replay
+                else ImportMaterializationDisposition.RECOVERY_REQUIRED
+            )
         immutable_manifest_fields = (
             "manifest_id",
             "batch_id",
@@ -1348,21 +1404,58 @@ def _validate_existing_import_lineage(
             raise StateCoreStoreError("receipt manifest identity is immutable")
         existing_snapshot = session.get(Snapshot, existing_manifest.snapshot_id)
         existing_index = session.get(ReceiptIndex, existing_manifest.receipt_id)
-        return (
+        mirror_complete = (
             existing_snapshot is not None
             and existing_index is not None
             and existing_index.path == existing_manifest.receipt_ref
         )
+        if mirror_complete:
+            return ImportMaterializationDisposition.IDEMPOTENT_RETRY
+        return (
+            ImportMaterializationDisposition.RECOVERY_REPLAY
+            if recovery_replay
+            else ImportMaterializationDisposition.RECOVERY_REQUIRED
+        )
     if existing_manifest is not None:
         raise StateCoreStoreError("receipt manifest exists without its import batch")
-    if batch.supersedes_batch_id is None:
+    if batch.supersedes_batch_id is not None:
+        superseded = session.get(ImportBatch, batch.supersedes_batch_id)
+        if superseded is None:
+            raise StateCoreStoreError("superseded import batch does not exist")
+        if superseded.source_kind != batch.source_kind or superseded.source_id != batch.source_id:
+            raise StateCoreStoreError("superseded import batch belongs to a different source")
+    return ImportMaterializationDisposition.NEW
+
+
+def _existing_import_stops_materialization(
+    session: Session,
+    *,
+    disposition: ImportMaterializationDisposition,
+    batch: ImportBatch,
+    expected_tombstones: Sequence[ImportTombstone],
+) -> bool:
+    """Validate existing mirrors and decide whether an ordinary retry stops."""
+    if disposition is ImportMaterializationDisposition.NEW:
         return False
-    superseded = session.get(ImportBatch, batch.supersedes_batch_id)
-    if superseded is None:
-        raise StateCoreStoreError("superseded import batch does not exist")
-    if superseded.source_kind != batch.source_kind or superseded.source_id != batch.source_id:
-        raise StateCoreStoreError("superseded import batch belongs to a different source")
-    return False
+    persisted_tombstones = session.exec(
+        select(ImportTombstone).where(ImportTombstone.batch_id == batch.batch_id)
+    ).all()
+    try:
+        _validate_tombstone_contract(
+            persisted_tombstones,
+            batch=batch,
+            expected_specs=[_tombstone_spec(item) for item in expected_tombstones],
+        )
+    except StateCoreStoreError as exc:
+        raise StateCoreStoreError(
+            "import recovery required: tombstone mirror is incomplete or inconsistent"
+        ) from exc
+    if disposition is ImportMaterializationDisposition.RECOVERY_REQUIRED:
+        raise StateCoreStoreError(
+            "import recovery required: persisted import lineage has an incomplete "
+            "materialized mirror"
+        )
+    return disposition is ImportMaterializationDisposition.IDEMPOTENT_RETRY
 
 
 def _delete_covered_source_records(
@@ -1381,6 +1474,7 @@ def materialize_import_batch(
     manifest: ReceiptManifest,
     artifact_store: ArtifactStore,
     engine: Engine,
+    recovery_replay: bool = False,
 ) -> list[StateCoreRecord]:
     """Atomically commit a provenance-bound production capital import.
 
@@ -1423,10 +1517,11 @@ def materialize_import_batch(
                 explicit_tombstones = [
                     record for record in materialized if isinstance(record, ImportTombstone)
                 ]
-                existing_retry = _validate_existing_import_lineage(
+                disposition = _existing_import_disposition(
                     session,
                     batch=batch,
                     manifest=manifest,
+                    recovery_replay=recovery_replay,
                 )
                 if deletion_plan is None:
                     automatic_tombstones = (
@@ -1447,7 +1542,7 @@ def materialize_import_batch(
                         batch=batch,
                         expected_specs=planned_explicit,
                     )
-                    if not existing_retry:
+                    if disposition is ImportMaterializationDisposition.NEW:
                         computed_automatic = (
                             _automatic_full_deletion_specs(
                                 session,
@@ -1487,15 +1582,12 @@ def materialize_import_batch(
                 }
                 if len(tombstones_by_id) != len(all_tombstones):
                     raise StateCoreStoreError("import deletion_plan contains duplicate identities")
-                if existing_retry:
-                    persisted_tombstones = session.exec(
-                        select(ImportTombstone).where(ImportTombstone.batch_id == batch.batch_id)
-                    ).all()
-                    _validate_tombstone_contract(
-                        persisted_tombstones,
-                        batch=batch,
-                        expected_specs=[_tombstone_spec(item) for item in all_tombstones],
-                    )
+                if _existing_import_stops_materialization(
+                    session,
+                    disposition=disposition,
+                    batch=batch,
+                    expected_tombstones=all_tombstones,
+                ):
                     return materialized
                 if batch.coverage_mode == "full":
                     _delete_covered_source_records(

@@ -586,6 +586,7 @@ def _ingest_broker_read_receipt_with_snapshot(
     receipt_root: str | Path | None = None,
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
+    recovery_replay: bool = False,
 ) -> tuple[BrokerReadImportResult, Snapshot]:
     target = Path(path)
     try:
@@ -719,6 +720,7 @@ def _ingest_broker_read_receipt_with_snapshot(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
+        **({"recovery_replay": True} if recovery_replay else {}),
     )
     result = BrokerReadImportResult(
         batch_id=prepared.batch.batch_id,
@@ -748,6 +750,7 @@ def ingest_broker_read_receipt(
     receipt_root: str | Path | None = None,
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
+    _recovery_replay: bool = False,
 ) -> BrokerReadImportResult:
     """Materialize one broker-read receipt through the canonical import envelope."""
     result, _snapshot = _ingest_broker_read_receipt_with_snapshot(
@@ -756,6 +759,7 @@ def ingest_broker_read_receipt(
         receipt_root=receipt_root,
         artifact_store=artifact_store,
         snapshot_id=snapshot_id,
+        recovery_replay=_recovery_replay,
     )
     return result
 
