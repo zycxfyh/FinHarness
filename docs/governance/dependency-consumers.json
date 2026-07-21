@@ -403,6 +403,7 @@
         "src/finharness/statecore/capital_objective_fits.py",
         "src/finharness/statecore/diff.py",
         "src/finharness/statecore/execution_models.py",
+        "src/finharness/statecore/import_identity.py",
         "src/finharness/statecore/import_models.py",
         "src/finharness/statecore/model_base.py",
         "src/finharness/statecore/models.py",
