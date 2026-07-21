@@ -17,6 +17,11 @@ from finharness.artifact_store import (
     ArtifactNotFoundError,
     ArtifactStore,
 )
+from finharness.statecore.import_identity import (
+    MATERIALIZED_RECORD_IDENTITIES_FIELD,
+    MaterializedRecordIdentityError,
+    normalize_materialized_record_identities,
+)
 from finharness.statecore.import_models import (
     IMPORT_COMPLETENESS_STATUSES,
     ImportBatch,
@@ -25,7 +30,7 @@ from finharness.statecore.import_models import (
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
 
-IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v3"
+IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v4"
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
@@ -306,6 +311,15 @@ def persist_source_evidence(
     )
 
 
+
+def _normalize_materialization_proof(
+    identities: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    try:
+        return normalize_materialized_record_identities(identities)
+    except MaterializedRecordIdentityError as exc:
+        raise ImportProvenanceError(str(exc)) from exc
+
 def prepare_import(
     *,
     source_kind: str,
@@ -325,6 +339,7 @@ def prepare_import(
     completeness_status: str,
     time_semantics: dict[str, Any],
     findings: list[dict[str, Any]],
+    materialized_record_identities: Sequence[Mapping[str, Any]] = (),
     covered_domains: list[str] | None = None,
     identity_time_semantics: Mapping[str, Any] | None = None,
     supersedes_batch_id: str | None = None,
@@ -357,6 +372,9 @@ def prepare_import(
     if corporate_action_status not in {"not_applicable", "unsupported_gap"}:
         raise ImportProvenanceError("corporate_action_status is outside the closed set")
     resolved_domains = sorted(set(covered_domains or record_counts))
+    resolved_materialized_identities = _normalize_materialization_proof(
+        materialized_record_identities
+    )
     raw_deletion_plan = receipt_payload.get("deletion_plan")
     if raw_deletion_plan is not None and not isinstance(raw_deletion_plan, dict):
         raise ImportProvenanceError("deletion_plan must be an object")
@@ -418,6 +436,7 @@ def prepare_import(
         "time_semantics": time_semantics,
         "findings": findings,
         "covered_domains": resolved_domains,
+        MATERIALIZED_RECORD_IDENTITIES_FIELD: resolved_materialized_identities,
         "supersedes_batch_id": supersedes_batch_id,
         "correction_reason": correction_reason,
         "corporate_action_status": corporate_action_status,

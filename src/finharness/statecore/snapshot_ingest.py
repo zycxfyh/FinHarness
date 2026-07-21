@@ -34,6 +34,7 @@ from finharness.statecore.identities import (
     instrument_identity,
     unresolved_instrument_finding,
 )
+from finharness.statecore.import_identity import materialized_record_identities
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
@@ -587,6 +588,7 @@ def _ingest_broker_read_receipt_with_snapshot(
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
     recovery_replay: bool = False,
+    recovery_projection_domains: list[str] | None = None,
 ) -> tuple[BrokerReadImportResult, Snapshot]:
     target = Path(path)
     try:
@@ -654,6 +656,39 @@ def _ingest_broker_read_receipt_with_snapshot(
         positions,
         evaluated_at_utc=snapshot.as_of_utc,
     )
+    lineage_refs = [import_receipt_ref, source_ref]
+    all_records: list[StateCoreRecord] = [
+        account_identity_record,
+        *instrument_identities,
+        *aliases,
+        account,
+        snapshot,
+        *positions,
+    ]
+    _set_lineage_refs(all_records, lineage_refs)
+    from typing import cast
+
+    from finharness.capital_import_registry import receipt_index_contract_fields
+
+    contract = receipt_index_contract_fields(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        receipt_ref=import_receipt_ref,
+        created_at_utc=source_descriptor.created_at_utc,
+        source_ref=source_ref,
+        upstream_receipt_id=cast(str | None, receipt_payload.get("upstream_receipt_id")),
+        source_artifact_id=source_descriptor.artifact_id,
+    )
+    receipt_index = ReceiptIndex(
+        receipt_id=import_receipt_id,
+        kind=cast(str, contract["kind"]),
+        path=cast(str, contract["path"]),
+        created_at_utc=cast(str, contract["created_at_utc"]),
+        source_refs=cast(list[str], contract["source_refs"]),
+        refs=cast(list[str], contract["refs"]),
+    )
+    expected_materialized_identities = materialized_record_identities(
+        [receipt_index, *all_records]
+    )
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,
         source_id=source_ref,
@@ -672,19 +707,10 @@ def _ingest_broker_read_receipt_with_snapshot(
         completeness_status=str(snapshot.payload["completeness_status"]),
         time_semantics=dict(snapshot.payload["time_semantics"]),
         findings=list(snapshot.payload["findings"]),
+        materialized_record_identities=expected_materialized_identities,
         covered_domains=["position"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
     )
-    lineage_refs = [import_receipt_ref, source_ref]
-    all_records: list[StateCoreRecord] = [
-        account_identity_record,
-        *instrument_identities,
-        *aliases,
-        account,
-        snapshot,
-        *positions,
-    ]
-    _set_lineage_refs(all_records, lineage_refs)
     snapshot.payload = {
         **snapshot.payload,
         "import_batch_id": prepared.batch.batch_id,
@@ -693,26 +719,6 @@ def _ingest_broker_read_receipt_with_snapshot(
         "import_receipt_ref": import_receipt_ref,
         "source_artifact_id": prepared.batch.source_artifact_id,
     }
-    from typing import cast
-
-    from finharness.capital_import_registry import receipt_index_contract_fields
-
-    contract = receipt_index_contract_fields(
-        source_kind=BROKER_READ_SOURCE_KIND,
-        receipt_ref=import_receipt_ref,
-        created_at_utc=source_descriptor.created_at_utc,
-        source_ref=source_ref,
-        upstream_receipt_id=cast(str | None, receipt_payload.get("upstream_receipt_id")),
-        source_artifact_id=prepared.batch.source_artifact_id,
-    )
-    receipt_index = ReceiptIndex(
-        receipt_id=import_receipt_id,
-        kind=cast(str, contract["kind"]),
-        path=cast(str, contract["path"]),
-        created_at_utc=cast(str, contract["created_at_utc"]),
-        source_refs=cast(list[str], contract["source_refs"]),
-        refs=cast(list[str], contract["refs"]),
-    )
     materialize_import_batch(
         [receipt_index, *all_records],
         source=BROKER_READ_SOURCE_KIND,
@@ -720,7 +726,8 @@ def _ingest_broker_read_receipt_with_snapshot(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        **({"recovery_replay": True} if recovery_replay else {}),
+        recovery_replay=recovery_replay,
+        recovery_projection_domains=recovery_projection_domains,
     )
     result = BrokerReadImportResult(
         batch_id=prepared.batch.batch_id,
@@ -751,6 +758,7 @@ def ingest_broker_read_receipt(
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
     _recovery_replay: bool = False,
+    _recovery_projection_domains: list[str] | None = None,
 ) -> BrokerReadImportResult:
     """Materialize one broker-read receipt through the canonical import envelope."""
     result, _snapshot = _ingest_broker_read_receipt_with_snapshot(
@@ -760,6 +768,7 @@ def ingest_broker_read_receipt(
         artifact_store=artifact_store,
         snapshot_id=snapshot_id,
         recovery_replay=_recovery_replay,
+        recovery_projection_domains=_recovery_projection_domains,
     )
     return result
 

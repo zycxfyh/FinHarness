@@ -10,16 +10,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from finharness.artifact_store import LocalArtifactStore
+from finharness.beancount_adapter import ingest_beancount_ledger
 from finharness.capital_import_recovery import (
     audit_capital_imports,
     batch_is_verified,
     recover_capital_imports,
 )
 from finharness.personal_finance import ingest_personal_finance_export
-from finharness.statecore.import_models import ImportTombstone
+from finharness.statecore.import_models import ImportDomainHead, ImportTombstone
 from finharness.statecore.models import (
     Liability,
     Position,
@@ -30,6 +32,7 @@ from finharness.statecore.models import (
 from finharness.statecore.store import (
     StateCoreStoreError,
     init_state_core,
+    migrate_state_core,
     source_owner_key,
 )
 
@@ -598,6 +601,10 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         with Session(self.engine) as session:
             liabilities = list(session.exec(select(Liability)).all())
             restored_snapshot = session.get(Snapshot, first.snapshot_id)
+            liability_head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
+            ).one()
+        self.assertEqual(liability_head.batch_id, second.batch_id)
         self.assertEqual([item.liability_id for item in liabilities], ["loan-b"])
         self.assertEqual(str(liabilities[0].balance), "200")
         self.assertIsNotNone(restored_snapshot)
@@ -607,6 +614,130 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             receipt_root=self.receipt_root,
             artifact_store=self.store,
         ))
+
+
+
+    def test_v16_migration_backfills_unique_latest_domain_head(self) -> None:
+        first_time = "2026-07-13T00:00:00+00:00"
+        second_time = "2026-07-14T00:00:00+00:00"
+        self._write_liability_export("loan-a", balance="100", observed_at=first_time)
+        first = self._ingest_liability(first_time)
+        self._write_liability_export("loan-b", balance="200", observed_at=second_time)
+        second = self._ingest_liability(second_time)
+        with Session(self.engine) as session:
+            session.exec(delete(ImportDomainHead))
+            first_manifest = session.exec(
+                select(ReceiptManifest).where(ReceiptManifest.batch_id == first.batch_id)
+            ).one()
+            second_manifest = session.exec(
+                select(ReceiptManifest).where(ReceiptManifest.batch_id == second.batch_id)
+            ).one()
+            first_manifest.materialized_at_utc = "2026-07-13T00:00:00+00:00"
+            second_manifest.materialized_at_utc = "2026-07-14T00:00:00+00:00"
+            session.add(first_manifest)
+            session.add(second_manifest)
+            session.commit()
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA user_version = 15")
+
+        migrate_state_core(self.engine)
+
+        with Session(self.engine) as session:
+            head = session.exec(
+                select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
+            ).one()
+        self.assertEqual(head.batch_id, second.batch_id)
+
+    def test_v16_migration_leaves_tied_domain_history_unresolved(self) -> None:
+        first_time = "2026-07-13T00:00:00+00:00"
+        second_time = "2026-07-14T00:00:00+00:00"
+        self._write_liability_export("loan-a", balance="100", observed_at=first_time)
+        first = self._ingest_liability(first_time)
+        self._write_liability_export("loan-b", balance="200", observed_at=second_time)
+        second = self._ingest_liability(second_time)
+        with Session(self.engine) as session:
+            session.exec(delete(ImportDomainHead))
+            for batch_id in (first.batch_id, second.batch_id):
+                manifest = session.exec(
+                    select(ReceiptManifest).where(ReceiptManifest.batch_id == batch_id)
+                ).one()
+                manifest.materialized_at_utc = "2026-07-14T00:00:00+00:00"
+                session.add(manifest)
+            session.commit()
+        with self.engine.begin() as connection:
+            connection.exec_driver_sql("PRAGMA user_version = 15")
+
+        migrate_state_core(self.engine)
+
+        with Session(self.engine) as session:
+            heads = list(session.exec(select(ImportDomainHead)).all())
+        self.assertEqual(heads, [])
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(report.ok)
+        self.assertIn("import_domain_head_missing", {item.code for item in report.findings})
+
+    def test_beancount_historical_recovery_uses_exact_bundle_without_rollback(self) -> None:
+        ledger = self.root / "ledger.beancount"
+
+        def ledger_text(balance: str, date: str) -> str:
+            return (
+                'option "operating_currency" "USD"\n'
+                "2026-01-01 open Liabilities:Loan USD\n"
+                "2026-01-01 open Equity:Opening\n\n"
+                f'{date} * "Liability state"\n'
+                f"  Liabilities:Loan  -{balance} USD\n"
+                f"  Equity:Opening     {balance} USD\n"
+            )
+
+        first_bytes = ledger_text("100.00", "2026-01-02")
+        second_bytes = ledger_text("200.00", "2026-01-03")
+        ledger.write_text(first_bytes, encoding="utf-8")
+        first = ingest_beancount_ledger(
+            ledger,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        ledger.write_text(second_bytes, encoding="utf-8")
+        second = ingest_beancount_ledger(
+            ledger,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+
+        with Session(self.engine) as session:
+            first_snapshot = session.get(Snapshot, first.snapshot_id)
+            assert first_snapshot is not None
+            session.delete(first_snapshot)
+            session.commit()
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        self.assertEqual(ledger.read_text(encoding="utf-8"), second_bytes)
+        with Session(self.engine) as session:
+            liability = session.get(Liability, "liab_Liabilities_Loan_USD")
+            restored_snapshot = session.get(Snapshot, first.snapshot_id)
+        self.assertIsNotNone(liability)
+        assert liability is not None
+        self.assertEqual(str(liability.balance), "200.00")
+        self.assertIsNotNone(restored_snapshot)
+        self.assertTrue(
+            batch_is_verified(
+                second.batch_id,
+                engine=self.engine,
+                receipt_root=self.receipt_root,
+                artifact_store=self.store,
+            )
+        )
 
 
 if __name__ == "__main__":

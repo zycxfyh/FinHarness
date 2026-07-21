@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -20,6 +24,7 @@ from finharness.artifact_store import (
     ArtifactStoreError,
     LocalArtifactStore,
 )
+from finharness.beancount_adapter import BEANCOUNT_SOURCE_BUNDLE_SCHEMA
 from finharness.capital_import_registry import (
     PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES,
     materialized_source_for,
@@ -32,14 +37,25 @@ from finharness.import_provenance import (
     normalize_import_deletions,
 )
 from finharness.project_paths import ROOT
+from finharness.statecore.import_identity import (
+    MATERIALIZED_RECORD_IDENTITIES_FIELD,
+    MaterializedRecordIdentityError,
+    audit_materialized_record_identities,
+    normalize_materialized_record_identities,
+)
 from finharness.statecore.models import (
     ImportBatch,
+    ImportDomainHead,
     ImportTombstone,
     ReceiptIndex,
     ReceiptManifest,
     Snapshot,
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_json, resolve_under
+from finharness.statecore.store import (
+    current_source_domains_for_batch,
+    import_domain_head_id,
+)
 
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
 CAPITAL_IMPORT_RECOVERY_SCHEMA = "finharness.capital_import_recovery.v1"
@@ -402,6 +418,56 @@ def _expected_receipt_index_contract(
     )
 
 
+
+def _audit_materialized_record_mirror(
+    *,
+    session: Session,
+    manifest: ReceiptManifest,
+    batch: ImportBatch,
+    receipt_payload: dict[str, Any],
+    current_domains: set[str],
+) -> list[CapitalImportFinding]:
+    action = (
+        "rebuild_current_projection"
+        if current_domains
+        else "restore_historical_evidence"
+    )
+    try:
+        expected = normalize_materialized_record_identities(
+            receipt_payload.get(MATERIALIZED_RECORD_IDENTITIES_FIELD)
+        )
+    except MaterializedRecordIdentityError as exc:
+        return [
+            _finding(
+                "materialized_record_identity_proof_missing",
+                batch_id=batch.batch_id,
+                receipt_id=manifest.receipt_id,
+                artifact_id=manifest.receipt_artifact_id,
+                recoverable=False,
+                recovery_action="reimport_with_materialization_proof",
+                message=str(exc),
+            )
+        ]
+    mismatches = audit_materialized_record_identities(
+        session,
+        source_kind=batch.source_kind,
+        source_id=batch.source_id,
+        expected=expected,
+        current_domains=current_domains,
+    )
+    return [
+        _finding(
+            item.code,
+            batch_id=batch.batch_id,
+            receipt_id=manifest.receipt_id,
+            artifact_id=manifest.receipt_artifact_id,
+            recoverable=True,
+            recovery_action=action,
+            message=item.message,
+        )
+        for item in mismatches
+    ]
+
 def _audit_manifest_mirror(
     manifest: ReceiptManifest,
     batch: ImportBatch,
@@ -409,6 +475,7 @@ def _audit_manifest_mirror(
     index: ReceiptIndex | None,
     snapshot: Snapshot | None,
     receipt_payload: dict[str, Any] | None = None,
+    current_domains: set[str] | None = None,
 ) -> list[CapitalImportFinding]:
     findings: list[CapitalImportFinding] = []
     if receipt_payload is not None and batch.source_kind == "broker_read":
@@ -472,7 +539,11 @@ def _audit_manifest_mirror(
                 receipt_id=manifest.receipt_id,
                 artifact_id=manifest.receipt_artifact_id,
                 recoverable=descriptor is not None,
-                recovery_action="replay_receipt",
+                recovery_action=(
+                    "rebuild_current_projection"
+                    if current_domains
+                    else "restore_historical_evidence"
+                ),
             )
         )
     elif (
@@ -490,6 +561,160 @@ def _audit_manifest_mirror(
         )
     return findings
 
+
+
+def _domain_head_candidates(
+    batches: list[ImportBatch],
+    manifests: list[ReceiptManifest],
+) -> dict[tuple[str, str, str], list[tuple[ImportBatch, ReceiptManifest]]]:
+    manifests_by_batch = {manifest.batch_id: manifest for manifest in manifests}
+    candidates: dict[
+        tuple[str, str, str],
+        list[tuple[ImportBatch, ReceiptManifest]],
+    ] = {}
+    for batch in batches:
+        manifest = manifests_by_batch.get(batch.batch_id)
+        if manifest is None:
+            continue
+        for domain in batch.covered_domains:
+            candidates.setdefault(
+                (batch.source_kind, batch.source_id, domain), []
+            ).append((batch, manifest))
+    return candidates
+
+
+def _unique_latest_domain_candidate(
+    items: list[tuple[ImportBatch, ReceiptManifest]],
+) -> tuple[ImportBatch, ReceiptManifest] | None:
+    if not items:
+        return None
+    latest_at = max(manifest.materialized_at_utc for _batch, manifest in items)
+    latest = [item for item in items if item[1].materialized_at_utc == latest_at]
+    return latest[0] if len(latest) == 1 else None
+
+
+def _audit_import_domain_heads(
+    *,
+    heads: list[ImportDomainHead],
+    batches: list[ImportBatch],
+    manifests: list[ReceiptManifest],
+) -> list[CapitalImportFinding]:
+    findings: list[CapitalImportFinding] = []
+    batches_by_id = {batch.batch_id: batch for batch in batches}
+    manifests_by_id = {manifest.manifest_id: manifest for manifest in manifests}
+    candidates = _domain_head_candidates(batches, manifests)
+    heads_by_key = {
+        (head.source_kind, head.source_id, head.domain): head for head in heads
+    }
+    for key, items in candidates.items():
+        head = heads_by_key.get(key)
+        if head is None:
+            unique = _unique_latest_domain_candidate(items)
+            blocked = items if unique is None else [unique]
+            for batch, _manifest in blocked:
+                findings.append(
+                    _finding(
+                        "import_domain_head_missing",
+                        batch_id=batch.batch_id,
+                        recoverable=unique is not None,
+                        recovery_action=(
+                            "rebuild_import_domain_head"
+                            if unique is not None
+                            else "reimport_to_establish_domain_head"
+                        ),
+                        message=(
+                            "current import domain head is missing"
+                            if unique is not None
+                            else "current import domain head is ambiguous"
+                        ),
+                    )
+                )
+            continue
+        head_batch = batches_by_id.get(head.batch_id)
+        manifest = manifests_by_id.get(head.manifest_id)
+        valid = (
+            head_batch is not None
+            and manifest is not None
+            and manifest.batch_id == head.batch_id
+            and head_batch.source_kind == head.source_kind
+            and head_batch.source_id == head.source_id
+            and head.domain in head_batch.covered_domains
+            and head.materialized_at_utc == manifest.materialized_at_utc
+        )
+        if not valid:
+            findings.append(
+                _finding(
+                    "import_domain_head_invalid",
+                    batch_id=head.batch_id,
+                    recoverable=_unique_latest_domain_candidate(items) is not None,
+                    recovery_action="rebuild_import_domain_head",
+                )
+            )
+    for key, head in heads_by_key.items():
+        if key not in candidates:
+            findings.append(
+                _finding(
+                    "import_domain_head_orphan",
+                    batch_id=head.batch_id,
+                    recoverable=True,
+                    recovery_action="remove_orphan_import_domain_head",
+                )
+            )
+    return findings
+
+
+def _repair_import_domain_heads(engine: Engine) -> list[str]:
+    actions: list[str] = []
+    with Session(engine) as session:
+        batches = list(session.exec(select(ImportBatch)).all())
+        manifests = list(session.exec(select(ReceiptManifest)).all())
+        candidates = _domain_head_candidates(batches, manifests)
+        heads = list(session.exec(select(ImportDomainHead)).all())
+        heads_by_key = {
+            (head.source_kind, head.source_id, head.domain): head for head in heads
+        }
+        for key, items in candidates.items():
+            source_kind, source_id, domain = key
+            unique = _unique_latest_domain_candidate(items)
+            if unique is None:
+                continue
+            batch, manifest = unique
+            current = heads_by_key.get(key)
+            valid = (
+                current is not None
+                and current.batch_id == batch.batch_id
+                and current.manifest_id == manifest.manifest_id
+                and current.materialized_at_utc == manifest.materialized_at_utc
+            )
+            if valid:
+                continue
+            session.merge(
+                ImportDomainHead(
+                    domain_head_id=import_domain_head_id(
+                        source_kind, source_id, domain
+                    ),
+                    source_kind=source_kind,
+                    source_id=source_id,
+                    domain=domain,
+                    batch_id=batch.batch_id,
+                    manifest_id=manifest.manifest_id,
+                    materialized_at_utc=manifest.materialized_at_utc,
+                    as_of_utc=manifest.materialized_at_utc,
+                    authority_level="read_only",
+                )
+            )
+            actions.append(
+                f"rebuilt_import_domain_head:{source_kind}:{source_id}:{domain}:"
+                f"{batch.batch_id}"
+            )
+        candidate_keys = set(candidates)
+        for head in heads:
+            key = (head.source_kind, head.source_id, head.domain)
+            if key not in candidate_keys:
+                session.delete(head)
+                actions.append(f"removed_orphan_import_domain_head:{head.domain_head_id}")
+        session.commit()
+    return actions
 
 def audit_capital_imports(
     *,
@@ -537,7 +762,18 @@ def audit_capital_imports(
             ).all()
         )
         tombstones = list(session.exec(select(ImportTombstone)).all())
+        domain_heads = list(session.exec(select(ImportDomainHead)).all())
         snapshots = {item.snapshot_id: item for item in session.exec(select(Snapshot)).all()}
+        domain_head_findings = _audit_import_domain_heads(
+            heads=domain_heads,
+            batches=batches,
+            manifests=manifests,
+        )
+        current_domains_by_batch = {
+            batch.batch_id: current_source_domains_for_batch(session, batch=batch)
+            for batch in batches
+        }
+    findings.extend(domain_head_findings)
     batches_by_id = {item.batch_id: item for item in batches}
     manifests_by_batch = {item.batch_id: item for item in manifests}
     manifests_by_receipt = {item.receipt_id: item for item in manifests}
@@ -614,9 +850,22 @@ def audit_capital_imports(
                 indexes_by_receipt.get(manifest.receipt_id),
                 snapshots.get(manifest.snapshot_id),
                 receipt_payload=rp,
+                current_domains=current_domains_by_batch.get(current_batch.batch_id, set()),
             )
         )
         if rp is not None:
+            with Session(engine) as identity_session:
+                findings.extend(
+                    _audit_materialized_record_mirror(
+                        session=identity_session,
+                        manifest=manifest,
+                        batch=current_batch,
+                        receipt_payload=rp,
+                        current_domains=current_domains_by_batch.get(
+                            current_batch.batch_id, set()
+                        ),
+                    )
+                )
             findings.extend(
                 _audit_tombstone_mirror(
                     batch=current_batch,
@@ -686,11 +935,78 @@ def _source_path(payload: dict[str, Any]) -> Path:
     raw = payload.get("source_ref")
     if not isinstance(raw, str) or not raw:
         raise CapitalImportRecoveryError("receipt has no replayable source_ref")
-    path = _read_path(raw)
-    if not path.is_file():
-        raise CapitalImportRecoveryError(f"replay source is missing: {path}")
-    return path
+    return _read_path(raw)
 
+
+
+def _trusted_replay_files(
+    *,
+    kind: str,
+    primary_source_path: Path,
+    trusted_source: bytes,
+) -> list[tuple[Path, bytes]]:
+    if kind != "beancount_ledger":
+        return [(primary_source_path, trusted_source)]
+    try:
+        payload = json.loads(trusted_source)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CapitalImportRecoveryError(
+            "beancount source artifact is not a replayable source bundle"
+        ) from exc
+    if not isinstance(payload, dict) or payload.get("schema") != BEANCOUNT_SOURCE_BUNDLE_SCHEMA:
+        raise CapitalImportRecoveryError(
+            "beancount source artifact has the wrong replay bundle schema"
+        )
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, list) or not raw_files:
+        raise CapitalImportRecoveryError("beancount replay bundle has no files")
+    resolved: list[tuple[Path, bytes]] = []
+    seen: set[Path] = set()
+    for item in raw_files:
+        if not isinstance(item, dict):
+            raise CapitalImportRecoveryError("beancount replay bundle file entry is invalid")
+        raw_path = item.get("path")
+        raw_content = item.get("content_base64")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise CapitalImportRecoveryError("beancount replay bundle file path is invalid")
+        if not isinstance(raw_content, str) or not raw_content:
+            raise CapitalImportRecoveryError("beancount replay bundle content is invalid")
+        path = _read_path(raw_path)
+        if path in seen:
+            raise CapitalImportRecoveryError("beancount replay bundle repeats a file path")
+        try:
+            content = base64.b64decode(raw_content, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise CapitalImportRecoveryError(
+                "beancount replay bundle contains invalid base64"
+            ) from exc
+        seen.add(path)
+        resolved.append((path, content))
+    if primary_source_path not in seen:
+        raise CapitalImportRecoveryError(
+            "beancount replay bundle does not contain the primary ledger path"
+        )
+    return resolved
+
+
+@contextmanager
+def _temporarily_restore_replay_sources(
+    files: list[tuple[Path, bytes]],
+) -> Iterator[None]:
+    previous: dict[Path, bytes | None] = {}
+    for path, content in files:
+        previous[path] = path.read_bytes() if path.is_file() else None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_bytes(path, content)
+    try:
+        yield
+    finally:
+        for path, old_content in reversed(list(previous.items())):
+            if old_content is None:
+                if path.exists():
+                    path.unlink()
+            else:
+                atomic_write_bytes(path, old_content)
 
 def _replay_receipt(
     descriptor: ArtifactDescriptor,
@@ -698,73 +1014,124 @@ def _replay_receipt(
     store: ArtifactStore,
     engine: Engine,
     receipt_root: Path,
+    projection_domains: set[str],
 ) -> str:
     payload = _receipt_payload(store, descriptor)
     kind = str(payload.get("kind") or "")
     source_path = _source_path(payload)
-    if kind == "personal_finance_export":
-        from finharness.personal_finance import ImportDeletion, ingest_personal_finance_export
+    source_artifact_id = str(payload.get("source_artifact_id") or "")
+    if not source_artifact_id:
+        raise CapitalImportRecoveryError("receipt has no bound source artifact")
+    try:
+        trusted_source = store.read(source_artifact_id)
+    except ArtifactStoreError as exc:
+        raise CapitalImportRecoveryError(
+            "receipt-bound source artifact is unavailable for replay"
+        ) from exc
+    replay_files = _trusted_replay_files(
+        kind=kind,
+        primary_source_path=source_path,
+        trusted_source=trusted_source,
+    )
+    with _temporarily_restore_replay_sources(replay_files):
+        if kind == "personal_finance_export":
+            from finharness.personal_finance import ImportDeletion, ingest_personal_finance_export
 
-        deletions = tuple(
-            ImportDeletion(
-                record_type=str(item["record_type"]),
-                record_id=str(item["record_id"]),
-                reason=str(item["reason"]),
+            deletions = tuple(
+                ImportDeletion(
+                    record_type=str(item["record_type"]),
+                    record_id=str(item["record_id"]),
+                    reason=str(item["reason"]),
+                )
+                for item in payload.get("deletions", [])
             )
-            for item in payload.get("deletions", [])
-        )
-        raw_coverage_mode = str(payload.get("coverage_mode", "full"))
-        if raw_coverage_mode not in {"full", "delta"}:
-            raise CapitalImportRecoveryError(
-                f"receipt has invalid coverage_mode: {raw_coverage_mode}"
+            raw_coverage_mode = str(payload.get("coverage_mode", "full"))
+            if raw_coverage_mode not in {"full", "delta"}:
+                raise CapitalImportRecoveryError(
+                    f"receipt has invalid coverage_mode: {raw_coverage_mode}"
+                )
+            coverage_mode = cast(Literal["full", "delta"], raw_coverage_mode)
+            raw_time_semantics = payload.get("time_semantics")
+            observed_at_utc = (
+                str(raw_time_semantics.get("observed_at_utc"))
+                if isinstance(raw_time_semantics, dict)
+                and raw_time_semantics.get("observed_at_utc")
+                else None
             )
-        coverage_mode = cast(Literal["full", "delta"], raw_coverage_mode)
-        raw_time_semantics = payload.get("time_semantics")
-        observed_at_utc = (
-            str(raw_time_semantics.get("observed_at_utc"))
-            if isinstance(raw_time_semantics, dict)
-            and raw_time_semantics.get("observed_at_utc")
-            else None
-        )
-        ingest_personal_finance_export(
-            source_path,
-            engine=engine,
-            receipt_root=receipt_root,
-            artifact_store=store,
-            snapshot_id=str(payload["snapshot_id"]),
-            coverage_mode=coverage_mode,
-            supersedes_batch_id=payload.get("supersedes_batch_id"),
-            correction_reason=payload.get("correction_reason"),
-            tombstones=deletions,
-            covered_domains=payload.get("covered_domains"),
-            observed_at_utc=observed_at_utc,
-            _recovery_replay=True,
-        )
-    elif kind == "beancount_ledger":
-        from finharness.beancount_adapter import ingest_beancount_ledger
+            ingest_personal_finance_export(
+                source_path,
+                engine=engine,
+                receipt_root=receipt_root,
+                artifact_store=store,
+                snapshot_id=str(payload["snapshot_id"]),
+                coverage_mode=coverage_mode,
+                supersedes_batch_id=payload.get("supersedes_batch_id"),
+                correction_reason=payload.get("correction_reason"),
+                tombstones=deletions,
+                covered_domains=payload.get("covered_domains"),
+                observed_at_utc=observed_at_utc,
+                _recovery_replay=True,
+                _recovery_projection_domains=sorted(projection_domains),
+            )
+        elif kind == "beancount_ledger":
+            from finharness.beancount_adapter import ingest_beancount_ledger
 
-        ingest_beancount_ledger(
-            source_path,
-            engine=engine,
-            receipt_root=receipt_root,
-            artifact_store=store,
-            snapshot_id=str(payload["snapshot_id"]),
-            _recovery_replay=True,
-        )
-    elif kind == "broker_read":
-        from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
+            ingest_beancount_ledger(
+                source_path,
+                engine=engine,
+                receipt_root=receipt_root,
+                artifact_store=store,
+                snapshot_id=str(payload["snapshot_id"]),
+                _recovery_replay=True,
+                _recovery_projection_domains=sorted(projection_domains),
+            )
+        elif kind == "broker_read":
+            from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
 
-        ingest_broker_read_receipt(
-            source_path,
-            engine=engine,
-            receipt_root=receipt_root,
-            artifact_store=store,
-            snapshot_id=str(payload["snapshot_id"]),
-            _recovery_replay=True,
-        )
-    else:
-        raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")
+            ingest_broker_read_receipt(
+                source_path,
+                engine=engine,
+                receipt_root=receipt_root,
+                artifact_store=store,
+                snapshot_id=str(payload["snapshot_id"]),
+                _recovery_replay=True,
+                _recovery_projection_domains=sorted(projection_domains),
+            )
+        else:
+            raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")
     return f"replayed:{descriptor.artifact_id}"
+
+
+
+def _recovery_projection_domains(
+    payload: dict[str, Any],
+    *,
+    engine: Engine,
+) -> set[str]:
+    """Return only domains whose current projection can be proved from atomic heads."""
+    batch_id = str(payload.get("import_batch_id") or "")
+    covered_domains = {str(item) for item in payload.get("covered_domains", [])}
+    candidate_created_at = str(payload.get("created_at_utc") or "")
+    with Session(engine) as session:
+        batch = session.get(ImportBatch, batch_id) if batch_id else None
+        if batch is not None:
+            return current_source_domains_for_batch(session, batch=batch)
+        source_kind = str(payload.get("kind") or "")
+        source_id = str(payload.get("source_ref") or "")
+        if not source_kind or not source_id or not candidate_created_at:
+            return set()
+        allowed: set[str] = set()
+        for domain in covered_domains:
+            head = session.exec(
+                select(ImportDomainHead).where(
+                    ImportDomainHead.source_kind == source_kind,
+                    ImportDomainHead.source_id == source_id,
+                    ImportDomainHead.domain == domain,
+                )
+            ).one_or_none()
+            if head is None or candidate_created_at > head.materialized_at_utc:
+                allowed.add(domain)
+        return allowed
 
 
 def _repair_artifact_index(
@@ -866,6 +1233,7 @@ def recover_capital_imports(
     actions: list[str] = []
     if not dry_run:
         actions.extend(_repair_artifact_index(before, store))
+        actions.extend(_repair_import_domain_heads(engine))
 
         with Session(engine) as session:
             manifests = list(session.exec(select(ReceiptManifest)).all())
@@ -936,15 +1304,30 @@ def recover_capital_imports(
             {
                 item.artifact_id
                 for item in refreshed.findings
-                if item.recovery_action == "replay_receipt" and item.artifact_id
+                if item.recovery_action
+                in {
+                    "replay_receipt",
+                    "rebuild_current_projection",
+                    "restore_historical_evidence",
+                }
+                and item.artifact_id
             }
         )
         descriptors = {item.artifact_id: item for item in store.list_descriptors()}
         for artifact_id in replay_ids:
             try:
+                descriptor = descriptors[artifact_id]
+                payload = _receipt_payload(store, descriptor)
                 actions.append(
                     _replay_receipt(
-                        descriptors[artifact_id], store=store, engine=engine, receipt_root=root
+                        descriptor,
+                        store=store,
+                        engine=engine,
+                        receipt_root=root,
+                        projection_domains=_recovery_projection_domains(
+                            payload,
+                            engine=engine,
+                        ),
                     )
                 )
             except (CapitalImportRecoveryError, KeyError, OSError, ValueError):

@@ -16,6 +16,7 @@ from sqlmodel import Field
 
 from finharness.statecore.import_models import (  # noqa: F401
     ImportBatch,
+    ImportDomainHead,
     ImportTombstone,
     ReceiptManifest,
 )

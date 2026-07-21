@@ -72,6 +72,28 @@ class ImportBatch(StateCoreBase, table=True):
     findings: list[dict[str, Any]] = Field(default_factory=list, sa_column=json_list_column())
 
 
+class ImportDomainHead(StateCoreBase, table=True):
+    """Atomic current-batch pointer for one source-owned import domain."""
+
+    __tablename__ = "import_domain_heads"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_kind",
+            "source_id",
+            "domain",
+            name="uq_import_domain_heads_source_domain",
+        ),
+    )
+
+    domain_head_id: str = Field(primary_key=True)
+    source_kind: str = Field(index=True)
+    source_id: str
+    domain: str = Field(index=True)
+    batch_id: str = Field(foreign_key="import_batches.batch_id", index=True)
+    manifest_id: str = Field(foreign_key="receipt_manifests.manifest_id", index=True)
+    materialized_at_utc: str
+
+
 class ImportTombstone(StateCoreBase, table=True):
     """Append-only evidence that one source-owned row disappeared or was deleted."""
 

@@ -17,6 +17,7 @@ from finharness.capital_truth import (
 )
 from finharness.import_provenance import prepare_import
 from finharness.readiness import CapitalTruthReadiness
+from finharness.statecore.import_identity import materialized_record_identities
 from finharness.statecore.models import ReceiptIndex, Snapshot
 from finharness.statecore.store import init_state_core, materialize_import_batch
 from tests.asgi_test_client import AsgiTestClient
@@ -64,6 +65,22 @@ class ReadinessTest(unittest.TestCase):
             if completeness_status == "complete"
             else [{"code": "test_partial", "severity": "partial", "message": "partial"}]
         )
+        materialized_records = [
+            ReceiptIndex(
+                receipt_id=receipt_id,
+                kind="readiness_test",
+                path=receipt_ref,
+                created_at_utc=created_at,
+                source_refs=[receipt_ref],
+            ),
+            Snapshot(
+                snapshot_id=snapshot_id,
+                kind="capital",
+                as_of_utc=observed.isoformat(),
+                payload={},
+                source_refs=[receipt_ref],
+            ),
+        ]
         prepared = prepare_import(
             source_kind="readiness_test",
             source_id="test://readiness",
@@ -87,26 +104,14 @@ class ReadinessTest(unittest.TestCase):
             completeness_status=completeness_status,
             time_semantics=clocks,
             findings=findings,
+            materialized_record_identities=materialized_record_identities(
+                materialized_records
+            ),
             covered_domains=[],
             corporate_action_status="not_applicable",
         )
         materialize_import_batch(
-            [
-                ReceiptIndex(
-                    receipt_id=receipt_id,
-                    kind="readiness_test",
-                    path=receipt_ref,
-                    created_at_utc=created_at,
-                    source_refs=[receipt_ref],
-                ),
-                Snapshot(
-                    snapshot_id=snapshot_id,
-                    kind="capital",
-                    as_of_utc=observed.isoformat(),
-                    payload={},
-                    source_refs=[receipt_ref],
-                ),
-            ],
+            materialized_records,
             source="readiness_test",
             batch=prepared.batch,
             manifest=prepared.manifest,

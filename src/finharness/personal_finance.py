@@ -25,7 +25,7 @@ from typing import Any, Literal
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from finharness.artifact_store import ArtifactStore, LocalArtifactStore
+from finharness.artifact_store import ArtifactStore, ArtifactStoreError, LocalArtifactStore
 from finharness.capital_import_contract import (
     CapitalImportContractError,
     ImportFinding,
@@ -58,6 +58,7 @@ from finharness.statecore.identities import (
     instrument_identity,
     unresolved_instrument_finding,
 )
+from finharness.statecore.import_identity import materialized_record_identities
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
@@ -66,12 +67,14 @@ from finharness.statecore.models import (
     FinancialGoal,
     IdentityAlias,
     ImportBatch,
+    ImportDomainHead,
     ImportTombstone,
     InstrumentIdentity,
     InsurancePolicy,
     Liability,
     Position,
     ReceiptIndex,
+    ReceiptManifest,
     Snapshot,
     SourcedStateCoreBase,
     TaxEvent,
@@ -781,7 +784,11 @@ def _status_counts(
 
 
 def _latest_source_positions(
-    *, engine: Engine, source_id: str, exclude_batch_id: str
+    *,
+    engine: Engine,
+    source_id: str,
+    exclude_batch_id: str,
+    artifact_store: ArtifactStore,
 ) -> tuple[str | None, list[Position]]:
     with Session(engine) as session:
         manifest = latest_source_manifest_for_domain(
@@ -791,6 +798,37 @@ def _latest_source_positions(
             domain="position",
             exclude_batch_id=exclude_batch_id,
         )
+        if manifest is None:
+            head = session.exec(
+                select(ImportDomainHead).where(
+                    ImportDomainHead.source_kind == EXPORT_KIND,
+                    ImportDomainHead.source_id == source_id,
+                    ImportDomainHead.domain == "position",
+                )
+            ).one_or_none()
+            if head is None or head.batch_id != exclude_batch_id:
+                return None, []
+            current_manifest = session.get(ReceiptManifest, head.manifest_id)
+            if current_manifest is None:
+                return None, []
+            try:
+                payload = json.loads(
+                    artifact_store.read(current_manifest.receipt_artifact_id)
+                )
+            except (ArtifactStoreError, UnicodeDecodeError, json.JSONDecodeError):
+                return None, []
+            base_batch_id = (
+                str(payload.get("delta_base_batch_id") or "")
+                if isinstance(payload, dict)
+                else ""
+            )
+            if not base_batch_id:
+                return None, []
+            manifest = session.exec(
+                select(ReceiptManifest).where(
+                    ReceiptManifest.batch_id == base_batch_id
+                )
+            ).one_or_none()
         if manifest is None:
             return None, []
         positions = session.exec(
@@ -808,11 +846,13 @@ def _materialize_delta_positions(
     as_of_utc: str,
     tombstones: Sequence[ImportDeletion],
     exclude_batch_id: str,
+    artifact_store: ArtifactStore,
 ) -> tuple[list[StateCoreRecord], str | None]:
     base_batch_id, previous = _latest_source_positions(
         engine=engine,
         source_id=source_id,
         exclude_batch_id=exclude_batch_id,
+        artifact_store=artifact_store,
     )
     deleted_position_ids = {
         tombstone.record_id for tombstone in tombstones if tombstone.record_type == "Position"
@@ -909,6 +949,7 @@ def ingest_personal_finance_export(
     covered_domains: Sequence[str] | None = None,
     observed_at_utc: str | None = None,
     _recovery_replay: bool = False,
+    _recovery_projection_domains: Sequence[str] | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -1021,6 +1062,7 @@ def ingest_personal_finance_export(
             as_of_utc=as_of_utc,
             tombstones=tombstones,
             exclude_batch_id=batch_id,
+            artifact_store=active_artifact_store,
         )
         if delta_base_batch_id is None:
             raise PersonalFinanceExportError(
@@ -1039,6 +1081,7 @@ def ingest_personal_finance_export(
     final_position_count = sum(1 for record in records if isinstance(record, Position))
     record_counts = {**record_counts, "position": final_position_count}
     receipt_payload["record_counts"] = record_counts
+    receipt_payload["delta_base_batch_id"] = delta_base_batch_id
     # Compute status counts for valuation_assessment.
     receipt_payload["valuation_assessment"] = valuation_assessment_summary(
         [record for record in records if isinstance(record, Position)],
@@ -1065,6 +1108,17 @@ def ingest_personal_finance_export(
         "covered_domains": resolved_covered_domains,
     }
     receipt_payload["deletions"] = explicit_deletions
+    receipt_index = ReceiptIndex(
+        receipt_id=receipt_id,
+        kind=EXPORT_KIND,
+        path=receipt_ref,
+        created_at_utc=source_descriptor.created_at_utc,
+        source_refs=source_refs,
+        refs=[display_path(source_path)],
+    )
+    expected_materialized_identities = materialized_record_identities(
+        [receipt_index, *records]
+    )
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,
@@ -1083,6 +1137,7 @@ def ingest_personal_finance_export(
         completeness_status=final_completeness,
         time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in final_findings],
+        materialized_record_identities=expected_materialized_identities,
         covered_domains=resolved_covered_domains,
         identity_time_semantics=time_semantics,
         supersedes_batch_id=supersedes_batch_id,
@@ -1095,14 +1150,6 @@ def ingest_personal_finance_export(
         raise PersonalFinanceExportError(
             "derived batch identity diverged from prepare_import batch_id"
         )
-    receipt_index = ReceiptIndex(
-        receipt_id=receipt_id,
-        kind=EXPORT_KIND,
-        path=receipt_ref,
-        created_at_utc=source_descriptor.created_at_utc,
-        source_refs=source_refs,
-        refs=[display_path(source_path)],
-    )
     deletion_records = _import_tombstones(batch=prepared.batch, deletions=tombstones)
     materialize_import_batch(
         [receipt_index, *records, *deletion_records],
@@ -1111,7 +1158,8 @@ def ingest_personal_finance_export(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        **({"recovery_replay": True} if _recovery_replay else {}),
+        recovery_replay=_recovery_replay,
+        recovery_projection_domains=_recovery_projection_domains,
     )
     return PersonalFinanceImportResult(
         batch_id=prepared.batch.batch_id,

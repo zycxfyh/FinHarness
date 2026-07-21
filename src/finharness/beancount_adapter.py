@@ -13,8 +13,10 @@ only holds a read-only mirror plus a receipt.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -37,7 +39,11 @@ from finharness.capital_import_valuation import (
     merge_valuation_findings,
     valuation_assessment_summary,
 )
-from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.import_provenance import (
+    canonical_json_bytes,
+    persist_source_evidence,
+    prepare_import,
+)
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
@@ -45,6 +51,7 @@ from finharness.statecore.identities import (
     instrument_identity,
     unresolved_instrument_finding,
 )
+from finharness.statecore.import_identity import materialized_record_identities
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
@@ -59,10 +66,12 @@ from finharness.statecore.models import (
 )
 from finharness.statecore.store import (
     materialize_import_batch,
+    source_owner_key,
 )
 
 DEFAULT_BEANCOUNT_RECEIPT_ROOT = ROOT / "data" / "receipts" / "beancount"
-ADAPTER_VERSION = "finharness.beancount_ledger.v3"
+ADAPTER_VERSION = "finharness.beancount_ledger.v4"
+BEANCOUNT_SOURCE_BUNDLE_SCHEMA = "finharness.beancount_source_bundle.v1"
 LEDGER_KIND = "beancount_ledger"
 DEFAULT_ASSETS_ROOT = "Assets"
 DEFAULT_LIABILITIES_ROOT = "Liabilities"
@@ -222,12 +231,19 @@ def _select_direct_price(
 
 
 def _ledger_evidence_bytes(files: list[str]) -> bytes:
-    """Canonical byte stream over the loaded ledger and every included file."""
-    evidence = bytearray()
-    for path in files:
-        evidence.extend(Path(path).read_bytes())
-        evidence.extend(b"\x00")
-    return bytes(evidence)
+    """Return a replayable canonical bundle for the ledger include graph."""
+    return canonical_json_bytes(
+        {
+            "schema": BEANCOUNT_SOURCE_BUNDLE_SCHEMA,
+            "files": [
+                {
+                    "path": display_path(Path(path)),
+                    "content_base64": base64.b64encode(Path(path).read_bytes()).decode("ascii"),
+                }
+                for path in files
+            ],
+        }
+    )
 
 
 def _combined_ledger_hash(files: list[str]) -> str:
@@ -574,6 +590,7 @@ def ingest_beancount_ledger(
     assets_root: str = DEFAULT_ASSETS_ROOT,
     liabilities_root: str = DEFAULT_LIABILITIES_ROOT,
     _recovery_replay: bool = False,
+    _recovery_projection_domains: Sequence[str] | None = None,
 ) -> BeancountImportResult:
     """Mirror a real Beancount ledger's holdings and liabilities into state core."""
     source_path = Path(ledger_path)
@@ -688,6 +705,9 @@ def ingest_beancount_ledger(
         status_map[position.position_id] = p
     positions = [status_map[p.position_id] for p in positions]
     findings = merge_valuation_findings(findings, assessments)
+    ownership_scope = source_owner_key(LEDGER_KIND, display_path(source_path))
+    for record in [*liabilities, *cashflows]:
+        record.source = ownership_scope
     # Batch-level valued_at is only set when every position agrees; else None.
     position_valued_ats = {
         position.valued_at_utc for position in positions if position.valued_at_utc
@@ -749,6 +769,27 @@ def ingest_beancount_ledger(
         positions,
         evaluated_at_utc=as_of_utc,
     )
+    receipt_index = ReceiptIndex(
+        receipt_id=receipt_id,
+        kind=LEDGER_KIND,
+        path=receipt_ref,
+        created_at_utc=source_descriptor.created_at_utc,
+        source_refs=source_refs,
+        refs=[display_path(source_path)],
+    )
+    expected_materialized_identities = materialized_record_identities(
+        [
+            receipt_index,
+            *account_identities,
+            *instrument_identities,
+            *identity_aliases,
+            *accounts,
+            snapshot,
+            *positions,
+            *liabilities,
+            *cashflows,
+        ]
+    )
     prepared = prepare_import(
         source_kind=LEDGER_KIND,
         source_id=display_path(source_path),
@@ -772,16 +813,9 @@ def ingest_beancount_ledger(
         completeness_status=final_completeness,
         time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in findings],
+        materialized_record_identities=expected_materialized_identities,
         covered_domains=["account", "position", "liability", "cashflow"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
-    )
-    receipt_index = ReceiptIndex(
-        receipt_id=receipt_id,
-        kind=LEDGER_KIND,
-        path=receipt_ref,
-        created_at_utc=source_descriptor.created_at_utc,
-        source_refs=source_refs,
-        refs=[display_path(source_path)],
     )
     materialize_import_batch(
         [
@@ -800,7 +834,8 @@ def ingest_beancount_ledger(
         manifest=prepared.manifest,
         artifact_store=active_artifact_store,
         engine=engine,
-        **({"recovery_replay": True} if _recovery_replay else {}),
+        recovery_replay=_recovery_replay,
+        recovery_projection_domains=_recovery_projection_domains,
     )
     return BeancountImportResult(
         batch_id=prepared.batch.batch_id,

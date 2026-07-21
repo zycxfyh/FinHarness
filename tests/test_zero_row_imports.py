@@ -25,7 +25,7 @@ from finharness.personal_finance import (
     PersonalFinanceExportError,
     ingest_personal_finance_export,
 )
-from finharness.statecore.import_models import ImportTombstone
+from finharness.statecore.import_models import ImportDomainHead, ImportTombstone
 from finharness.statecore.models import (
     ImportBatch,
     Liability,
@@ -458,7 +458,7 @@ class ZeroRowImportTargetTest(unittest.TestCase):
 
         captured = {}
 
-        def _patched(records, *, source, batch, manifest, artifact_store, engine):
+        def _patched(records, *, source, batch, manifest, artifact_store, engine, **_kwargs):
             captured.update(
                 {
                     "records": copy.deepcopy(list(records)),
@@ -658,6 +658,53 @@ class ZeroRowImportTargetTest(unittest.TestCase):
             with self.assertRaises(StateCoreStoreError):
                 writer([liab], engine=self.engine)
         self.assertEqual(len(list(read_all(Liability, engine=self.engine))), 0)
+
+
+    def test_generic_writes_cannot_forge_import_envelope_or_domain_head(self):
+        from finharness.statecore.store import upsert_records, write_records
+
+        records = [
+            ImportBatch(
+                batch_id="forged-batch",
+                source_kind="personal_finance_export",
+                source_id="/tmp/forged.csv",
+                coverage_mode="full",
+                source_sha256="0" * 64,
+                source_artifact_id="forged-source-artifact",
+                adapter_version="forged",
+                import_schema_version="forged",
+                contract_digest="forged",
+                covered_domains=["liability"],
+                completeness_status="complete",
+            ),
+            ReceiptManifest(
+                manifest_id="forged-manifest",
+                batch_id="forged-batch",
+                receipt_id="forged-receipt",
+                snapshot_id="forged-snapshot",
+                receipt_ref="forged.json",
+                receipt_sha256="0" * 64,
+                source_artifact_id="forged-source-artifact",
+                receipt_artifact_id="forged-receipt-artifact",
+                materialization_status="materialized",
+                materialized_at_utc=OBSERVED,
+            ),
+            ImportDomainHead(
+                domain_head_id="forged-head",
+                source_kind="personal_finance_export",
+                source_id="/tmp/forged.csv",
+                domain="liability",
+                batch_id="forged-batch",
+                manifest_id="forged-manifest",
+                materialized_at_utc=OBSERVED,
+            ),
+        ]
+        for writer in (write_records, upsert_records):
+            for record in records:
+                with self.assertRaisesRegex(
+                    StateCoreStoreError, "materialize_import_batch"
+                ):
+                    writer([record], engine=self.engine)
 
     def test_v15_migration_normalizes_unique_legacy_owner_then_full_n_to_zero(self):
         from finharness.statecore.store import migrate_state_core, source_owner_key
