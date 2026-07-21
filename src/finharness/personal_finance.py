@@ -43,6 +43,7 @@ from finharness.import_provenance import (
     ImportProvenanceError,
     build_import_tombstone,
     derive_import_batch_id,
+    derive_receipt_manifest_id,
     normalize_import_deletions,
     persist_source_evidence,
     prepare_import,
@@ -56,6 +57,7 @@ from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
+    instrument_identity_source_claims,
     unresolved_instrument_finding,
 )
 from finharness.statecore.import_identity import materialized_record_identities
@@ -85,6 +87,7 @@ from finharness.statecore.store import (
     materialize_import_batch,
     plan_full_import_deletions,
     recovery_materialization_options,
+    validated_current_projection_authority,
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
@@ -812,7 +815,10 @@ def _latest_source_positions(
             ).one_or_none()
             if head is None or head.batch_id != exclude_batch_id:
                 return None, []
-            current_manifest = session.get(ReceiptManifest, head.manifest_id)
+            authority = validated_current_projection_authority(session, head=head)
+            if authority is None:
+                return None, []
+            current_manifest = session.get(ReceiptManifest, authority.manifest_id)
             if current_manifest is None:
                 return None, []
             try:
@@ -939,6 +945,36 @@ def _identity_findings(rows: list[dict[str, str]]) -> list[ImportFinding]:
     return findings
 
 
+def _instrument_claims_for_records(
+    records: Sequence[StateCoreRecord],
+    *,
+    batch_id: str,
+    manifest_id: str,
+    receipt_id: str,
+    source_id: str,
+    source_artifact_id: str,
+    observed_at_utc: str,
+    source_refs: Sequence[str],
+) -> list[StateCoreRecord]:
+    return list(
+        instrument_identity_source_claims(
+            instrument_ids=(
+                record.instrument_id
+                for record in records
+                if isinstance(record, Position) and record.instrument_id is not None
+            ),
+            batch_id=batch_id,
+            manifest_id=manifest_id,
+            receipt_id=receipt_id,
+            source_kind=EXPORT_KIND,
+            source_id=source_id,
+            source_artifact_id=source_artifact_id,
+            observed_at_utc=observed_at_utc,
+            source_refs=source_refs,
+        )
+    )
+
+
 def ingest_personal_finance_export(
     export_path: str | Path,
     *,
@@ -954,6 +990,7 @@ def ingest_personal_finance_export(
     observed_at_utc: str | None = None,
     _recovery_replay: bool = False,
     _recovery_projection_domains: Sequence[str] | None = None,
+    _recovery_source_ref: str | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -962,6 +999,9 @@ def ingest_personal_finance_export(
     limits.
     """
     source_path = Path(export_path)
+    logical_source_path = (
+        Path(_recovery_source_ref) if _recovery_source_ref is not None else source_path
+    )
     if coverage_mode not in {"full", "delta"}:
         raise PersonalFinanceExportError("coverage_mode must be full or delta")
     rows = _read_rows(source_path)
@@ -999,7 +1039,7 @@ def ingest_personal_finance_export(
     )
     source_hash = _file_hash(source_path)
     source_content = source_path.read_bytes()
-    source_id = display_path(source_path)
+    source_id = display_path(logical_source_path)
     active_artifact_store = artifact_store or LocalArtifactStore(
         Path(receipt_root) / "artifact-store"
     )
@@ -1035,7 +1075,7 @@ def ingest_personal_finance_export(
     record_counts = _record_counts(rows)
     receipt_payload = _receipt_payload(
         receipt_id=receipt_id,
-        source_path=source_path,
+        source_path=logical_source_path,
         source_hash=source_hash,
         as_of_utc=as_of_utc,
         row_count=len(rows),
@@ -1043,13 +1083,13 @@ def ingest_personal_finance_export(
         record_counts=record_counts,
     )
     receipt_ref = display_path(receipt_path)
-    source_refs = [receipt_ref, display_path(source_path)]
+    source_refs = [receipt_ref, display_path(logical_source_path)]
     records = _records_from_rows(
         rows=rows,
         source_refs=source_refs,
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
-        source_path=source_path,
+        source_path=logical_source_path,
         source_id=source_id,
         covered_domains=resolved_covered_domains,
         time_semantics=time_semantics,
@@ -1079,7 +1119,7 @@ def ingest_personal_finance_export(
         time_semantics=time_semantics,
         coverage_mode=coverage_mode,
         rows=rows,
-        source_path=source_path,
+        source_path=logical_source_path,
     )
     # Materialized position counts include carried rows for delta receipts.
     final_position_count = sum(1 for record in records if isinstance(record, Position))
@@ -1119,10 +1159,22 @@ def ingest_personal_finance_export(
         created_at_utc=source_descriptor.created_at_utc,
         as_of_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
-        refs=[display_path(source_path)],
+        refs=[display_path(logical_source_path)],
     )
+    expected_manifest_id = derive_receipt_manifest_id(batch_id, receipt_id)
+    instrument_claims = _instrument_claims_for_records(
+        records,
+        batch_id=batch_id,
+        manifest_id=expected_manifest_id,
+        receipt_id=receipt_id,
+        source_id=source_id,
+        source_artifact_id=source_descriptor.artifact_id,
+        observed_at_utc=as_of_utc,
+        source_refs=source_refs,
+    )
+    materialized_records = [*records, *instrument_claims]
     expected_materialized_identities = materialized_record_identities(
-        [receipt_index, *records]
+        [receipt_index, *materialized_records], import_receipt_ref=receipt_ref
     )
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
@@ -1151,13 +1203,16 @@ def ingest_personal_finance_export(
             "unsupported_gap" if final_position_count else "not_applicable"
         ),
     )
-    if prepared.batch.batch_id != batch_id:
+    if (
+        prepared.batch.batch_id != batch_id
+        or prepared.manifest.manifest_id != expected_manifest_id
+    ):
         raise PersonalFinanceExportError(
-            "derived batch identity diverged from prepare_import batch_id"
+            "derived import envelope identity diverged before materialization"
         )
     deletion_records = _import_tombstones(batch=prepared.batch, deletions=tombstones)
     materialize_import_batch(
-        [receipt_index, *records, *deletion_records],
+        [receipt_index, *materialized_records, *deletion_records],
         source=EXPORT_KIND,
         batch=prepared.batch,
         manifest=prepared.manifest,

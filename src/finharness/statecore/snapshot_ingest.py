@@ -37,6 +37,7 @@ from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
+    instrument_identity_source_claims,
     unresolved_instrument_finding,
 )
 from finharness.statecore.import_identity import materialized_record_identities
@@ -585,6 +586,11 @@ def load_portfolio_payload_from_receipt(path: str | Path) -> dict[str, Any]:
 
 def _set_lineage_refs(records: list[StateCoreRecord], refs: list[str]) -> None:
     for record in records:
+        if isinstance(record, InstrumentIdentity) or (
+            isinstance(record, IdentityAlias)
+            and record.identity_kind == "instrument"
+        ):
+            continue
         if hasattr(record, "source_refs"):
             record.source_refs = list(refs)
 
@@ -598,6 +604,7 @@ def _ingest_broker_read_receipt_with_snapshot(
     snapshot_id: str | None = None,
     recovery_replay: bool = False,
     recovery_projection_domains: list[str] | None = None,
+    recovery_source_ref: str | None = None,
 ) -> tuple[BrokerReadImportResult, Snapshot]:
     target = Path(path)
     try:
@@ -606,7 +613,7 @@ def _ingest_broker_read_receipt_with_snapshot(
         raise StateCoreStoreError(f"portfolio receipt unreadable: {target}: {exc}") from exc
     source_sha256 = hashlib.sha256(source_content).hexdigest()
     payload = _payload_from_exact_bytes(target, source_content)
-    source_ref = _display_path(target)
+    source_ref = recovery_source_ref or _display_path(target)
     active_receipt_root = (
         Path(receipt_root)
         if receipt_root is not None
@@ -715,8 +722,24 @@ def _ingest_broker_read_receipt_with_snapshot(
         "import_receipt_ref": import_receipt_ref,
         "source_artifact_id": source_descriptor.artifact_id,
     }
+    instrument_claims = instrument_identity_source_claims(
+        instrument_ids=(
+            position.instrument_id
+            for position in positions
+            if position.instrument_id is not None
+        ),
+        batch_id=expected_batch_id,
+        manifest_id=expected_manifest_id,
+        receipt_id=import_receipt_id,
+        source_kind=BROKER_READ_SOURCE_KIND,
+        source_id=source_ref,
+        source_artifact_id=source_descriptor.artifact_id,
+        observed_at_utc=snapshot.as_of_utc,
+        source_refs=lineage_refs,
+    )
+    all_records.extend(instrument_claims)
     expected_materialized_identities = materialized_record_identities(
-        [receipt_index, *all_records]
+        [receipt_index, *all_records], import_receipt_ref=import_receipt_ref
     )
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,
@@ -790,6 +813,7 @@ def ingest_broker_read_receipt(
     snapshot_id: str | None = None,
     _recovery_replay: bool = False,
     _recovery_projection_domains: list[str] | None = None,
+    _recovery_source_ref: str | None = None,
 ) -> BrokerReadImportResult:
     """Materialize one broker-read receipt through the canonical import envelope."""
     result, _snapshot = _ingest_broker_read_receipt_with_snapshot(
@@ -800,6 +824,7 @@ def ingest_broker_read_receipt(
         snapshot_id=snapshot_id,
         recovery_replay=_recovery_replay,
         recovery_projection_domains=_recovery_projection_domains,
+        recovery_source_ref=_recovery_source_ref,
     )
     return result
 

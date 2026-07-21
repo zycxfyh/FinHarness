@@ -124,6 +124,7 @@ from finharness.statecore.personal_finance_models import (  # noqa: F401, E402
     FinancialGoal,
     IdentityAlias,
     InstrumentIdentity,
+    InstrumentIdentitySourceClaim,
     InsurancePolicy,
     Liability,
     Position,

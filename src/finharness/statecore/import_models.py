@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import CheckConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -83,6 +83,15 @@ class ImportDomainHead(StateCoreBase, table=True):
             "domain",
             name="uq_import_domain_heads_source_domain",
         ),
+        ForeignKeyConstraint(
+            ["manifest_id", "batch_id"],
+            ["receipt_manifests.manifest_id", "receipt_manifests.batch_id"],
+            name="fk_import_domain_heads_exact_manifest",
+        ),
+        CheckConstraint(
+            "head_revision >= 1",
+            name="ck_import_domain_heads_revision_positive",
+        ),
     )
 
     domain_head_id: str = Field(primary_key=True)
@@ -92,6 +101,7 @@ class ImportDomainHead(StateCoreBase, table=True):
     batch_id: str = Field(foreign_key="import_batches.batch_id", index=True)
     manifest_id: str = Field(foreign_key="receipt_manifests.manifest_id", index=True)
     materialized_at_utc: str
+    head_revision: int = 1
 
 
 class ImportTombstone(StateCoreBase, table=True):
@@ -127,6 +137,11 @@ class ReceiptManifest(StateCoreBase, table=True):
         ),
         UniqueConstraint("batch_id", name="uq_receipt_manifests_batch_id"),
         UniqueConstraint("receipt_id", name="uq_receipt_manifests_receipt_id"),
+        UniqueConstraint(
+            "manifest_id",
+            "batch_id",
+            name="uq_receipt_manifests_exact_batch",
+        ),
     )
 
     manifest_id: str = Field(primary_key=True)

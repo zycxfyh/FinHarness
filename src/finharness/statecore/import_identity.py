@@ -24,6 +24,7 @@ TABLE_DOMAINS: dict[str, str] = {
     "receipt_index": "receipt",
     "account_identities": "account",
     "instrument_identities": "position",
+    "instrument_identity_source_claims": "position",
     "identity_aliases": "identity",
     "accounts": "account",
     "snapshots": "snapshot",
@@ -44,7 +45,12 @@ OWNER_SCOPED_TABLES: dict[str, str] = {
     "document_refs": "document",
 }
 HISTORICAL_REPLAY_ALLOWED_TABLES = frozenset(
-    {"receipt_index", "snapshots", "positions"}
+    {
+        "instrument_identity_source_claims",
+        "receipt_index",
+        "snapshots",
+        "positions",
+    }
 )
 CURRENT_REPLAY_TABLE_DOMAINS: dict[str, frozenset[str]] = {
     "account_identities": frozenset({"account", "position"}),
@@ -101,37 +107,60 @@ def _canonical_value(value: Any) -> Any:
 
 
 
-def _stable_receipt_reference(value: str) -> str:
-    name = Path(value).name
-    if name.startswith("receipt_") and name.endswith(".json"):
-        return f"receipt://{name[:-5]}"
-    return value
+@dataclass(frozen=True)
+class MaterializedCommitmentContext:
+    """Field-aware semantic references used by row-content commitments."""
+
+    import_receipt_ref: str | None = None
 
 
-def _normalize_lineage_value(key: str, value: Any) -> Any:
+def _semantic_receipt_reference(value: str, context: MaterializedCommitmentContext) -> str:
+    if context.import_receipt_ref is None or value != context.import_receipt_ref:
+        return value
+    return f"receipt://{Path(value).stem}"
+
+
+def _normalize_lineage_value(
+    key: str,
+    value: Any,
+    *,
+    context: MaterializedCommitmentContext,
+) -> Any:
     if key == "import_receipt_ref" and isinstance(value, str):
-        return _stable_receipt_reference(value)
+        return _semantic_receipt_reference(value, context)
     if key == "source_refs" and isinstance(value, list):
         return [
-            _stable_receipt_reference(item) if isinstance(item, str) else item
+            _semantic_receipt_reference(item, context)
+            if isinstance(item, str)
+            else item
             for item in value
         ]
     if isinstance(value, Mapping):
         return {
-            str(child_key): _normalize_lineage_value(str(child_key), child_value)
+            str(child_key): _normalize_lineage_value(
+                str(child_key), child_value, context=context
+            )
             for child_key, child_value in value.items()
         }
     if isinstance(value, list):
-        return [_normalize_lineage_value("", item) for item in value]
+        return [
+            _normalize_lineage_value("", item, context=context) for item in value
+        ]
     return value
 
 
-def _content_commitment_payload(table_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _content_commitment_payload(
+    table_name: str,
+    payload: dict[str, Any],
+    *,
+    context: MaterializedCommitmentContext,
+) -> dict[str, Any]:
     normalized = {
-        key: _normalize_lineage_value(key, value) for key, value in payload.items()
+        key: _normalize_lineage_value(key, value, context=context)
+        for key, value in payload.items()
     }
     if table_name == "receipt_index" and isinstance(normalized.get("path"), str):
-        normalized["path"] = _stable_receipt_reference(normalized["path"])
+        normalized["path"] = _semantic_receipt_reference(normalized["path"], context)
     return normalized
 
 def _content_digest(payload: Mapping[str, Any]) -> str:
@@ -144,23 +173,31 @@ def _content_digest(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _record_content_payload(record: Any) -> dict[str, Any]:
+def _record_content_payload(
+    record: Any, *, context: MaterializedCommitmentContext
+) -> dict[str, Any]:
     table = getattr(record.__class__, "__table__", None)
     if table is None:
         raise MaterializedRecordIdentityError(
             f"materialized record {record.__class__.__name__} has no table"
         )
     payload = {column.name: getattr(record, column.name) for column in table.columns}
-    return _content_commitment_payload(table.name, payload)
+    return _content_commitment_payload(table.name, payload, context=context)
 
 
-def _row_content_digest(table_name: str, row: Any) -> str:
+def _row_content_digest(
+    table_name: str, row: Any, *, context: MaterializedCommitmentContext
+) -> str:
     table = SQLModel.metadata.tables[table_name]
     payload = {column.name: row[column.name] for column in table.columns}
-    return _content_digest(_content_commitment_payload(table_name, payload))
+    return _content_digest(
+        _content_commitment_payload(table_name, payload, context=context)
+    )
 
 
-def materialized_record_identity(record: Any) -> dict[str, str] | None:
+def materialized_record_identity(
+    record: Any, *, import_receipt_ref: str | None = None
+) -> dict[str, str] | None:
     """Return deterministic identity and content commitment for one materialized row."""
     table = getattr(record.__class__, "__table__", None)
     if table is None or table.name not in TABLE_DOMAINS:
@@ -183,19 +220,35 @@ def materialized_record_identity(record: Any) -> dict[str, str] | None:
         "record_id": record_id,
         "domain": TABLE_DOMAINS[table.name],
         "content_schema": MATERIALIZED_RECORD_CONTENT_SCHEMA,
-        "content_sha256": _content_digest(_record_content_payload(record)),
+        "content_sha256": _content_digest(
+            _record_content_payload(
+                record,
+                context=MaterializedCommitmentContext(
+                    import_receipt_ref=import_receipt_ref
+                ),
+            )
+        ),
     }
     if table.name == "positions":
         identity["scope_id"] = str(getattr(record, "snapshot_id", "") or "")
     return identity
 
 
-def materialized_record_identities(records: Iterable[Any]) -> list[dict[str, str]]:
+def materialized_record_identities(
+    records: Iterable[Any],
+    *,
+    import_receipt_ref: str | None = None,
+) -> list[dict[str, str]]:
     """Freeze exact row identities and canonical persisted content commitments."""
     identities = [
         identity
         for record in records
-        if (identity := materialized_record_identity(record)) is not None
+        if (
+            identity := materialized_record_identity(
+                record, import_receipt_ref=import_receipt_ref
+            )
+        )
+        is not None
     ]
     identities.sort(key=_identity_sort_key)
     keys = {(item["table"], item["record_id"]) for item in identities}
@@ -280,6 +333,7 @@ def audit_materialized_record_identities(  # noqa: C901
     source_id: str,
     expected: Sequence[Mapping[str, Any]],
     current_domains: set[str],
+    import_receipt_ref: str | None = None,
 ) -> list[MaterializedIdentityMismatch]:
     """Compare receipt-bound identity/content proof with the queryable mirror."""
     normalized = normalize_materialized_record_identities(expected)
@@ -315,7 +369,13 @@ def audit_materialized_record_identities(  # noqa: C901
                     f"materialized row owner mismatch: {table_name}:{record_id}",
                 )
             )
-        actual_digest = _row_content_digest(table_name, row)
+        actual_digest = _row_content_digest(
+            table_name,
+            row,
+            context=MaterializedCommitmentContext(
+                import_receipt_ref=import_receipt_ref
+            ),
+        )
         if actual_digest != identity["content_sha256"]:
             findings.append(
                 MaterializedIdentityMismatch(

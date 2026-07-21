@@ -7,11 +7,12 @@ import json
 import os
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Connection, Engine, delete, event, inspect, text
+from sqlalchemy import Connection, Engine, MetaData, Table, delete, event, inspect, text
 from sqlalchemy import select as sa_select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, SQLModel, col, create_engine, select
@@ -66,6 +67,7 @@ from finharness.statecore.models import (
     ImportDomainHead,
     ImportTombstone,
     InstrumentIdentity,
+    InstrumentIdentitySourceClaim,
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
@@ -109,6 +111,7 @@ StateCoreRecord = (
     | InsurancePolicy
     | IdentityAlias
     | InstrumentIdentity
+    | InstrumentIdentitySourceClaim
     | DocumentRef
     | PaperAccount
     | PaperExecutionReceipt
@@ -235,7 +238,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 16
+CURRENT_STATE_CORE_USER_VERSION = 17
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -671,17 +674,40 @@ def import_domain_head_id(source_kind: str, source_id: str, domain: str) -> str:
 
 
 def _migrate_add_import_domain_heads(connection: Connection) -> None:
-    """Migration 16: establish explicit domain heads only when history is unambiguous."""
-    table = SQLModel.metadata.tables["import_domain_heads"]
-    table.create(connection, checkfirst=True)
+    """Migration 16: establish heads only when total history is unambiguous."""
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
+    if "import_domain_heads" not in tables:
+        connection.exec_driver_sql(
+            "CREATE TABLE import_domain_heads ("
+            "schema_version VARCHAR NOT NULL, "
+            "as_of_utc VARCHAR NOT NULL, "
+            "authority_level VARCHAR NOT NULL, "
+            "domain_head_id VARCHAR PRIMARY KEY, "
+            "source_kind VARCHAR NOT NULL, source_id VARCHAR NOT NULL, "
+            "domain VARCHAR NOT NULL, batch_id VARCHAR NOT NULL, "
+            "manifest_id VARCHAR NOT NULL, materialized_at_utc VARCHAR NOT NULL, "
+            "FOREIGN KEY(batch_id) REFERENCES import_batches(batch_id), "
+            "FOREIGN KEY(manifest_id) REFERENCES receipt_manifests(manifest_id), "
+            "UNIQUE(source_kind, source_id, domain))"
+        )
+        tables.add("import_domain_heads")
     if not {"import_batches", "receipt_manifests"} <= tables:
         return
+    inspector = inspect(connection)
+    head_columns = {
+        column["name"] for column in inspector.get_columns("import_domain_heads")
+    }
+    reflected_head_table = Table(
+        "import_domain_heads", MetaData(), autoload_with=connection
+    )
     existing = {
         (str(row.source_kind), str(row.source_id), str(row.domain))
         for row in connection.execute(
-            select(table.c.source_kind, table.c.source_id, table.c.domain)
+            text(
+                "SELECT source_kind, source_id, domain "
+                "FROM import_domain_heads"
+            )
         ).all()
     }
     candidates: dict[tuple[str, str, str], list[dict[str, str]]] = {}
@@ -712,24 +738,137 @@ def _migrate_add_import_domain_heads(connection: Connection) -> None:
                 }
             )
     for (source_kind, source_id, domain), items in candidates.items():
-        if (source_kind, source_id, domain) in existing:
+        if (source_kind, source_id, domain) in existing or len(items) != 1:
             continue
-        latest_at = max(item["materialized_at_utc"] for item in items)
-        latest = [item for item in items if item["materialized_at_utc"] == latest_at]
-        if len(latest) != 1:
-            continue
-        item = latest[0]
-        connection.execute(
-            table.insert().values(
-                domain_head_id=import_domain_head_id(source_kind, source_id, domain),
-                source_kind=source_kind,
-                source_id=source_id,
-                domain=domain,
-                batch_id=item["batch_id"],
-                manifest_id=item["manifest_id"],
-                materialized_at_utc=item["materialized_at_utc"],
-            )
+        item = items[0]
+        values: dict[str, object] = {
+            "schema_version": "finharness.state_core.v1",
+            "as_of_utc": item["materialized_at_utc"],
+            "authority_level": "read_only",
+            "domain_head_id": import_domain_head_id(source_kind, source_id, domain),
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "domain": domain,
+            "batch_id": item["batch_id"],
+            "manifest_id": item["manifest_id"],
+            "materialized_at_utc": item["materialized_at_utc"],
+        }
+        if "head_revision" in head_columns:
+            values["head_revision"] = 1
+        connection.execute(reflected_head_table.insert(), values)
+
+
+def _import_domain_head_contract_is_current(connection: Connection) -> bool:
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    if "receipt_manifests" not in tables or "import_domain_heads" not in tables:
+        return False
+    head_columns = {
+        column["name"] for column in inspector.get_columns("import_domain_heads")
+    }
+    manifest_constraints = {
+        tuple(item["column_names"])
+        for item in inspector.get_unique_constraints("receipt_manifests")
+    }
+    head_foreign_keys = {
+        (
+            tuple(item.get("constrained_columns") or ()),
+            tuple(item.get("referred_columns") or ()),
         )
+        for item in inspector.get_foreign_keys("import_domain_heads")
+    }
+    claim_foreign_keys = (
+        {
+            (
+                tuple(item.get("constrained_columns") or ()),
+                tuple(item.get("referred_columns") or ()),
+            )
+            for item in inspector.get_foreign_keys(
+                "instrument_identity_source_claims"
+            )
+        }
+        if "instrument_identity_source_claims" in tables
+        else set()
+    )
+    exact_binding = (
+        ("manifest_id", "batch_id"),
+        ("manifest_id", "batch_id"),
+    )
+    return (
+        "head_revision" in head_columns
+        and ("manifest_id", "batch_id") in manifest_constraints
+        and exact_binding in head_foreign_keys
+        and (
+            "instrument_identity_source_claims" not in tables
+            or exact_binding in claim_foreign_keys
+        )
+    )
+
+
+def _migrate_add_instrument_identity_source_claims(connection: Connection) -> None:
+    """Migration 17: exact heads plus append-only instrument provenance."""
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    if not _import_domain_head_contract_is_current(connection):
+        head_rows = (
+            [
+                dict(row)
+                for row in connection.execute(
+                    text("SELECT * FROM import_domain_heads")
+                ).mappings()
+            ]
+            if "import_domain_heads" in tables
+            else []
+        )
+        manifest_rows = (
+            [
+                dict(row)
+                for row in connection.execute(
+                    text("SELECT * FROM receipt_manifests")
+                ).mappings()
+            ]
+            if "receipt_manifests" in tables
+            else []
+        )
+        if "instrument_identity_source_claims" in tables:
+            connection.execute(text("DROP TABLE instrument_identity_source_claims"))
+        if "import_domain_heads" in tables:
+            connection.execute(text("DROP TABLE import_domain_heads"))
+        if "receipt_manifests" in tables:
+            connection.execute(text("DROP TABLE receipt_manifests"))
+        manifest_table = SQLModel.metadata.tables["receipt_manifests"]
+        manifest_table.create(connection)
+        if manifest_rows:
+            connection.execute(manifest_table.insert(), manifest_rows)
+        head_table = SQLModel.metadata.tables["import_domain_heads"]
+        head_table.create(connection)
+        if head_rows:
+            current_columns = set(head_table.columns.keys())
+            projected_heads: list[dict[str, Any]] = []
+            for row in head_rows:
+                projected = {
+                    key: value for key, value in row.items() if key in current_columns
+                }
+                projected["head_revision"] = int(row.get("head_revision") or 1)
+                projected_heads.append(projected)
+            connection.execute(head_table.insert(), projected_heads)
+    SQLModel.metadata.tables["instrument_identity_source_claims"].create(
+        connection, checkfirst=True
+    )
+    binding_violations = [
+        *connection.exec_driver_sql(
+            "PRAGMA foreign_key_check(import_domain_heads)"
+        ).all(),
+        *connection.exec_driver_sql(
+            "PRAGMA foreign_key_check(instrument_identity_source_claims)"
+        ).all(),
+    ]
+    if binding_violations:
+        raise StateCoreStoreError(
+            "state-core v17 migration found invalid exact import bindings: "
+            f"{sorted(tuple(row) for row in binding_violations)}"
+        )
+
 
 def _migrate_add_canonical_identities(connection: Connection) -> None:
     """Add nullable identity bindings without inventing identity for legacy rows."""
@@ -851,6 +990,7 @@ def migrate_state_core(engine: Engine) -> None:
         (14, _rebuild_import_batches_unique),
         (15, _migrate_normalize_legacy_source_ownership),
         (16, _migrate_add_import_domain_heads),
+        (17, _migrate_add_instrument_identity_source_claims),
     )
     try:
         with engine.connect() as connection:
@@ -861,7 +1001,7 @@ def migrate_state_core(engine: Engine) -> None:
             for version, step in migrations:
                 if version <= current:
                     continue
-                if version in {10, 14}:
+                if version in {10, 14, 17}:
                     _run_foreign_key_parent_migration(
                         connection,
                         version=version,
@@ -1015,7 +1155,13 @@ def _reject_unmanifested_production_import(records: Sequence[StateCoreRecord]) -
     for record in records:
         if isinstance(
             record,
-            (ImportBatch, ImportDomainHead, ImportTombstone, ReceiptManifest),
+            (
+                ImportBatch,
+                ImportDomainHead,
+                ImportTombstone,
+                InstrumentIdentitySourceClaim,
+                ReceiptManifest,
+            ),
         ):
             raise StateCoreStoreError(
                 "capital import envelope records require materialize_import_batch"
@@ -1173,13 +1319,15 @@ def _validate_materialized_identity_contract(
     records: Sequence[StateCoreRecord],
     *,
     receipt_payload: Mapping[str, Any],
+    import_receipt_ref: str,
 ) -> None:
     try:
         expected_identities = normalize_materialized_record_identities(
             receipt_payload.get(MATERIALIZED_RECORD_IDENTITIES_FIELD)
         )
         actual_identities = materialized_record_identities(
-            record for record in records if not isinstance(record, ImportTombstone)
+            (record for record in records if not isinstance(record, ImportTombstone)),
+            import_receipt_ref=import_receipt_ref,
         )
     except MaterializedRecordIdentityError as exc:
         raise StateCoreStoreError(str(exc)) from exc
@@ -1320,6 +1468,89 @@ def _deletion_spec_key(item: Mapping[str, str]) -> tuple[str, str, str]:
     return (item["record_type"], item["record_id"], item["reason"])
 
 
+@dataclass(frozen=True)
+class CurrentProjectionAuthority:
+    """Validated exact current-projection authority for one source domain."""
+
+    source_kind: str
+    source_id: str
+    domain: str
+    batch_id: str
+    manifest_id: str
+    domain_head_id: str
+    materialized_at_utc: str
+    head_revision: int
+
+
+def validated_current_projection_authority(
+    session: Session,
+    *,
+    head: ImportDomainHead,
+    expected_batch: ImportBatch | None = None,
+) -> CurrentProjectionAuthority | None:
+    """Validate the complete persisted head/batch/manifest binding."""
+    if head.head_revision < 1:
+        return None
+    if head.domain_head_id != import_domain_head_id(
+        head.source_kind, head.source_id, head.domain
+    ):
+        return None
+    batch = session.get(ImportBatch, head.batch_id)
+    manifest = session.get(ReceiptManifest, head.manifest_id)
+    if batch is None or manifest is None:
+        return None
+    if expected_batch is not None and (
+        batch.batch_id != expected_batch.batch_id
+        or batch.source_kind != expected_batch.source_kind
+        or batch.source_id != expected_batch.source_id
+    ):
+        return None
+    if (
+        manifest.batch_id != batch.batch_id
+        or batch.source_kind != head.source_kind
+        or batch.source_id != head.source_id
+        or head.domain not in batch.covered_domains
+        or head.materialized_at_utc != manifest.materialized_at_utc
+    ):
+        return None
+    return CurrentProjectionAuthority(
+        source_kind=head.source_kind,
+        source_id=head.source_id,
+        domain=head.domain,
+        batch_id=head.batch_id,
+        manifest_id=head.manifest_id,
+        domain_head_id=head.domain_head_id,
+        materialized_at_utc=head.materialized_at_utc,
+        head_revision=head.head_revision,
+    )
+
+
+def validated_current_projection_authorities(
+    session: Session,
+    *,
+    batch: ImportBatch,
+) -> tuple[CurrentProjectionAuthority, ...]:
+    """Return only strictly validated authorities naming one exact batch."""
+    heads = session.exec(
+        select(ImportDomainHead).where(
+            ImportDomainHead.source_kind == batch.source_kind,
+            ImportDomainHead.source_id == batch.source_id,
+            ImportDomainHead.batch_id == batch.batch_id,
+        )
+    ).all()
+    authorities = [
+        authority
+        for head in heads
+        if (
+            authority := validated_current_projection_authority(
+                session, head=head, expected_batch=batch
+            )
+        )
+        is not None
+    ]
+    return tuple(sorted(authorities, key=lambda item: item.domain))
+
+
 def latest_source_manifest_for_domain(
     session: Session,
     *,
@@ -1328,7 +1559,7 @@ def latest_source_manifest_for_domain(
     domain: str,
     exclude_batch_id: str,
 ) -> ReceiptManifest | None:
-    """Return the explicit current manifest for one source-owned domain."""
+    """Return the strictly validated current manifest for one source domain."""
     head = session.exec(
         select(ImportDomainHead).where(
             ImportDomainHead.source_kind == source_kind,
@@ -1338,7 +1569,10 @@ def latest_source_manifest_for_domain(
     ).one_or_none()
     if head is None or head.batch_id == exclude_batch_id:
         return None
-    return session.get(ReceiptManifest, head.manifest_id)
+    authority = validated_current_projection_authority(session, head=head)
+    if authority is None:
+        return None
+    return session.get(ReceiptManifest, authority.manifest_id)
 
 
 def current_source_domains_for_batch(
@@ -1346,15 +1580,11 @@ def current_source_domains_for_batch(
     *,
     batch: ImportBatch,
 ) -> set[str]:
-    """Return domains whose atomic current pointer names this exact batch."""
-    heads = session.exec(
-        select(ImportDomainHead).where(
-            ImportDomainHead.source_kind == batch.source_kind,
-            ImportDomainHead.source_id == batch.source_id,
-            ImportDomainHead.batch_id == batch.batch_id,
-        )
-    ).all()
-    return {head.domain for head in heads if head.domain in batch.covered_domains}
+    """Compatibility wrapper over strict current-projection authorities."""
+    return {
+        authority.domain
+        for authority in validated_current_projection_authorities(session, batch=batch)
+    }
 
 
 def _previous_source_snapshot(
@@ -1682,6 +1912,7 @@ def _existing_import_stops_materialization(
     batch: ImportBatch,
     expected_tombstones: Sequence[ImportTombstone],
     receipt_payload: Mapping[str, Any],
+    manifest: ReceiptManifest,
 ) -> bool:
     """Validate existing mirrors and decide whether an ordinary retry stops."""
     if disposition is ImportMaterializationDisposition.NEW:
@@ -1705,6 +1936,20 @@ def _existing_import_stops_materialization(
             "materialized mirror"
         )
     if disposition is ImportMaterializationDisposition.IDEMPOTENT_RETRY:
+        raw_heads = session.exec(
+            select(ImportDomainHead).where(
+                ImportDomainHead.source_kind == batch.source_kind,
+                ImportDomainHead.source_id == batch.source_id,
+                ImportDomainHead.batch_id == batch.batch_id,
+            )
+        ).all()
+        valid_authorities = validated_current_projection_authorities(
+            session, batch=batch
+        )
+        if len(valid_authorities) != len(raw_heads):
+            raise StateCoreStoreError(
+                "import recovery required: current domain head is invalid"
+            )
         try:
             expected_identities = normalize_materialized_record_identities(
                 receipt_payload.get(MATERIALIZED_RECORD_IDENTITIES_FIELD)
@@ -1713,12 +1958,18 @@ def _existing_import_stops_materialization(
             raise StateCoreStoreError(
                 "import recovery required: materialized identity proof is invalid"
             ) from exc
+        persisted_manifest = session.get(ReceiptManifest, manifest.manifest_id)
+        if persisted_manifest is None:
+            raise StateCoreStoreError(
+                "import recovery required: persisted receipt manifest is missing"
+            )
         mismatches = audit_materialized_record_identities(
             session,
             source_kind=batch.source_kind,
             source_id=batch.source_id,
             expected=expected_identities,
             current_domains=current_source_domains_for_batch(session, batch=batch),
+            import_receipt_ref=persisted_manifest.receipt_ref,
         )
         if mismatches:
             raise StateCoreStoreError(
@@ -1758,6 +2009,41 @@ def _delete_covered_source_records(
     for model, _id_field, _table, domain in _SOURCE_OWNED_MODELS:
         if domain in covered_domains:
             session.execute(delete(model).where(col(model.source) == source))
+
+
+def _domain_head_for_materialization(
+    session: Session,
+    *,
+    batch: ImportBatch,
+    manifest: ReceiptManifest,
+    domain: str,
+) -> ImportDomainHead:
+    domain_head_id = import_domain_head_id(
+        batch.source_kind, batch.source_id, domain
+    )
+    existing = session.get(ImportDomainHead, domain_head_id)
+    if existing is None:
+        revision = 1
+    elif (
+        existing.batch_id == batch.batch_id
+        and existing.manifest_id == manifest.manifest_id
+        and existing.materialized_at_utc == manifest.materialized_at_utc
+    ):
+        revision = existing.head_revision
+    else:
+        revision = existing.head_revision + 1
+    return ImportDomainHead(
+        domain_head_id=domain_head_id,
+        source_kind=batch.source_kind,
+        source_id=batch.source_id,
+        domain=domain,
+        batch_id=batch.batch_id,
+        manifest_id=manifest.manifest_id,
+        materialized_at_utc=manifest.materialized_at_utc,
+        head_revision=revision,
+        as_of_utc=manifest.materialized_at_utc,
+        authority_level="read_only",
+    )
 
 
 def materialize_import_batch(  # noqa: C901
@@ -1817,11 +2103,20 @@ def materialize_import_batch(  # noqa: C901
     _validate_materialized_identity_contract(
         materialized,
         receipt_payload=receipt_payload,
+        import_receipt_ref=manifest.receipt_ref,
     )
     saved: list[StateCoreRecord] = []
     try:
         with Session(engine) as session:
             with session.begin():
+                if recovery_projection_domains is not None:
+                    persisted_domains = current_source_domains_for_batch(
+                        session, batch=batch
+                    )
+                    if projection_domains != persisted_domains:
+                        raise StateCoreStoreError(
+                            "recovery authority changed before materialization commit"
+                        )
                 explicit_tombstones = [
                     record for record in materialized if isinstance(record, ImportTombstone)
                 ]
@@ -1899,6 +2194,7 @@ def materialize_import_batch(  # noqa: C901
                     batch=batch,
                     expected_tombstones=all_tombstones,
                     receipt_payload=receipt_payload,
+                    manifest=manifest,
                 ):
                     return materialized
                 if batch.coverage_mode == "full" and projection_domains:
@@ -1948,6 +2244,15 @@ def materialize_import_batch(  # noqa: C901
                                 )
                                 if not account_exists or not instrument_exists:
                                     continue
+                            if (
+                                isinstance(candidate, InstrumentIdentitySourceClaim)
+                                and not projection_domains
+                                and session.get(
+                                    InstrumentIdentity, candidate.instrument_id
+                                )
+                                is None
+                            ):
+                                continue
                             filtered_records.append(candidate)
                             continue
                         required_domains = CURRENT_REPLAY_TABLE_DOMAINS.get(table_name)
@@ -1955,29 +2260,45 @@ def materialize_import_batch(  # noqa: C901
                             filtered_records.append(candidate)
                     non_tombstone_records = filtered_records
                 domain_heads = [
-                    ImportDomainHead(
-                        domain_head_id=import_domain_head_id(
-                            batch.source_kind, batch.source_id, domain
-                        ),
-                        source_kind=batch.source_kind,
-                        source_id=batch.source_id,
+                    _domain_head_for_materialization(
+                        session,
+                        batch=batch,
+                        manifest=manifest,
                         domain=domain,
-                        batch_id=batch.batch_id,
-                        manifest_id=manifest.manifest_id,
-                        materialized_at_utc=manifest.materialized_at_utc,
-                        as_of_utc=manifest.materialized_at_utc,
-                        authority_level="read_only",
                     )
                     for domain in sorted(projection_domains)
                 ]
-                records_to_merge: list[StateCoreRecord] = [
-                    batch,
-                    manifest,
+                envelope_records: list[StateCoreRecord] = [batch, manifest]
+                for candidate in envelope_records:
+                    _reject_alias_retarget(session, candidate)
+                    saved.append(session.merge(candidate))
+                session.flush()
+
+                source_claims = [
+                    candidate
+                    for candidate in non_tombstone_records
+                    if isinstance(candidate, InstrumentIdentitySourceClaim)
+                ]
+                projection_records = [
+                    candidate
+                    for candidate in non_tombstone_records
+                    if not isinstance(candidate, InstrumentIdentitySourceClaim)
+                ]
+                for candidate in projection_records:
+                    _reject_alias_retarget(session, candidate)
+                    saved.append(session.merge(candidate))
+                session.flush()
+
+                for candidate in source_claims:
+                    _reject_alias_retarget(session, candidate)
+                    saved.append(session.merge(candidate))
+                session.flush()
+
+                tail_records: list[StateCoreRecord] = [
                     *domain_heads,
-                    *non_tombstone_records,
                     *tombstones_by_id.values(),
                 ]
-                for candidate in records_to_merge:
+                for candidate in tail_records:
                     _reject_alias_retarget(session, candidate)
                     saved.append(session.merge(candidate))
                 session.flush()

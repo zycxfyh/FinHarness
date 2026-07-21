@@ -13,7 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.model_base import (
@@ -123,6 +123,37 @@ class InstrumentIdentity(StateCoreBase, table=True):
     venue: str
     quote_currency: str
     identity_version: str = "finharness.instrument_identity.v0"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+
+
+class InstrumentIdentitySourceClaim(StateCoreBase, table=True):
+    """Append-only receipt-specific provenance for one canonical instrument."""
+
+    __tablename__ = "instrument_identity_source_claims"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_id",
+            "batch_id",
+            name="uq_instrument_identity_source_claim_batch",
+        ),
+        ForeignKeyConstraint(
+            ["manifest_id", "batch_id"],
+            ["receipt_manifests.manifest_id", "receipt_manifests.batch_id"],
+            name="fk_instrument_identity_source_claim_exact_manifest",
+        ),
+    )
+
+    claim_id: str = Field(primary_key=True)
+    instrument_id: str = Field(
+        foreign_key="instrument_identities.instrument_id", index=True
+    )
+    batch_id: str = Field(foreign_key="import_batches.batch_id", index=True)
+    manifest_id: str = Field(foreign_key="receipt_manifests.manifest_id", index=True)
+    receipt_id: str = Field(index=True)
+    source_kind: str = Field(index=True)
+    source_id: str
+    source_artifact_id: str
+    observed_at_utc: str
     source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
 
 

@@ -13,10 +13,14 @@ from finharness.statecore.models import (
     AccountIdentity,
     IdentityAlias,
     InstrumentIdentity,
+    InstrumentIdentitySourceClaim,
     Position,
 )
 
 IdentityKind = Literal["account", "instrument"]
+
+CANONICAL_INSTRUMENT_AS_OF_UTC = "1970-01-01T00:00:00+00:00"
+
 
 
 class IdentityContractError(ValueError):
@@ -104,23 +108,24 @@ def instrument_identity(
         normalized_venue,
         normalized_currency,
     )
-    identity_kwargs = {"as_of_utc": as_of_utc} if as_of_utc is not None else {}
     identity = InstrumentIdentity(
         instrument_id=instrument_id,
         symbol=normalized_symbol,
         instrument_type=normalized_type,
         venue=normalized_venue,
         quote_currency=normalized_currency,
-        source_refs=sorted(set(source_refs)),
-        **identity_kwargs,
+        as_of_utc=CANONICAL_INSTRUMENT_AS_OF_UTC,
+        source_refs=[],
     )
+    # Instrument aliases are canonical provider mappings. Receipt-specific
+    # evidence belongs to InstrumentIdentitySourceClaim, not this shared row.
     alias = identity_alias(
         identity_kind="instrument",
         provider_namespace=provider_namespace,
         provider_alias=provider_alias or symbol,
         canonical_id=instrument_id,
-        source_refs=source_refs,
-        as_of_utc=as_of_utc,
+        source_refs=(),
+        as_of_utc=CANONICAL_INSTRUMENT_AS_OF_UTC,
     )
     return identity, alias
 
@@ -203,3 +208,44 @@ def cross_account_duplicate_findings(
             )
         )
     return tuple(findings)
+
+
+def instrument_identity_source_claims(
+    *,
+    instrument_ids: Iterable[str],
+    batch_id: str,
+    manifest_id: str,
+    receipt_id: str,
+    source_kind: str,
+    source_id: str,
+    source_artifact_id: str,
+    observed_at_utc: str,
+    source_refs: Sequence[str],
+) -> list[InstrumentIdentitySourceClaim]:
+    """Build deterministic receipt-specific claims for canonical instruments."""
+    claims: list[InstrumentIdentitySourceClaim] = []
+    for instrument_id in sorted({value for value in instrument_ids if value}):
+        claim_id = _id(
+            "instrument_claim",
+            instrument_id,
+            batch_id,
+            receipt_id,
+            source_artifact_id,
+        )
+        claims.append(
+            InstrumentIdentitySourceClaim(
+                claim_id=claim_id,
+                instrument_id=instrument_id,
+                batch_id=batch_id,
+                manifest_id=manifest_id,
+                receipt_id=receipt_id,
+                source_kind=source_kind,
+                source_id=source_id,
+                source_artifact_id=source_artifact_id,
+                observed_at_utc=observed_at_utc,
+                as_of_utc=observed_at_utc,
+                authority_level="read_only",
+                source_refs=sorted(set(source_refs)),
+            )
+        )
+    return claims

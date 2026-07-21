@@ -7,8 +7,11 @@ import base64
 import binascii
 import hashlib
 import json
+import os
+import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -30,6 +33,7 @@ from finharness.capital_import_registry import (
     materialized_source_for,
 )
 from finharness.import_provenance import (
+    IMPORT_MANIFEST_SCHEMA_VERSION,
     RECEIPT_ARTIFACT_SCHEMA,
     ImportProvenanceError,
     build_import_tombstone,
@@ -54,6 +58,7 @@ from finharness.statecore.models import (
 from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_json, resolve_under
 from finharness.statecore.store import (
     current_source_domains_for_batch,
+    validated_current_projection_authority,
 )
 
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
@@ -64,6 +69,27 @@ PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES)
 
 class CapitalImportRecoveryError(RuntimeError):
     """Raised when a requested repair cannot be applied without guessing."""
+
+
+class ReplayUnavailableError(CapitalImportRecoveryError):
+    """Raised when immutable replay evidence is unavailable or unsupported."""
+
+
+class ReplayValidationError(CapitalImportRecoveryError):
+    """Raised when immutable replay evidence fails validation."""
+
+
+class ReplaySourceIntegrityError(CapitalImportRecoveryError):
+    """Critical failure that may have affected a user-owned source path."""
+
+    def __init__(self, message: str, *, affected_paths: tuple[str, ...] = ()) -> None:
+        detail = (
+            f"{message}; affected_paths={list(affected_paths)}"
+            if affected_paths
+            else message
+        )
+        super().__init__(detail)
+        self.affected_paths = affected_paths
 
 
 class CapitalImportFinding(BaseModel):
@@ -130,6 +156,7 @@ def _finding(
     recoverable: bool,
     recovery_action: str,
     message: str | None = None,
+    blocks_verified_state: bool = True,
 ) -> CapitalImportFinding:
     return CapitalImportFinding(
         code=code,
@@ -140,6 +167,7 @@ def _finding(
         message=message or code.replace("_", " "),
         recoverable=recoverable,
         recovery_action=recovery_action,
+        blocks_verified_state=blocks_verified_state,
     )
 
 
@@ -453,6 +481,7 @@ def _audit_materialized_record_mirror(
         source_id=batch.source_id,
         expected=expected,
         current_domains=current_domains,
+        import_receipt_ref=manifest.receipt_ref,
     )
     return [
         _finding(
@@ -583,34 +612,14 @@ def _domain_head_candidates(
 
 
 
-def _domain_head_is_structurally_valid(
-    head: ImportDomainHead,
-    *,
-    batches_by_id: dict[str, ImportBatch],
-    manifests_by_id: dict[str, ReceiptManifest],
-) -> bool:
-    batch = batches_by_id.get(head.batch_id)
-    manifest = manifests_by_id.get(head.manifest_id)
-    return (
-        batch is not None
-        and manifest is not None
-        and manifest.batch_id == head.batch_id
-        and batch.source_kind == head.source_kind
-        and batch.source_id == head.source_id
-        and head.domain in batch.covered_domains
-        and head.materialized_at_utc == manifest.materialized_at_utc
-    )
-
-
 def _audit_import_domain_heads(
     *,
+    session: Session,
     heads: list[ImportDomainHead],
     batches: list[ImportBatch],
     manifests: list[ReceiptManifest],
 ) -> list[CapitalImportFinding]:
     findings: list[CapitalImportFinding] = []
-    batches_by_id = {batch.batch_id: batch for batch in batches}
-    manifests_by_id = {manifest.manifest_id: manifest for manifest in manifests}
     candidates = _domain_head_candidates(batches, manifests)
     heads_by_key = {
         (head.source_kind, head.source_id, head.domain): head for head in heads
@@ -632,11 +641,7 @@ def _audit_import_domain_heads(
                     )
                 )
             continue
-        if not _domain_head_is_structurally_valid(
-            head,
-            batches_by_id=batches_by_id,
-            manifests_by_id=manifests_by_id,
-        ):
+        if validated_current_projection_authority(session, head=head) is None:
             findings.append(
                 _finding(
                     "import_domain_head_invalid",
@@ -714,6 +719,7 @@ def audit_capital_imports(
         domain_heads = list(session.exec(select(ImportDomainHead)).all())
         snapshots = {item.snapshot_id: item for item in session.exec(select(Snapshot)).all()}
         domain_head_findings = _audit_import_domain_heads(
+            session=session,
             heads=domain_heads,
             batches=batches,
             manifests=manifests,
@@ -723,6 +729,23 @@ def audit_capital_imports(
             for batch in batches
         }
     findings.extend(domain_head_findings)
+    for batch in batches:
+        if batch.import_schema_version == IMPORT_MANIFEST_SCHEMA_VERSION:
+            continue
+        is_current = bool(current_domains_by_batch.get(batch.batch_id, set()))
+        findings.append(
+            _finding(
+                "legacy_import_manifest_reimport_required",
+                batch_id=batch.batch_id,
+                recoverable=False,
+                recovery_action="reimport_with_current_manifest_schema",
+                message=(
+                    f"import manifest {batch.import_schema_version} cannot claim "
+                    f"{IMPORT_MANIFEST_SCHEMA_VERSION} current verification"
+                ),
+                blocks_verified_state=is_current,
+            )
+        )
     batches_by_id = {item.batch_id: item for item in batches}
     manifests_by_batch = {item.batch_id: item for item in manifests}
     manifests_by_receipt = {item.receipt_id: item for item in manifests}
@@ -802,7 +825,11 @@ def audit_capital_imports(
                 current_domains=current_domains_by_batch.get(current_batch.batch_id, set()),
             )
         )
-        if rp is not None:
+        if (
+            rp is not None
+            and current_batch.import_schema_version
+            == IMPORT_MANIFEST_SCHEMA_VERSION
+        ):
             with Session(engine) as identity_session:
                 findings.extend(
                     _audit_materialized_record_mirror(
@@ -836,12 +863,18 @@ def audit_capital_imports(
                 )
             )
 
-    blocked_batches = {item.batch_id for item in findings if item.batch_id}
+    blocked_batches = {
+        item.batch_id
+        for item in findings
+        if item.batch_id and item.blocks_verified_state
+    }
     verified = tuple(
         sorted(
             manifest.batch_id
             for manifest in manifests
             if manifest.batch_id not in blocked_batches
+            and batches_by_id[manifest.batch_id].import_schema_version
+            == IMPORT_MANIFEST_SCHEMA_VERSION
         )
     )
     ordered = tuple(
@@ -857,7 +890,7 @@ def audit_capital_imports(
     )
     return CapitalImportAuditReport(
         created_at_utc=datetime.now(UTC).isoformat(),
-        ok=not ordered,
+        ok=not any(item.blocks_verified_state for item in ordered),
         batch_count=len(batches),
         manifest_count=len(manifests),
         receipt_artifact_count=len(receipt_descriptors),
@@ -899,84 +932,97 @@ def _trusted_replay_files(
     try:
         payload = json.loads(trusted_source)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CapitalImportRecoveryError(
+        raise ReplayValidationError(
             "beancount source artifact is not a replayable source bundle"
         ) from exc
     if not isinstance(payload, dict) or payload.get("schema") != BEANCOUNT_SOURCE_BUNDLE_SCHEMA:
-        raise CapitalImportRecoveryError(
+        raise ReplayValidationError(
             "beancount source artifact has the wrong replay bundle schema"
         )
     raw_files = payload.get("files")
     if not isinstance(raw_files, list) or not raw_files:
-        raise CapitalImportRecoveryError("beancount replay bundle has no files")
+        raise ReplayValidationError("beancount replay bundle has no files")
     resolved: list[tuple[Path, bytes]] = []
     seen: set[Path] = set()
     for item in raw_files:
         if not isinstance(item, dict):
-            raise CapitalImportRecoveryError("beancount replay bundle file entry is invalid")
+            raise ReplayValidationError("beancount replay bundle file entry is invalid")
         raw_path = item.get("path")
         raw_content = item.get("content_base64")
         if not isinstance(raw_path, str) or not raw_path:
-            raise CapitalImportRecoveryError("beancount replay bundle file path is invalid")
+            raise ReplayValidationError("beancount replay bundle file path is invalid")
         if not isinstance(raw_content, str) or not raw_content:
-            raise CapitalImportRecoveryError("beancount replay bundle content is invalid")
-        path = _read_path(raw_path)
+            raise ReplayValidationError("beancount replay bundle content is invalid")
+        path = _read_path(raw_path).resolve()
         if path in seen:
-            raise CapitalImportRecoveryError("beancount replay bundle repeats a file path")
+            raise ReplayValidationError("beancount replay bundle repeats a file path")
         try:
             content = base64.b64decode(raw_content, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise CapitalImportRecoveryError(
+            raise ReplayValidationError(
                 "beancount replay bundle contains invalid base64"
             ) from exc
         seen.add(path)
         resolved.append((path, content))
-    if primary_source_path not in seen:
-        raise CapitalImportRecoveryError(
+    if primary_source_path.resolve() not in seen:
+        raise ReplayValidationError(
             "beancount replay bundle does not contain the primary ledger path"
         )
     return resolved
 
 
+@dataclass(frozen=True)
+class ReplayWorkspace:
+    """Isolated physical replay tree bound to immutable logical source identity."""
+
+    primary_path: Path
+    logical_source_ref: str
+    logical_source_files: tuple[str, ...]
+    source_content: bytes
+
+
 @contextmanager
-def _temporarily_restore_replay_sources(
-    files: list[tuple[Path, bytes]],
-) -> Iterator[None]:
-    """Temporarily install replay bytes with rollback covering setup failures."""
-    previous: dict[Path, bytes | None] = {}
-    changed: list[Path] = []
-    created_directories: set[Path] = set()
-    restoration_errors: list[str] = []
-    try:
-        for path, content in files:
-            previous[path] = path.read_bytes() if path.is_file() else None
-            missing_parents = [parent for parent in path.parents if not parent.exists()]
-            path.parent.mkdir(parents=True, exist_ok=True)
-            created_directories.update(missing_parents)
-            changed.append(path)
-            atomic_write_bytes(path, content)
-        yield
-    finally:
-        for path in reversed(changed):
+def _stage_replay_sources(
+    *,
+    kind: str,
+    primary_source_path: Path,
+    trusted_source: bytes,
+    logical_source_ref: str | None = None,
+) -> Iterator[ReplayWorkspace]:
+    """Stage immutable replay evidence without writing user-owned source paths."""
+    logical_files = _trusted_replay_files(
+        kind=kind,
+        primary_source_path=primary_source_path,
+        trusted_source=trusted_source,
+    )
+    logical_paths = [path.resolve() for path, _content in logical_files]
+    common_root = Path(os.path.commonpath([str(path.parent) for path in logical_paths]))
+    with tempfile.TemporaryDirectory(prefix="finharness-replay-") as raw_workspace:
+        workspace_root = Path(raw_workspace) / "source-tree"
+        staged_by_logical: dict[Path, Path] = {}
+        for logical_path, content in logical_files:
+            resolved = logical_path.resolve()
             try:
-                old_content = previous[path]
-                if old_content is None:
-                    if path.exists():
-                        path.unlink()
-                else:
-                    atomic_write_bytes(path, old_content)
-            except OSError as exc:
-                restoration_errors.append(f"{path}:{exc}")
-        for directory in sorted(
-            created_directories, key=lambda item: len(item.parts), reverse=True
-        ):
-            with suppress(OSError):
-                directory.rmdir()
-        if restoration_errors:
-            raise CapitalImportRecoveryError(
-                "critical recovery source restoration failure: "
-                + "; ".join(restoration_errors)
-            )
+                relative = resolved.relative_to(common_root)
+            except ValueError as exc:
+                raise ReplayValidationError(
+                    "replay source path escapes the validated common root"
+                ) from exc
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ReplayValidationError("replay source path is not safely relative")
+            staged = workspace_root / relative
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_bytes(staged, content)
+            staged_by_logical[resolved] = staged
+        primary = staged_by_logical.get(primary_source_path.resolve())
+        if primary is None:
+            raise ReplayValidationError("replay workspace has no primary source")
+        yield ReplayWorkspace(
+            primary_path=primary,
+            logical_source_ref=logical_source_ref or str(primary_source_path),
+            logical_source_files=tuple(str(path) for path in logical_paths),
+            source_content=trusted_source,
+        )
 
 
 def _replay_receipt(
@@ -988,8 +1034,13 @@ def _replay_receipt(
     projection_domains: set[str],
 ) -> str:
     payload = _receipt_payload(store, descriptor)
+    if payload.get("import_schema_version") != IMPORT_MANIFEST_SCHEMA_VERSION:
+        raise ReplayUnavailableError(
+            "legacy import manifest requires an explicit current-schema reimport"
+        )
     kind = str(payload.get("kind") or "")
     source_path = _source_path(payload)
+    logical_source_ref = str(payload.get("source_ref") or "")
     source_artifact_id = str(payload.get("source_artifact_id") or "")
     if not source_artifact_id:
         raise CapitalImportRecoveryError("receipt has no bound source artifact")
@@ -999,12 +1050,12 @@ def _replay_receipt(
         raise CapitalImportRecoveryError(
             "receipt-bound source artifact is unavailable for replay"
         ) from exc
-    replay_files = _trusted_replay_files(
+    with _stage_replay_sources(
         kind=kind,
         primary_source_path=source_path,
         trusted_source=trusted_source,
-    )
-    with _temporarily_restore_replay_sources(replay_files):
+        logical_source_ref=logical_source_ref,
+    ) as workspace:
         if kind == "personal_finance_export":
             from finharness.personal_finance import ImportDeletion, ingest_personal_finance_export
 
@@ -1030,7 +1081,7 @@ def _replay_receipt(
                 else None
             )
             ingest_personal_finance_export(
-                source_path,
+                workspace.primary_path,
                 engine=engine,
                 receipt_root=receipt_root,
                 artifact_store=store,
@@ -1043,30 +1094,35 @@ def _replay_receipt(
                 observed_at_utc=observed_at_utc,
                 _recovery_replay=True,
                 _recovery_projection_domains=sorted(projection_domains),
+                _recovery_source_ref=workspace.logical_source_ref,
             )
         elif kind == "beancount_ledger":
             from finharness.beancount_adapter import ingest_beancount_ledger
 
             ingest_beancount_ledger(
-                source_path,
+                workspace.primary_path,
                 engine=engine,
                 receipt_root=receipt_root,
                 artifact_store=store,
                 snapshot_id=str(payload["snapshot_id"]),
                 _recovery_replay=True,
                 _recovery_projection_domains=sorted(projection_domains),
+                _recovery_source_ref=workspace.logical_source_ref,
+                _recovery_source_content=workspace.source_content,
+                _recovery_source_files=workspace.logical_source_files,
             )
         elif kind == "broker_read":
             from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
 
             ingest_broker_read_receipt(
-                source_path,
+                workspace.primary_path,
                 engine=engine,
                 receipt_root=receipt_root,
                 artifact_store=store,
                 snapshot_id=str(payload["snapshot_id"]),
                 _recovery_replay=True,
                 _recovery_projection_domains=sorted(projection_domains),
+                _recovery_source_ref=workspace.logical_source_ref,
             )
         else:
             raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")
@@ -1286,6 +1342,8 @@ def recover_capital_imports(
                         ),
                     )
                 )
+            except ReplaySourceIntegrityError:
+                raise
             except (CapitalImportRecoveryError, KeyError, OSError, ValueError):
                 continue
 

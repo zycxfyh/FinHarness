@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import tempfile
@@ -17,7 +18,7 @@ from sqlmodel import Session, select
 from finharness.artifact_store import LocalArtifactStore
 from finharness.beancount_adapter import ingest_beancount_ledger
 from finharness.capital_import_recovery import (
-    _temporarily_restore_replay_sources,
+    _stage_replay_sources,
     audit_capital_imports,
     batch_is_verified,
     recover_capital_imports,
@@ -622,25 +623,19 @@ class CapitalImportRecoveryTest(unittest.TestCase):
 
 
 
-    def test_v16_migration_backfills_unique_latest_domain_head(self) -> None:
-        first_time = "2026-07-13T00:00:00+00:00"
-        second_time = "2026-07-14T00:00:00+00:00"
-        self._write_liability_export("loan-a", balance="100", observed_at=first_time)
-        first = self._ingest_liability(first_time)
-        self._write_liability_export("loan-b", balance="200", observed_at=second_time)
-        second = self._ingest_liability(second_time)
+    def test_v16_migration_backfills_only_single_total_candidate(self) -> None:
+        observed = "2026-07-13T00:00:00+00:00"
+        self._write_liability_export("loan-a", balance="100", observed_at=observed)
+        result = self._ingest_liability(observed)
         with Session(self.engine) as session:
             session.exec(delete(ImportDomainHead))
-            first_manifest = session.exec(
-                select(ReceiptManifest).where(ReceiptManifest.batch_id == first.batch_id)
+            manifest = session.exec(
+                select(ReceiptManifest).where(
+                    ReceiptManifest.batch_id == result.batch_id
+                )
             ).one()
-            second_manifest = session.exec(
-                select(ReceiptManifest).where(ReceiptManifest.batch_id == second.batch_id)
-            ).one()
-            first_manifest.materialized_at_utc = "2026-07-13T00:00:00+00:00"
-            second_manifest.materialized_at_utc = "2026-07-14T00:00:00+00:00"
-            session.add(first_manifest)
-            session.add(second_manifest)
+            manifest.materialized_at_utc = observed
+            session.add(manifest)
             session.commit()
         with self.engine.begin() as connection:
             connection.exec_driver_sql("PRAGMA user_version = 15")
@@ -651,7 +646,7 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             head = session.exec(
                 select(ImportDomainHead).where(ImportDomainHead.domain == "liability")
             ).one()
-        self.assertEqual(head.batch_id, second.batch_id)
+        self.assertEqual(head.batch_id, result.batch_id)
 
     def test_v16_migration_leaves_tied_domain_history_unresolved(self) -> None:
         first_time = "2026-07-13T00:00:00+00:00"
@@ -813,11 +808,30 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         self.assertEqual(str(liabilities[0].balance), "200")
         self.assertEqual(len(batches), 2)
 
-    def test_multifile_replay_prepare_failure_restores_every_changed_file(self) -> None:
+    def test_multifile_replay_stage_failure_never_touches_user_files(self) -> None:
         main = self.root / "ledger.beancount"
         included = self.root / "included.beancount"
         main.write_bytes(b"current-main")
         included.write_bytes(b"current-include")
+        bundle = json.dumps(
+            {
+                "schema": "finharness.beancount_source_bundle.v1",
+                "files": [
+                    {
+                        "path": str(main),
+                        "content_base64": base64.b64encode(
+                            b"historical-main"
+                        ).decode("ascii"),
+                    },
+                    {
+                        "path": str(included),
+                        "content_base64": base64.b64encode(
+                            b"historical-include"
+                        ).decode("ascii"),
+                    },
+                ],
+            }
+        ).encode("utf-8")
         from finharness import capital_import_recovery as recovery_module
 
         original_write = recovery_module.atomic_write_bytes
@@ -827,7 +841,7 @@ class CapitalImportRecoveryTest(unittest.TestCase):
             nonlocal calls
             calls += 1
             if calls == 2:
-                raise OSError("injected second replay write failure")
+                raise OSError("injected second replay stage write failure")
             original_write(path, content)
 
         with (
@@ -835,9 +849,12 @@ class CapitalImportRecoveryTest(unittest.TestCase):
                 "finharness.capital_import_recovery.atomic_write_bytes",
                 side_effect=fail_second_write,
             ),
-            self.assertRaises(OSError),_temporarily_restore_replay_sources(
-            [(main, b"historical-main"), (included, b"historical-include")]
-        )
+            self.assertRaises(OSError),
+            _stage_replay_sources(
+                kind="beancount_ledger",
+                primary_source_path=main,
+                trusted_source=bundle,
+            ),
         ):
             self.fail("replay context must not be entered")
 

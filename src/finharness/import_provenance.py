@@ -30,7 +30,7 @@ from finharness.statecore.import_models import (
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
 
-IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v5"
+IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v6"
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 

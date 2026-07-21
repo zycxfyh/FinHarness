@@ -41,6 +41,8 @@ from finharness.capital_import_valuation import (
 )
 from finharness.import_provenance import (
     canonical_json_bytes,
+    derive_import_batch_id,
+    derive_receipt_manifest_id,
     persist_source_evidence,
     prepare_import,
 )
@@ -49,6 +51,7 @@ from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
+    instrument_identity_source_claims,
     unresolved_instrument_finding,
 )
 from finharness.statecore.import_identity import materialized_record_identities
@@ -65,6 +68,7 @@ from finharness.statecore.models import (
     utc_now_iso,
 )
 from finharness.statecore.store import (
+    StateCoreRecord,
     materialize_import_batch,
     recovery_materialization_options,
     source_owner_key,
@@ -595,17 +599,28 @@ def ingest_beancount_ledger(
     liabilities_root: str = DEFAULT_LIABILITIES_ROOT,
     _recovery_replay: bool = False,
     _recovery_projection_domains: Sequence[str] | None = None,
+    _recovery_source_ref: str | None = None,
+    _recovery_source_content: bytes | None = None,
+    _recovery_source_files: Sequence[str] | None = None,
 ) -> BeancountImportResult:
     """Mirror a real Beancount ledger's holdings and liabilities into state core."""
     source_path = Path(ledger_path)
+    logical_source_path = (
+        Path(_recovery_source_ref) if _recovery_source_ref is not None else source_path
+    )
     if not source_path.exists():
         raise BeancountLedgerError(f"beancount ledger missing: {source_path}")
     source_files, operating_currencies, effective_at_utc, price_index = _ledger_metadata(
         source_path
     )
     rows = _query_rows(source_path)
-    source_content = _ledger_evidence_bytes(source_files)
-    source_hash = _combined_ledger_hash(source_files)
+    logical_source_files = list(_recovery_source_files or source_files)
+    source_content = (
+        _recovery_source_content
+        if _recovery_source_content is not None
+        else _ledger_evidence_bytes(source_files)
+    )
+    source_hash = hashlib.sha256(source_content).hexdigest()
     active_artifact_store = artifact_store or LocalArtifactStore(
         Path(receipt_root) / "artifact-store"
     )
@@ -632,7 +647,7 @@ def ingest_beancount_ledger(
     receipt_id = f"receipt_beancount_ledger_{base_id}"
     receipt_path = Path(receipt_root) / f"{receipt_id}.json"
     receipt_ref = display_path(receipt_path)
-    source_refs = [receipt_ref, display_path(source_path)]
+    source_refs = [receipt_ref, display_path(logical_source_path)]
     (
         accounts,
         account_identities,
@@ -709,7 +724,7 @@ def ingest_beancount_ledger(
         status_map[position.position_id] = p
     positions = [status_map[p.position_id] for p in positions]
     findings = merge_valuation_findings(findings, assessments)
-    ownership_scope = source_owner_key(LEDGER_KIND, display_path(source_path))
+    ownership_scope = source_owner_key(LEDGER_KIND, display_path(logical_source_path))
     for record in [*liabilities, *cashflows]:
         record.source = ownership_scope
     # Batch-level valued_at is only set when every position agrees; else None.
@@ -735,7 +750,7 @@ def ingest_beancount_ledger(
         authority_level="read_only",
         payload={
             "source": LEDGER_KIND,
-            "source_ref": display_path(source_path),
+            "source_ref": display_path(logical_source_path),
             "adapter_version": ADAPTER_VERSION,
             "record_counts": {
                 "account": len(accounts),
@@ -758,9 +773,9 @@ def ingest_beancount_ledger(
     )
     receipt_payload = _receipt_payload(
         receipt_id=receipt_id,
-        source_path=source_path,
+        source_path=logical_source_path,
         source_hash=source_hash,
-        source_files=source_files,
+        source_files=logical_source_files,
         as_of_utc=as_of_utc,
         snapshot_id=active_snapshot_id,
         account_count=len(accounts),
@@ -780,24 +795,50 @@ def ingest_beancount_ledger(
         created_at_utc=source_descriptor.created_at_utc,
         as_of_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
-        refs=[display_path(source_path)],
+        refs=[display_path(logical_source_path)],
     )
+    expected_batch_id = derive_import_batch_id(
+        source_kind=LEDGER_KIND,
+        source_id=display_path(logical_source_path),
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode="full",
+        covered_domains=["account", "position", "liability", "cashflow"],
+    )
+    expected_manifest_id = derive_receipt_manifest_id(expected_batch_id, receipt_id)
+    instrument_claims = instrument_identity_source_claims(
+        instrument_ids=(
+            position.instrument_id
+            for position in positions
+            if position.instrument_id is not None
+        ),
+        batch_id=expected_batch_id,
+        manifest_id=expected_manifest_id,
+        receipt_id=receipt_id,
+        source_kind=LEDGER_KIND,
+        source_id=display_path(logical_source_path),
+        source_artifact_id=source_descriptor.artifact_id,
+        observed_at_utc=as_of_utc,
+        source_refs=source_refs,
+    )
+    materialized_records: list[StateCoreRecord] = [
+        *account_identities,
+        *instrument_identities,
+        *instrument_claims,
+        *identity_aliases,
+        *accounts,
+        snapshot,
+        *positions,
+        *liabilities,
+        *cashflows,
+    ]
     expected_materialized_identities = materialized_record_identities(
-        [
-            receipt_index,
-            *account_identities,
-            *instrument_identities,
-            *identity_aliases,
-            *accounts,
-            snapshot,
-            *positions,
-            *liabilities,
-            *cashflows,
-        ]
+        [receipt_index, *materialized_records],
+        import_receipt_ref=receipt_ref,
     )
     prepared = prepare_import(
         source_kind=LEDGER_KIND,
-        source_id=display_path(source_path),
+        source_id=display_path(logical_source_path),
         source_content=source_content,
         source_sha256=source_hash,
         adapter_version=ADAPTER_VERSION,
@@ -822,18 +863,16 @@ def ingest_beancount_ledger(
         covered_domains=["account", "position", "liability", "cashflow"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
     )
+    if prepared.batch.batch_id != expected_batch_id:
+        raise BeancountLedgerError(
+            "derived Beancount batch identity diverged before materialization"
+        )
+    if prepared.manifest.manifest_id != expected_manifest_id:
+        raise BeancountLedgerError(
+            "derived Beancount manifest identity diverged before materialization"
+        )
     materialize_import_batch(
-        [
-            receipt_index,
-            *account_identities,
-            *instrument_identities,
-            *identity_aliases,
-            *accounts,
-            snapshot,
-            *positions,
-            *liabilities,
-            *cashflows,
-        ],
+        [receipt_index, *materialized_records],
         source=LEDGER_KIND,
         batch=prepared.batch,
         manifest=prepared.manifest,

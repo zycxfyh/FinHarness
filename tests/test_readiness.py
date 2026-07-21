@@ -105,7 +105,8 @@ class ReadinessTest(unittest.TestCase):
             time_semantics=clocks,
             findings=findings,
             materialized_record_identities=materialized_record_identities(
-                materialized_records
+                materialized_records,
+                import_receipt_ref=receipt_ref,
             ),
             covered_domains=[],
             corporate_action_status="not_applicable",
