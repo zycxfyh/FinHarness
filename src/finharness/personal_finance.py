@@ -41,6 +41,7 @@ from finharness.capital_import_valuation import (
 )
 from finharness.import_provenance import (
     derive_import_batch_id,
+    normalize_import_deletions,
     persist_source_evidence,
     prepare_import,
 )
@@ -80,7 +81,7 @@ from finharness.statecore.store import (
 )
 
 DEFAULT_PERSONAL_FINANCE_RECEIPT_ROOT = ROOT / "data" / "receipts" / "personal-finance"
-ADAPTER_VERSION = "finharness.personal_finance_export.v4"
+ADAPTER_VERSION = "finharness.personal_finance_export.v5"
 EXPORT_KIND = "personal_finance_export"
 POSITION_COLUMNS = {
     "account_id",
@@ -192,30 +193,6 @@ def _file_hash(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _import_contract_fragment(
-    *,
-    source_id: str,
-    source_hash: str,
-    coverage_mode: str,
-    covered_domains: list[str] | None,
-    supersedes_batch_id: str | None,
-    correction_reason: str | None,
-) -> str:
-    domains = sorted(set(covered_domains or []))
-    return hashlib.sha256(
-        "\x00".join(
-            (
-                source_id,
-                source_hash,
-                coverage_mode,
-                *domains,
-                supersedes_batch_id or "",
-                correction_reason or "",
-            )
-        ).encode("utf-8")
-    ).hexdigest()[:12]
 
 
 def _read_rows(path: Path) -> list[dict[str, str]]:
@@ -990,6 +967,9 @@ def ingest_personal_finance_export(
         RECORD_TYPE_COLUMNS
     ):
         raise PersonalFinanceExportError("covered_domains must use supported record types")
+    explicit_deletions = normalize_import_deletions(
+        [asdict(tombstone) for tombstone in tombstones]
+    )
     source_hash = _file_hash(source_path)
     source_content = source_path.read_bytes()
     source_id = display_path(source_path)
@@ -1009,18 +989,21 @@ def ingest_personal_finance_export(
     )
     findings.extend(_identity_findings(rows))
     as_of_utc = str(time_semantics["observed_at_utc"])
-    base_id = _safe_id(
-        _import_contract_fragment(
-            source_id=source_id,
-            source_hash=source_hash,
-            coverage_mode=coverage_mode,
-            covered_domains=resolved_covered_domains,
-            supersedes_batch_id=supersedes_batch_id,
-            correction_reason=correction_reason,
-        )
+    batch_id = derive_import_batch_id(
+        source_kind=EXPORT_KIND,
+        source_id=source_id,
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode=coverage_mode,
+        covered_domains=resolved_covered_domains,
+        deletions=explicit_deletions,
+        identity_time_semantics=time_semantics,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
     )
-    active_snapshot_id = snapshot_id or f"snap_personal_finance_{base_id}"
-    receipt_id = f"receipt_personal_finance_export_{base_id}"
+    identity_suffix = batch_id.removeprefix("import_batch_")
+    active_snapshot_id = snapshot_id or f"snap_personal_finance_{identity_suffix}"
+    receipt_id = f"receipt_personal_finance_export_{identity_suffix}"
     receipt_path = Path(receipt_root) / f"{receipt_id}.json"
     record_counts = _record_counts(rows)
     receipt_payload = _receipt_payload(
@@ -1033,24 +1016,14 @@ def ingest_personal_finance_export(
         record_counts=record_counts,
     )
     deletion_plan = {
-        "explicit": [asdict(tombstone) for tombstone in tombstones],
+        "explicit": explicit_deletions,
         "automatic": [],
         "domain": "personal_finance",
         "covered_domains": resolved_covered_domains,
     }
     receipt_payload["deletion_plan"] = deletion_plan
-    receipt_payload["deletions"] = [asdict(tombstone) for tombstone in tombstones]
+    receipt_payload["deletions"] = explicit_deletions
     receipt_ref = display_path(receipt_path)
-    batch_id = derive_import_batch_id(
-        source_kind=EXPORT_KIND,
-        source_id=source_id,
-        source_sha256=source_hash,
-        adapter_version=ADAPTER_VERSION,
-        coverage_mode=coverage_mode,
-        covered_domains=resolved_covered_domains,
-        supersedes_batch_id=supersedes_batch_id,
-        correction_reason=correction_reason,
-    )
     source_refs = [receipt_ref, display_path(source_path)]
     records = _records_from_rows(
         rows=rows,
@@ -1114,6 +1087,8 @@ def ingest_personal_finance_export(
         time_semantics=time_semantics,
         findings=[finding.as_dict() for finding in final_findings],
         covered_domains=resolved_covered_domains,
+        identity_deletions=explicit_deletions,
+        identity_time_semantics=time_semantics,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
         corporate_action_status=(

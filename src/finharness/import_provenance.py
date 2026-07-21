@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,98 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{digest}"
 
 
+_IMPORT_IDENTITY_TIME_FIELDS = (
+    "effective_at_utc",
+    "observed_at_utc",
+    "valued_at_utc",
+)
+
+
+def normalize_import_deletions(
+    deletions: Sequence[Mapping[str, Any]] | None,
+) -> list[dict[str, str]]:
+    """Return a deterministic, closed explicit-deletion contract."""
+    normalized: list[dict[str, str]] = []
+    for item in deletions or ():
+        entry = {
+            "record_type": str(item.get("record_type") or "").strip(),
+            "record_id": str(item.get("record_id") or "").strip(),
+            "reason": str(item.get("reason") or "").strip(),
+        }
+        if not all(entry.values()):
+            raise ImportProvenanceError(
+                "import deletion requires record_type, record_id, and reason"
+            )
+        normalized.append(entry)
+    normalized.sort(key=lambda item: (item["record_type"], item["record_id"], item["reason"]))
+    if len({tuple(item.values()) for item in normalized}) != len(normalized):
+        raise ImportProvenanceError("import deletion plan contains duplicate entries")
+    return normalized
+
+
+def canonical_import_contract_payload(
+    *,
+    coverage_mode: str,
+    covered_domains: Sequence[str] | None = None,
+    deletions: Sequence[Mapping[str, Any]] | None = None,
+    identity_time_semantics: Mapping[str, Any] | None = None,
+    supersedes_batch_id: str | None = None,
+    correction_reason: str | None = None,
+    corporate_action_status: str | None = None,
+) -> dict[str, Any]:
+    """Build the deterministic import-intent contract used by identity hashes."""
+    payload: dict[str, Any] = {
+        "coverage_mode": coverage_mode,
+        "covered_domains": sorted(set(covered_domains or ())),
+        "explicit_deletions": normalize_import_deletions(deletions),
+        "time_semantics": (
+            {
+                field: identity_time_semantics.get(field)
+                for field in _IMPORT_IDENTITY_TIME_FIELDS
+            }
+            if identity_time_semantics is not None
+            else {}
+        ),
+        "supersedes_batch_id": supersedes_batch_id,
+        "correction_reason": correction_reason,
+    }
+    if corporate_action_status is not None:
+        payload["corporate_action_status"] = corporate_action_status
+    return payload
+
+
+def _contract_bytes(payload: Mapping[str, Any]) -> bytes:
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+
+
+def derive_import_contract_digest(
+    *,
+    coverage_mode: str,
+    covered_domains: Sequence[str] | None = None,
+    deletions: Sequence[Mapping[str, Any]] | None = None,
+    identity_time_semantics: Mapping[str, Any] | None = None,
+    supersedes_batch_id: str | None = None,
+    correction_reason: str | None = None,
+    corporate_action_status: str,
+) -> str:
+    payload = canonical_import_contract_payload(
+        coverage_mode=coverage_mode,
+        covered_domains=covered_domains,
+        deletions=deletions,
+        identity_time_semantics=identity_time_semantics,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+        corporate_action_status=corporate_action_status,
+    )
+    return hashlib.sha256(_contract_bytes(payload)).hexdigest()[:32]
+
+
 def derive_import_batch_id(
     *,
     source_kind: str,
@@ -86,12 +179,21 @@ def derive_import_batch_id(
     source_sha256: str,
     adapter_version: str,
     coverage_mode: str,
-    covered_domains: list[str] | None = None,
+    covered_domains: Sequence[str] | None = None,
+    deletions: Sequence[Mapping[str, Any]] | None = None,
+    identity_time_semantics: Mapping[str, Any] | None = None,
     supersedes_batch_id: str | None = None,
     correction_reason: str | None = None,
 ) -> str:
-    """Deterministic ImportBatch identity shared by adapters and prepare_import."""
-    domains = sorted(set(covered_domains or []))
+    """Derive one deterministic batch identity from source and import intent."""
+    contract = canonical_import_contract_payload(
+        coverage_mode=coverage_mode,
+        covered_domains=covered_domains,
+        deletions=deletions,
+        identity_time_semantics=identity_time_semantics,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+    )
     return _stable_id(
         "import_batch",
         source_kind,
@@ -99,10 +201,7 @@ def derive_import_batch_id(
         source_sha256,
         adapter_version,
         IMPORT_MANIFEST_SCHEMA_VERSION,
-        coverage_mode,
-        *domains,
-        supersedes_batch_id or "",
-        correction_reason or "",
+        _contract_bytes(contract).decode("utf-8"),
     )
 
 
@@ -183,6 +282,8 @@ def prepare_import(
     time_semantics: dict[str, Any],
     findings: list[dict[str, Any]],
     covered_domains: list[str] | None = None,
+    identity_deletions: Sequence[Mapping[str, Any]] | None = None,
+    identity_time_semantics: Mapping[str, Any] | None = None,
     supersedes_batch_id: str | None = None,
     correction_reason: str | None = None,
     corporate_action_status: str = "unsupported_gap",
@@ -223,6 +324,8 @@ def prepare_import(
         adapter_version=adapter_version,
         coverage_mode=coverage_mode,
         covered_domains=resolved_domains,
+        deletions=identity_deletions,
+        identity_time_semantics=identity_time_semantics,
         supersedes_batch_id=supersedes_batch_id,
         correction_reason=correction_reason,
     )
@@ -267,16 +370,15 @@ def prepare_import(
     )
     receipt_path = resolve_under(receipt_root, f"{receipt_id}.json")
     atomic_write_bytes(receipt_path, receipt_bytes)
-    contract_parts = [
-        coverage_mode,
-        *resolved_domains,
-        supersedes_batch_id or "",
-        correction_reason or "",
-        corporate_action_status,
-    ]
-    contract_digest = hashlib.sha256(
-        "|".join(contract_parts).encode("utf-8")
-    ).hexdigest()[:32]
+    contract_digest = derive_import_contract_digest(
+        coverage_mode=coverage_mode,
+        covered_domains=resolved_domains,
+        deletions=identity_deletions,
+        identity_time_semantics=identity_time_semantics,
+        supersedes_batch_id=supersedes_batch_id,
+        correction_reason=correction_reason,
+        corporate_action_status=corporate_action_status,
+    )
 
     batch = ImportBatch(
         batch_id=batch_id,
