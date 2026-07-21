@@ -18,7 +18,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from finharness.artifact_store import LocalArtifactStore
-from finharness.personal_finance import PersonalFinanceExportError, ingest_personal_finance_export
+from finharness.personal_finance import (
+    ImportDeletion,
+    PersonalFinanceExportError,
+    ingest_personal_finance_export,
+)
 from finharness.statecore.import_models import ImportTombstone
 from finharness.statecore.models import (
     ImportBatch,
@@ -35,17 +39,40 @@ from finharness.statecore.store import (
 )
 
 TYPED_CSV_COLUMNS = [
-    "account_id", "account_name", "account_kind", "venue",
-    "symbol", "instrument_type", "instrument_venue",
-    "quantity", "market_value", "cost_basis", "currency", "as_of_utc",
-    "unit_price", "valuation_currency", "price_currency",
-    "valued_at_utc", "price_source_ref",
-    "fx_rate", "fx_as_of_utc", "fx_source_ref",
-    "effective_at_utc", "observed_at_utc",
+    "account_id",
+    "account_name",
+    "account_kind",
+    "venue",
+    "symbol",
+    "instrument_type",
+    "instrument_venue",
+    "quantity",
+    "market_value",
+    "cost_basis",
+    "currency",
+    "as_of_utc",
+    "unit_price",
+    "valuation_currency",
+    "price_currency",
+    "valued_at_utc",
+    "price_source_ref",
+    "fx_rate",
+    "fx_as_of_utc",
+    "fx_source_ref",
+    "effective_at_utc",
+    "observed_at_utc",
     "record_type",
-    "liability_id", "name", "liability_type", "balance",
-    "goal_id", "target_amount", "current_amount",
-    "document_id", "document_type", "title", "path",
+    "liability_id",
+    "name",
+    "liability_type",
+    "balance",
+    "goal_id",
+    "target_amount",
+    "current_amount",
+    "document_id",
+    "document_type",
+    "title",
+    "path",
 ]
 
 OBSERVED = "2025-06-20T08:00:00+00:00"
@@ -54,15 +81,26 @@ OBSERVED = "2025-06-20T08:00:00+00:00"
 def _typed_row(overrides=None):
     row = {
         "record_type": "position",
-        "account_id": "acct", "account_name": "Test", "account_kind": "broker",
-        "venue": "test", "symbol": "SPY", "instrument_type": "equity",
+        "account_id": "acct",
+        "account_name": "Test",
+        "account_kind": "broker",
+        "venue": "test",
+        "symbol": "SPY",
+        "instrument_type": "equity",
         "instrument_venue": "ARCX",
-        "quantity": "2", "market_value": "100", "cost_basis": "90",
-        "currency": "USD", "as_of_utc": OBSERVED,
-        "unit_price": "50", "valuation_currency": "USD", "price_currency": "USD",
+        "quantity": "2",
+        "market_value": "100",
+        "cost_basis": "90",
+        "currency": "USD",
+        "as_of_utc": OBSERVED,
+        "unit_price": "50",
+        "valuation_currency": "USD",
+        "price_currency": "USD",
         "valued_at_utc": "2025-06-20T07:00:00+00:00",
         "price_source_ref": "fixture:test",
-        "fx_rate": "", "fx_as_of_utc": "", "fx_source_ref": "",
+        "fx_rate": "",
+        "fx_as_of_utc": "",
+        "fx_source_ref": "",
         "effective_at_utc": OBSERVED,
         "observed_at_utc": OBSERVED,
     }
@@ -112,7 +150,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         path = self.root / "header_only.csv"
         _write_csv(path, [])
         result = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("r1"),
             artifact_store=self.store,
             coverage_mode="full",
@@ -121,84 +160,116 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         )
         self.assertIsNotNone(result.batch_id)
         positions = list(read_all(Position, engine=self.engine))
-        self.assertEqual(len(positions), 0,
-                         "header-only full should produce zero positions")
+        self.assertEqual(len(positions), 0, "header-only full should produce zero positions")
 
     # ── target 2: full position 1→0 creates empty portfolio Snapshot + tombstone ──
 
     def test_full_position_one_to_zero_creates_empty_snapshot_and_tombstone(self):
-        # Seed
-        path_seed = self.root / "seed.csv"
-        _write_csv(path_seed, [_typed_row()])
-        r1 = ingest_personal_finance_export(
-            path_seed, engine=self.engine,
+        path = self.root / "positions.csv"
+        _write_csv(path, [_typed_row()])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("seed"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["position"],
         )
         self.assertEqual(len(list(read_all(Position, engine=self.engine))), 1)
 
-        # Clear
-        path_clear = self.root / "clear.csv"
-        _write_csv(path_clear, [])
-        r2 = ingest_personal_finance_export(
-            path_clear, engine=self.engine,
+        _write_csv(path, [])
+        result = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("clear"),
             artifact_store=self.store,
             coverage_mode="full",
             covered_domains=["position"],
             observed_at_utc=OBSERVED,
         )
-        # Zero current positions
-        positions = list(read_all(Position, engine=self.engine))
-        self.assertEqual(len(positions), 0)
-
-        # Empty portfolio Snapshot exists
         manifest = exactly_one(
-            m for m in read_all(ReceiptManifest, engine=self.engine)
-            if m.batch_id == r2.batch_id
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == result.batch_id
         )
-        snapshots = list(read_all(Snapshot, engine=self.engine))
-        target = exactly_one(s for s in snapshots if s.snapshot_id == manifest.snapshot_id)
-        self.assertEqual(target.kind, "portfolio")
+        snapshot = exactly_one(
+            item
+            for item in read_all(Snapshot, engine=self.engine)
+            if item.snapshot_id == manifest.snapshot_id
+        )
+        self.assertEqual(snapshot.kind, "portfolio")
+        current_positions = [
+            item
+            for item in read_all(Position, engine=self.engine)
+            if item.snapshot_id == snapshot.snapshot_id
+        ]
+        self.assertEqual(current_positions, [])
+        self.assertEqual(
+            len(list(read_all(Position, engine=self.engine))),
+            1,
+            "immutable positions from the prior snapshot must remain as history",
+        )
 
-        # Tombstone for the cleared position
         tombstones = list(read_all(ImportTombstone, engine=self.engine))
-        self.assertGreaterEqual(len(tombstones), 1)
-        self.assertTrue(any(t.record_type == "Position" for t in tombstones))
-
-        # Receipt has deletion_plan with automatic entries
-        receipt_bytes = self.store.read(manifest.receipt_artifact_id)
-        receipt = json.loads(receipt_bytes)
-        plan = receipt.get("deletion_plan", {})
-        self.assertGreaterEqual(len(plan.get("automatic", [])), 1)
+        self.assertEqual(
+            [(item.record_type, item.reason) for item in tombstones],
+            [("Position", "absent_from_full_import")],
+        )
+        receipt = json.loads(self.store.read(manifest.receipt_artifact_id))
+        automatic = receipt.get("deletion_plan", {}).get("automatic", [])
+        self.assertEqual(
+            [(item["record_type"], item["record_id"], item["reason"]) for item in automatic],
+            [("Position", tombstones[0].record_id, "absent_from_full_import")],
+        )
 
     # ── target 3: zero-row delta with base preserves prior positions ──
 
     def test_zero_row_delta_with_base_preserves_positions(self):
         path = self.root / "positions.csv"
         _write_csv(path, [_typed_row()])
-        ingest_personal_finance_export(
-            path, engine=self.engine,
+        base = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("seed"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["position"],
         )
-        self.assertEqual(len(list(read_all(Position, engine=self.engine))), 1)
 
-        # Overwrite same file with zero rows for delta
         _write_csv(path, [])
         result = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("delta"),
             artifact_store=self.store,
             coverage_mode="delta",
             covered_domains=["position"],
             observed_at_utc=OBSERVED,
         )
-        positions = list(read_all(Position, engine=self.engine))
-        self.assertEqual(len(positions), 1,
-                         "zero-row delta must preserve prior positions")
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == result.batch_id
+        )
+        snapshot = exactly_one(
+            item
+            for item in read_all(Snapshot, engine=self.engine)
+            if item.snapshot_id == manifest.snapshot_id
+        )
+        current_positions = [
+            item
+            for item in read_all(Position, engine=self.engine)
+            if item.snapshot_id == snapshot.snapshot_id
+        ]
+        self.assertEqual(len(current_positions), 1)
+        self.assertEqual(current_positions[0].symbol, "SPY")
+        self.assertEqual(snapshot.payload["delta_base_batch_id"], base.batch_id)
+        self.assertEqual(snapshot.payload["materialized_position_count"], 1)
+        self.assertEqual(
+            len(list(read_all(Position, engine=self.engine))),
+            2,
+            "delta creates a new immutable snapshot while retaining prior history",
+        )
 
     # ── target 4: zero-row delta without base fails closed ──
 
@@ -207,7 +278,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         _write_csv(path, [])
         with self.assertRaises(PersonalFinanceExportError):
             ingest_personal_finance_export(
-                path, engine=self.engine,
+                path,
+                engine=self.engine,
                 receipt_root=self._receipt_root("delta"),
                 artifact_store=self.store,
                 coverage_mode="delta",
@@ -223,7 +295,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         _write_csv(path, [_typed_row()])
         with self.assertRaises(PersonalFinanceExportError):
             ingest_personal_finance_export(
-                path, engine=self.engine,
+                path,
+                engine=self.engine,
                 receipt_root=self._receipt_root("fail"),
                 artifact_store=self.store,
                 coverage_mode="full",
@@ -237,63 +310,67 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         return {
             "record_type": "liability",
             "liability_id": liability_id,
-            "name": "Test Loan", "liability_type": "loan",
-            "balance": "50000", "currency": "USD",
+            "name": "Test Loan",
+            "liability_type": "loan",
+            "balance": "50000",
+            "currency": "USD",
             "as_of_utc": OBSERVED,
         }
 
     def _goal_row(self, goal_id="goal-1"):
         return {
             "record_type": "goal",
-            "goal_id": goal_id, "name": "Emergency Fund",
-            "target_amount": "50000", "current_amount": "10000",
+            "goal_id": goal_id,
+            "name": "Emergency Fund",
+            "target_amount": "50000",
+            "current_amount": "10000",
             "currency": "USD",
             "as_of_utc": OBSERVED,
         }
 
     def test_full_empties_liability_while_updating_goal(self):
-        # Seed: liability + goal
-        path_seed = self.root / "seed.csv"
-        _write_csv(path_seed, [self._liability_row("loan-a"), self._goal_row("goal-a")])
+        path = self.root / "capital.csv"
+        _write_csv(path, [self._liability_row("loan-a"), self._goal_row("goal-a")])
         ingest_personal_finance_export(
-            path_seed, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("seed"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability", "goal"],
         )
         self.assertEqual(len(list(read_all(Liability, engine=self.engine))), 1)
-        self.assertGreater(len(list(read_all(
-            __import__("finharness.statecore.models", fromlist=["FinancialGoal"]).FinancialGoal,
-            engine=self.engine))), 0)
 
-        # Full: remove liability, update goal
-        path_update = self.root / "update.csv"
-        _write_csv(path_update, [
-            self._goal_row("goal-a"),
-        ])
+        _write_csv(path, [self._goal_row("goal-a")])
         result = ingest_personal_finance_export(
-            path_update, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("update"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability", "goal"],
         )
-        # Liability cleared
         self.assertEqual(len(list(read_all(Liability, engine=self.engine))), 0)
-        # Liability tombstone exists
-        tombstones = list(read_all(ImportTombstone, engine=self.engine))
-        self.assertTrue(any(
-            t.record_type == "Liability" and t.record_id == "loan-a"
-            for t in tombstones
-        ))
-        # Deletion plan in receipt
-        manifest = exactly_one(
-            m for m in read_all(ReceiptManifest, engine=self.engine)
-            if m.batch_id == result.batch_id
+        liability_tombstone = exactly_one(
+            item
+            for item in read_all(ImportTombstone, engine=self.engine)
+            if item.record_type == "Liability" and item.record_id == "loan-a"
         )
-        receipt_bytes = self.store.read(manifest.receipt_artifact_id)
-        receipt = json.loads(receipt_bytes)
-        plan = receipt.get("deletion_plan", {})
-        self.assertGreaterEqual(len(plan.get("automatic", [])), 1)
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == result.batch_id
+        )
+        receipt = json.loads(self.store.read(manifest.receipt_artifact_id))
+        self.assertIn(
+            {
+                "record_type": "Liability",
+                "record_id": "loan-a",
+                "reason": "absent_from_full_import",
+            },
+            receipt["deletion_plan"]["automatic"],
+        )
+        self.assertEqual(liability_tombstone.reason, "absent_from_full_import")
 
     # ── target 7: source A full does not modify or tombstone source B ──
 
@@ -301,16 +378,19 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         path_a = self.root / "a.csv"
         _write_csv(path_a, [self._liability_row("loan-a")])
         ingest_personal_finance_export(
-            path_a, engine=self.engine,
+            path_a,
+            engine=self.engine,
             receipt_root=self._receipt_root("a"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
         )
 
         path_b = self.root / "b.csv"
         _write_csv(path_b, [self._liability_row("loan-b")])
         ingest_personal_finance_export(
-            path_b, engine=self.engine,
+            path_b,
+            engine=self.engine,
             receipt_root=self._receipt_root("b"),
             artifact_store=self._fresh_artifact_store("b"),
             coverage_mode="full",
@@ -318,49 +398,55 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         )
         liabilities = list(read_all(Liability, engine=self.engine))
         ids = {liab.liability_id for liab in liabilities}
-        self.assertEqual(ids, {"loan-a", "loan-b"},
-                         "source B full should not delete source A records")
+        self.assertEqual(
+            ids, {"loan-a", "loan-b"}, "source B full should not delete source A records"
+        )
 
     # ── target 8: automatic non-position tombstone in receipt and DB ──
 
     def test_automatic_tombstone_in_receipt_and_db(self):
-        path_seed = self.root / "seed.csv"
-        _write_csv(path_seed, [self._liability_row("loan-1")])
-        r1 = ingest_personal_finance_export(
-            path_seed, engine=self.engine,
+        path = self.root / "liabilities.csv"
+        _write_csv(path, [self._liability_row("loan-1")])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("seed"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
         )
-        path_clear = self.root / "clear.csv"
-        _write_csv(path_clear, [])
-        r2 = ingest_personal_finance_export(
-            path_clear, engine=self.engine,
+        _write_csv(path, [])
+        result = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("clear"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
             observed_at_utc=OBSERVED,
         )
-        # DB tombstone
-        tombstones = list(read_all(ImportTombstone, engine=self.engine))
-        self.assertTrue(any(
-            t.record_type == "Liability" and t.record_id == "loan-1"
-            and t.reason == "absent_from_full_import"
-            for t in tombstones
-        ))
-        # Receipt deletion plan
-        manifest = exactly_one(
-            m for m in read_all(ReceiptManifest, engine=self.engine)
-            if m.batch_id == r2.batch_id
+        tombstone = exactly_one(
+            item
+            for item in read_all(ImportTombstone, engine=self.engine)
+            if item.record_type == "Liability" and item.record_id == "loan-1"
         )
-        receipt_bytes = self.store.read(manifest.receipt_artifact_id)
-        receipt = json.loads(receipt_bytes)
-        plan = receipt.get("deletion_plan", {})
-        auto = plan.get("automatic", [])
-        self.assertTrue(any(
-            d.get("record_type") == "Liability" and d.get("record_id") == "loan-1"
-            for d in auto
-        ))
+        self.assertEqual(tombstone.reason, "absent_from_full_import")
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == result.batch_id
+        )
+        receipt = json.loads(self.store.read(manifest.receipt_artifact_id))
+        self.assertEqual(
+            receipt["deletion_plan"]["automatic"],
+            [
+                {
+                    "record_type": "Liability",
+                    "record_id": "loan-1",
+                    "reason": "absent_from_full_import",
+                }
+            ],
+        )
 
     # ── target 9: forged deletion plan rejected with zero writes ──
 
@@ -371,12 +457,15 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         captured = {}
 
         def _patched(records, *, source, batch, manifest, artifact_store, engine):
-            captured.update({
-                "records": copy.deepcopy(list(records)),
-                "source": source, "batch": copy.deepcopy(batch),
-                "manifest": copy.deepcopy(manifest),
-                "store": artifact_store,
-            })
+            captured.update(
+                {
+                    "records": copy.deepcopy(list(records)),
+                    "source": source,
+                    "batch": copy.deepcopy(batch),
+                    "manifest": copy.deepcopy(manifest),
+                    "store": artifact_store,
+                }
+            )
             # Inject forged tombstone with non-contract reason
             tombstone = ImportTombstone(
                 tombstone_id="import_tombstone_forged",
@@ -389,16 +478,21 @@ class ZeroRowImportTargetTest(unittest.TestCase):
             captured["records"].append(tombstone)
             # Now call the real materializer — it should reject
             materialize_import_batch(
-                captured["records"], source=source,
-                batch=batch, manifest=manifest,
-                artifact_store=artifact_store, engine=engine,
+                captured["records"],
+                source=source,
+                batch=batch,
+                manifest=manifest,
+                artifact_store=artifact_store,
+                engine=engine,
             )
 
-        with patch(
-            "finharness.personal_finance.materialize_import_batch", _patched
-        ), self.assertRaises(StateCoreStoreError):
+        with (
+            patch("finharness.personal_finance.materialize_import_batch", _patched),
+            self.assertRaises(StateCoreStoreError),
+        ):
             ingest_personal_finance_export(
-                path, engine=self.engine,
+                path,
+                engine=self.engine,
                 receipt_root=self._receipt_root("forged"),
                 artifact_store=self.store,
                 coverage_mode="full",
@@ -413,20 +507,74 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         _write_csv(path, [_typed_row()])
 
         r1 = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("r1"),
             artifact_store=self._fresh_artifact_store("r1"),
             coverage_mode="full",
             covered_domains=["position"],
         )
         r2 = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("r2"),
             artifact_store=self._fresh_artifact_store("r2"),
             coverage_mode="full",
             covered_domains=["position", "liability"],
         )
         self.assertNotEqual(r1.batch_id, r2.batch_id)
+
+    def test_same_bytes_different_sources_coexist(self):
+        path_a = self.root / "same-a.csv"
+        path_b = self.root / "same-b.csv"
+        row = self._liability_row("shared-loan")
+        _write_csv(path_a, [row])
+        _write_csv(path_b, [row])
+
+        first = ingest_personal_finance_export(
+            path_a,
+            engine=self.engine,
+            receipt_root=self._receipt_root("same-a"),
+            artifact_store=self._fresh_artifact_store("same-a"),
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        second = ingest_personal_finance_export(
+            path_b,
+            engine=self.engine,
+            receipt_root=self._receipt_root("same-b"),
+            artifact_store=self._fresh_artifact_store("same-b"),
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        self.assertNotEqual(first.batch_id, second.batch_id)
+        self.assertEqual(len(list(read_all(ImportBatch, engine=self.engine))), 2)
+
+    def test_same_bytes_different_explicit_deletions_change_batch_identity(self):
+        path = self.root / "explicit-delete.csv"
+        _write_csv(path, [])
+
+        first = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("delete-a"),
+            artifact_store=self._fresh_artifact_store("delete-a"),
+            coverage_mode="full",
+            covered_domains=["liability"],
+            observed_at_utc=OBSERVED,
+            tombstones=[ImportDeletion("Liability", "loan-x", "operator correction a")],
+        )
+        second = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("delete-b"),
+            artifact_store=self._fresh_artifact_store("delete-b"),
+            coverage_mode="full",
+            covered_domains=["liability"],
+            observed_at_utc=OBSERVED,
+            tombstones=[ImportDeletion("Liability", "loan-x", "operator correction b")],
+        )
+        self.assertNotEqual(first.batch_id, second.batch_id)
 
     # ── target 11: same header bytes different observed clocks →
     #                  different batch IDs ──
@@ -436,7 +584,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         _write_csv(path, [_typed_row()])
 
         r1 = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("c1"),
             artifact_store=self._fresh_artifact_store("c1"),
             coverage_mode="full",
@@ -446,7 +595,8 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         path2 = self.root / "clock2.csv"
         _write_csv(path2, [])
         r2 = ingest_personal_finance_export(
-            path2, engine=self.engine,
+            path2,
+            engine=self.engine,
             receipt_root=self._receipt_root("c2"),
             artifact_store=self._fresh_artifact_store("c2"),
             coverage_mode="full",
@@ -462,9 +612,12 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         from finharness.statecore.store import write_records
 
         liab = Liability(
-            liability_id="bypass-1", name="Bypassed",
-            liability_type="loan", balance=Decimal("100"),
-            currency="USD", source="personal_finance_export",
+            liability_id="bypass-1",
+            name="Bypassed",
+            liability_type="loan",
+            balance=Decimal("100"),
+            currency="USD",
+            source="personal_finance_export",
         )
         with self.assertRaises(StateCoreStoreError):
             write_records([liab], engine=self.engine)
@@ -476,16 +629,20 @@ class ZeroRowImportTargetTest(unittest.TestCase):
         path = self.root / "pos.csv"
         _write_csv(path, [_typed_row()])
         r1 = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("r1"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["position"],
         )
         # Retry — should succeed (deterministic) with same batch_id
         r2 = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("r2"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["position"],
         )
         self.assertEqual(r1.batch_id, r2.batch_id)
@@ -493,43 +650,46 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     # ── target 14: duplicate run produces no duplicate tombstones ──
 
     def test_duplicate_run_no_duplicate_tombstones(self):
-        # Seed liability, then clear it, then clear again
-        path_seed = self.root / "seed.csv"
-        _write_csv(path_seed, [self._liability_row("loan-1")])
+        path = self.root / "liabilities.csv"
+        _write_csv(path, [self._liability_row("loan-1")])
         ingest_personal_finance_export(
-            path_seed, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("seed"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
         )
-        path_clear = self.root / "clear.csv"
-        _write_csv(path_clear, [])
-        ingest_personal_finance_export(
-            path_clear, engine=self.engine,
+        _write_csv(path, [])
+        first = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("c1"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
             observed_at_utc=OBSERVED,
         )
-        tombstones_after_first = list(read_all(ImportTombstone, engine=self.engine))
-        self.assertGreaterEqual(len(tombstones_after_first), 1)
-
-        # Clear again — should be idempotent
-        ingest_personal_finance_export(
-            path_clear, engine=self.engine,
+        second = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("c2"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
             covered_domains=["liability"],
             observed_at_utc=OBSERVED,
         )
-        tombstones_after_second = list(read_all(ImportTombstone, engine=self.engine))
-        # No new liability tombstones (only the original one)
+        self.assertEqual(first.batch_id, second.batch_id)
         liability_tombstones = [
-            t for t in tombstones_after_second
-            if t.record_type == "Liability" and t.record_id == "loan-1"
+            item
+            for item in read_all(ImportTombstone, engine=self.engine)
+            if item.record_type == "Liability" and item.record_id == "loan-1"
         ]
-        self.assertEqual(len(liability_tombstones), 1,
-                         "duplicate clear should not create duplicate tombstones")
+        self.assertEqual(
+            len(liability_tombstones),
+            1,
+            "replaying the same deterministic batch must not duplicate deletion evidence",
+        )
 
     # ── target 15: legacy position-only CSV (no record_type) auto-declares
     #                position coverage ──
@@ -537,29 +697,49 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     def test_legacy_csv_without_record_type_auto_declares_position(self):
         path = self.root / "legacy.csv"
         with path.open("w", encoding="utf-8", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=[
-                "account_id", "account_name", "account_kind", "venue",
-                "symbol", "quantity", "market_value", "cost_basis",
-                "currency", "as_of_utc", "observed_at_utc",
-            ])
+            w = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "account_id",
+                    "account_name",
+                    "account_kind",
+                    "venue",
+                    "symbol",
+                    "quantity",
+                    "market_value",
+                    "cost_basis",
+                    "currency",
+                    "as_of_utc",
+                    "observed_at_utc",
+                ],
+            )
             w.writeheader()
-            w.writerow({
-                "account_id": "acct", "account_name": "Legacy",
-                "account_kind": "broker", "venue": "test",
-                "symbol": "SPY", "quantity": "2", "market_value": "100",
-                "cost_basis": "90", "currency": "USD",
-                "as_of_utc": OBSERVED, "observed_at_utc": OBSERVED,
-            })
+            w.writerow(
+                {
+                    "account_id": "acct",
+                    "account_name": "Legacy",
+                    "account_kind": "broker",
+                    "venue": "test",
+                    "symbol": "SPY",
+                    "quantity": "2",
+                    "market_value": "100",
+                    "cost_basis": "90",
+                    "currency": "USD",
+                    "as_of_utc": OBSERVED,
+                    "observed_at_utc": OBSERVED,
+                }
+            )
         result = ingest_personal_finance_export(
-            path, engine=self.engine,
+            path,
+            engine=self.engine,
             receipt_root=self._receipt_root("legacy"),
-            artifact_store=self.store, coverage_mode="full",
+            artifact_store=self.store,
+            coverage_mode="full",
         )
         positions = list(read_all(Position, engine=self.engine))
         self.assertEqual(len(positions), 1)
         batch = exactly_one(
-            b for b in read_all(ImportBatch, engine=self.engine)
-            if b.batch_id == result.batch_id
+            b for b in read_all(ImportBatch, engine=self.engine) if b.batch_id == result.batch_id
         )
         self.assertEqual(batch.covered_domains, ["position"])
 

@@ -401,6 +401,81 @@ class StateCoreStoreTest(unittest.TestCase):
             self.assertIn("import_tombstones", inspect(connection).get_table_names())
         migrate_state_core(engine)
 
+    def test_v13_import_batch_schema_migrates_to_v14_contract_identity(self) -> None:
+        engine = open_state_core(self.db_path, create=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE import_batches ("
+                "schema_version VARCHAR NOT NULL, as_of_utc VARCHAR NOT NULL, "
+                "authority_level VARCHAR NOT NULL, batch_id VARCHAR PRIMARY KEY, "
+                "source_kind VARCHAR NOT NULL, source_id VARCHAR NOT NULL, "
+                "coverage_mode VARCHAR NOT NULL, source_sha256 VARCHAR NOT NULL, "
+                "source_artifact_id VARCHAR NOT NULL, adapter_version VARCHAR NOT NULL, "
+                "import_schema_version VARCHAR NOT NULL, record_counts JSON NOT NULL, "
+                "covered_domains JSON NOT NULL, supersedes_batch_id VARCHAR, "
+                "correction_reason VARCHAR, corporate_action_status VARCHAR NOT NULL, "
+                "corporate_action_gaps JSON NOT NULL, completeness_status VARCHAR NOT NULL, "
+                "time_semantics JSON NOT NULL, findings JSON NOT NULL, "
+                "CONSTRAINT uq_import_batches_content_contract UNIQUE ("
+                "source_kind, source_id, source_sha256, adapter_version, "
+                "import_schema_version, coverage_mode, supersedes_batch_id))"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO import_batches VALUES ("
+                "'finharness.state_core.v1','2026-07-20T00:00:00+00:00','read_only',"
+                "'batch-v13','personal_finance_export','source-a','full','same-hash',"
+                "'artifact-a','adapter-v4','manifest-v3','{}','[\"liability\"]',"
+                "NULL,NULL,'not_applicable','[]','complete','{}','[]')"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 13")
+
+        migrate_state_core(engine)
+
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("import_batches")}
+        self.assertIn("contract_digest", columns)
+        constraints = {
+            item["name"]: tuple(item["column_names"])
+            for item in inspector.get_unique_constraints("import_batches")
+        }
+        self.assertEqual(
+            constraints["uq_import_batches_content_contract"],
+            (
+                "source_kind",
+                "source_id",
+                "source_sha256",
+                "adapter_version",
+                "import_schema_version",
+                "contract_digest",
+            ),
+        )
+        with engine.connect() as connection:
+            version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+            digest = connection.execute(
+                text("SELECT contract_digest FROM import_batches WHERE batch_id='batch-v13'")
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO import_batches ("
+                    "schema_version, as_of_utc, authority_level, batch_id, source_kind, "
+                    "source_id, coverage_mode, source_sha256, source_artifact_id, "
+                    "adapter_version, import_schema_version, contract_digest, record_counts, "
+                    "covered_domains, supersedes_batch_id, correction_reason, "
+                    "corporate_action_status, corporate_action_gaps, completeness_status, "
+                    "time_semantics, findings) VALUES ("
+                    "'finharness.state_core.v1','2026-07-20T00:00:00+00:00','read_only',"
+                    "'batch-v14-b','personal_finance_export','source-b','full','same-hash',"
+                    "'artifact-b','adapter-v4','manifest-v3',:digest,'{}','[\"liability\"]',"
+                    "NULL,NULL,'not_applicable','[]','complete','{}','[]')"
+                ),
+                {"digest": digest},
+            )
+            connection.commit()
+        self.assertEqual(version, 14)
+        self.assertTrue(str(digest).startswith("legacy:"))
+        self.assertEqual(len(read_all(ImportBatch, engine=engine)), 2)
+        migrate_state_core(engine)
+
     def test_migration_adds_identity_bindings_without_forging_legacy_identity(self) -> None:
         engine = open_state_core(self.db_path, create=True)
         with engine.begin() as connection:
