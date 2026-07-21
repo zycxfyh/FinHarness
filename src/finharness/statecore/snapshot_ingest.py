@@ -26,7 +26,12 @@ from finharness.capital_import_valuation import (
     merge_valuation_findings,
     valuation_assessment_summary,
 )
-from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.import_provenance import (
+    derive_import_batch_id,
+    derive_receipt_manifest_id,
+    persist_source_evidence,
+    prepare_import,
+)
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
 from finharness.statecore.identities import (
@@ -270,6 +275,7 @@ def _position_records(
                 quote_currency=currency,
                 provider_namespace=provider_namespace,
                 source_refs=[source_ref],
+                as_of_utc=as_of_utc,
             )
             identities.setdefault(identity.instrument_id, identity)
             aliases.setdefault(alias.alias_id, alias)
@@ -442,6 +448,7 @@ def _portfolio_records_with_identities(
         source_namespace=provider_namespace,
         source_native_id=source_native_account_id,
         source_refs=[source_ref],
+        as_of_utc=as_of_utc,
     )
     account_id = account_identity_record.canonical_account_id
     resolved_snapshot_id = _safe_id(
@@ -498,6 +505,7 @@ def _portfolio_records_with_identities(
             or account_payload.get("status"),
             account_id,
         ),
+        created_at_utc=as_of_utc,
         as_of_utc=as_of_utc,
         source_refs=[source_ref],
     )
@@ -684,9 +692,29 @@ def _ingest_broker_read_receipt_with_snapshot(
         kind=cast(str, contract["kind"]),
         path=cast(str, contract["path"]),
         created_at_utc=cast(str, contract["created_at_utc"]),
+        as_of_utc=cast(str, contract["created_at_utc"]),
         source_refs=cast(list[str], contract["source_refs"]),
         refs=cast(list[str], contract["refs"]),
     )
+    expected_batch_id = derive_import_batch_id(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        source_id=source_ref,
+        source_sha256=source_sha256,
+        adapter_version=BROKER_READ_ADAPTER_VERSION,
+        coverage_mode="full",
+        covered_domains=["position"],
+    )
+    expected_manifest_id = derive_receipt_manifest_id(
+        expected_batch_id, import_receipt_id
+    )
+    snapshot.payload = {
+        **snapshot.payload,
+        "import_batch_id": expected_batch_id,
+        "receipt_manifest_id": expected_manifest_id,
+        "import_receipt_id": import_receipt_id,
+        "import_receipt_ref": import_receipt_ref,
+        "source_artifact_id": source_descriptor.artifact_id,
+    }
     expected_materialized_identities = materialized_record_identities(
         [receipt_index, *all_records]
     )
@@ -712,14 +740,14 @@ def _ingest_broker_read_receipt_with_snapshot(
         covered_domains=["position"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
     )
-    snapshot.payload = {
-        **snapshot.payload,
-        "import_batch_id": prepared.batch.batch_id,
-        "receipt_manifest_id": prepared.manifest.manifest_id,
-        "import_receipt_id": import_receipt_id,
-        "import_receipt_ref": import_receipt_ref,
-        "source_artifact_id": prepared.batch.source_artifact_id,
-    }
+    if prepared.batch.batch_id != expected_batch_id:
+        raise StateCoreStoreError(
+            "derived broker import batch identity diverged before materialization"
+        )
+    if prepared.manifest.manifest_id != expected_manifest_id:
+        raise StateCoreStoreError(
+            "derived broker receipt manifest identity diverged before materialization"
+        )
     materialize_import_batch(
         [receipt_index, *all_records],
         source=BROKER_READ_SOURCE_KIND,

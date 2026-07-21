@@ -54,17 +54,20 @@ def account_identity(
     source_native_id: str,
     source_refs: Sequence[str] = (),
     canonical_account_id: str | None = None,
+    as_of_utc: str | None = None,
 ) -> tuple[AccountIdentity, IdentityAlias]:
     namespace = _required(source_namespace, "source_namespace")
     native_id = source_native_id.strip()
     if not native_id:
         raise IdentityContractError("source_native_id must be explicit")
     canonical_id = canonical_account_id or _id("acct", namespace, native_id)
+    identity_kwargs = {"as_of_utc": as_of_utc} if as_of_utc is not None else {}
     identity = AccountIdentity(
         canonical_account_id=canonical_id,
         source_namespace=namespace,
         source_native_id=native_id,
         source_refs=sorted(set(source_refs)),
+        **identity_kwargs,
     )
     alias = identity_alias(
         identity_kind="account",
@@ -72,6 +75,7 @@ def account_identity(
         provider_alias=native_id,
         canonical_id=canonical_id,
         source_refs=source_refs,
+        as_of_utc=as_of_utc,
     )
     return identity, alias
 
@@ -85,6 +89,7 @@ def instrument_identity(
     provider_namespace: str,
     provider_alias: str | None = None,
     source_refs: Sequence[str] = (),
+    as_of_utc: str | None = None,
 ) -> tuple[InstrumentIdentity, IdentityAlias]:
     normalized_symbol = _required(symbol, "symbol", upper=True)
     normalized_type = _required(instrument_type, "instrument_type")
@@ -99,6 +104,7 @@ def instrument_identity(
         normalized_venue,
         normalized_currency,
     )
+    identity_kwargs = {"as_of_utc": as_of_utc} if as_of_utc is not None else {}
     identity = InstrumentIdentity(
         instrument_id=instrument_id,
         symbol=normalized_symbol,
@@ -106,6 +112,7 @@ def instrument_identity(
         venue=normalized_venue,
         quote_currency=normalized_currency,
         source_refs=sorted(set(source_refs)),
+        **identity_kwargs,
     )
     alias = identity_alias(
         identity_kind="instrument",
@@ -113,6 +120,7 @@ def instrument_identity(
         provider_alias=provider_alias or symbol,
         canonical_id=instrument_id,
         source_refs=source_refs,
+        as_of_utc=as_of_utc,
     )
     return identity, alias
 
@@ -125,6 +133,7 @@ def identity_alias(
     canonical_id: str,
     source_refs: Sequence[str] = (),
     mapping_version: str = "finharness.identity_alias.v0",
+    as_of_utc: str | None = None,
 ) -> IdentityAlias:
     namespace = _required(provider_namespace, "provider_namespace")
     alias = provider_alias.strip()
@@ -132,6 +141,7 @@ def identity_alias(
     version = mapping_version.strip()
     if not alias or not target or not version:
         raise IdentityContractError("alias, canonical_id, and mapping_version must be explicit")
+    alias_kwargs = {"as_of_utc": as_of_utc} if as_of_utc is not None else {}
     return IdentityAlias(
         alias_id=_id("alias", identity_kind, namespace, alias, version),
         identity_kind=identity_kind,
@@ -140,6 +150,7 @@ def identity_alias(
         canonical_id=target,
         mapping_version=version,
         source_refs=sorted(set(source_refs)),
+        **alias_kwargs,
     )
 
 

@@ -30,7 +30,7 @@ from finharness.statecore.import_models import (
 )
 from finharness.statecore.receipt_io import atomic_write_bytes, resolve_under
 
-IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v4"
+IMPORT_MANIFEST_SCHEMA_VERSION = "finharness.import_manifest.v5"
 SOURCE_ARTIFACT_SCHEMA = "finharness.import_source_evidence"
 RECEIPT_ARTIFACT_SCHEMA = "finharness.import_receipt"
 
@@ -254,6 +254,11 @@ def derive_import_batch_id(
     )
 
 
+
+def derive_receipt_manifest_id(batch_id: str, receipt_id: str) -> str:
+    """Derive the immutable manifest identity before receipt content is frozen."""
+    return _stable_id("receipt_manifest", batch_id, receipt_id)
+
 def _put_or_verify(
     store: ArtifactStore,
     *,
@@ -424,7 +429,7 @@ def prepare_import(
     )
     source_artifact_id = source_descriptor.artifact_id
     stable_created_at = source_descriptor.created_at_utc
-    manifest_id = _stable_id("receipt_manifest", batch_id, receipt_id)
+    manifest_id = derive_receipt_manifest_id(batch_id, receipt_id)
     complete_receipt = {
         **receipt_payload,
         "import_batch_id": batch_id,

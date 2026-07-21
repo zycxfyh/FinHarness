@@ -410,6 +410,7 @@ def _records_from_rows(
                 source_namespace=source_namespace,
                 source_native_id=account,
                 source_refs=source_refs,
+                as_of_utc=as_of_utc,
             )
             canonical_account_id = account_identity_record.canonical_account_id
             account_identities.setdefault(canonical_account_id, account_identity_record)
@@ -422,6 +423,7 @@ def _records_from_rows(
                     kind="beancount",
                     venue="beancount",
                     display_name=account,
+                    created_at_utc=as_of_utc,
                     as_of_utc=as_of_utc,
                     authority_level="read_only",
                     source_refs=source_refs,
@@ -439,6 +441,7 @@ def _records_from_rows(
                     quote_currency=currency,
                     provider_namespace=source_namespace,
                     source_refs=source_refs,
+                    as_of_utc=as_of_utc,
                 )
                 instrument_id = instrument.instrument_id
                 instrument_identities.setdefault(instrument_id, instrument)
@@ -775,6 +778,7 @@ def ingest_beancount_ledger(
         kind=LEDGER_KIND,
         path=receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
+        as_of_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )

@@ -1,15 +1,24 @@
-"""Receipt-bound positive proof for capital-import materialized record identities."""
+"""Receipt-bound proof for capital-import materialized rows and content."""
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, SQLModel
 
 MATERIALIZED_RECORD_IDENTITIES_FIELD = "materialized_record_identities"
+MATERIALIZED_RECORD_CONTENT_SCHEMA = "finharness.materialized_record_content.v1"
 
 TABLE_DOMAINS: dict[str, str] = {
     "receipt_index": "receipt",
@@ -34,10 +43,20 @@ OWNER_SCOPED_TABLES: dict[str, str] = {
     "insurance_policies": "insurance",
     "document_refs": "document",
 }
+HISTORICAL_REPLAY_ALLOWED_TABLES = frozenset(
+    {"receipt_index", "snapshots", "positions"}
+)
+CURRENT_REPLAY_TABLE_DOMAINS: dict[str, frozenset[str]] = {
+    "account_identities": frozenset({"account", "position"}),
+    "instrument_identities": frozenset({"position"}),
+    "identity_aliases": frozenset({"account", "position"}),
+    "accounts": frozenset({"account", "position"}),
+    **{table: frozenset({domain}) for table, domain in OWNER_SCOPED_TABLES.items()},
+}
 
 
 class MaterializedRecordIdentityError(RuntimeError):
-    """Raised when receipt-bound materialized identity proof is malformed."""
+    """Raised when receipt-bound materialized proof is malformed."""
 
 
 @dataclass(frozen=True)
@@ -52,8 +71,97 @@ def _identity_sort_key(item: Mapping[str, str]) -> tuple[str, str, str]:
     return (item["table"], item["record_id"], item.get("scope_id", ""))
 
 
+def _canonical_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, Decimal):
+        return {"$decimal": str(value)}
+    if isinstance(value, float):
+        return {"$float": repr(value)}
+    if isinstance(value, datetime):
+        return {"$datetime": value.isoformat()}
+    if isinstance(value, date):
+        return {"$date": value.isoformat()}
+    if isinstance(value, UUID):
+        return {"$uuid": str(value)}
+    if isinstance(value, Enum):
+        return _canonical_value(value.value)
+    if isinstance(value, bytes):
+        return {"$bytes_base64": base64.b64encode(value).decode("ascii")}
+    if isinstance(value, Mapping):
+        return {
+            str(key): _canonical_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_value(item) for item in value]
+    raise MaterializedRecordIdentityError(
+        f"unsupported materialized content value: {type(value).__name__}"
+    )
+
+
+
+def _stable_receipt_reference(value: str) -> str:
+    name = Path(value).name
+    if name.startswith("receipt_") and name.endswith(".json"):
+        return f"receipt://{name[:-5]}"
+    return value
+
+
+def _normalize_lineage_value(key: str, value: Any) -> Any:
+    if key == "import_receipt_ref" and isinstance(value, str):
+        return _stable_receipt_reference(value)
+    if key == "source_refs" and isinstance(value, list):
+        return [
+            _stable_receipt_reference(item) if isinstance(item, str) else item
+            for item in value
+        ]
+    if isinstance(value, Mapping):
+        return {
+            str(child_key): _normalize_lineage_value(str(child_key), child_value)
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_lineage_value("", item) for item in value]
+    return value
+
+
+def _content_commitment_payload(table_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = {
+        key: _normalize_lineage_value(key, value) for key, value in payload.items()
+    }
+    if table_name == "receipt_index" and isinstance(normalized.get("path"), str):
+        normalized["path"] = _stable_receipt_reference(normalized["path"])
+    return normalized
+
+def _content_digest(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        _canonical_value(payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _record_content_payload(record: Any) -> dict[str, Any]:
+    table = getattr(record.__class__, "__table__", None)
+    if table is None:
+        raise MaterializedRecordIdentityError(
+            f"materialized record {record.__class__.__name__} has no table"
+        )
+    payload = {column.name: getattr(record, column.name) for column in table.columns}
+    return _content_commitment_payload(table.name, payload)
+
+
+def _row_content_digest(table_name: str, row: Any) -> str:
+    table = SQLModel.metadata.tables[table_name]
+    payload = {column.name: row[column.name] for column in table.columns}
+    return _content_digest(_content_commitment_payload(table_name, payload))
+
+
 def materialized_record_identity(record: Any) -> dict[str, str] | None:
-    """Return one deterministic table/primary-key identity for a materialized row."""
+    """Return deterministic identity and content commitment for one materialized row."""
     table = getattr(record.__class__, "__table__", None)
     if table is None or table.name not in TABLE_DOMAINS:
         return None
@@ -74,6 +182,8 @@ def materialized_record_identity(record: Any) -> dict[str, str] | None:
         "primary_key": primary_key,
         "record_id": record_id,
         "domain": TABLE_DOMAINS[table.name],
+        "content_schema": MATERIALIZED_RECORD_CONTENT_SCHEMA,
+        "content_sha256": _content_digest(_record_content_payload(record)),
     }
     if table.name == "positions":
         identity["scope_id"] = str(getattr(record, "snapshot_id", "") or "")
@@ -81,7 +191,7 @@ def materialized_record_identity(record: Any) -> dict[str, str] | None:
 
 
 def materialized_record_identities(records: Iterable[Any]) -> list[dict[str, str]]:
-    """Freeze the exact non-tombstone queryable rows one import claims to materialize."""
+    """Freeze exact row identities and canonical persisted content commitments."""
     identities = [
         identity
         for record in records
@@ -91,19 +201,17 @@ def materialized_record_identities(records: Iterable[Any]) -> list[dict[str, str
     keys = {(item["table"], item["record_id"]) for item in identities}
     if len(keys) != len(identities):
         raise MaterializedRecordIdentityError(
-            "materialized record identity proof contains duplicate table identities"
+            "materialized record proof contains duplicate table identities"
         )
     return identities
 
 
-def normalize_materialized_record_identities(
+def normalize_materialized_record_identities(  # noqa: C901
     raw: Sequence[Mapping[str, Any]] | None,
 ) -> list[dict[str, str]]:
-    """Validate and normalize immutable receipt identity proof."""
+    """Validate and normalize immutable receipt row proof."""
     if raw is None:
-        raise MaterializedRecordIdentityError(
-            "receipt has no materialized record identity proof"
-        )
+        raise MaterializedRecordIdentityError("receipt has no materialized record proof")
     normalized: list[dict[str, str]] = []
     for item in raw:
         table_name = str(item.get("table") or "").strip()
@@ -124,6 +232,8 @@ def normalize_materialized_record_identities(
             "primary_key": str(item.get("primary_key") or "").strip(),
             "record_id": str(item.get("record_id") or "").strip(),
             "domain": str(item.get("domain") or "").strip(),
+            "content_schema": str(item.get("content_schema") or "").strip(),
+            "content_sha256": str(item.get("content_sha256") or "").strip().lower(),
         }
         scope_id = str(item.get("scope_id") or "").strip()
         if scope_id:
@@ -140,6 +250,15 @@ def normalize_materialized_record_identities(
             raise MaterializedRecordIdentityError(
                 f"materialized identity domain mismatch for {table_name}"
             )
+        if entry["content_schema"] != MATERIALIZED_RECORD_CONTENT_SCHEMA:
+            raise MaterializedRecordIdentityError(
+                f"materialized content schema mismatch for {table_name}"
+            )
+        digest = entry["content_sha256"]
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise MaterializedRecordIdentityError(
+                f"materialized content digest is invalid for {table_name}"
+            )
         if table_name == "positions" and not scope_id:
             raise MaterializedRecordIdentityError(
                 "position materialized identity requires snapshot scope_id"
@@ -149,12 +268,12 @@ def normalize_materialized_record_identities(
     keys = {(item["table"], item["record_id"]) for item in normalized}
     if len(keys) != len(normalized):
         raise MaterializedRecordIdentityError(
-            "materialized record identity proof contains duplicate table identities"
+            "materialized record proof contains duplicate table identities"
         )
     return normalized
 
 
-def audit_materialized_record_identities(
+def audit_materialized_record_identities(  # noqa: C901
     session: Session,
     *,
     source_kind: str,
@@ -162,15 +281,15 @@ def audit_materialized_record_identities(
     expected: Sequence[Mapping[str, Any]],
     current_domains: set[str],
 ) -> list[MaterializedIdentityMismatch]:
-    """Compare receipt-bound identities with the queryable mirror without guessing."""
+    """Compare receipt-bound identity/content proof with the queryable mirror."""
     normalized = normalize_materialized_record_identities(expected)
     owner = f"{source_kind}::{source_id}"
     findings: list[MaterializedIdentityMismatch] = []
     expected_by_table: dict[str, set[str]] = {}
     for identity in normalized:
         table_name = identity["table"]
-        domain = identity["domain"]
-        if table_name in OWNER_SCOPED_TABLES and domain not in current_domains:
+        required_domains = CURRENT_REPLAY_TABLE_DOMAINS.get(table_name)
+        if required_domains and not required_domains & current_domains:
             continue
         table = SQLModel.metadata.tables[table_name]
         record_id = identity["record_id"]
@@ -194,6 +313,16 @@ def audit_materialized_record_identities(
                     table_name,
                     record_id,
                     f"materialized row owner mismatch: {table_name}:{record_id}",
+                )
+            )
+        actual_digest = _row_content_digest(table_name, row)
+        if actual_digest != identity["content_sha256"]:
+            findings.append(
+                MaterializedIdentityMismatch(
+                    "materialized_record_content_mismatch",
+                    table_name,
+                    record_id,
+                    f"materialized row content drift: {table_name}:{record_id}",
                 )
             )
         expected_by_table.setdefault(table_name, set()).add(record_id)
@@ -224,7 +353,9 @@ def audit_materialized_record_identities(
     expected_positions: dict[str, set[str]] = {}
     for identity in normalized:
         if identity["table"] == "positions":
-            expected_positions.setdefault(identity["scope_id"], set()).add(identity["record_id"])
+            expected_positions.setdefault(identity["scope_id"], set()).add(
+                identity["record_id"]
+            )
     position_table = SQLModel.metadata.tables["positions"]
     for snapshot_id, expected_ids in expected_positions.items():
         actual_ids = {

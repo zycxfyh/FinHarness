@@ -8,7 +8,7 @@ import binascii
 import hashlib
 import json
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -54,7 +54,6 @@ from finharness.statecore.models import (
 from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_json, resolve_under
 from finharness.statecore.store import (
     current_source_domains_for_batch,
-    import_domain_head_id,
 )
 
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
@@ -583,14 +582,24 @@ def _domain_head_candidates(
     return candidates
 
 
-def _unique_latest_domain_candidate(
-    items: list[tuple[ImportBatch, ReceiptManifest]],
-) -> tuple[ImportBatch, ReceiptManifest] | None:
-    if not items:
-        return None
-    latest_at = max(manifest.materialized_at_utc for _batch, manifest in items)
-    latest = [item for item in items if item[1].materialized_at_utc == latest_at]
-    return latest[0] if len(latest) == 1 else None
+
+def _domain_head_is_structurally_valid(
+    head: ImportDomainHead,
+    *,
+    batches_by_id: dict[str, ImportBatch],
+    manifests_by_id: dict[str, ReceiptManifest],
+) -> bool:
+    batch = batches_by_id.get(head.batch_id)
+    manifest = manifests_by_id.get(head.manifest_id)
+    return (
+        batch is not None
+        and manifest is not None
+        and manifest.batch_id == head.batch_id
+        and batch.source_kind == head.source_kind
+        and batch.source_id == head.source_id
+        and head.domain in batch.covered_domains
+        and head.materialized_at_utc == manifest.materialized_at_utc
+    )
 
 
 def _audit_import_domain_heads(
@@ -609,45 +618,32 @@ def _audit_import_domain_heads(
     for key, items in candidates.items():
         head = heads_by_key.get(key)
         if head is None:
-            unique = _unique_latest_domain_candidate(items)
-            blocked = items if unique is None else [unique]
-            for batch, _manifest in blocked:
+            for batch, _manifest in items:
                 findings.append(
                     _finding(
                         "import_domain_head_missing",
                         batch_id=batch.batch_id,
-                        recoverable=unique is not None,
-                        recovery_action=(
-                            "rebuild_import_domain_head"
-                            if unique is not None
-                            else "reimport_to_establish_domain_head"
-                        ),
+                        recoverable=False,
+                        recovery_action="reimport_to_establish_domain_head",
                         message=(
-                            "current import domain head is missing"
-                            if unique is not None
-                            else "current import domain head is ambiguous"
+                            "current import domain head is missing; runtime recovery "
+                            "cannot infer current authority from historical ordering"
                         ),
                     )
                 )
             continue
-        head_batch = batches_by_id.get(head.batch_id)
-        manifest = manifests_by_id.get(head.manifest_id)
-        valid = (
-            head_batch is not None
-            and manifest is not None
-            and manifest.batch_id == head.batch_id
-            and head_batch.source_kind == head.source_kind
-            and head_batch.source_id == head.source_id
-            and head.domain in head_batch.covered_domains
-            and head.materialized_at_utc == manifest.materialized_at_utc
-        )
-        if not valid:
+        if not _domain_head_is_structurally_valid(
+            head,
+            batches_by_id=batches_by_id,
+            manifests_by_id=manifests_by_id,
+        ):
             findings.append(
                 _finding(
                     "import_domain_head_invalid",
                     batch_id=head.batch_id,
-                    recoverable=_unique_latest_domain_candidate(items) is not None,
-                    recovery_action="rebuild_import_domain_head",
+                    recoverable=False,
+                    recovery_action="reimport_to_establish_domain_head",
+                    message="invalid current domain head cannot be repaired by clock inference",
                 )
             )
     for key, head in heads_by_key.items():
@@ -656,65 +652,18 @@ def _audit_import_domain_heads(
                 _finding(
                     "import_domain_head_orphan",
                     batch_id=head.batch_id,
-                    recoverable=True,
-                    recovery_action="remove_orphan_import_domain_head",
+                    recoverable=False,
+                    recovery_action="manually_resolve_or_reimport_domain_head",
                 )
             )
     return findings
 
 
 def _repair_import_domain_heads(engine: Engine) -> list[str]:
-    actions: list[str] = []
-    with Session(engine) as session:
-        batches = list(session.exec(select(ImportBatch)).all())
-        manifests = list(session.exec(select(ReceiptManifest)).all())
-        candidates = _domain_head_candidates(batches, manifests)
-        heads = list(session.exec(select(ImportDomainHead)).all())
-        heads_by_key = {
-            (head.source_kind, head.source_id, head.domain): head for head in heads
-        }
-        for key, items in candidates.items():
-            source_kind, source_id, domain = key
-            unique = _unique_latest_domain_candidate(items)
-            if unique is None:
-                continue
-            batch, manifest = unique
-            current = heads_by_key.get(key)
-            valid = (
-                current is not None
-                and current.batch_id == batch.batch_id
-                and current.manifest_id == manifest.manifest_id
-                and current.materialized_at_utc == manifest.materialized_at_utc
-            )
-            if valid:
-                continue
-            session.merge(
-                ImportDomainHead(
-                    domain_head_id=import_domain_head_id(
-                        source_kind, source_id, domain
-                    ),
-                    source_kind=source_kind,
-                    source_id=source_id,
-                    domain=domain,
-                    batch_id=batch.batch_id,
-                    manifest_id=manifest.manifest_id,
-                    materialized_at_utc=manifest.materialized_at_utc,
-                    as_of_utc=manifest.materialized_at_utc,
-                    authority_level="read_only",
-                )
-            )
-            actions.append(
-                f"rebuilt_import_domain_head:{source_kind}:{source_id}:{domain}:"
-                f"{batch.batch_id}"
-            )
-        candidate_keys = set(candidates)
-        for head in heads:
-            key = (head.source_kind, head.source_id, head.domain)
-            if key not in candidate_keys:
-                session.delete(head)
-                actions.append(f"removed_orphan_import_domain_head:{head.domain_head_id}")
-        session.commit()
-    return actions
+    """Runtime recovery never creates, rewrites, or removes current domain heads."""
+    del engine
+    return []
+
 
 def audit_capital_imports(
     *,
@@ -993,20 +942,42 @@ def _trusted_replay_files(
 def _temporarily_restore_replay_sources(
     files: list[tuple[Path, bytes]],
 ) -> Iterator[None]:
+    """Temporarily install replay bytes with rollback covering setup failures."""
     previous: dict[Path, bytes | None] = {}
-    for path, content in files:
-        previous[path] = path.read_bytes() if path.is_file() else None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(path, content)
+    changed: list[Path] = []
+    created_directories: set[Path] = set()
+    restoration_errors: list[str] = []
     try:
+        for path, content in files:
+            previous[path] = path.read_bytes() if path.is_file() else None
+            missing_parents = [parent for parent in path.parents if not parent.exists()]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            created_directories.update(missing_parents)
+            changed.append(path)
+            atomic_write_bytes(path, content)
         yield
     finally:
-        for path, old_content in reversed(list(previous.items())):
-            if old_content is None:
-                if path.exists():
-                    path.unlink()
-            else:
-                atomic_write_bytes(path, old_content)
+        for path in reversed(changed):
+            try:
+                old_content = previous[path]
+                if old_content is None:
+                    if path.exists():
+                        path.unlink()
+                else:
+                    atomic_write_bytes(path, old_content)
+            except OSError as exc:
+                restoration_errors.append(f"{path}:{exc}")
+        for directory in sorted(
+            created_directories, key=lambda item: len(item.parts), reverse=True
+        ):
+            with suppress(OSError):
+                directory.rmdir()
+        if restoration_errors:
+            raise CapitalImportRecoveryError(
+                "critical recovery source restoration failure: "
+                + "; ".join(restoration_errors)
+            )
+
 
 def _replay_receipt(
     descriptor: ArtifactDescriptor,
@@ -1108,30 +1079,15 @@ def _recovery_projection_domains(
     *,
     engine: Engine,
 ) -> set[str]:
-    """Return only domains whose current projection can be proved from atomic heads."""
+    """Authorize projection rebuild only through an exact persisted batch/head."""
     batch_id = str(payload.get("import_batch_id") or "")
-    covered_domains = {str(item) for item in payload.get("covered_domains", [])}
-    candidate_created_at = str(payload.get("created_at_utc") or "")
+    if not batch_id:
+        return set()
     with Session(engine) as session:
-        batch = session.get(ImportBatch, batch_id) if batch_id else None
-        if batch is not None:
-            return current_source_domains_for_batch(session, batch=batch)
-        source_kind = str(payload.get("kind") or "")
-        source_id = str(payload.get("source_ref") or "")
-        if not source_kind or not source_id or not candidate_created_at:
+        batch = session.get(ImportBatch, batch_id)
+        if batch is None:
             return set()
-        allowed: set[str] = set()
-        for domain in covered_domains:
-            head = session.exec(
-                select(ImportDomainHead).where(
-                    ImportDomainHead.source_kind == source_kind,
-                    ImportDomainHead.source_id == source_id,
-                    ImportDomainHead.domain == domain,
-                )
-            ).one_or_none()
-            if head is None or candidate_created_at > head.materialized_at_utc:
-                allowed.add(domain)
-        return allowed
+        return current_source_domains_for_batch(session, batch=batch)
 
 
 def _repair_artifact_index(

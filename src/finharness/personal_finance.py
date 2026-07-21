@@ -448,6 +448,7 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
         source_namespace=namespace,
         source_native_id=source_native_id,
         source_refs=ctx.source_refs,
+        as_of_utc=ctx.as_of_utc,
     )
     account_id = account_identity_record.canonical_account_id
     symbol = _required_text(row, "symbol", row_number=index).upper()
@@ -463,6 +464,7 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
             quote_currency=quote_currency,
             provider_namespace=namespace,
             source_refs=ctx.source_refs,
+            as_of_utc=ctx.as_of_utc,
         )
         resolved_instrument_id = instrument.instrument_id
         ctx.instrument_identities.setdefault(instrument.instrument_id, instrument)
@@ -477,6 +479,7 @@ def _build_position(row: dict[str, str], index: int, ctx: _IngestContext) -> Pos
             kind=_required_text(row, "account_kind", row_number=index),
             venue=_required_text(row, "venue", row_number=index),
             display_name=_required_text(row, "account_name", row_number=index),
+            created_at_utc=ctx.as_of_utc,
             as_of_utc=ctx.as_of_utc,
             authority_level="read_only",
             source_refs=ctx.source_refs,
@@ -1114,6 +1117,7 @@ def ingest_personal_finance_export(
         kind=EXPORT_KIND,
         path=receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
+        as_of_utc=source_descriptor.created_at_utc,
         source_refs=source_refs,
         refs=[display_path(source_path)],
     )

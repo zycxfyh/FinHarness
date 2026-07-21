@@ -35,6 +35,8 @@ from finharness.statecore.execution_models import (
     ReconciliationReport,
 )
 from finharness.statecore.import_identity import (
+    CURRENT_REPLAY_TABLE_DOMAINS,
+    HISTORICAL_REPLAY_ALLOWED_TABLES,
     MATERIALIZED_RECORD_IDENTITIES_FIELD,
     OWNER_SCOPED_TABLES,
     MaterializedRecordIdentityError,
@@ -1932,12 +1934,25 @@ def materialize_import_batch(  # noqa: C901
                         table_name = getattr(
                             getattr(candidate.__class__, "__table__", None), "name", ""
                         )
-                        owner_domain = OWNER_SCOPED_TABLES.get(table_name)
-                        if owner_domain is not None and owner_domain not in projection_domains:
+                        if table_name in HISTORICAL_REPLAY_ALLOWED_TABLES:
+                            if isinstance(candidate, Position) and not projection_domains:
+                                account_exists = (
+                                    session.get(Account, candidate.account_id) is not None
+                                )
+                                instrument_exists = (
+                                    candidate.instrument_id is None
+                                    or session.get(
+                                        InstrumentIdentity, candidate.instrument_id
+                                    )
+                                    is not None
+                                )
+                                if not account_exists or not instrument_exists:
+                                    continue
+                            filtered_records.append(candidate)
                             continue
-                        if isinstance(candidate, Account) and not projection_domains:
-                            continue
-                        filtered_records.append(candidate)
+                        required_domains = CURRENT_REPLAY_TABLE_DOMAINS.get(table_name)
+                        if required_domains and required_domains & projection_domains:
+                            filtered_records.append(candidate)
                     non_tombstone_records = filtered_records
                 domain_heads = [
                     ImportDomainHead(
