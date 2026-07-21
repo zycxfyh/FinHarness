@@ -17,6 +17,8 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import text
+
 from finharness.artifact_store import LocalArtifactStore
 from finharness.personal_finance import (
     ImportDeletion,
@@ -641,20 +643,237 @@ class ZeroRowImportTargetTest(unittest.TestCase):
     # ── target 12: generic upsert cannot bypass scoped production ownership ──
 
     def test_generic_upsert_cannot_bypass_ownership(self):
-        from finharness.statecore.models import Liability
-        from finharness.statecore.store import write_records
+        from finharness.statecore.store import source_owner_key, upsert_records, write_records
 
-        liab = Liability(
-            liability_id="bypass-1",
-            name="Bypassed",
-            liability_type="loan",
-            balance=Decimal("100"),
-            currency="USD",
-            source="personal_finance_export",
-        )
-        with self.assertRaises(StateCoreStoreError):
-            write_records([liab], engine=self.engine)
+        owner = source_owner_key("personal_finance_export", "/tmp/export.csv")
+        for index, writer in enumerate((write_records, upsert_records), start=1):
+            liab = Liability(
+                liability_id=f"bypass-{index}",
+                name="Bypassed",
+                liability_type="loan",
+                balance=Decimal("100"),
+                currency="USD",
+                source=owner,
+            )
+            with self.assertRaises(StateCoreStoreError):
+                writer([liab], engine=self.engine)
         self.assertEqual(len(list(read_all(Liability, engine=self.engine))), 0)
+
+    def test_v15_migration_normalizes_unique_legacy_owner_then_full_n_to_zero(self):
+        from finharness.statecore.store import migrate_state_core, source_owner_key
+
+        path = self.root / "legacy-owner.csv"
+        _write_csv(path, [self._liability_row("legacy-loan")])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("legacy-seed"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        with self.engine.begin() as connection:
+            connection.execute(
+                text("UPDATE liabilities SET source = 'personal_finance_export'")
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 14")
+
+        migrate_state_core(self.engine)
+
+        liability = exactly_one(read_all(Liability, engine=self.engine))
+        self.assertEqual(
+            liability.source,
+            source_owner_key("personal_finance_export", str(path)),
+        )
+        _write_csv(path, [])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("legacy-clear"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+            observed_at_utc="2025-07-20T08:00:00+00:00",
+        )
+        self.assertEqual(list(read_all(Liability, engine=self.engine)), [])
+        self.assertTrue(
+            any(
+                item.record_type == "Liability" and item.record_id == "legacy-loan"
+                for item in read_all(ImportTombstone, engine=self.engine)
+            )
+        )
+
+    def test_ambiguous_legacy_owner_blocks_full_import(self):
+        from finharness.statecore.store import migrate_state_core
+
+        path = self.root / "ambiguous-owner.csv"
+        _write_csv(path, [self._liability_row("ambiguous-loan")])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("ambiguous-seed"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE liabilities SET source = 'personal_finance_export', "
+                    "source_refs = '[\"unmapped-source\"]'"
+                )
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 14")
+        migrate_state_core(self.engine)
+
+        _write_csv(path, [])
+        with self.assertRaisesRegex(StateCoreStoreError, "legacy source ownership"):
+            ingest_personal_finance_export(
+                path,
+                engine=self.engine,
+                receipt_root=self._receipt_root("ambiguous-clear"),
+                artifact_store=self.store,
+                coverage_mode="full",
+                covered_domains=["liability"],
+                observed_at_utc="2025-07-20T08:00:00+00:00",
+            )
+        self.assertEqual(
+            {item.liability_id for item in read_all(Liability, engine=self.engine)},
+            {"ambiguous-loan"},
+        )
+
+    def test_position_delta_uses_latest_position_covered_predecessor(self):
+        path = self.root / "interleaved-delta.csv"
+        _write_csv(path, [_typed_row()])
+        position_batch = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-position"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["position"],
+        )
+        _write_csv(path, [self._liability_row("interleaved-loan")])
+        liability_batch = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-liability"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        _write_csv(path, [])
+        delta = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-delta"),
+            artifact_store=self.store,
+            coverage_mode="delta",
+            covered_domains=["position"],
+            observed_at_utc="2025-07-20T08:00:00+00:00",
+        )
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == delta.batch_id
+        )
+        snapshot = exactly_one(
+            item
+            for item in read_all(Snapshot, engine=self.engine)
+            if item.snapshot_id == manifest.snapshot_id
+        )
+        current = [
+            item
+            for item in read_all(Position, engine=self.engine)
+            if item.snapshot_id == snapshot.snapshot_id
+        ]
+        self.assertEqual(len(current), 1)
+        self.assertEqual(snapshot.payload["delta_base_batch_id"], position_batch.batch_id)
+        self.assertNotEqual(snapshot.payload["delta_base_batch_id"], liability_batch.batch_id)
+
+    def test_position_full_uses_latest_position_covered_predecessor(self):
+        path = self.root / "interleaved-full.csv"
+        _write_csv(path, [_typed_row()])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-full-position"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["position"],
+        )
+        _write_csv(path, [self._liability_row("interleaved-full-loan")])
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-full-liability"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        _write_csv(path, [])
+        cleared = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("interleaved-full-clear"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["position"],
+            observed_at_utc="2025-07-20T08:00:00+00:00",
+        )
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == cleared.batch_id
+        )
+        receipt = json.loads(self.store.read(manifest.receipt_artifact_id))
+        self.assertEqual(
+            [item["record_type"] for item in receipt["deletion_plan"]["automatic"]],
+            ["Position"],
+        )
+
+    def test_explicit_deletion_does_not_expand_full_coverage(self):
+        path = self.root / "explicit-outside-coverage.csv"
+        _write_csv(
+            path,
+            [self._liability_row("loan-a"), self._liability_row("loan-b")],
+        )
+        ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("explicit-seed"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["liability"],
+        )
+        _write_csv(path, [self._goal_row("goal-a")])
+        result = ingest_personal_finance_export(
+            path,
+            engine=self.engine,
+            receipt_root=self._receipt_root("explicit-delete"),
+            artifact_store=self.store,
+            coverage_mode="full",
+            covered_domains=["goal"],
+            tombstones=[ImportDeletion("Liability", "loan-a", "operator correction")],
+        )
+        self.assertEqual(
+            {item.liability_id for item in read_all(Liability, engine=self.engine)},
+            {"loan-b"},
+        )
+        batch = exactly_one(
+            item
+            for item in read_all(ImportBatch, engine=self.engine)
+            if item.batch_id == result.batch_id
+        )
+        self.assertEqual(batch.covered_domains, ["goal"])
+        manifest = exactly_one(
+            item
+            for item in read_all(ReceiptManifest, engine=self.engine)
+            if item.batch_id == result.batch_id
+        )
+        receipt = json.loads(self.store.read(manifest.receipt_artifact_id))
+        self.assertEqual(receipt["deletion_plan"]["covered_domains"], ["goal"])
+        self.assertEqual(receipt["deletion_plan"]["automatic"], [])
 
     # ── target 13: restart/retry produces identical receipt, plan, tombstones ──
 
