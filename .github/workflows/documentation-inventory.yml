@@ -42,6 +42,14 @@ jobs:
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
+      - name: Lint inventory audit
+        run: |
+          mkdir -p .artifacts/documentation-inventory
+          uvx --from ruff==0.15.14 ruff check \
+            scripts/audit_documentation_inventory.py \
+            --output-format=json \
+            > .artifacts/documentation-inventory/ruff.json
+
       - name: Run adversarial inventory self-test
         run: env -u UV_LOCKED uv run --script scripts/audit_documentation_inventory.py --self-test
 
@@ -67,6 +75,7 @@ jobs:
             -- "${MARKDOWN_PATHS[@]}"
 
       - name: Upload documentation inventory evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: documentation-inventory
