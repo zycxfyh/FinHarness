@@ -13,6 +13,7 @@ trusted capital state
 ```
 
 Read [`docs/current-system.md`](docs/current-system.md) before substantial work. Do not infer current capability from an old proposal, review, roadmap, note, branch, or conversation.
+Use [`Agentic Engineering Principles`](docs/engineering/agentic-abstraction-principles.md) for the stable Human/Agent/Harness/deterministic responsibility split.
 
 ## Truth hierarchy
 
