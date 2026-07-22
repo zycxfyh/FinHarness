@@ -1,6 +1,6 @@
 # Contributing
 
-Read [FinHarness Current System](docs/current-system.md) and [Agent Instructions](AGENTS.md) before substantial work. Issues and pull requests coordinate durable shared work; they are not prerequisites for every reversible change.
+Read [FinHarness Current System](docs/current-system.md), [Agent Instructions](AGENTS.md), and the short [Agentic Engineering Principles](docs/engineering/agentic-abstraction-principles.md) before substantial work. Issues and pull requests coordinate durable shared work; they are not prerequisites for every reversible change.
 
 ## Before changing the repository
 

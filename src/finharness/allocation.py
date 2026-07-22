@@ -45,6 +45,7 @@ CANDIDATE_NON_CLAIMS = (
     "Not execution authorization.",
 )
 
+
 def _refs(*groups: tuple[str, ...]) -> list[str]:
     """Merge per-domain provenance into a minimal, deduped, sorted ref list."""
     merged: set[str] = set()
@@ -99,6 +100,10 @@ def _candidate_scaffold(candidate: AllocationCandidate) -> dict[str, str]:
         "do_nothing_case": do_nothing_case,
         "risk_if_wrong": "; ".join(candidate.key_risks)
         or "Acting may incur transaction or tax cost, or forgo upside.",
+        "counter_evidence": (
+            "Reassess when the trigger metric falls below its threshold, the source "
+            "capital state changes, or admitted evidence becomes stale or incomplete."
+        ),
         "position_impact": (
             f"dimension={candidate.dimension}; reversibility={candidate.reversibility}"
         ),
@@ -175,11 +180,7 @@ def _concentration_candidate(
     report: ExposureReport,
     thresholds: ObservationThresholds,
 ) -> AllocationCandidate | None:
-    if (
-        not report.asset_valuation_admitted
-        or report.holding_count == 0
-        or not report.holdings
-    ):
+    if not report.asset_valuation_admitted or report.holding_count == 0 or not report.holdings:
         return None
     weight = report.top_holding_weight
     if weight is None:
@@ -461,9 +462,7 @@ def _insurance_gap_candidate(
             "verified from current records."
         ),
         evidence=evidence,
-        assumptions=(
-            "Insurance records in the state core reflect the user's actual policies.",
-        ),
+        assumptions=("Insurance records in the state core reflect the user's actual policies.",),
         limitations=(
             "This is a records / coverage-evidence review, not an actuarial or needs analysis.",
             "No household structure, income-replacement need, or risk profile is modeled.",
@@ -534,9 +533,7 @@ def _tax_window_candidate(
             "No jurisdiction-specific tax rules are applied.",
         ),
         options=options,
-        key_risks=(
-            "An unconfirmed or missed tax deadline could create penalties or interest.",
-        ),
+        key_risks=("An unconfirmed or missed tax deadline could create penalties or interest.",),
         reversibility=(
             "Flow (confirming status / recording amounts / reserving cash) is reversible; "
             "freeing up funds to pay (stock) is flagged for human review."
