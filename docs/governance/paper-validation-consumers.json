@@ -146,14 +146,6 @@
       "deletion_gate": "mark_resolved_when_all_isolation_gates_pass"
     },
     {
-      "consumer_id": "receipt-backed-write-registry",
-      "kind": "write_registry",
-      "path": "docs/governance/receipt-backed-write-registry.json",
-      "relation": "registers_paper_write_endpoints",
-      "migration_state": "remove_when_records_purged",
-      "deletion_gate": "remove_paper_entries_when_routes_are_deleted"
-    },
-    {
       "consumer_id": "removal-ledger",
       "kind": "governance_reference",
       "path": "docs/governance/removal-ledger.yml",

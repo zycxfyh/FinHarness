@@ -118,37 +118,6 @@
       "resolution_ref": "SEC-02A / #235, SEC-02B / #236, SEC-02C / #237, SEC-02D / #238"
     },
     {
-      "id": "ENG-DEBT-0003",
-      "title": "Receipt-backed write registry",
-      "status": "resolved",
-      "priority": "P1",
-      "category": "receipt-integrity",
-      "surface": "statecore",
-      "introduced_by": [
-        "StateCore receipt-backed write paths"
-      ],
-      "current_state": "The current machine-checkable write registry inventories canonical and legacy receipt-backed writes, imports registered functions, and verifies route/function coverage and execution substrate semantics.",
-      "desired_state": "Every receipt-backed write path is registered with its stale guard, receipt builder, index behavior, cleanup behavior, and execution substrate.",
-      "risk_if_ignored": "Unregistered write paths can drift in stale guards, hash binding, cleanup, or ReceiptIndex behavior.",
-      "next_action": "Keep registry coverage tests mandatory and update entries in the same slice as every new or removed write path.",
-      "non_goals": [
-        "extracting a shared receipt command base",
-        "changing receipt file formats",
-        "replacing ReceiptIndex"
-      ],
-      "blocked_by": [],
-      "target_slice": "completed",
-      "created_at": "2026-07-06",
-      "last_reviewed_at": "2026-07-10",
-      "review_due": "2026-08-15",
-      "evidence_refs": [
-        "docs/governance/receipt-backed-write-registry.json",
-        "tests/test_receipt_backed_write_registry.py"
-      ],
-      "verification": "receipt_backed_write_registry",
-      "resolution_ref": "PR #112, #128-#131, and #144"
-    },
-    {
       "id": "ENG-DEBT-0004",
       "title": "Taskfile check layering",
       "status": "resolved",

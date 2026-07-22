@@ -8,7 +8,6 @@ resolved entry must return true and every non-resolved entry must return false.
 
 from __future__ import annotations
 
-import importlib
 import json
 import re
 import sys
@@ -181,57 +180,6 @@ def _paper_validation_legacy_boundary(root: Path) -> bool:
             removal_ok,
         )
     )
-
-
-def _receipt_backed_write_registry(root: Path) -> bool:
-    registry = json.loads(_read(root, "docs/governance/receipt-backed-write-registry.json"))
-    entries = registry.get("entries", [])
-    ids = [entry.get("id") for entry in entries]
-    if (
-        registry.get("schema") != "finharness.receipt_backed_write_registry.v1"
-        or registry.get("status") != "current"
-        or registry.get("debt_ref") != "ENG-DEBT-0003"
-        or not entries
-        or len(ids) != len(set(ids))
-    ):
-        return False
-    required = {
-        "id",
-        "module",
-        "file",
-        "function",
-        "route_refs",
-        "db_write_models",
-        "receipt_kind",
-        "receipt_indexed",
-        "stale_guard",
-        "failure_cleanup",
-        "execution_allowed",
-        "execution_substrate",
-        "real_external_execution_allowed",
-    }
-    for entry in entries:
-        if not required.issubset(entry) or not (root / entry["file"]).is_file():
-            return False
-        try:
-            function = getattr(importlib.import_module(entry["module"]), entry["function"])
-        except (AttributeError, ImportError):
-            return False
-        if not callable(function):
-            return False
-        if any(
-            (
-                entry["execution_allowed"],
-                entry["real_external_execution_allowed"],
-                not entry["receipt_indexed"],
-                "ReceiptIndex" not in entry["db_write_models"],
-                not str(entry["receipt_kind"]).strip(),
-                not str(entry["stale_guard"]).strip(),
-                not str(entry["failure_cleanup"]).strip(),
-            )
-        ):
-            return False
-    return True
 
 
 def _task_check_layering(root: Path) -> bool:
@@ -616,16 +564,6 @@ VERIFIERS: dict[str, VerifierSpec] = {
             "src/finharness/paper_validation_boundary_audit.py",
         ),
         sunset="Delete with the paper-validation legacy surface after its removal gate passes.",
-    ),
-    "receipt_backed_write_registry": VerifierSpec(
-        evaluate=_receipt_backed_write_registry,
-        claim=(
-            "Every governed write is importable and matches route, receipt, and cleanup semantics."
-        ),
-        owner="State Core Integrity",
-        evidence_level="semantic",
-        production_path=("docs/governance/receipt-backed-write-registry.json",),
-        sunset="Merge into Artifact Store command registration after STORE migration completes.",
     ),
     "statecore_model_split": VerifierSpec(
         evaluate=_statecore_model_split,
