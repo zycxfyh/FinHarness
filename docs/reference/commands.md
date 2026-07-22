@@ -51,20 +51,36 @@ execution authorization.
 
 ## Current Product Loop
 
+The two cockpit commands use the same default persistent workspace:
+`data/state/state-core/state-core.sqlite` and `data/receipts/state-core`. Pass
+`--state-db`, `--receipt-root`, and optionally `--port` after `--` to select one
+explicit alternative workspace. Reuse the same values across restarts.
+
 | Command | Purpose | Boundary |
 | --- | --- | --- |
-| `task api:serve` | Serve the local read/review API and cockpit. | No order/transfer/execution endpoint. |
-| `task beancount:import -- path/to/ledger.beancount` | Mirror a real Beancount ledger into State Core via `bean-query`. | Read-only mirror. |
-| `task personal-finance:import -- path/to/export.csv` | Import a FinHarness-contract CSV into State Core. | Read-only mirror. |
+| `task api:serve` | Serve the persistent local cockpit in read-only mode. | All writes fail closed; no attestation, rejection, deferral, scaffold revision, review-event, order, transfer, or execution write is admitted. |
+| `task cockpit:review` | Serve the loopback-only persistent cockpit with governed human review writes. | Human confirm/reject/defer/revision/review events only; no execution capability or external venue connectivity. |
+| `task beancount:import -- path/to/ledger.beancount` | Mirror a real Beancount ledger into State Core via `bean-query`. | Source ledger is read-only; the importer writes the selected FinHarness State Core and receipt workspace. |
+| `task personal-finance:import -- path/to/export.csv` | Import a FinHarness-contract CSV into State Core. | Source export is read-only; the importer writes the selected FinHarness State Core and receipt workspace. |
 | `task db:migrate` | Apply State Core schema migrations. | Deliberate state change; inspect first. |
 | `task brief:daily` | Compute and archive the unified daily brief. | Descriptive summary only. |
 | `task decisions:scan` | Record capital-allocation candidates as governed proposals. | No execution authority. |
-| `task decisions:golden-path` | Run isolated receipt-consumption demo. | Synthetic/offline/manual demo. |
+| `task decisions:golden-path` | Run the isolated direct-seed proposal/review/receipt replay demo. | Ephemeral synthetic workspace; it does not expose a DB/receipt root for a later cockpit and does not prove canonical import, capital-truth readiness, or Daily Brief. |
 | `task decisions:research-smoke` | Run opt-in live research smoke. | Manual/network; not in `task check`. |
 | `task review:annual` | Record an annual decision retrospective. | Review evidence. |
 | `task lessons:draft` | Draft lesson candidates from receipts. | Human promotion still required. |
 | `task lessons:promote` | Promote a reviewed lesson into a rule change. | Human action with lineage. |
 | `task rules:audit` | Verify rule changes have lesson-to-receipt lineage. | Included in `task check`. |
+
+For an explicit persistent workspace, use the same paths with either cockpit mode:
+
+```bash
+STATE_DB="$PWD/.local/finharness-review/state-core.sqlite"
+RECEIPT_ROOT="$PWD/.local/finharness-review/receipts"
+task api:serve -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --port 8765
+# Stop the read-only server before switching modes on the same port.
+task cockpit:review -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --port 8765
+```
 
 ## Governance, Quality, And Security
 
