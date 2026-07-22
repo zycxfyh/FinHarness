@@ -1,14 +1,16 @@
 # How-to Guides
 
-How-to guides are task recipes for users who already understand the golden path.
-They should answer "how do I do this one job?" without explaining the whole
-architecture.
+How-to guides are task recipes for users who already understand the current
+product boundaries. They should answer "how do I do this one job?" without
+explaining the whole architecture.
 
-Start with the tutorial first: [Golden Path Tutorial](../tutorials/golden-path.md).
+To observe the isolated proposal/review/receipt mechanics first, use the
+[Synthetic Golden Path Tutorial](../tutorials/golden-path.md). That tutorial is
+an ephemeral direct-seed demo, not a canonical imported-capital review journey.
 
 ## Available Now
 
-- First safe end-to-end run: [Golden Path Tutorial](../tutorials/golden-path.md).
+- Isolated proposal/review/receipt replay demo: [Synthetic Golden Path Tutorial](../tutorials/golden-path.md).
 - Command lookup while recipes are being expanded: [Command Reference](../reference/commands.md).
 - Layer-specific responsibilities: [Module Map](../architecture/module-map.md).
 
