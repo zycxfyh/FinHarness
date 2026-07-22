@@ -53,7 +53,8 @@ jobs:
           while IFS= read -r path; do
             case "$path" in
               src/*.py|src/*/*.py|src/*/*/*.py|scripts/*.py|tests/*.py|\
-              pyproject.toml|uv.lock|Taskfile.yml|.github/workflows/fuzz.yml)
+              data/security/fuzzing/*|pyproject.toml|uv.lock|Taskfile.yml|\
+              .github/workflows/fuzz.yml)
                 relevant=true
                 ;;
             esac
