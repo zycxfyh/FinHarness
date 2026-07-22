@@ -68,6 +68,7 @@ class CIWorkflowContractTest(unittest.TestCase):
                 "dependencies",
                 "security_surface",
                 "agent",
+                "gitleaks_depth",
             },
         )
 
@@ -94,7 +95,9 @@ class CIWorkflowContractTest(unittest.TestCase):
 
         fast_steps = workflow["jobs"]["fast-feedback"]["steps"]
         docs = next(
-            item for item in fast_steps if item.get("name") == "Check maintained documentation"
+            item
+            for item in fast_steps
+            if item.get("name") == "Check maintained documentation"
         )
         self.assertEqual(docs["run"], "task docs:current-check")
         self.assertIn("docs_only == 'true'", docs["if"])
@@ -126,19 +129,38 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn(".artifacts/check-logs/", paths)
         self.assertEqual(upload["with"]["if-no-files-found"], "error")
 
-    def test_pr_gitleaks_scans_changed_content_not_full_history(self) -> None:
-        raw = (WORKFLOW_ROOT / "security.yml").read_text(encoding="utf-8")
+    def test_pr_gitleaks_scans_commit_range_not_full_history(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
+        scope = workflow["jobs"]["scope"]
+        classify = scope["steps"][0]["run"]
+        self.assertIn("gitleaks_depth=$((pr_commits + 1))", classify)
+
         steps = workflow["jobs"]["gitleaks"]["steps"]
-        changed = next(
+        checkout = steps[0]
+        self.assertEqual(
+            checkout["with"]["fetch-depth"],
+            "${{ github.event_name == 'schedule' && '0' || "
+            "needs.scope.outputs.gitleaks_depth }}",
+        )
+        commit_range = next(
             step
             for step in steps
-            if step.get("name") == "Scan pull request changed content"
+            if step.get("name") == "Scan pull request commit range"
         )
-        self.assertIn("pulls/$PR_NUMBER/files", changed["run"])
-        self.assertIn("--no-git", changed["run"])
-        self.assertIn("Scan full history on schedule", raw)
-        self.assertNotIn("fetch-depth: 0\n", raw)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', commit_range["run"])
+        self.assertIn("gitleaks git", commit_range["run"])
+        self.assertIn(
+            '--log-opts="${BASE_SHA}..${HEAD_SHA}"',
+            commit_range["run"],
+        )
+        self.assertNotIn("--no-git", commit_range["run"])
+        scheduled = next(
+            step for step in steps if step.get("name") == "Scan full history on schedule"
+        )
+        self.assertEqual(
+            scheduled["run"],
+            "gitleaks git --config .gitleaks.toml --redact --verbose .",
+        )
 
     def test_required_local_verification_checks_pr_head_and_final_main(self) -> None:
         workflow = load_workflow(WORKFLOW_ROOT / "security.yml")
