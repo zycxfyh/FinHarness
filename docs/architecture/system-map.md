@@ -290,14 +290,14 @@ domain model / read model / write(command) model / adapters / invariants
 - **invariants**:`execution_allowed=false` 常显;前端只能展示和复核边界,不能放松
   后端边界;不无限加顶级 tab。
 
-### 11. EOS Governance / Quality
+### 11. Engineering Assurance
 
-- **职责**:怎么安全变更、怎么证明边界、怎么阻止 docs/facts drift。
-- **assets**:`tests/_policy_registry.py`、`tests/test_governance_invariants.py`、
-  `tests/test_docs_current_facts.py`、`hardening.py`、`quality_governance_graph.py`、
-  `release_preflight_graph.py`、`repo_intelligence_graph.py`、
-  `receipt_usage_audit.py`。
-- **invariants**:机器检查只管当前事实和当前入口;历史 notes/reviews 不被改写。
+- **职责**:用直接行为测试、架构边界、exact-head CI、secret scan、targeted fuzz
+  和 Git rollback 保护当前产品。
+- **assets**:`hardening.py`、直接领域测试、`check_architecture_boundaries.py`、
+  `check_keyed_mutation_route_capabilities.py` 和 GitHub Actions。
+- **invariants**:不为可恢复代码工作维护第二套治理状态、dashboard、graph registry
+  或 debt ledger；历史 notes/reviews 保持历史证据身份。
 
 ### 12. Archived Live-Trading Legacy
 
@@ -315,7 +315,7 @@ State Core <- Capital Map <- IPS / Decision Workflow <- Review System <- Cockpit
 Agent Explanation and Agent Cognition read through tools; they do not own source-of-truth.
 Agent Autonomy Control evaluates admissibility but currently performs no effect.
 Agent Cognition cannot call through to Execution Kernel commands.
-EOS Governance cuts across all systems.
+Engineering Assurance checks cross-cutting product boundaries without owning product state.
 Archived Live-Trading Legacy has no dependency edge back into mainline.
 ```
 
@@ -323,10 +323,7 @@ Archived Live-Trading Legacy has no dependency edge back into mainline.
 
 这些边界不只停在本文:
 
-- `task governance:check` runs policy registry and frontend no-action probes.
 - `task docs:current-check` checks maintained docs against live Taskfile facts.
-- `tests/_graph_registry.py` records graph assets by status, including retired
-  and downgraded paths.
 
 ## How To Use This Map
 

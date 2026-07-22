@@ -38,9 +38,6 @@ configuration and schemas:
 system ownership and lifecycle:
   docs/architecture/system-catalog.yml
 
-verified engineering debt:
-  docs/governance/debt-register.json
-
 product direction:
   docs/product/product-thesis.md and docs/product-north-star.md
 

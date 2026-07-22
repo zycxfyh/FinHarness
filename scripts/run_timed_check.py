@@ -35,9 +35,7 @@ CHECK_STAGES: tuple[CheckStage, ...] = (
     CheckStage("python_unittest", "test:unittest"),
     CheckStage("python_pytest", "test:pytest"),
     CheckStage("base_dependency_profile", "deps:probe-base"),
-    CheckStage("integration", "test:integration"),
     CheckStage("frontend", "test:frontend"),
-    CheckStage("governance", "governance:inventory"),
     CheckStage("architecture", "architecture:check"),
     CheckStage("rules", "rules:audit"),
 )

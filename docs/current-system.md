@@ -88,7 +88,6 @@ Future direction documents may discuss these possibilities. They are not current
 | Configuration | Canonical config models and direct environment reads |
 | Schemas | Pydantic/SQLModel/receipt schema sources |
 | System ownership and lifecycle | `docs/architecture/system-catalog.yml` |
-| Verified engineering debt | `docs/governance/debt-register.json` |
 | Product direction | `docs/product/product-thesis.md` and `docs/product-north-star.md` |
 | Historical decisions and evidence | ADRs, proposals, reviews, notes, old roadmaps, and Git history |
 

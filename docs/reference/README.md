@@ -16,7 +16,6 @@ Current reference surfaces:
 - Framework index: [../architecture/framework-index.md](../architecture/framework-index.md).
 - System catalog: [../architecture/system-catalog.yml](../architecture/system-catalog.yml).
 - Engineering leverage map: [../architecture/engineering-leverage-map.md](../architecture/engineering-leverage-map.md).
-- Governance policy registry: run `task governance:policies`.
 - Current-doc fact guard: [../architecture/documentation-fact-governance.md](../architecture/documentation-fact-governance.md).
 - Module responsibilities: [../architecture/module-map.md](../architecture/module-map.md).
 

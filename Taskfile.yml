@@ -65,16 +65,6 @@ tasks:
     cmds:
       - uv run python scripts/manage_pr_contract.py check {{.CLI_ARGS}}
 
-  governance:inventory:
-    desc: Check derived dependency consumers and paper-validation boundaries
-    cmds:
-      - uv run python scripts/manage_governance_inventories.py
-
-  governance:inventory:update:
-    desc: Update derived dependency consumer fields deterministically
-    cmds:
-      - uv run python scripts/manage_governance_inventories.py --update
-
   check:
     desc: Merge gate — run the CI-required verification suite (alias for check:ci)
     cmds:
@@ -94,9 +84,7 @@ tasks:
     cmds:
       - task: check:fast
       - task: deps:probe-base
-      - task: test:integration
       - task: test:frontend
-      - task: governance:check
       - task: architecture:check
       - task: rules:audit
 
@@ -117,60 +105,15 @@ tasks:
     cmds:
       - uv run python scripts/run_hardening_gate.py
 
-  repo:intelligence:
-    desc: Build local repo intelligence graph, Mermaid doc, and receipt
-    cmds:
-      - uv run python scripts/run_repo_intelligence_graph.py
-
-  receipt:usage-audit:
-    desc: Audit which receipts are consumed by reviews, lessons, and docs
-    cmds:
-      - uv run python scripts/run_receipt_usage_audit.py --write
-
   capital:reconcile:
     desc: Audit capital-import receipt/DB consistency; pass --apply for safe repairs
     cmds:
       - uv run python scripts/reconcile_capital_imports.py {{.CLI_ARGS}}
 
-  quality:governance:
-    desc: Run quality governance graph with authoritative local checks
-    cmds:
-      - uv run python scripts/run_quality_governance_graph.py --run-checks
-
-  quality:governance-checks:
-    desc: Alias for quality governance with authoritative local checks
-    cmds:
-      - uv run python scripts/run_quality_governance_graph.py --run-checks
-
-  release:preflight:
-    desc: Run release preflight graph with authoritative local checks
-    cmds:
-      - uv run python scripts/run_release_preflight_graph.py --run-checks
-
-  governance:dashboard:
-    desc: Build the RC governance dashboard receipt and Markdown report
-    cmds:
-      - uv run python scripts/run_governance_dashboard.py
-
   observability:trace:
     desc: Read a local observability trace-index receipt (bounded summary, no raw payloads)
     cmds:
       - uv run python scripts/read_observability_trace.py {{.CLI_ARGS}}
-
-  project:governance-adapter:
-    desc: Adapt workstation Project Governance Loop receipt into FinHarness compatibility receipt
-    cmds:
-      - uv run python scripts/run_project_governance_adapter.py
-
-  test:properties:
-    desc: Run property-style governance and boundary tests (also included in test:integration)
-    cmds:
-      - uv run python -m unittest tests.integration_property_baseline
-
-  test:integration:
-    desc: Run slower graph/property integration tests outside the default unit loop
-    cmds:
-      - uv run python -m unittest tests.integration_quality_governance_graph tests.integration_release_preflight_graph tests.integration_property_baseline
 
   test:frontend:
     desc: Run jsdom-based frontend DOM tests
@@ -202,11 +145,6 @@ tasks:
       - node frontend/tests/browser/browser_mutation_response_loss.test.cjs
       - node frontend/tests/browser/browser_stale_proposal_version.test.cjs
 
-  governance:check:
-    desc: Run remaining dependency and paper-boundary drift checks
-    cmds:
-      - task: governance:inventory
-
   architecture:check:
     desc: Fail on Python import SCCs and direct/transitive architecture boundary violations
     cmds:
@@ -217,16 +155,6 @@ tasks:
     desc: Audit keyed-mutation APIRoutes, recovery capabilities, and resolver dispatch
     cmds:
       - uv run python scripts/check_keyed_mutation_route_capabilities.py
-
-  governance:policies:
-    desc: List the governance policy registry (id / owner / scope / source)
-    cmds:
-      - uv run python tests/_policy_registry.py
-
-  governance:graphs:
-    desc: List the Graph Registry (R1) — graph assets by status/consumer/owner (judgment artifact, not a deletion authorization)
-    cmds:
-      - uv run python tests/_graph_registry.py
 
   hardening:redteam:
     desc: Run local adversarial boundary checks
@@ -407,12 +335,9 @@ tasks:
     cmds:
       - uv run python scripts/sync_current_docs.py --check
       - uv run python -m unittest tests.test_current_doc_generation
-      - uv run python -m unittest tests.test_docs_current_facts
       - uv run python -m unittest tests.test_system_catalog
       - uv run python -m unittest tests.test_evolution_roadmap
       - uv run python -m unittest tests.test_abstraction_inventory_execution
-      - uv run python -m unittest tests.test_support_surface_registry
-      - uv run python -m unittest tests.test_removal_ledger
 
   vocab:lint:
     desc: Advisory controlled-vocabulary lint for formal docs and code strings

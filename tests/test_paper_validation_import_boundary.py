@@ -67,6 +67,26 @@ class PaperValidationTransitiveImportBoundaryTest(unittest.TestCase):
             + "\n".join(f"  {f.code}: {' -> '.join(f.path)}" for f in findings),
         )
 
+    def test_only_api_composition_imports_the_legacy_paper_routes(self) -> None:
+        """No new production module may become a PaperValidation consumer."""
+        from finharness.paper_validation_boundary_audit import (
+            build_internal_import_graph,
+            find_unapproved_incoming_imports,
+        )
+
+        graph = build_internal_import_graph(ROOT)
+        findings = find_unapproved_incoming_imports(
+            graph,
+            protected_modules=set(PAPER_MODULES),
+            approved_sources={"finharness.api.app"},
+        )
+        self.assertEqual(
+            findings,
+            [],
+            "Found a new production PaperValidation consumer:\n"
+            + "\n".join(f"  {f.source_module} -> {f.target_module}" for f in findings),
+        )
+
     def test_no_paper_module_transitively_imports_forbidden_external(self) -> None:
         """No paper module imports external network dependencies."""
         from finharness.paper_validation_boundary_audit import (
@@ -176,6 +196,29 @@ class PaperValidationTransitiveNegativeFixtureTest(unittest.TestCase):
                 forbidden_prefixes={"finharness.execution.commands"},
             )
             self.assertEqual(len(findings), 1)
+
+    def test_unapproved_incoming_production_consumer_is_detected(self) -> None:
+        from finharness.paper_validation_boundary_audit import (
+            ImportEdge,
+            ImportGraph,
+            find_unapproved_incoming_imports,
+        )
+
+        graph = ImportGraph()
+        graph.add_edge(
+            ImportEdge(
+                source_module="finharness.new_product",
+                target_module="finharness.statecore.paper_accounts",
+                source_path="src/finharness/new_product.py",
+                lineno=1,
+            )
+        )
+        findings = find_unapproved_incoming_imports(
+            graph,
+            protected_modules={"finharness.statecore.paper_accounts"},
+            approved_sources=set(),
+        )
+        self.assertEqual([finding.code for finding in findings], ["unapproved_incoming_import"])
 
     def test_missing_root_is_a_finding_not_a_vacuous_pass(self) -> None:
         from finharness.paper_validation_boundary_audit import (

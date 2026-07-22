@@ -7,7 +7,6 @@ fact_ownership:
   current_system_orientation: docs/current-system.md
   current_work_authorization: https://github.com/zycxfyh/FinHarness/issues
   product_objective: https://github.com/zycxfyh/FinHarness/issues/277
-  verified_engineering_debt: docs/governance/debt-register.json
 documentation:
   generated_views:
     - docs/architecture/framework-index.md
@@ -85,7 +84,6 @@ systems:
     mature_posture: Borrow event/receipt-sourcing ideas without adopting a heavy event platform.
     checks:
       - task test:all
-      - task governance:check
     upgrade_trigger: Multiple stores or remote writers require a stronger event/log abstraction.
 
   - id: capital_map
@@ -127,7 +125,6 @@ systems:
       - src/finharness/api/routes_agent_authority_grants.py
     mature_posture: IdentityProvider assertions feed one closed domain-owned human-administration guard; they do not become capital authority by authentication alone. CapitalMandate versions and lifecycle events remain immutable principal-bound inputs. AgentAuthorityGrant stays exact-version/currency/scope bound, while Agent-runtime consumption remains separate from human administration and never grants execution authority.
     checks:
-      - task governance:check
       - uv run python -m unittest tests.test_ips
       - uv run python -m unittest tests.test_capital_mandates
       - uv run python -m unittest tests.test_versioned_capital_mandates
@@ -168,7 +165,6 @@ systems:
       - src/finharness/rule_change_ledger.py
     mature_posture: Decision log plus risk/issue register discipline; attestation and risk severity hints are review evidence, not execution.
     checks:
-      - task governance:check
       - task test:all
       - uv run python -m unittest tests.test_review_read tests.test_review_workspace_api
       - uv run python -m unittest tests.test_risk_register
@@ -252,7 +248,6 @@ systems:
       - src/finharness/research_enrichment.py
     mature_posture: Mature finance wheels provide calculations; FinHarness owns claims, redlines, and receipts.
     checks:
-      - task governance:check
       - task hardening:redteam
     upgrade_trigger: Research workflows need repeatable experiment tracking or external lineage export.
 
@@ -374,52 +369,30 @@ systems:
       - task test:all
     upgrade_trigger: Product surface complexity exceeds vanilla JS locality.
 
-  - id: eos_governance_quality
-    name: EOS Governance / Quality
-    status: current
-    summary: Change control, evidence-strength proof registry, docs-current guard, repo intelligence, hardening, and release checks.
+  - id: engineering_assurance
+    name: Engineering Assurance
+    status: thin
+    summary: Direct tests, architecture boundaries, exact-head CI, secret scanning, targeted fuzzing, and Git rollback protect current product behavior without a parallel governance state system.
     docs:
-      - docs/architecture/framework-index.md
+      - docs/current-system.md
       - docs/architecture/system-catalog.yml
-      - docs/architecture/documentation-fact-governance.md
-      - docs/architecture/governance-proof-contract.md
-      - docs/architecture/scaffolding-inventory.md
-      - docs/engineering/change-control.md
-      - docs/architecture/engineering-leverage-map.md
+      - docs/security/finharness-threat-model.md
     runtime_roots:
-      - tests/_policy_registry.py
-      - tests/_graph_registry.py
+      - .github
+      - data/security
       - src/finharness/hardening.py
       - src/finharness/repo_intelligence.py
-      - src/finharness/quality_governance_graph.py
-      - src/finharness/release_preflight_graph.py
-      - scripts/verify_debt_register.py
-    mature_posture: Python registry now; defer OPA, Conftest, Backstage, Temporal until repeated pain.
+      - scripts/check_architecture_boundaries.py
+      - scripts/check_keyed_mutation_route_capabilities.py
+      - scripts/run_fuzz_baseline.py
+    mature_posture: Use direct executable evidence and retain hard blockers only for non-recoverable consequences.
     checks:
-      - task docs:current-check
-      - task governance:check
-      - uv run python scripts/verify_debt_register.py
       - task check
-    upgrade_trigger: Repeated manual coordination or policy drift survives current probes.
-
-  - id: security_supply_chain
-    name: Security / Supply Chain
-    status: current
-    summary: Threat model, SSDF map, CODEOWNERS, fuzz baseline, scanner aggregation, SBOM/provenance baseline.
-    docs:
-      - docs/security/finharness-threat-model.md
-      - docs/security/ssdf-control-map.md
-      - docs/security/security-response-runbook.md
-    runtime_roots:
-      - .github/
-      - src/finharness/hardening.py
-      - data/security/
-    mature_posture: OpenSSF Scorecard, CodeQL, Gitleaks, Trivy, SBOM/SLSA posture.
-    checks:
-      - task security:fuzz
+      - task docs:current-check
+      - task hardening:redteam
       - task security:scan
-    upgrade_trigger: Public artifacts or team workflow require signed provenance and formal SBOM.
-
+      - task security:fuzz
+    upgrade_trigger: Add a mechanism only after a repeated observed failure survives direct tests, Git recovery, backup, receipt, or reconciliation.
   - id: archived_live_trading_legacy
     name: Archived Live-Trading Legacy
     status: archived
@@ -432,5 +405,4 @@ systems:
     mature_posture: If revived, redesign as a separately gated capability rather than inheriting mainline authority.
     checks:
       - task docs:current-check
-      - task governance:check
     upgrade_trigger: Any future live-read/live-write capability needs a new C3 design and threat model.
