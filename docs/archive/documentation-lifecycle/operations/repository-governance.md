@@ -1,0 +1,154 @@
+# Repository Governance
+
+Generated for RC0.1 hardening on 2026-06-04.
+
+## Current GitHub Posture
+
+- Repository: `zycxfyh/FinHarness`
+- Visibility: `PUBLIC`
+- Default branch: `main`
+- Viewer permission during audit: `ADMIN`
+- Security policy: enabled
+- Security policy URL: `https://github.com/zycxfyh/FinHarness/security/policy`
+- License: Apache-2.0
+- Branch protection for `main`: repository ruleset planned/applied via GitHub
+  rulesets
+- Repository rulesets: `finharness-main-medium-protection` and
+  `finharness-release-strict-protection`
+- Main ruleset ID: `17250742`
+- Release ruleset ID: `17250754`
+- Dependabot config: present
+- Code scanning workflow: present
+- Scorecard workflow: present
+- CODEOWNERS: present as ownership documentation for high-risk paths
+
+## Commit Identity Evidence
+
+CI treats PR head, pull-request merge ref, and final main commit as separate
+proof identities. Relevant jobs explicitly select their checkout, compare
+`git rev-parse HEAD` with that target, and write claim, repository, commit, ref,
+command, and result to the native job summary. Required Local verification runs
+on the explicit PR head before merge and on the final main commit after a main
+push; other PR workflows may continue to exercise the synthetic merge ref as
+integration evidence.
+
+Merge-ref proof pins the event's `GITHUB_SHA` and requires
+`refs/pull/<number>/merge`. PR-head proof uses
+`github.event.pull_request.head.sha`; final-main proof requires a push to
+`refs/heads/main` and uses that event's `GITHUB_SHA`.
+
+Missing, skipped, cancelled, stale, or different-SHA evidence does not satisfy
+the corresponding claim. The dedicated workflow passes successful job outputs
+to one machine-readable manifest per run; no per-job identity artifacts are
+created.
+
+The manifest `result` is only the result of commit-identity verification. It
+does not assert that fuzz, browser, dependency, security, or project tests
+passed; consumers must evaluate those job results separately.
+
+## Current Alerts
+
+- Dependabot: no open alerts after the current lockfile updates.
+- Code scanning: remaining open alerts are Scorecard governance posture items:
+  Branch-Protection, Code-Review, Fuzzing, CII-Best-Practices, and Maintained.
+  The local deterministic fuzz baseline exists, but Scorecard does not
+  recognize it as OSS-Fuzz or ClusterFuzzLite coverage.
+
+## RC0.1 Ruleset Policy
+
+The selected policy is:
+
+- `main`: medium protection with admin bypass for solo maintainer velocity.
+- `release/*`: strict protection with pull request, status checks, stale review
+  dismissal, last-push approval, and review-thread resolution. New release
+  branch creation is allowed so a release branch can be cut from a checked
+  commit before stricter update rules apply.
+- `.github/CODEOWNERS`: documents current owner coverage for security,
+  governance, provider, risk, execution, release, and report paths. Current
+  rulesets do not yet require code-owner review.
+
+Main ruleset:
+
+```json
+{
+  "name": "finharness-main-medium-protection",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [
+    {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {"context": "Local verification"},
+          {"context": "Gitleaks"},
+          {"context": "Trivy filesystem scan"},
+          {"context": "CodeQL"}
+        ]
+      }
+    }
+  ]
+}
+```
+
+Release ruleset:
+
+```json
+{
+  "name": "finharness-release-strict-protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/release/*"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          {"context": "Local verification"},
+          {"context": "Gitleaks"},
+          {"context": "Trivy filesystem scan"},
+          {"context": "CodeQL"}
+        ]
+      }
+    }
+  ]
+}
+```
+
+## FinHarness Boundary
+
+Repository governance is an engineering release control. It does not authorize
+live trading, live order routing, or autonomous execution. Provider write paths
+remain gated by existing environment and explicit flag checks.
