@@ -73,7 +73,7 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
         tutorial = _read(Path("docs/tutorials/golden-path.md")).lower()
         commands = _read(Path("docs/reference/commands.md")).lower()
         self.assertNotIn("may let a named human attest", tutorial)
-        self.assertIn("every write fails closed", tutorial)
+        self.assertRegex(tutorial, r"every write fails\s+closed")
         self.assertIn("all writes fail closed", commands)
 
 
