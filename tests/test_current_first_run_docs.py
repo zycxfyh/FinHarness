@@ -45,7 +45,7 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
         self.assertIn("does not prove canonical capital import", tutorial)
         self.assertIn("capital-truth readiness", tutorial)
         self.assertIn("daily brief", tutorial)
-        self.assertIn("does not expose its temporary state core", tutorial)
+        self.assertIn("does not provide a supported `--state-db` /", tutorial)
 
         for path in FIRST_RUN_DOCS:
             text = _read(path).lower()
@@ -55,7 +55,10 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
     def test_demo_and_persistent_cockpit_are_explicitly_separate(self) -> None:
         tutorial = _read(Path("docs/tutorials/golden-path.md"))
         self.assertIn("task decisions:golden-path", tutorial)
-        self.assertIn("does not open the demo's temporary workspace", tutorial)
+        self.assertIn("does not open the demo", tutorial)
+        self.assertIn("artifact_root", tutorial)
+        self.assertIn("cleanup_hint", tutorial)
+        self.assertNotIn("creates and destroys", tutorial)
         self.assertIn("task api:serve -- --state-db", tutorial)
         self.assertIn("task cockpit:review -- --state-db", tutorial)
         self.assertGreaterEqual(tutorial.count("$STATE_DB"), 3)
