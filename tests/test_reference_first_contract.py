@@ -1,4 +1,4 @@
-"""Structural contract for reference-first mechanism selection."""
+"""Structural contract for minimal mechanism selection."""
 
 from __future__ import annotations
 
@@ -25,10 +25,20 @@ class ReferenceFirstContractTest(unittest.TestCase):
             "observed gap",
             "named replacement/deletion target",
         ):
-            with self.subTest(anchor=anchor):
+            with self.subTest(agent_anchor=anchor):
                 self.assertIn(anchor, agents)
-        self.assertIn("Reference-First Design Gate", contributing)
-        self.assertIn("bounded bug fix", contributing)
+
+        for anchor in (
+            "delete a duplicate",
+            "use the canonical boundary",
+            "standard or mature capability",
+            "observed gap",
+            "replacement or deletion target",
+            "bounded bug fix does not require ceremonial research",
+        ):
+            with self.subTest(contributor_anchor=anchor):
+                self.assertIn(anchor, contributing)
+        self.assertNotIn("Reference-First Design Gate", contributing)
 
     def test_mechanism_issue_forms_require_reference_first_fields(self) -> None:
         options_by_template: dict[str, list[str]] = {}
