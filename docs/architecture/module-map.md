@@ -9,6 +9,11 @@ For current capability and boundaries, read
 `Taskfile.yml` and `task --list`. For current work authorization and sequence use
 GitHub Issue/PR state and labels.
 
+The **Canonical plane model** vocabulary—**Truth**, **Knowledge**,
+**Judgment**, **Control**, **Agent**, **Action/Learning**, **Product**, and
+**Assurance**—is owned by the architecture layer matrix and its ADR. This
+generated runtime projection does not redefine or sequence those planes.
+
 ## Mainline Modules
 
 <!-- BEGIN GENERATED: system-catalog -->
