@@ -36,6 +36,14 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - `task decisions:scan` records capital-allocation candidates as governed proposals.
 - Exposure, positions, proposals, and timeline evidence are available through the local API and cockpit surfaces.
 
+### Canonical synthetic acceptance
+
+- `task acceptance:capital-review` proves canonical CSV import, admitted truth,
+  Exposure, Daily Brief, Decision scan, governed human review, blocked valuation,
+  durable receipts, application restart, and identity-preserving replay.
+- It uses checked-in synthetic templates with runtime clocks and never connects a
+  broker or grants execution authority.
+
 ### Human review
 
 - `task api:serve` starts the persistent local cockpit in read-only mode; all writes fail closed.
@@ -71,7 +79,8 @@ Current main does not provide:
 - live trading, transfers, tax submission, or other funded external effects;
 - a public hosted Product Agent or delegated autonomous capital manager;
 - cross-cycle Agent session/resume, scheduler, daemon, or general multi-Agent runtime;
-- an independently verified canonical first-run capital-review journey from clean documentation.
+- a longitudinal real-user capital-review pilot with outcome follow-up;
+- a completed real-model Capital World Audit with semantic trust and stop evidence.
 
 Future direction documents may discuss these possibilities. They are not current capability claims.
 
@@ -92,6 +101,7 @@ Future direction documents may discuss these possibilities. They are not current
 | Historical decisions and evidence | ADRs, proposals, reviews, notes, old roadmaps, and Git history |
 
 A document may explain a machine-owned fact or link to it. It must not become a second mutable registry.
+The stable engineering responsibility model is linked once in [`Agentic Engineering Principles`](engineering/agentic-abstraction-principles.md).
 
 ## Orientation for a new Agent or maintainer
 

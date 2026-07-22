@@ -36,8 +36,10 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
         self.assertIn("read-only", commands.lower())
         self.assertIn("all writes fail closed", commands.lower())
         self.assertIn("`task cockpit:review`", commands)
+        self.assertIn("`task acceptance:capital-review`", commands)
         self.assertIn("governed human review writes", commands.lower())
         self.assertIn("task cockpit:review -- --state-db", tutorial)
+        self.assertIn("task acceptance:capital-review", _read(Path("README.md")))
 
     def test_synthetic_demo_is_not_claimed_as_canonical_product_journey(self) -> None:
         tutorial = _read(Path("docs/tutorials/golden-path.md")).lower()
