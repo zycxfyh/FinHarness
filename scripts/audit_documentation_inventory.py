@@ -149,7 +149,7 @@ class _HTMLLinkParser(HTMLParser):
             self.images.append(str(attr_map["src"]))
 
 
-def _run_git(root: Path, *args: str, text: bool = True) -> subprocess.CompletedProcess[str]:
+def _run_git(root: Path, *args: str, text: bool = True) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(
         ["git", "-C", str(root), *args],
         check=True,
@@ -162,7 +162,7 @@ def resolve_commit(root: Path, baseline: str) -> str:
     return _run_git(root, "rev-parse", f"{baseline}^{{commit}}").stdout.strip()
 
 
-def tracked_markdown_paths(root: Path, baseline: str) -> tuple[str, ...]:
+def tracked_repository_paths(root: Path, baseline: str) -> tuple[str, ...]:
     raw = _run_git(
         root,
         "ls-tree",
@@ -172,19 +172,30 @@ def tracked_markdown_paths(root: Path, baseline: str) -> tuple[str, ...]:
         baseline,
         text=False,
     ).stdout
-    assert isinstance(raw, bytes)
-    paths = [
-        item.decode("utf-8", errors="strict")
-        for item in raw.split(b"\0")
-        if item and PurePosixPath(item.decode()).suffix.lower() in {".md", ".markdown"}
-    ]
-    return tuple(sorted(paths))
+    if not isinstance(raw, bytes):
+        raise TypeError("git ls-tree returned text while bytes were required")
+    return tuple(
+        sorted(
+            item.decode("utf-8", errors="strict")
+            for item in raw.split(b"\0")
+            if item
+        )
+    )
+
+
+def tracked_markdown_paths(root: Path, baseline: str) -> tuple[str, ...]:
+    return tuple(
+        path
+        for path in tracked_repository_paths(root, baseline)
+        if PurePosixPath(path).suffix.lower() in {".md", ".markdown"}
+    )
 
 
 def read_git_text(root: Path, baseline: str, path: str) -> str:
     result = _run_git(root, "show", f"{baseline}:{path}", text=False)
     raw = result.stdout
-    assert isinstance(raw, bytes)
+    if not isinstance(raw, bytes):
+        raise TypeError("git show returned text while bytes were required")
     return raw.decode("utf-8", errors="replace")
 
 
@@ -310,6 +321,9 @@ def resolve_internal_target(
     for candidate in candidates:
         if candidate in tracked_paths:
             return "internal", candidate
+    directory_prefix = f"{collapsed.rstrip('/')}/"
+    if any(path.startswith(directory_prefix) for path in tracked_paths):
+        return "internal_directory", collapsed
     return "missing", collapsed
 
 
@@ -680,18 +694,22 @@ def _disposition(
 
 def build_inventory(root: Path, baseline: str) -> dict[str, Any]:  # noqa: C901
     baseline_sha = resolve_commit(root, baseline)
-    paths = tracked_markdown_paths(root, baseline_sha)
+    tracked_all = set(tracked_repository_paths(root, baseline_sha))
+    paths = tuple(
+        path
+        for path in sorted(tracked_all)
+        if PurePosixPath(path).suffix.lower() in {".md", ".markdown"}
+    )
     documents = {
         path: parse_document(path, read_git_text(root, baseline_sha, path)) for path in paths
     }
-    tracked = set(paths)
 
     resolved_links: dict[str, list[dict[str, Any]]] = {}
     inbound: dict[str, set[str]] = defaultdict(set)
     for path, document in documents.items():
         entries: list[dict[str, Any]] = []
         for raw_target in document.links:
-            kind, target = resolve_internal_target(path, raw_target, tracked)
+            kind, target = resolve_internal_target(path, raw_target, tracked_all)
             entry = {"raw": raw_target, "kind": kind, "target": target}
             entries.append(entry)
             if kind == "internal" and target:
@@ -728,6 +746,14 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:  # noqa: C901
                 outbound_internal.append(str(link["target"]))
             elif link["kind"] == "external":
                 external_links.append(str(link["raw"]))
+            elif link["kind"] == "internal_directory":
+                findings.append(
+                    _finding(
+                        "directory_navigation_target",
+                        "info",
+                        f"{link['raw']} -> {link['target']}",
+                    )
+                )
             elif link["kind"] == "missing":
                 findings.append(
                     _finding(
@@ -1067,6 +1093,12 @@ def self_test() -> None:
             "# Orphan\n\nThis file has an old date but no current route.\n",
             encoding="utf-8",
         )
+        (root / "config.yml").write_text("enabled: true\n", encoding="utf-8")
+        (root / "docs" / "guide.md").write_text(
+            (root / "docs" / "guide.md").read_text(encoding="utf-8")
+            + "[Tracked config](../config.yml)\n",
+            encoding="utf-8",
+        )
         _run_git(root, "add", ".")
         _run_git(root, "commit", "-m", "fixture")
         inventory = build_inventory(root, "HEAD")
@@ -1109,6 +1141,14 @@ def self_test() -> None:
                 for item in rows["docs/guide.md"]["observed_findings"]
             ),
             "hard-coded local path was not detected",
+        )
+        _require(
+            not any(
+                item["code"] == "broken_internal_link"
+                and "config.yml" in item["detail"]
+                for item in rows["docs/guide.md"]["observed_findings"]
+            ),
+            "tracked non-Markdown target was reported missing",
         )
         _require(
             any(
