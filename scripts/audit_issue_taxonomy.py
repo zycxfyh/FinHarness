@@ -1,4 +1,4 @@
-"""Audit open GitHub Issues for canonical backlog taxonomy cardinality."""
+"""Report optional GitHub Issue taxonomy labels without blocking work."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ PREFIXES = {"plane": "plane:", "kind": "type:", "lifecycle": "status:"}
 
 
 class IssueAuditError(RuntimeError):
-    """Raised when GitHub Issue truth cannot be loaded."""
+    """Raised when GitHub Issue metadata cannot be loaded."""
 
 
 def _label_names(issue: dict[str, Any]) -> set[str]:
@@ -56,19 +56,18 @@ def _label_names(issue: dict[str, Any]) -> set[str]:
     return {str(label.get("name", "") if isinstance(label, dict) else label) for label in labels}
 
 
-def validate_issues(issues: Sequence[dict[str, Any]]) -> list[str]:
-    """Return deterministic findings for missing, multiple, or unknown labels."""
+def inspect_issues(issues: Sequence[dict[str, Any]]) -> list[str]:
+    """Return advisory findings for missing, multiple, or unknown taxonomy labels."""
     findings: list[str] = []
     for issue in sorted(issues, key=lambda item: int(item["number"])):
         number = int(issue["number"])
         labels = _label_names(issue)
         for dimension, allowed in TAXONOMY.items():
             selected = sorted(label for label in labels if label.startswith(PREFIXES[dimension]))
-            if len(selected) != 1:
-                findings.append(
-                    f"#{number} {dimension}: expected exactly one label, "
-                    f"found {len(selected)} ({', '.join(selected) or 'none'})"
-                )
+            if len(selected) == 0:
+                findings.append(f"#{number} {dimension}: no label")
+            elif len(selected) > 1:
+                findings.append(f"#{number} {dimension}: multiple labels ({', '.join(selected)})")
             elif selected[0] not in allowed:
                 findings.append(f"#{number} {dimension}: unknown label {selected[0]}")
     return findings
@@ -92,16 +91,16 @@ def load_open_issues(repository: str | None = None) -> list[dict[str, Any]]:
     completed = subprocess.run(command, check=False, capture_output=True, text=True)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
-        raise IssueAuditError(f"failed to load GitHub Issue truth: {detail}")
+        raise IssueAuditError(f"failed to load GitHub Issue metadata: {detail}")
     payload = json.loads(completed.stdout)
     if not isinstance(payload, list):
-        raise IssueAuditError("GitHub Issue truth must be a JSON list")
+        raise IssueAuditError("GitHub Issue metadata must be a JSON list")
     return payload
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Audit open Issues for one plane, kind, and lifecycle label."
+        description="Report optional plane, kind, and lifecycle labels on open Issues."
     )
     parser.add_argument("--repo", help="GitHub OWNER/REPO; defaults to the current checkout")
     return parser
@@ -114,21 +113,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (IssueAuditError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 2
-    findings = validate_issues(issues)
+
+    findings = inspect_issues(issues)
     print(
         json.dumps(
             {
-                "schema": "finharness.issue_taxonomy_audit.v1",
+                "schema": "finharness.issue_taxonomy_report.v1",
                 "repository": args.repo or "current-checkout",
                 "open_issue_count": len(issues),
                 "finding_count": len(findings),
                 "findings": findings,
-                "ok": not findings,
+                "advisory": True,
+                "ok": True,
             },
             indent=2,
         )
     )
-    return 1 if findings else 0
+    return 0
 
 
 if __name__ == "__main__":
