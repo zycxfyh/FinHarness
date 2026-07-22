@@ -15,6 +15,7 @@ class ReferenceFirstContractTest(unittest.TestCase):
     def test_agent_and_contributor_entry_points_preserve_the_selection_order(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        contributing_text = " ".join(contributing.split())
 
         for anchor in (
             "delete or retire a duplicate mechanism",
@@ -37,7 +38,7 @@ class ReferenceFirstContractTest(unittest.TestCase):
             "bounded bug fix does not require ceremonial research",
         ):
             with self.subTest(contributor_anchor=anchor):
-                self.assertIn(anchor, contributing)
+                self.assertIn(anchor, contributing_text)
         self.assertNotIn("Reference-First Design Gate", contributing)
 
     def test_mechanism_issue_forms_require_reference_first_fields(self) -> None:
