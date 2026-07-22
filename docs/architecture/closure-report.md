@@ -249,7 +249,7 @@ After #150–#151, only 2 items remain partially addressed:
 
 | Debt ID | Layer | 状态 | 说明 |
 |---|---|---|---|
-| DEBT-REG-001 | registry | partially_addressed | abstraction-inventory.yml 未更新 Execution Kernel 分类 |
+| DEBT-REG-001 | historical registry | retired | The classification inventory was removed; source and behavior tests own current execution facts. |
 | DEBT-CTL-001 | control | partially_addressed | ExecutionCapabilities 已定义，未接入 enforcement |
 
 All other 15 debt items resolved across #134–#151.

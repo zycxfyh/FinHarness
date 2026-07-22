@@ -337,7 +337,6 @@ tasks:
       - uv run python -m unittest tests.test_current_doc_generation
       - uv run python -m unittest tests.test_system_catalog
       - uv run python -m unittest tests.test_evolution_roadmap
-      - uv run python -m unittest tests.test_abstraction_inventory_execution
 
   vocab:lint:
     desc: Advisory controlled-vocabulary lint for formal docs and code strings

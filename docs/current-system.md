@@ -92,6 +92,7 @@ Future direction documents may discuss these possibilities. They are not current
 | Historical decisions and evidence | ADRs, proposals, reviews, notes, old roadmaps, and Git history |
 
 A document may explain a machine-owned fact or link to it. It must not become a second mutable registry.
+The stable engineering responsibility model is linked once in [`Agentic Engineering Principles`](engineering/agentic-abstraction-principles.md).
 
 ## Orientation for a new Agent or maintainer
 
