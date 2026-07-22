@@ -72,6 +72,12 @@ task brief:daily
 task decisions:scan
 ```
 
+Prove the complete synthetic capital-review, blocked-data, and restart paths:
+
+```bash
+task acceptance:capital-review
+```
+
 Start the persistent local cockpit in read-only mode:
 
 ```bash
