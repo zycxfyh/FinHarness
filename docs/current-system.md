@@ -79,7 +79,8 @@ Current main does not provide:
 - live trading, transfers, tax submission, or other funded external effects;
 - a public hosted Product Agent or delegated autonomous capital manager;
 - cross-cycle Agent session/resume, scheduler, daemon, or general multi-Agent runtime;
-- an independently verified canonical first-run capital-review journey from clean documentation.
+- a longitudinal real-user capital-review pilot with outcome follow-up;
+- a completed real-model Capital World Audit with semantic trust and stop evidence.
 
 Future direction documents may discuss these possibilities. They are not current capability claims.
 
