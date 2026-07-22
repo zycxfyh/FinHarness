@@ -1,148 +1,30 @@
-name: Implementation vertical slice
-description: Deliver one bounded runtime or product behavior with executable evidence.
-title: "Slice: "
+name: Implementation / change
+description: Deliver one bounded user or system result. Use a blank issue for simpler notes.
+title: "Change: "
 labels:
   - type:feature
 body:
-  - type: input
-    id: baseline
-    attributes:
-      label: Current main SHA
-      placeholder: main@<sha>
-    validations:
-      required: true
   - type: textarea
-    id: problem
+    id: outcome
     attributes:
-      label: Problem and user outcome
-    validations:
-      required: true
-  - type: textarea
-    id: source
-    attributes:
-      label: Source / audit
-    validations:
-      required: true
-  - type: dropdown
-    id: primary_plane
-    attributes:
-      label: Primary backlog plane
-      description: This declaration does not apply a label; after creation, a reviewer must apply the matching plane:* label.
-      options:
-        - plane:truth — capital facts, imports, reconciliation, and verified projections
-        - plane:knowledge — observations, claims, provenance, and evidence admission
-        - plane:judgment — cases, scenarios, readiness, decisions, and validity
-        - plane:control — identity, mandate, authorization, admission, and capability
-        - plane:agent — bounded context, tools, observations, evaluation, and stop
-        - plane:action-learning — execution, outcome review, lessons, and governed learning
-        - plane:product — human discovery, decision, review, and learning journeys
-        - plane:assurance — transactions, recovery, indexes, CI, proof, and engineering governance
-    validations:
-      required: true
-  - type: dropdown
-    id: lifecycle
-    attributes:
-      label: Backlog lifecycle
-      description: This declaration does not apply a label; active still follows dependency order, while dormant and deferred do not authorize implementation.
-      options:
-        - status:active — authorized only in canonical dependency order
-        - status:dormant — valid scope whose activation gate is not satisfied
-        - status:deferred — explicit closed gate
-        - status:temporary — limited owner with an exit condition
-    validations:
-      required: true
-
-  - type: dropdown
-    id: adoption_mode
-    attributes:
-      label: Reference-First adoption mode
-      description: Classify the mechanism before implementation; use N/A only when the existing owner and mechanism are already fixed.
-      options:
-        - A — adopt a mature library, standard, or platform capability
-        - B — adapt a mature protocol or architecture pattern
-        - C — own FinHarness-specific domain or product semantics
-        - N/A — bounded correction with no mechanism choice
-    validations:
-      required: true
-  - type: textarea
-    id: adopt_adapt_own
-    attributes:
-      label: Adopt / Adapt / Own and rejected alternatives
-      description: Name the canonical repository owner, primary references, directly adopted capabilities, adapted invariants, FinHarness-owned meaning, forbidden reinvention, and why rejected mature alternatives are insufficient. For N/A, identify the already-fixed mechanism and owner.
-    validations:
-      required: true
-  - type: textarea
-    id: dependencies
-    attributes:
-      label: Native dependencies
-      description: Add GitHub blocked-by relationships after issue creation.
+      label: Result
+      description: What should become possible, correct, or simpler?
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
       label: Scope
+      description: Name the relevant boundary and any important non-goal.
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Give the smallest observable completion condition.
     validations:
       required: true
   - type: textarea
-    id: non_goals
+    id: consequence
     attributes:
-      label: Non-goals
-    validations:
-      required: true
-  - type: textarea
-    id: acceptance
-    attributes:
-      label: Acceptance criteria
-    validations:
-      required: true
-  - type: textarea
-    id: negative
-    attributes:
-      label: Negative fixture
-      description: Describe the failure that proves the protected production path is exercised.
-    validations:
-      required: true
-  - type: textarea
-    id: persistence
-    attributes:
-      label: Restart / persistence evidence
-      description: State the restart evidence or why the slice is intentionally non-persistent.
-    validations:
-      required: true
-  - type: textarea
-    id: rollout
-    attributes:
-      label: Rollout and rollback
-    validations:
-      required: true
-  - type: dropdown
-    id: evidence
-    attributes:
-      label: Required evidence level
-      options:
-        - Structural
-        - Semantic
-        - Runtime
-        - Restart
-        - Clean-env
-        - Product
-    validations:
-      required: true
-  - type: textarea
-    id: docs
-    attributes:
-      label: Documentation claims affected
-    validations:
-      required: true
-  - type: dropdown
-    id: executor
-    attributes:
-      label: Primary executor
-      options:
-        - Human
-        - Codex
-        - DeepSeek
-        - Deterministic
-    validations:
-      required: true
+      label: Persistent or external consequence
+      description: Fill this only when the change affects persistent state, credentials, deployment, money, publishing, or another hard-to-recover effect. Include recovery or revocation.
