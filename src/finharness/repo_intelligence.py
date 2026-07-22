@@ -64,9 +64,6 @@ MAINLINE_SENSITIVE_KEYWORDS = (
     "data_entry",
     "providers",
     "hardening",
-    "release_preflight",
-    "governance_dashboard",
-    "quality_governance",
     "repo_intelligence",
 )
 ARCHIVED_LIVE_BOUNDARY_KEYWORDS = (

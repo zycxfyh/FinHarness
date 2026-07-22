@@ -12,7 +12,6 @@ from finharness.repo_intelligence import (
     infer_required_checks,
     parse_taskfile,
 )
-from finharness.repo_intelligence_graph import run_repo_intelligence_graph
 
 
 class RepoIntelligenceTest(unittest.TestCase):
@@ -65,28 +64,19 @@ class RepoIntelligenceTest(unittest.TestCase):
 
         checks = infer_required_checks(["src/finharness/ips.py"])
         self.assertIn("uv run python -m unittest tests.test_ips", checks)
-        self.assertIn("task governance:check", checks)
+        self.assertIn("task check", checks)
 
     def test_catalog_governance_files_are_catalog_aware(self) -> None:
         systems = affected_systems_for_files(["docs/architecture/system-catalog.yml"])
         ids = {system["id"] for system in systems}
-        self.assertIn("eos_governance_quality", ids)
+        self.assertIn("engineering_assurance", ids)
 
         graph = build_import_graph()
         tests = build_test_map()
         blast = build_blast_radius(["docs/architecture/system-catalog.yml"], graph, tests)
-        self.assertIn("eos_governance_quality", {item["id"] for item in blast["affected_systems"]})
+        self.assertIn("engineering_assurance", {item["id"] for item in blast["affected_systems"]})
         self.assertIn("task docs:current-check", blast["required_checks"])
 
-    def test_repo_intelligence_graph_outputs_final_decision_context(self) -> None:
-        result = run_repo_intelligence_graph(
-            changed_files=["src/finharness/authorization.py"]
-        )
-        final = result["final"]
-        self.assertEqual(final["source"]["graph"], "repo_intelligence_graph")
-        self.assertFalse(final["execution_allowed"])
-        self.assertTrue(final["security_surface"]["requires_human_review"])
-        self.assertIn("outputs", final)
 
 
 class RepoIntelligencePruneTest(unittest.TestCase):

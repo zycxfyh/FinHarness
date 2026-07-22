@@ -37,8 +37,6 @@ non-current document.
 | Configuration and schemas | Canonical config/model sources and direct environment reads | Document supported external fields only. |
 | System ownership and lifecycle | `system-catalog.yml` | Generate inventory views; do not add a parallel catalog. |
 | Documentation lifecycle | `documentation-lifecycle.md` plus catalog roots/paths and visible banners | Keep current and non-current material separate. |
-| Verified engineering debt | `debt-register.json` | Link to the register; do not copy counts or active lists. |
-| Support-surface lifecycle | `support-surface-registry.yml` | Project the registered support boundary. |
 | Historical decisions and evidence | ADRs, proposals, reviews, notes, and Git history | Preserve context without rewriting it as current truth. |
 
 A prose page may summarize and link to a canonical owner. It must not redefine

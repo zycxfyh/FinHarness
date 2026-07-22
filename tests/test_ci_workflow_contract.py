@@ -263,14 +263,17 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertEqual(profiles, ["data", "research", "agent", "eval"])
         self.assertNotIn("base", profiles)
 
-    def test_governance_stage_does_not_repeat_canonical_test_gates(self) -> None:
+    def test_ci_gate_uses_direct_product_and_boundary_checks(self) -> None:
         taskfile = (REPO_ROOT / "Taskfile.yml").read_text(encoding="utf-8")
-        body = taskfile.split("  governance:check:\n", maxsplit=1)[1].split(
-            "\n  architecture:check:", maxsplit=1
+        body = taskfile.split("  check:ci:\n", maxsplit=1)[1].split(
+            "\n  check:timed:", maxsplit=1
         )[0]
-        self.assertIn("task: governance:inventory", body)
-        self.assertNotIn("unittest", body)
-        self.assertNotIn("frontend/tests/", body)
+        self.assertIn("task: check:fast", body)
+        self.assertIn("task: test:frontend", body)
+        self.assertIn("task: architecture:check", body)
+        self.assertIn("task: rules:audit", body)
+        self.assertNotIn("governance:check", body)
+        self.assertNotIn("governance:inventory", body)
 
     def test_optional_workflows_install_only_their_runtime_profiles(self) -> None:
         browser = (WORKFLOW_ROOT / "browser.yml").read_text(encoding="utf-8")

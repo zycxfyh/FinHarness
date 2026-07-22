@@ -148,11 +148,6 @@ Trace 是审计与证据材料；它不直接授予权限，但可以作为 Eval
 | --- | --- |
 | change-control.md (C0-C3) | Guardrail + Evaluator |
 | gate-checklists.md | Skill (checklist form) |
-| debt-register.json | Loop backlog |
-| support-surface-registry.yml | Resource (governance config) |
-| removal-ledger.yml | Trace (deletion record) |
-| _graph_registry.py | Resource (graph asset catalog) |
-| _policy_registry.py | Guardrail registry |
 
 ## 6. 对新 PR 的要求
 

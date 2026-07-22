@@ -21,10 +21,6 @@ src/finharness/authorization.py @zycxfyh
 src/finharness/restricted_symbols.py @zycxfyh
 src/finharness/data_entry.py @zycxfyh
 src/finharness/providers/ @zycxfyh
-src/finharness/release_preflight_graph.py @zycxfyh
-src/finharness/quality_governance_graph.py @zycxfyh
-src/finharness/governance_dashboard.py @zycxfyh
-src/finharness/governance_dashboard_graph.py @zycxfyh
 src/finharness/hardening.py @zycxfyh
 src/finharness/research_assets.py @zycxfyh
 experiments/archive/live_trading_legacy/ @zycxfyh

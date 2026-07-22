@@ -79,9 +79,8 @@ Open questions that would materially change risk:
   provide read-only provider data.
 - Authorization and restricted-symbol records:
   `src/finharness/authorization.py` and `src/finharness/restricted_symbols.py`.
-- Governance graphs: `repo_intelligence_graph`, `quality_governance_graph`,
-  `release_preflight_graph`, `governance_dashboard_graph`, and
-  `engineering_delivery_graph`.
+- Engineering assurance: direct product tests, architecture checks, targeted fuzzing,
+  exact-head CI, secret scanning, and Git rollback.
 - Security tooling: `.github/workflows/security.yml`,
   `.github/workflows/scorecard.yml`, `.github/dependabot.yml`, `.gitleaks.toml`,
   `.github/CODEOWNERS`, and `docs/security/security-response-runbook.md`.
@@ -196,7 +195,6 @@ Non-capabilities:
 | Archived live-trading code | archived files only | history -> no runtime authority | No Taskfile/API/Agent path | `experiments/archive/live_trading_legacy/` |
 | Receipts and reports | local JSON/Markdown writes | runtime evidence -> durable files | Must not leak raw secrets or overclaim | `src/finharness/hardening.py` |
 | Security CI | push/PR/workflow dispatch | GitHub runner -> code scanning | Pinned actions and job permissions | `.github/workflows/security.yml` |
-| Release preflight | `task release:preflight` | local checks -> release gate | Seals release evidence, not trading authority | `src/finharness/release_preflight_graph.py` |
 
 ## Top Abuse Paths
 
@@ -224,10 +222,10 @@ Non-capabilities:
 | TM-001 | Local operator, PR author, compromised dependency | Exfiltrate provider credentials through committed files or generated outputs. | Provider credentials, scanner reports | Gitleaks/redacted classifier in `src/finharness/hardening.py`; security workflow; response runbook | No full secret inventory or automated rotation proof | Gitleaks findings, unexpected `.env*` files, receipt diffs | high |
 | TM-002 | Developer or malicious PR | Reconnect archived live-trading code to current Taskfile/API/Agent path. | Archived live-trading boundary, Provider credentials | Archive in `experiments/archive/live_trading_legacy/`; `GOV-DOCS-*` current-doc checks; CODEOWNERS | No formal dual-control process for any future live-write redesign | Changes touching archive, Taskfile, API, Agent tools, provider code | high |
 | TM-003 | Prompt/asset injection attacker | Convert research/reference text into proposal or execution authority. | Research asset specs, proposal/review receipts | Cite-only research asset selection; redline tests; `execution_allowed=false` | No signed asset provenance | Missing IDs, asset diffs, unexpected execution claims | high |
-| TM-004 | Developer or PR author | Weaken checks while preserving release-ready wording. | GitHub workflows, release receipts | `task release:preflight`; policy registry; CodeQL/Gitleaks/Trivy | Main keeps admin bypass; code-owner review not required by ruleset | Workflow/Taskfile diffs, ruleset audit logs | high |
+| TM-004 | Developer or PR author | Weaken checks while preserving release-ready wording. | GitHub workflows, reviewed candidate | `task check`; exact-head identity; CodeQL/Gitleaks/Trivy | Main keeps admin bypass; code-owner review not required by ruleset | Workflow/Taskfile diffs, ruleset audit logs | high |
 | TM-005 | Dependency or action supply-chain attacker | Execute attacker-controlled code in CI/local checks. | Dependencies, workflows, release evidence | Dependabot, SHA-pinned actions, Trivy, lockfiles | No signed SLSA provenance yet | Dependabot, Scorecard, Trivy, lockfile diffs | high |
 | TM-006 | Provider or malformed response | Treat bad quote/provider data as valid evidence. | External data, capital state, receipts | `data_entry.py`, `market_data.py`, provider quality checks | Freshness/provider outage monitoring incomplete | Quality reports, stale-data notes, provider errors | medium |
-| TM-007 | Local process or generated data | Poison receipts or dashboard with false readiness. | Receipts, dashboard, release preflight | `governance_dashboard_graph`, `release_preflight_graph`, property tests | Receipts are unsigned local files | Receipt schema checks, diff review, dashboard status | medium |
+| TM-007 | Local process or generated data | Poison receipts or generated reports with false readiness. | Receipts and review evidence | Receipt schemas, identity binding, idempotent replay, restart tests, and diff review | Receipts are unsigned local files | Receipt/index mismatches, replay failure, unexpected generated-file diffs | medium |
 | TM-008 | External contributor or compromised admin | Land high-risk change without prior review. | Rulesets, workflows, security docs, boundaries | `.github/CODEOWNERS`; governance docs; branch rulesets | Main is not PR-only and code-owner review is not enforced by ruleset | Scorecard Code-Review/Branch-Protection, ruleset audit logs | medium |
 
 ## Focus Paths For Security Review
@@ -240,8 +238,6 @@ Non-capabilities:
 | `src/finharness/data_entry.py` | Read-only external data input | TM-006 |
 | `src/finharness/providers/ccxt_provider.py` | Optional provider boundary and dependency loading | TM-006 |
 | `src/finharness/hardening.py` | Redacted scanner summaries and boundary corpus | TM-001 |
-| `src/finharness/release_preflight_graph.py` | Release readiness gate | TM-004, TM-007 |
-| `src/finharness/governance_dashboard.py` | Aggregated governance posture | TM-007 |
 | `experiments/archive/live_trading_legacy/` | Historical live-trading code; must stay non-mainline | TM-002 |
 | `.github/workflows/security.yml` | Remote security checks and token permissions | TM-004, TM-005 |
 | `.github/workflows/scorecard.yml` | OpenSSF signal and SARIF upload | TM-004, TM-005 |
@@ -310,10 +306,9 @@ A contributor could extend the paper ticket/execution chain with new fields
 surface as a scaffold for a hidden second broker integration path.
 
 Existing controls: `system-catalog.yml` classifies the Execution Kernel as the
-canonical execution path and Paper Validation as legacy; `debt-register.json`,
-the removal ledger, the consumer manifest, and the import/broker isolation tests
-own its retirement and non-extension boundary. New paper-validation features do
-not receive current product or execution authority.
+canonical execution path and Paper Validation as legacy. Direct import-boundary,
+broker-isolation, legacy-header, model-constraint, and HTTP tests prevent the
+legacy surface from acquiring current product or execution authority.
 
 Gaps: resolved by SEC-02B and the 2026-07-11 audit correction — the AST import
 graph uses canonical importable module names, includes package initialization and
@@ -331,10 +326,10 @@ from the canonical execution pipeline.
 Existing controls: the `deprecated=True` tag and legacy headers inform callers;
 the legacy bridge separates paper projections from execution facts.
 
-Gaps: resolved by SEC-02A — machine-verifiable consumer manifest
-(`docs/governance/paper-validation-consumers.json` + `paper_validation_boundary_audit.py`
-+ `test_paper_validation_consumer_manifest.py`). The AST scanner detects
-unregistered consumers and the contract test validates manifest completeness.
+Gaps: bounded by direct route deprecation, transitive import analysis,
+broker-isolation tests, and current frontend/Agent product tests. A new caller is
+a normal product diff and must pass those executable boundaries; no parallel
+consumer inventory is maintained.
 
 ### Isolation Rules (contract, not convention)
 
@@ -354,24 +349,6 @@ unregistered consumers and the contract test validates manifest completeness.
 7. The paper ticket validator `_live_or_submit_marker` must continue to reject
    live/broker-submit keys and be verified by a unit test.
 
-### Consumer Audit
-
-Direct consumers of the PaperValidation surface (`2026-07-10`):
-
-| Consumer | Type | Location | Migration path |
-| --- | --- | --- | --- |
-| `routes_paper_validation.py` | API router | `api/routes_paper_validation.py` | Delete when no callers remain. |
-| `api/app.py` | Router registration | `api/app.py:142` | Remove `include_router` line. |
-| `paper_accounts.py` | Domain module | `statecore/paper_accounts.py` | Archeology-only. |
-| `paper_order_tickets.py` | Domain module | `statecore/paper_order_tickets.py` | Archeology-only. |
-| `paper_executions.py` | Domain module | `statecore/paper_executions.py` | Archeology-only. |
-| `legacy_bridge.py` | Separation bridge | `execution/legacy_bridge.py` | Still needed while paper records exist. |
-| `pretrade_packet.py` | Legacy projection | `execution/pretrade_packet.py` | Delete when paper records are purged. |
-| `test_action_intents.py` | Test client | `tests/test_action_intents.py` | Replace with Execution Kernel API tests. |
-| `test_legacy_route_headers.py` | Deprecation test | `tests/test_legacy_route_headers.py` | Keep until routes are deleted. |
-| `test_pretrade_packet.py` | Legacy projection test | `tests/test_pretrade_packet.py` | Delete when pretrade_packet is deleted. |
-| `abstraction-inventory.yml` | Architecture inventory | `docs/engineering/abstraction-inventory.yml` | Keep classification; point to deletion conditions. |
-| `debt-register.json` | Governance | `docs/governance/debt-register.json` | Close ENG-DEBT-0002 when boundary is complete. |
 
 ### Deletion Criteria
 

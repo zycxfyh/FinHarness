@@ -23,8 +23,6 @@ execution authorization.
 | `task issues:audit [-- --repo OWNER/REPO]` | Report optional plane, kind, and lifecycle labels on live open Issues. | Advisory; findings do not fail the command. GitHub metadata load failure still exits non-zero. |
 | `task pr:body -- <fields>` | Render an optional concise PR summary from scope, validation, changed files, and relevant consequences. | Legacy risk/classification and Issue arguments are accepted for compatibility but no longer required or rendered. |
 | `task pr:check -- --body-file <path>` | Report advisory findings when a PR summary or validation note is absent. | Read-only; prose findings do not fail the command or block a Ready PR. Metadata read errors still fail. |
-| `task governance:inventory` | Check source-derived dependency consumers and paper-validation boundary drift. | Read-only; prints the affected source and repair command on drift. |
-| `task governance:inventory:update` | Repair source-derived dependency inventory fields. | Deterministic and idempotent; never invents manual dependency policy. |
 | `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
 | `task capital:reconcile -- --receipt-root <path> --apply` | Apply deterministic import repairs and write a recovery receipt. | Never invents missing evidence or grants authority. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
@@ -86,16 +84,7 @@ task cockpit:review -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --p
 
 | Command | Purpose |
 | --- | --- |
-| `task governance:check` | Run governance inventory drift checks not already owned by the Python and frontend gates. |
-| `task governance:policies` | List the governance policy registry. |
-| `task governance:graphs` | List graph assets by status/consumer/owner. |
-| `task governance:dashboard` | Build governance dashboard receipt/report. |
 | `task docs:current-check` | Check maintained docs against live Taskfile/current facts. |
-| `task repo:intelligence` | Build local repo intelligence graph, doc, and receipt. |
-| `task receipt:usage-audit` | Audit receipt references and consumption. |
-| `task quality:governance` | Run quality governance graph with authoritative checks. |
-| `task release:preflight` | Run release preflight graph with authoritative checks. |
-| `task project:governance-adapter` | Adapt workstation project-governance receipts. |
 | `task hardening:gate` | Run local MVP hardening checks. |
 | `task hardening:redteam` | Run local adversarial boundary checks. |
 | `task security:scan` | Run dependency, gitleaks, and Trivy scans. |

@@ -59,7 +59,6 @@ class SystemCatalogTest(unittest.TestCase):
                 "current_system_orientation": "docs/current-system.md",
                 "current_work_authorization": "https://github.com/zycxfyh/FinHarness/issues",
                 "product_objective": "https://github.com/zycxfyh/FinHarness/issues/277",
-                "verified_engineering_debt": "docs/governance/debt-register.json",
             },
         )
         self.assertNotIn("implementation_sequence", catalog["fact_ownership"])

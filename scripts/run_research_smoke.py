@@ -1,7 +1,7 @@
 """C3 opt-in live smoke for the --with-research enrichment path.
 
 Manual / on-demand / **network** harness. NOT part of `task check`,
-`task governance:check`, or `task test:*` — it exercises the real RE2 provider
+`task check`, or `task test:*` — it exercises the real RE2 provider
 (OpenBB/yfinance via market_data) end to end against an **isolated synthetic sample**
 (a tempdir state core + a synthetic SPY concentration position). It never touches the
 operator's real ledger.

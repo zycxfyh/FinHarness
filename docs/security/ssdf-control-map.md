@@ -15,7 +15,7 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 | --- | --- | --- | --- |
 | PO: Prepare the Organization | Apache-2.0 license, repository rulesets, CODEOWNERS, security policy, governance docs | partial | Main is not PR-only and current rulesets do not require code-owner review |
 | PS: Protect the Software | Gitleaks, Trivy, CodeQL, Dependabot, pinned actions, branch rulesets, local SBOM/provenance baseline | partial | No formal CycloneDX/SPDX SBOM or signed SLSA provenance yet |
-| PW: Produce Well-Secured Software | Typed layer contracts, tests, hardening gate, red-team corpus, deterministic fuzz baseline, release preflight | partial | No formal fuzzing service recognized by Scorecard |
+| PW: Produce Well-Secured Software | Typed layer contracts, tests, hardening gate, red-team corpus, deterministic fuzz baseline, exact-head verification | partial | No formal fuzzing service recognized by Scorecard |
 | RV: Respond to Vulnerabilities | `.github/SECURITY.md`, security response runbook, Dependabot, scanner receipts | partial | No recurring vulnerability review cadence or live-provider dual-control process |
 
 ## PO: Prepare the Organization
@@ -24,8 +24,8 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 | --- | --- | --- |
 | Define security requirements | `docs/security/mvp-hardening-gate.md`, `docs/security/finharness-threat-model.md` | Turn high-priority threats into tracked tasks |
 | Define roles and responsibilities | `.github/CODEOWNERS`, `docs/operations/repository-governance.md`, GitHub rulesets | Decide whether to require code-owner review in rulesets |
-| Establish secure development workflow | `Taskfile.yml`, `task release:preflight`, `task governance:dashboard` | Decide if/when `main` becomes PR-only |
-| Define acceptable release evidence | `docs/architecture/release-preflight-graph.md`, `docs/operations/governance-dashboard-latest.md` | Add signed release receipt or checksum policy |
+| Establish secure development workflow | `Taskfile.yml`, `task check`, exact-head GitHub checks | Decide if/when `main` becomes PR-only |
+| Define acceptable release evidence | exact reviewed head, `task check`, required GitHub checks, and merged PR history | Add signed release artifact provenance only when a distributable release exists |
 
 ## PS: Protect the Software
 
@@ -34,14 +34,14 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 | Protect code repository | Apache-2.0 `LICENSE`, `.github/CODEOWNERS`, active main and release rulesets | Decide if/when `main` becomes PR-only and code-owner review is enforced |
 | Protect secrets | `.gitleaks.toml`, `src/finharness/hardening.py`, `task hardening:gate` | Add rotation checklist and local secret inventory policy |
 | Protect build/release integrity | SHA-pinned GitHub Actions, `uv.lock`, `pnpm-lock.yaml`, Dependabot, `task security:sbom` | Upgrade local SBOM to formal CycloneDX/SPDX and signed SLSA provenance after artifact shape is chosen |
-| Protect generated evidence | Receipts under `data/receipts/`, release preflight receipt | Add receipt schema/checksum verification |
+| Protect generated evidence | Receipt schemas, Artifact digests, identity binding, replay tests, and reviewed diffs | Add signed external-release evidence only when required |
 
 ## PW: Produce Well-Secured Software
 
 | Practice intent | Current evidence | Residual work |
 | --- | --- | --- |
 | Design with trust boundaries | `docs/security/finharness-threat-model.md`, Capital OS layering, system map | Keep threat model updated when provider/archive boundaries change |
-| Review and test security properties | `tests/test_hardening_gate.py`, `tests/integration_property_baseline.py`, `tests/test_security_fuzz.py`, `task check`, `task security:fuzz` | Decide whether to add formal fuzzing recognized by Scorecard |
+| Review and test security properties | `tests/test_hardening_gate.py`, `tests/test_security_fuzz.py`, `task check`, `task security:fuzz` | Decide whether to add formal fuzzing recognized by Scorecard |
 | Verify dependencies and configs | Trivy, CodeQL, Dependabot, Scorecard workflow | Add periodic dependency review receipt |
 | Prevent unsafe execution semantics | `src/finharness/authorization.py`, `src/finharness/restricted_symbols.py`, `src/finharness/research_assets.py`, `experiments/archive/live_trading_legacy/` | Add dual-control approval before any future live-write redesign |
 
@@ -72,4 +72,4 @@ Reference: https://csrc.nist.gov/pubs/sp/800/218/final
 - This map does not authorize live trading.
 - This map does not claim broker, exchange, custody, settlement, tax, or
   performance-reporting correctness.
-- This map does not replace `task release:preflight` or GitHub branch rulesets.
+- This map does not replace `task check` or GitHub branch rulesets.

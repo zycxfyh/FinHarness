@@ -36,7 +36,6 @@ Prefer vertical slices and existing canonical boundaries. Ordinary reversible im
 - Documentation lifecycle and current graph: [Documentation Lifecycle](architecture/documentation-lifecycle.md)
 - Documentation fact ownership: [Documentation Fact Governance](architecture/documentation-fact-governance.md)
 - Security boundary: [Threat Model](security/finharness-threat-model.md)
-- Verified engineering debt: [`debt-register.json`](governance/debt-register.json)
 - Historical reviews and evidence: [Reviews](reviews/README.md)
 
 ## Understand FinHarness

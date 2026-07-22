@@ -718,7 +718,6 @@ not trading authority.
 | Repo intelligence | `workflow`; `generated_at`; `source`; `file_inventory`; `inventory_summary`; `task_graph`; `import_graph`; `test_map`; `blast_radius`; `security_surface`; `execution_allowed` |
 | Quality governance | `workflow`; `generated_at`; `source`; `check_results`; `repo_intelligence`; `security_gate`; `redteam_gate`; `performance_baseline`; `release_decision` |
 | Release preflight | `workflow`; `generated_at`; `source`; `quality`; `supply_chain`; `release_gate` |
-| Governance dashboard | `workflow`; `generated_at`; `source`; `dashboard_status`; `receipt_refs`; `repo_intelligence`; `quality_governance`; `hardening_gate`; `redteam_boundary`; `release_preflight`; `performance_baseline`; `execution_allowed`; `requires_human_review` |
 | Hardening gate | `workflow`; `generated_at`; `execution_allowed`; `release_blocked`; `checks` |
 | pip-audit summary | `dependency_count`; `vulnerability_count`; `vulnerable_package_count`; `vulnerable_packages`; `vulnerabilities` |
 | gitleaks/trivy summaries | Tool-specific redacted scanner fields plus vulnerability/secret counts where available. |

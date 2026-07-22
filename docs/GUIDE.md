@@ -17,6 +17,6 @@ Use the current documentation entry points instead:
 - Current receipt reference: [reference/receipts.md](reference/receipts.md)
 
 The downgrade is recorded in
-[governance/removal-ledger.yml](governance/removal-ledger.yml). Historical
+Git history and merged pull requests. Historical
 trading-chain context lives under
 [archive/ten-layer-trading-chain/](archive/ten-layer-trading-chain/).

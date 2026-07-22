@@ -41,7 +41,7 @@ live account data.
 5. If live or mutating provider access may be affected, stop expansion work and
    leave live-write gates disabled.
 6. Patch only the affected boundary and its closest tests.
-7. Run `task security:scan`, `task check`, and `task release:preflight` before
+7. Run `task security:scan`, `task security:fuzz`, and `task check` before
    claiming closure.
 8. Record an engineering delivery receipt and a short lesson when the fix lands.
 
@@ -63,8 +63,7 @@ If a credential or account boundary may be exposed:
 Block release claims when any of these are true:
 
 - `task security:scan` fails.
-- `task release:preflight` reports `release_ready=false`.
-- `task governance:dashboard` reports `dashboard_status=blocked`.
+- `task check` fails.
 - A high or critical report is unresolved.
 - A fix changes `.github/`, `Taskfile.yml`, `src/finharness/authorization.py`,
   `src/finharness/restricted_symbols.py`, `src/finharness/research_assets.py`,
