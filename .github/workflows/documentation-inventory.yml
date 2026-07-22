@@ -52,6 +52,19 @@ jobs:
           env -u UV_LOCKED uv run --script scripts/audit_documentation_inventory.py \
             --baseline "$BASELINE_SHA" \
             --output-dir .artifacts/documentation-inventory
+          mapfile -d '' MARKDOWN_PATHS < <(
+            git ls-tree -r --name-only -z "$BASELINE_SHA" | \
+              while IFS= read -r -d '' path; do
+                case "$path" in
+                  *.md|*.markdown) printf '%s\0' "$path" ;;
+                esac
+              done
+          )
+          git archive \
+            --format=tar.gz \
+            --output=.artifacts/documentation-inventory/documentation-source-bundle.tar.gz \
+            "$BASELINE_SHA" \
+            -- "${MARKDOWN_PATHS[@]}"
 
       - name: Upload documentation inventory evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
