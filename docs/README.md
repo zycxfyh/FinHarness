@@ -46,8 +46,8 @@ connectivity.
 | Contribute without letting docs rot | [Contributing](../CONTRIBUTING.md) |
 
 The synthetic tutorial proves only direct-seeded proposal/review/receipt replay in
-an ephemeral workspace. It does not prove canonical capital import,
-capital-truth readiness, Daily Brief, or a persistent first-capital-review
+an isolated temporary artifact workspace. It does not prove canonical capital
+import, capital-truth readiness, Daily Brief, or a persistent first-capital-review
 journey; that executable journey remains separately owned by #455.
 
 ## Documentation Types
