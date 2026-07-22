@@ -16,7 +16,7 @@ connectivity.
 - Understand how work should advance: [Operating Model](engineering/operating-model.md), [Change Control](engineering/change-control.md), [Gate Checklists](engineering/gate-checklists.md)
 - Need the framework in one screen: [Framework Index](architecture/framework-index.md)
 - Need the engineering leverage / future-tooling map: [Engineering Leverage Map](architecture/engineering-leverage-map.md)
-- New to the project: [Golden Path Tutorial](tutorials/golden-path.md)
+- New to the project mechanics: [Synthetic Golden Path Tutorial](tutorials/golden-path.md)
 - Need to perform one task: [How-to Guides](how-to/README.md)
 - Need exact facts, commands, or schemas: [Reference](reference/README.md)
 - Need the "why" and design context: [Explanation](explanation/README.md)
@@ -25,7 +25,7 @@ connectivity.
 
 | Goal | Use this |
 | --- | --- |
-| Run the first safe end-to-end flow | [Golden Path Tutorial](tutorials/golden-path.md) |
+| Run the isolated proposal/review/receipt replay demo | [Synthetic Golden Path Tutorial](tutorials/golden-path.md) |
 | See every system's core summary | [Framework Index](architecture/framework-index.md) |
 | Shape and release a bounded PR | [Operating Model](engineering/operating-model.md), [mini-RFC template](templates/mini-rfc.md) |
 | See which engineering layers prevent future drag | [Engineering Leverage Map](architecture/engineering-leverage-map.md) |
@@ -44,6 +44,11 @@ connectivity.
 | Read runtime operations reports | [Operations](operations/) |
 | Read reviews and lessons | [Reviews](reviews/README.md), [Lessons](lessons/README.md) |
 | Contribute without letting docs rot | [Contributing](../CONTRIBUTING.md) |
+
+The synthetic tutorial proves only direct-seeded proposal/review/receipt replay in
+an isolated temporary artifact workspace. It does not prove canonical capital
+import, capital-truth readiness, Daily Brief, or a persistent first-capital-review
+journey; that executable journey remains separately owned by #455.
 
 ## Documentation Types
 
