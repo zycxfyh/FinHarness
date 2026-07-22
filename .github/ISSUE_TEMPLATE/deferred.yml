@@ -1,95 +1,27 @@
-name: Deferred integration gate
-description: Specify a gated integration or autonomy capability without authorizing implementation.
+name: Deferred capability
+description: Record something worth revisiting later without authorizing work now.
 title: "Deferred: "
 labels:
   - type:deferred-gate
   - status:deferred
   - priority:P3
 body:
-  - type: input
-    id: baseline
+  - type: textarea
+    id: why_later
     attributes:
-      label: Current main SHA
-      placeholder: main@<sha>
+      label: Why later
+      description: Why is this not worth doing now?
     validations:
       required: true
   - type: textarea
-    id: rationale
+    id: opening_signal
     attributes:
-      label: Why this remains deferred
-    validations:
-      required: true
-  - type: textarea
-    id: source
-    attributes:
-      label: Source / audit
-    validations:
-      required: true
-  - type: dropdown
-    id: primary_plane
-    attributes:
-      label: Primary backlog plane
-      description: This declaration does not apply a label; after creation, a reviewer must apply the matching plane:* label.
-      options:
-        - plane:truth — capital facts, imports, reconciliation, and verified projections
-        - plane:knowledge — observations, claims, provenance, and evidence admission
-        - plane:judgment — cases, scenarios, readiness, decisions, and validity
-        - plane:control — identity, mandate, authorization, admission, and capability
-        - plane:agent — bounded context, tools, observations, evaluation, and stop
-        - plane:action-learning — execution, outcome review, lessons, and governed learning
-        - plane:product — human discovery, decision, review, and learning journeys
-        - plane:assurance — transactions, recovery, indexes, CI, proof, and engineering governance
-    validations:
-      required: true
-  - type: dropdown
-    id: lifecycle
-    attributes:
-      label: Backlog lifecycle
-      description: Deferred templates create a closed gate and do not authorize implementation.
-      options:
-        - status:deferred — explicit closed gate
-    validations:
-      required: true
-
-  - type: textarea
-    id: blockers
-    attributes:
-      label: Native blockers and opening conditions
-      description: Add every opening condition as a GitHub blocked-by relationship.
+      label: Revisit when
+      description: Name the concrete observation, demand, dependency, or consequence change that would justify another look.
     validations:
       required: true
   - type: textarea
     id: scope
     attributes:
-      label: Design-gate scope
-    validations:
-      required: true
-  - type: textarea
-    id: prohibited
-    attributes:
-      label: Explicitly prohibited before the gate opens
-    validations:
-      required: true
-  - type: textarea
-    id: acceptance
-    attributes:
-      label: Gate acceptance and negative fixtures
-    validations:
-      required: true
-  - type: textarea
-    id: rollback
-    attributes:
-      label: Rollback, revocation, and affected claims
-    validations:
-      required: true
-  - type: dropdown
-    id: executor
-    attributes:
-      label: Primary executor
-      options:
-        - Human
-        - Codex
-        - DeepSeek
-        - Deterministic
-    validations:
-      required: true
+      label: Relevant scope
+      description: Add only enough context to recognize the future decision.
