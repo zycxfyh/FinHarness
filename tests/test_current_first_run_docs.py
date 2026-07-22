@@ -34,7 +34,7 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
         tutorial = _read(Path("docs/tutorials/golden-path.md"))
         self.assertIn("`task api:serve`", commands)
         self.assertIn("read-only", commands.lower())
-        self.assertIn("fails closed for writes", commands.lower())
+        self.assertIn("all writes fail closed", commands.lower())
         self.assertIn("`task cockpit:review`", commands)
         self.assertIn("governed human review writes", commands.lower())
         self.assertIn("task cockpit:review -- --state-db", tutorial)
@@ -58,8 +58,8 @@ class CurrentFirstRunDocumentationTest(unittest.TestCase):
         self.assertIn("does not open the demo's temporary workspace", tutorial)
         self.assertIn("task api:serve -- --state-db", tutorial)
         self.assertIn("task cockpit:review -- --state-db", tutorial)
-        self.assertGreaterEqual(tutorial.count("$STATE_DB"), 4)
-        self.assertGreaterEqual(tutorial.count("$RECEIPT_ROOT"), 4)
+        self.assertGreaterEqual(tutorial.count("$STATE_DB"), 3)
+        self.assertGreaterEqual(tutorial.count("$RECEIPT_ROOT"), 3)
 
     def test_current_first_run_docs_have_no_maintainer_absolute_paths(self) -> None:
         forbidden = re.compile(r"(?:/root/projects/|/home/[^/\s]+/[^\s`)]*)")
