@@ -6,8 +6,8 @@
 > 修订(2026-06-24):新增「北极星指标:Financial Decision Clarity」一节,
 > 作为本文一句话北极星的**可度量操作化**。它是**用户价值形态**的指标,与下文
 > 「路线与成功指标」里"决策能否仅凭收据重建打分"的**治理形态**指标互补,不
-> 替代后者。配套文档:[产品命题](product/product-thesis.md)、
-> [产品路线](product/product-roadmap.md)。
+> 替代后者。配套当前文档:[产品命题](product/product-thesis.md)、
+> [当前系统](current-system.md)。当前投资顺序由 [Program #277](https://github.com/zycxfyh/FinHarness/issues/277) 与 GitHub Issue/PR 状态拥有。
 >
 > 修订(2026-07-02):把"AI 永不拥有执行权"收窄为更精确的产品边界:
 > **Agent 不默认拥有高后果身份或执行权**。未来若支持有限代理身份,必须由

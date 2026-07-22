@@ -1,61 +1,13 @@
 # FinHarness Framework Index
 
-状态:current(2026-07-11)。这是 FinHarness 的“不要每次重新理解一遍”索引。
+This is the machine-derived system inventory. For a short human/Agent
+orientation, current product boundary, and fact-owner map, start with
+[FinHarness Current System](../current-system.md).
 
-本页只回答四件事:
-
-1. FinHarness 到底是什么框架;
-2. 每个部分的核心职责是什么;
-3. 当前入口和机器检查在哪里;
-4. 我们借鉴哪些成熟方案,哪些暂时不上。
-
-更细的文件事实看 [Module Map](module-map.md);系统边界看
-[System Map](system-map.md);分层演进看 [Capital OS Layering](capital-os-layering.md)。
-产品能力路线看 [Capital Workbench Roadmap](../product/capital-workbench-roadmap.md)。
-2026-07-11 外部调研与代码校准看
-[External Research Synthesis](../notes/2026-07-11-external-research-synthesis.md)，
-分阶段实施门槛看
-[Evidence-First Evolution Execution Plan](../proposals/2026-07-11-finharness-evolution-execution-plan.md)。
-机器可读目录看 [System Catalog](system-catalog.yml);工程推进风险看
-[Engineering Leverage Map](engineering-leverage-map.md)。Agent L5 参考模式看
-[Agent Runtime Reference](agent-runtime-reference/README.md)。金融行业词与
-FinHarness 原语的对应关系看
-[Financial Terminology Map](../reference/financial-terminology-map.md)。
-
-## One Sentence
-
-FinHarness 当前是一个 local-owned **Personal Capital Review and Decision
-Ledger**：把个人资本状态、证据、proposal/review、human DecisionRecord 方向、
-receipt、governance checks 和 simulated Execution substrate 组织成可审计的
-复核工作台。**Agent-Native Personal Capital Operating System** 是北极星，
-不是当前产品完成度声明。
-
-## Framework Shape
-
-```text
-Human Principal
-  goals + capital constitution + mandate + veto/revocation
-        ↓
-Capital Agent
-  observe -> reason -> plan -> act -> verify -> learn
-        ↓
-FinHarness Harness
-  world model + tools/skills + policy + receipts + recovery + escalation
-        ↓
-Deterministic Engines
-  accounting/FX/risk/Scenario + persistence + execution + reconciliation
-```
-
-当前 Agent Operating Cycle v0.1 已达到 AUT2 foundation（15/15），仍处于
-Human-in-the-loop；这不是 AUT3 delegated decision authority。
-目标不是让确定性引擎永久拥有工作流，而是让 Agent 在 Harness 的机器边界内
-逐步获得目标级自治。External/mature wheels 负责 mechanics，不拥有目标或权限。
-
-Current executable truth: **Agent Operating Cycle v0.1 is the current AUT2
-foundation**. Structural evidence: `run_agent_operating_surface_smoke.py` (23 checks);
-`run_agent_work_loop_smoke.py` (18 structural checks). The dedicated behavioral
-gate is 15/15.
-This closure does not imply session/resume, scheduling, subagents, or AUT3 authority.
+Use [Module Map](module-map.md) for file-level roots, [System Map](system-map.md)
+for detailed responsibilities, and [System Catalog](system-catalog.yml) as the
+machine-readable lifecycle owner. Product direction is separate from current
+capability and lives under [`docs/product/`](../product/).
 
 ## System Summary
 
@@ -65,8 +17,7 @@ This closure does not imply session/resume, scheduling, subagents, or AUT3 autho
 | System | Lifecycle | Current responsibility | Primary roots | Verification |
 | --- | --- | --- | --- | --- |
 | Shared Artifact and Receipt Store | `current` | Domain-neutral immutable-byte, descriptor, integrity-audit, index, and recovery ports. STORE-00 is live for new artifact forms; existing domain receipts migrate separately with replay and rollback proof. | `src/finharness/artifact_store.py`<br>`src/finharness/import_provenance.py`<br>`src/finharness/statecore/receipt_io.py` | `uv run python -m unittest tests.test_artifact_store` |
-| Product North Star | `current` | Product category and staged capability path; FinHarness is a personal capital governance framework moving from awareness and review toward paper validation and controlled capital-action workflows. | `README.md`<br>`docs/product/` | `task docs:current-check` |
-| Evolution Roadmap | `current` | Canonical implementation sequence, phase gates, dependency order, and current active-debt projection for the verified capital decision loop. | `docs/architecture/finharness-evolution-roadmap.md`<br>`docs/governance/debt-register.json` | `uv run python -m unittest tests.test_evolution_roadmap`<br>`uv run python scripts/verify_debt_register.py` |
+| Product North Star | `current` | Product category and long-term capability direction; current shipped capability and boundaries are owned separately by docs/current-system.md. | `README.md`<br>`docs/current-system.md`<br>`docs/product/` | `task docs:current-check` |
 | State Core | `current` | Receipt-backed query mirror for personal capital state with exact Decimal ingestion, explicit UTC clocks, canonical identities, typed valuation/FX provenance, completeness findings, and immutable evidence roots. | `src/finharness/statecore/`<br>`src/finharness/capital_import_contract.py`<br>`src/finharness/statecore/identities.py`<br>`src/finharness/position_valuation.py`<br>`src/finharness/personal_finance.py`<br>`src/finharness/beancount_adapter.py`<br>`src/finharness/api/routes_state.py` | `task test:all`<br>`task governance:check` |
 | Capital Map | `current` | Read-only exposure, daily brief, dashboard summary, and capital-state observations. | `src/finharness/exposure.py`<br>`src/finharness/daily_brief.py`<br>`src/finharness/daily_change_brief.py` | `task brief:daily`<br>`task decisions:scan` |
 | IPS / Policy / Authority Credentials | `current` | User-owned Investment Policy Statement, human-admin-only mandate/grant administration, immutable principal-bound CapitalMandate versions with append-only lifecycle resolution, and currency-aware mandate-bounded AgentAuthorityGrant credentials with dynamic validation and closed deny reasons. | `src/finharness/ips.py`<br>`src/finharness/api/routes_ips.py`<br>`src/finharness/authority_administration.py`<br>`src/finharness/statecore/capital_mandates.py`<br>`src/finharness/api/routes_capital_mandates.py`<br>`src/finharness/statecore/agent_authority_grants.py`<br>`src/finharness/api/routes_agent_authority_grants.py` | `task governance:check`<br>`uv run python -m unittest tests.test_ips`<br>`uv run python -m unittest tests.test_capital_mandates`<br>`uv run python -m unittest tests.test_versioned_capital_mandates`<br>`uv run python -m unittest tests.test_agent_authority_grants`<br>`uv run python -m unittest tests.test_authority_administration tests.test_authority_administration_integration`<br>`uv run python -m unittest tests.test_statecore_store` |
@@ -88,52 +39,18 @@ This closure does not imply session/resume, scheduling, subagents, or AUT3 autho
 
 ## What Lives Where
 
-| Need | Start here | Why |
-| --- | --- | --- |
-| “我们是什么?” | README + this page | 产品类别 + 框架一屏总结 |
-| “有哪些系统?” | [System Map](system-map.md) | 每个 system 的职责、读写、adapter、不变量 |
-| “有哪些文件?” | [Module Map](module-map.md) | 当前 mainline 文件事实 |
-| “现在能跑什么?” | [Command Reference](../reference/commands.md), `task --list` | Taskfile 是命令事实源 |
-| “哪些文档必须保持 current?” | [Documentation Fact Governance](documentation-fact-governance.md) | current lane 与 history lane 分开 |
-| “哪些成熟方案可借?” | [Engineering Leverage Map](engineering-leverage-map.md), [Scaffolding Inventory](scaffolding-inventory.md), [Mature Wheel Control Plane](mature-wheel-control-plane.md) | 工程层次、keep / standardize / replace / defer 判断 |
-| “Agent L5 参考哪些成熟运行时模式?” | [Agent Runtime Reference](agent-runtime-reference/README.md) | Hermes-style tool runtime、prompt/context、guardrail、review lifecycle、delegation、memory/skills 的参考边界 |
-| “机器可读系统目录在哪?” | [System Catalog](system-catalog.yml) | 给 repo intelligence / checks / future generated docs 使用 |
-| “哪些边界是机器守的?” | `task governance:policies` | policy registry 是当前 guardrail 入口 |
-| “安全边界在哪?” | [Threat Model](../security/finharness-threat-model.md), [SSDF Control Map](../security/ssdf-control-map.md) | current security facts |
-
-## Mature Solution Posture
-
-FinHarness 的管理方式不是“所有成熟工具都上”,而是三档:
-
-| Problem | Current solution | Mature reference | Decision rule |
-| --- | --- | --- | --- |
-| Architecture ownership | `system-map.md` + `module-map.md` + this index | Backstage catalog metadata | 先借 catalog 思想;多人/多 repo 后再考虑工具 |
-| Change proposals | mini-RFC / ADR / proposal docs | Kubernetes KEPs, Rust RFCs | 大变更先写动机、边界、替代方案、receipt |
-| Documentation types | tutorials / how-to / reference / explanation 分流 | Diataxis | 防止 README 变成百科全书 |
-| Docs freshness | `GOV-DOCS-*` policy + `task docs:current-check` | docs-as-code / GitLab docs discipline | 可枚举漂移进机器检查 |
-| Policy checks | Python `PolicyRule` registry | OPA / Conftest / Cedar | 规则多到 Python 难管时再升级 |
-| Workflow durability | Taskfile + receipts + LangGraph where useful | Temporal | 出现定时、重试、长审批、补偿事务后再评估 |
-| Observability | trace id -> receipt/task/request index | OpenTelemetry | trace 索引 receipt,不替代 receipt |
-| Evidence lineage | local receipts | OpenLineage / MLflow / DVC / Sigstore | 外部 lineage 只能镜像/索引,不能成为 source-of-truth |
-| Supply chain | CodeQL / Gitleaks / Trivy / Scorecard / local SBOM | SLSA, CycloneDX/SPDX, Syft | 有发布 artifact 后再做正式 attestation |
+| Need | Start here |
+| --- | --- |
+| What is current and supported? | [Current System](../current-system.md) |
+| Which systems and runtime roots exist? | This generated table and [Module Map](module-map.md) |
+| Which commands exist? | `Taskfile.yml`, `task --list`, and [Command Reference](../reference/commands.md) |
+| Which work is authorized now? | GitHub Issue/PR state and labels |
+| Which boundaries are machine-enforced? | `task governance:policies` and the relevant source/tests |
+| What is historical context? | ADRs, proposals, reviews, notes, archived files, and Git history |
 
 ## Maintenance Rule
 
-This index must change when any of these change:
-
-- a current system is added, removed, archived, or renamed;
-- `system-catalog.yml` changes a system id, doc path, runtime root, check, or
-  upgrade trigger;
-- a mature tool graduates from “reference posture” to active dependency;
-- a current entry doc changes the product category or mainline loop;
-- `system-map.md` or `module-map.md` changes system ownership.
-
-Run:
-
-```bash
-task docs:current-check
-task governance:check
-```
-
-This page is an index, not a design proof. Detailed reasoning belongs in ADRs,
-mini-RFCs, reviews, or architecture specs.
+The generated section changes only through
+`docs/architecture/system-catalog.yml` and
+`task docs:generate-current-views`. This page is an inventory, not a product
+roadmap, work queue, design proof, or current capability entrypoint.

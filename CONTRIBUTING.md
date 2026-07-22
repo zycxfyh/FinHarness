@@ -1,62 +1,76 @@
 # Contributing
 
-Use the existing project tasks and keep changes small, reviewable, and
-evidence-bound.
+Read [FinHarness Current System](docs/current-system.md) and
+[Agent Instructions](AGENTS.md) before substantial work. GitHub Issues and pull
+requests own mutable work state; this file does not duplicate an implementation
+sequence.
 
-For the numbered issue → worktree → PR → CI → merge lifecycle, follow
-[Manage Issue Worktrees](docs/how-to/manage-issue-worktrees.md). Do not begin the
-next implementation until the current issue PR has merged.
+## Before changing the repository
 
-## Before You Change Code
+1. Confirm the repository, exact `main` SHA, owning Issue or existing defect
+   context, branch, and requested outcome.
+2. Locate the canonical production owner, direct consumers, relevant tests, and
+   current user/operator documentation.
+3. Decide whether the change is reversible. Reserve hard pre-action gates for
+   secrets, external effects, destructive migration, authority escalation,
+   unique evidence, and final evidence bound to the wrong commit.
+4. Use the mechanism-selection order in `AGENTS.md`:
+   delete a duplicate, use the canonical boundary, adopt a standard or mature
+   capability, add the smallest adapter/policy, and create a new abstraction
+   only for an observed gap with a replacement or deletion target.
+5. State explicit non-goals before introducing a cross-cutting mechanism.
 
-1. Confirm the problem has an open, calibrated Issue before creating a worktree.
-   The open Issue must have exactly one `plane:*`, one `type:*`, and one
-   `status:*` label; run `task issues:audit` after applying them.
-2. For a new mechanism or architecture choice, complete the
-   [Reference-First Design Gate](AGENTS.md#reference-first-design-gate) in the
-   Issue: classify A/B/C, record Adopt/Adapt/Own, and explain rejected mature
-   alternatives and forbidden reinvention.
-3. Read the relevant module doc under `docs/modules/` and locate the current
-   canonical production owner and tests.
-4. Prefer existing task entries over ad hoc commands.
-5. Check whether a mature wheel, standard, or platform capability should own
-   the heavy implementation.
-6. Keep FinHarness local code focused on adapters, governance models, quality,
-   lineage, snapshots, receipts, permission boundaries, workflow orchestration,
-   and tests.
+A bounded bug fix does not require ceremonial research, a proposal, an ADR, or a
+new Issue when an existing owner already contains the problem.
 
-A bounded bug fix may state that the mechanism is already fixed and that no
-external adoption decision is involved. Reference-First is a design gate, not a
-requirement to produce ceremonial research for every edit.
+## Implement a vertical slice
 
-## Documentation Definition Of Done
+Prefer:
 
-A change is not complete if it creates a new user-facing command, interface,
-receipt, adapter, or safety boundary and the docs do not explain how to use and
-review it.
+```text
+real input
+-> canonical domain boundary
+-> user/operator-visible result
+-> relevant failure path
+-> evidence and recovery
+```
 
-Update the smallest relevant docs:
+Keep the change small enough to review as one responsibility. Do not create a
+parallel state store, registry, workflow identity, roadmap, policy language, or
+financial engine merely for future flexibility.
 
-| Change type | Required docs |
-| --- | --- |
-| New task command | [Command Reference](docs/reference/commands.md) and a how-to if users must run it directly. |
-| New mature-wheel adapter | [Interface Reference](docs/reference/interfaces.md), the relevant module doc, and an adapter how-to if repeatable. |
-| New receipt/snapshot shape | [Receipt Reference](docs/reference/receipts.md) and evidence inventory if provenance changes. |
-| New config/env var | [Config And Environment Reference](docs/reference/config-env.md). |
-| New safety rule or boundary | [Policy Contract](docs/architecture/policy-contract.md) plus the relevant how-to/tutorial. |
-| New architecture decision | ADR or architecture explanation doc. |
+Use `task ...` entries instead of ad hoc package-manager or global Python
+commands. Run the smallest relevant checks during development.
 
-## Safety Documentation Rule
+## Documentation
 
-Every tutorial or how-to touching research, risk, execution, broker, or venue
-behavior must say:
+Update maintained prose only when the change:
 
-- what evidence is produced;
-- where the receipt is written;
-- what `execution_allowed` means for that layer;
-- what the command does not authorize;
-- whether human attestation is required;
-- which stop conditions should make the operator stop and review.
+- enables or changes a real supported task;
+- changes a durable user/operator boundary;
+- assigns a canonical fact owner;
+- preserves unique decision or failure evidence;
+- materially reduces restart, diagnosis, or handoff cost.
 
-Do not document a trading path as "easy" unless the brakes are visible in the
-same document.
+Commands belong to `Taskfile.yml`, API facts to the effective route graph and
+models, schemas to their source models, system lifecycle to
+`system-catalog.yml`, and work state to GitHub. Do not copy these into another
+mutable table.
+
+Historical proposals, reviews, lessons, notes, and roadmaps do not need updating
+for ordinary implementation changes.
+
+## Final candidate
+
+1. Review the actual diff and remove temporary diagnostics, duplicate mechanisms,
+   generated drift, and stale claims.
+2. Mark the pull request Ready only when the responsibility and rollback boundary
+   are stable.
+3. Run the required changed-surface and exact-head final checks.
+4. Record only the exact final head, checks actually run, unresolved material
+   debt, and recovery boundary.
+5. Merge with the expected head SHA so review and evidence cannot silently refer
+   to an older commit.
+
+CI success proves the checked contracts passed. It does not prove that the
+product direction or abstraction is correct.

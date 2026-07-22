@@ -56,10 +56,13 @@ class SystemCatalogTest(unittest.TestCase):
             catalog["fact_ownership"],
             {
                 "system_ownership_and_lifecycle": "docs/architecture/system-catalog.yml",
+                "current_system_orientation": "docs/current-system.md",
+                "current_work_authorization": "https://github.com/zycxfyh/FinHarness/issues",
+                "product_objective": "https://github.com/zycxfyh/FinHarness/issues/277",
                 "verified_engineering_debt": "docs/governance/debt-register.json",
-                "implementation_sequence": "docs/architecture/finharness-evolution-roadmap.md",
             },
         )
+        self.assertNotIn("implementation_sequence", catalog["fact_ownership"])
         self.assertEqual(
             catalog["documentation"]["update_command"],
             "task docs:generate-current-views",
@@ -67,6 +70,7 @@ class SystemCatalogTest(unittest.TestCase):
         self.assertGreaterEqual(len(catalog["systems"]), 10)
         ids = [system["id"] for system in catalog["systems"]]
         self.assertEqual(len(ids), len(set(ids)))
+        self.assertNotIn("evolution_roadmap", ids)
         for system in catalog["systems"]:
             with self.subTest(system=system.get("id")):
                 self.assertEqual(set(system), REQUIRED_SYSTEM_FIELDS)

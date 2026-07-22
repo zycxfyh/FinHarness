@@ -1,500 +1,194 @@
 # FinHarness Agent Instructions
 
-## Project Role
+## Objective
 
-FinHarness is an AI-native financial decision operating system.
-
-It is a research, evidence, workflow, risk, execution, and review harness that
-can produce governed financial suggestions and staged capital-action workflows.
-Those suggestions must be evidence-bound, conditional, auditable, and explicit
-about their review state, authority boundary, receipt path, and future review
-condition.
-
-Do not pretend the system is advice-free. The point is to help the operator
-form better financial judgments. Do prevent advice from becoming a magic answer
-or an automatic action: every non-trivial suggestion should expose its evidence,
-assumptions, rejected alternatives, risks, authority boundary, receipt path, and
-future review condition.
-
-The core loop is:
+FinHarness is a local-first personal capital review and decision system. The
+current product objective is a verified material capital decision review:
 
 ```text
-information -> judgment -> action -> feedback -> process improvement
+trusted capital state
+-> admitted evidence
+-> reviewable decision candidate
+-> human decide / defer / reject
+-> outcome review and learning
 ```
 
-The project should compound through disciplined capture of evidence, ideas,
-experiments, receipts, and lessons.
+Read [`docs/current-system.md`](docs/current-system.md) before substantial work.
+Do not infer current capability or authorization from an old proposal, review,
+roadmap, note, branch, or conversation.
 
-## AI Cognitive Engineering
+## Truth hierarchy
 
-Treat idea capture as a first-class engineering activity.
-
-Individual ideas may look weak or premature when captured. The value comes from
-accumulation, structure, lineage, recombination, scoring, and later evolution.
-
-When a conversation produces a new project direction, market mechanism,
-workflow principle, risk lesson, product insight, architecture pattern, or
-research hypothesis, preserve it instead of leaving it only in chat.
-
-Default capture destinations:
+Use the smallest canonical owner for each fact:
 
 ```text
-ideas/backlog.md:
-  Small, raw, or queue-like ideas.
+current work and sequence:
+  GitHub Issue/PR state, labels, and native relationships
 
-ideas/YYYY-MM-DD-*.md:
-  More mature executable ideas, hypotheses, experiments, and success signals.
+runtime behavior:
+  source code and executable tests
 
-docs/think/YYYY-MM-DD-*.md:
-  Higher-level reasoning, first-principles thinking, project direction, and
-  cognitive models.
+commands:
+  Taskfile.yml
 
-docs/notes/YYYY-MM-DD-*.md or docs/notes/*.md:
-  Implementation notes, architecture notes, integration decisions, and
-  operating-model research.
+API operations:
+  effective FastAPI route graph and models
 
-docs/proposals/YYYY-MM-DD-*.md:
-  Pre-action plans for substantial new layers, workflow redesigns, and
-  experiments.
+configuration and schemas:
+  canonical config/model sources and direct environment reads
 
-docs/reviews/YYYY-MM-DD-*.md:
-  Post-action reviews for failures, surprises, blocked risk gates, bad
-  proposals, and experiment outcomes.
+system ownership and lifecycle:
+  docs/architecture/system-catalog.yml
 
-docs/lessons/YYYY-MM-DD-*.md:
-  Durable lessons distilled from repeated ideas, receipts, reviews, and
-  experiments.
+verified engineering debt:
+  docs/governance/debt-register.json
+
+product direction:
+  docs/product/product-thesis.md and docs/product-north-star.md
+
+historical evidence:
+  ADRs, proposals, reviews, notes, old roadmaps, archived files, and Git history
 ```
 
-Prefer this minimum structure for captured ideas:
+A prose document may explain or link to a machine-owned fact. It must not become
+a second mutable registry.
+
+## Start every substantial task
+
+1. Confirm the repository, exact `main` SHA, Issue, branch, and requested scope.
+2. Identify the current production owner, direct consumers, tests, and relevant
+   current documentation.
+3. State the failure being solved and whether it is reversible.
+4. Prefer the smallest change that advances one end-to-end product result.
+5. Record explicit non-goals before adding a cross-cutting mechanism.
+
+Do not start from a historical implementation plan and assume its remaining
+checklist is still authorized.
+
+## Engineering order
+
+Use this order:
+
+1. delete or retire a duplicate mechanism;
+2. use the existing canonical repository boundary;
+3. use a standard-library, platform, official, or mature-project capability;
+4. add the smallest adapter or FinHarness-specific policy needed;
+5. add a new abstraction only after the earlier options are demonstrably
+   insufficient.
+
+"Future flexibility" is not evidence for a new platform layer. Do not create a
+second state store, workflow identity, SHA classifier, authorization language,
+event log, provenance format, Agent loop, documentation registry, or financial
+engine without an observed gap and a named replacement/deletion target.
+
+FinHarness should own capital-specific semantics that external tools cannot
+decide: capital-truth admission, evidence admission, decision meaning,
+DecisionReadiness, mandate/authority policy, review, receipts, and learning.
+Mature tools should own commodity data, calculation, execution, and platform
+mechanics where suitable.
+
+## Delivery method
+
+Prefer a vertical slice over a horizontal architecture project:
 
 ```text
-idea_id
-date
-source
-raw_thought
-layer
-hypothesis
-why_it_might_matter
-testable_experiment
-success_signal
-risk_or_failure_mode
-links
-status
+real input
+-> canonical domain boundary
+-> user/operator-visible result
+-> relevant failure path
+-> evidence and recovery
 ```
 
-Useful statuses:
-
-```text
-captured
-clarified
-planned
-testing
-validated
-rejected
-archived
-evolved
-```
-
-Periodically run an idea evolution pass:
-
-```text
-find duplicates
-find forgotten useful ideas
-link related ideas
-combine 2-3 ideas into an experiment
-identify falsified assumptions
-promote strong ideas into implementation plans
-archive stale ideas with a reason
-```
-
-This is part of the product. FinHarness should become a financial idea
-evolution system, not only a codebase.
-
-This practice is necessary only when it improves future judgment, experiment
-quality, execution safety, handoff, or learning. Do not write documents as
-ceremony. Every durable note should reduce future cost, preserve evidence,
-clarify a decision, or enable a better experiment.
-
-## Architecture Principle
-
-Use mature wheels for heavy finance mechanics.
-
-FinHarness local code should stay thin:
-
-```text
-adapters
-governance models
-quality reports
-lineage
-snapshots
-receipts
-permission boundaries
-workflow orchestration
-tests
-```
-
-Do not hand-roll engines when mature wheels exist.
-
-Current wheel ownership:
-
-```text
-OpenBB / yfinance:
-  market and reference data access
-
-TA-Lib / pandas-ta:
-  indicator math
-
-vectorbt:
-  vectorized research and parameter sweeps
-
-Backtrader:
-  small event-style baseline backtests
-
-NautilusTrader:
-  typed trading data model and catalog/storage concepts
-
-Alpaca / OKX official tooling:
-  broker or venue adapters
-```
-
-FinHarness owns evidence and boundaries, not exchange semantics, matching,
-portfolio accounting, margin engines, or execution engines.
-
-## Reference-First Design Gate
-
-Before changing code, complete this gate when an Issue introduces or replaces a
-cross-cutting mechanism, abstraction, architecture boundary, or external
-dependency. A bounded correction with no mechanism choice may say so explicitly
-and proceed without ceremonial research.
-
-Start with repository truth: locate the current canonical owner, production
-path, tests, and prior ADRs. Then classify the problem:
-
-```text
-A — Adopt:
-  A mature library, standard, official Action, or platform capability owns the
-  mechanism. Integrate it through the thinnest safe boundary.
-
-B — Adapt:
-  A mature protocol or architecture pattern owns the invariants, but the local
-  deployment needs a small implementation or adapter.
-
-C — Own:
-  The behavior is FinHarness-specific capital-decision policy or product
-  semantics that an external mechanism cannot decide.
-```
-
-Record the following in the Issue before its worktree starts:
-
-```text
-current counterexample and canonical repository owner
-official standard/specification and mature implementation references
-Adopt: capabilities used directly
-Adapt: protocols, state machines, error semantics, or invariants reused
-Own: FinHarness-specific policy and product meaning retained locally
-rejected alternatives and the concrete reason each is insufficient
-forbidden reinvention for this Issue
-destructive fixtures derived from the reference invariants
-```
-
-Keep research proportional. Prefer official documentation, original standards,
-primary repositories, and original papers. Do not require a technology survey
-for a small bug whose mechanism and owner are already fixed.
-
-Use this implementation order:
-
-1. Delete or retire a duplicate mechanism.
-2. Use an existing canonical repository boundary.
-3. Use a standard-library, platform, or mature-project capability directly.
-4. Add the smallest adapter that preserves the mature invariants.
-5. Add a new abstraction only after the earlier options are shown insufficient.
-
-"Future flexibility" is not evidence for a new platform layer. Do not invent a
-second SHA classifier, workflow identity, idempotency protocol, authorization
-language, event store, file-index database, workflow engine, provenance format,
-Agent loop, browser state framework, or financial calculation engine without a
-documented and reviewed gap.
-
-External mechanisms own mechanics; FinHarness owns the domain decisions they
-cannot make: CapitalState admission, Evidence admission, DecisionCase meaning,
-DecisionReadiness, CapitalMandate policy, and the human decision/review/learning
-loop. Convert adopted invariants into executable tests whenever the protected
-behavior is machine-observable.
-
-## Backlog Taxonomy Contract
-
-GitHub Issue state and labels are the backlog truth. Every open Issue must have
-exactly one label in each dimension:
-
-```text
-plane:*   — the primary architectural owner
-type:*    — the work kind, independent of scheduling state
-status:*  — active, dormant, deferred, or temporary lifecycle
-```
-
-`status:active` authorizes work only in the dependency order recorded by the
-canonical Program. `status:dormant` means valid scope whose activation gate is
-not satisfied. `status:deferred` is an explicit closed gate, not an invitation
-to implement. `status:temporary` is limited ownership that must have an exit
-condition. Labels classify work; they never prove behavior or completion.
-
-Issue Forms record the requested plane and lifecycle for review but cannot apply
-dynamic labels. After creation, apply the matching labels and run
-`task issues:audit`. Program bodies may link GitHub-native searches and native
-relationships; do not copy live child status into Markdown or commit a snapshot
-of mutable Issue state.
-
-## Layer Map
-
-The working architecture should evolve through layers:
-
-```text
-1. Information / market data
-2. Indicators / features
-3. Events: news, filings, social, macro, on-chain
-4. Interpretation: entities, claims, catalysts, risks
-5. Hypotheses: thesis generation with disconfirming evidence
-6. Validation: backtest, scenario, factor, liquidity, evidence checks
-7. Proposal: structured action candidate
-8. Risk gate: mandate, sizing, drawdown, leverage, liquidity, behavior
-9. Execution: broker/exchange adapter with permission boundaries
-10. Review: receipt, attribution, learning, process update
-```
-
-Each layer should have:
-
-```text
-typed input
-typed output
-quality report
-lineage
-receipt
-tests
-explicit permission boundary
-```
-
-Indicators, events, interpretations, and hypotheses do not authorize
-execution. They describe state or create proposals only.
-
-## Delivery Method
-
-Prefer vertical slice MVPs over large horizontal architecture projects.
-
-Each substantial build should try to move a small end-to-end workflow forward:
-
-```text
-source evidence
--> snapshot
--> interpretation or feature
--> hypothesis
--> validation
--> proposal
--> risk gate
--> receipt
--> review
-```
-
-Use this lightweight process:
-
-```text
-1. Charter:
-   What problem does this layer or slice solve?
-
-2. Boundary:
-   What are the typed inputs, outputs, and non-goals?
-
-3. Mature wheel:
-   Which existing library owns the domain work?
-
-4. Thin implementation:
-   Write only adapters, governance, receipts, and tests locally.
-
-5. Verification:
-   Run the smallest relevant checks first, then project checks when needed.
-
-6. Documentation:
-   Record what changed, what remains missing, and what idea it supports.
-
-7. Retrospective:
-   Capture lessons and update the idea/think base.
-```
-
-## Goal-Bound Workflows
-
-Do not treat goal mode as only an open-ended loop.
-
-When a goal is substantial, bind it to an explicit workflow:
-
-```text
-goal
--> classify goal type
--> select workflow
--> instantiate workflow state
--> run graph nodes
--> checkpoint evidence
--> require gates where needed
--> write receipt/review/lesson
--> complete only when exit criteria are met
-```
-
-Use the agent loop for local reasoning inside a node. Use the workflow graph for
-sequence, gates, and state. Use the goal object for persistence, exit criteria,
-and completion evidence.
-
-Current workflow bindings:
-
-```text
-cognitive_graph:
-  ideas, research scans, proposals, reviews, lessons.
-
-engineering_delivery_graph:
-  engineering delivery quality gates, receipts, reviews, and lessons.
-
-ten-layer domain chain:
-  market data -> indicators -> events -> interpretation -> hypotheses ->
-  validation -> proposal -> risk gate -> execution -> post-trade.
-```
-
-Archived workflow bindings:
-
-```text
-finance_graph:
-  deleted in the repo prune; recorded as historical in tests/_graph_registry.py.
-
-trade_graph:
-  deleted in the repo prune; recorded as archived in tests/_graph_registry.py.
-```
-
-Do not mark a goal complete just because the agent produced a convincing answer.
-A goal is complete only when the workflow exit criteria are satisfied and the
-required artifacts, checks, receipts, or accepted failure notes exist.
-
-## Module Governance
-
-Maintain module-level memory as the project grows.
-
-Every major layer should have a module document under:
-
-```text
-docs/modules/<module-name>.md
-```
-
-Each module document should record:
-
-```text
-purpose
-current responsibilities
-non-goals
-typed inputs
-typed outputs
-important files
-mature wheels / external systems
-quality / lineage / receipt strategy
-upgrade log
-open risks
-next upgrades
-```
-
-Use ADRs for significant decisions:
-
-```text
-docs/adr/YYYY-MM-DD-short-title.md
-```
-
-Use proposals for substantial new layers or cross-cutting changes:
-
-```text
-docs/proposals/YYYY-MM-DD-short-title.md
-```
-
-Use reviews and lessons to close the loop:
-
-```text
-docs/reviews/YYYY-MM-DD-short-title.md:
-  what happened, what evidence exists, what surprised us, what should change.
-
-docs/lessons/YYYY-MM-DD-short-title.md:
-  durable lessons that should alter future module docs, ADRs, tests, or agent
-  behavior.
-```
-
-Rule of thumb:
-
-```text
-small implementation detail:
-  code comments/tests are enough.
-
-module behavior change:
-  update the module document upgrade log.
-
-architectural choice:
-  write an ADR.
-
-new layer or workflow redesign:
-  write a proposal before implementation.
-```
-
-This follows the spirit of Rust RFCs, Kubernetes KEPs, Django DEPs, GitLab
-architecture blueprints, and ADR/MADR practice: write down why a change exists,
-what was considered, what changed, and how success will be verified.
-
-## Agent Platform Direction
-
-Track OpenAI, Claude, Gemini, and other major agent platforms as references,
-but keep FinHarness provider-neutral.
-
-The major platforms are converging on:
-
-```text
-agent harnesses
-managed or sandboxed execution
-MCP / tools / apps / connectors
-subagents or specialized roles
-file and knowledge search
-deep research
-traceability
-interactive app surfaces
-```
-
-FinHarness should adopt the durable pattern, not the surface branding.
-
-Durable local objects:
-
-```text
-Snapshot
-Quality
-Lineage
-Receipt
-Proposal
-RiskGate
-Review
-```
-
-Provider-facing adapters can come later:
-
-```text
-OpenAI:
-  Responses tools, Agents SDK, Apps SDK, Docs MCP.
-
-Claude:
-  MCP tools, plugins, subagent-style workflows, Claude Agent SDK patterns.
-
-Gemini:
-  Managed Agents, Interactions API, AGENTS.md/SKILL.md-style versioned agents.
-```
-
-Do not hide core project logic inside provider prompts. Agent behavior,
-permissions, and workflows should be versioned in repo files when they become
-important to the product.
-
-## Safety
-
-Generated analysis is not evidence.
-
-Backtests are not live edge.
-
-Paper trades are not proof of performance.
-
-Future live write paths require explicit environment gates, risk gates,
-allowlists, and receipts.
+During development:
+
+- run the smallest relevant checks first;
+- keep Draft pull requests cheap and diagnostic;
+- do not repeatedly invalidate exact-head full evidence for minor intermediate
+  edits;
+- freeze the final candidate, run the required exact-head checks, review the
+  actual diff, and merge with the expected head SHA;
+- do not treat CI green as proof that the product direction or abstraction is
+  correct.
+
+A convincing model answer, generated artifact, receipt count, test count, or
+label does not prove task completion. Completion requires the Issue's user or
+system outcome and its necessary evidence.
+
+## Documentation rule
+
+Create or update maintained documentation only when it does at least one of the
+following:
+
+- enables a real supported task;
+- explains a durable decision or boundary that code cannot express;
+- assigns one canonical fact owner;
+- preserves unique evidence that Git history alone cannot make discoverable;
+- materially reduces future diagnosis, restart, or handoff cost.
+
+Ordinary reversible implementation details belong in code, tests, commits, and
+the owning Issue. They do **not** require a proposal, module upgrade log, review,
+lesson, idea record, or roadmap update by default.
+
+Use:
+
+- an ADR for a durable architectural decision whose rationale will matter after
+  the implementation changes;
+- a proposal only when a substantial cross-cutting choice must be reviewed
+  before implementation;
+- a review only when an outcome, failure, or experiment produced reusable
+  evidence not already captured by the PR and tests;
+- a lesson only when repeated evidence changes future behavior.
+
+Do not rewrite historical evidence to look current. Classify it and point to the
+current authority when necessary.
+
+## Work-state rule
+
+GitHub is the mutable work-state system.
+
+- Open Issues define bounded work or explicit future gates.
+- `status:active` authorizes implementation.
+- `status:dormant` and `status:deferred` do not authorize work.
+- Program bodies describe stable outcomes and investment logic; they must not
+  copy changing child status.
+- Avoid creating a new Issue when an existing owner can accept the finding
+  without mixing responsibilities.
+- Close or transfer temporary owners when their bounded purpose is complete.
+
+One product mainline may have multiple non-conflicting observations or audits,
+but do not run competing implementation paths against the same authority
+surface.
+
+## Irreversible safety kernel
+
+Use hard blocking controls for failures that cannot be cheaply undone:
+
+- secret or credential disclosure;
+- real external execution, transfer, deployment, DNS, or cloud mutation;
+- destructive user-data or schema migration without restore evidence;
+- authority escalation or bypass;
+- loss of unique receipt, provenance, or recovery evidence;
+- final review/test evidence bound to the wrong commit;
+- current product surfaces claiming unsupported capability.
+
+Treat ordinary internal code, tests, documentation, and unshipped UI as
+reversible unless evidence shows otherwise. Prefer fast detection, clear logs,
+Git rollback, and repair over speculative pre-action gates.
+
+Current execution remains simulated-only. There is no real broker SDK, funded
+account, credential loader, external venue submission, live trading, transfer,
+or tax submission path. Raw model text never mutates canonical state or invokes
+an external effect.
+
+## Minimum completion report
+
+For substantial work, report only:
+
+- exact final head;
+- changed responsibility and deleted duplicate responsibility;
+- checks actually run and their result;
+- unresolved material debt;
+- rollback/recovery boundary when relevant.
+
+Do not create ceremonial artifacts solely to restate information already present
+in the Issue, diff, checks, and Git history.

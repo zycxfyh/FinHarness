@@ -309,10 +309,11 @@ A contributor could extend the paper ticket/execution chain with new fields
 (real account credentials, broker routing, FIX tag support) and treat the paper
 surface as a scaffold for a hidden second broker integration path.
 
-Existing controls: the canonical Execution Kernel (`/execution/*` routes,
-`execution/services.py`, `execution/broker.py`) is documented as the only
-execution path. The roadmap explicitly prohibits new paper-validation features
-and the debt register lists this as non-goal.
+Existing controls: `system-catalog.yml` classifies the Execution Kernel as the
+canonical execution path and Paper Validation as legacy; `debt-register.json`,
+the removal ledger, the consumer manifest, and the import/broker isolation tests
+own its retirement and non-extension boundary. New paper-validation features do
+not receive current product or execution authority.
 
 Gaps: resolved by SEC-02B and the 2026-07-11 audit correction — the AST import
 graph uses canonical importable module names, includes package initialization and

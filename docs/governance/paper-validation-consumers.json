@@ -186,14 +186,6 @@
       "deletion_gate": "update_verifier_when_ENG-DEBT-0002_is_closed"
     },
     {
-      "consumer_id": "evolution-roadmap",
-      "kind": "architecture_reference",
-      "path": "docs/architecture/finharness-evolution-roadmap.md",
-      "relation": "tracks_paper_validation_debt_in_roadmap",
-      "migration_state": "close_debt_when_boundary_complete",
-      "deletion_gate": "remove_roadmap_entry_when_boundary_is_closed"
-    },
-    {
       "consumer_id": "module-map",
       "kind": "architecture_reference",
       "path": "docs/architecture/module-map.md",

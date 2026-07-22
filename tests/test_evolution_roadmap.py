@@ -1,155 +1,37 @@
-"""Current-fact checks for the maintained FinHarness evolution roadmap."""
+"""Compatibility entrypoint for the retired Markdown roadmap contract."""
 
 from __future__ import annotations
 
-import json
-import re
 import unittest
 from pathlib import Path
 
-from tests.test_agent_work_loop_acceptance import (
-    EXPECTED_OPEN_CHECKS,
-    EXPECTED_PASSING_CHECKS,
-)
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ROADMAP = ROOT / "docs" / "architecture" / "finharness-evolution-roadmap.md"
-DEBT_REGISTER = ROOT / "docs" / "governance" / "debt-register.json"
-NORTH_STAR = ROOT / "docs" / "product-north-star.md"
-CONTROL_OWNERSHIP_ADR = ROOT / "docs" / "adr" / "2026-07-11-agent-native-control-ownership.md"
 
 
-def _roadmap() -> str:
-    return ROADMAP.read_text(encoding="utf-8")
-
-
-def _marked_section(text: str, marker: str) -> str:
-    start = f"<!-- {marker}:start -->"
-    end = f"<!-- {marker}:end -->"
-    return text.split(start, maxsplit=1)[1].split(end, maxsplit=1)[0]
-
-
-class EvolutionRoadmapCurrentFactsTest(unittest.TestCase):
-    def test_roadmap_is_current_and_indexed(self) -> None:
-        text = _roadmap()
-        framework = (ROOT / "docs" / "architecture" / "framework-index.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("Status: current", text)
-        self.assertIn("Updated: 2026-07-15", text)
-        self.assertIn("| Evolution Roadmap |", framework)
-        self.assertIn("finharness-evolution-roadmap.md", framework)
-
-    def test_active_debt_block_matches_canonical_register(self) -> None:
-        register = json.loads(DEBT_REGISTER.read_text(encoding="utf-8"))
-        active = {debt["id"] for debt in register["debts"] if debt["status"] == "active"}
-        resolved = {debt["id"] for debt in register["debts"] if debt["status"] == "resolved"}
-        section = _marked_section(_roadmap(), "active-debt")
-        documented = set(re.findall(r"ENG-DEBT-\d{4}", section))
-
-        self.assertEqual(documented, active)
-        self.assertTrue(resolved.isdisjoint(documented))
-        self.assertEqual(active, {"ENG-DEBT-0007", "ENG-DEBT-0010"})
-        self.assertEqual(len(resolved), 8)
-        self.assertIn("8 resolved; 2 active", _roadmap())
-
-    def test_agent_acceptance_block_matches_executable_baseline(self) -> None:
-        section = _marked_section(_roadmap(), "agent-open")
-        documented = set(re.findall(r"`([a-z0-9_]+)`", section))
-        self.assertEqual(documented, EXPECTED_OPEN_CHECKS)
-        self.assertEqual(len(EXPECTED_OPEN_CHECKS), 0)
-        self.assertEqual(len(EXPECTED_PASSING_CHECKS), 15)
-        for check_id in EXPECTED_PASSING_CHECKS:
-            with self.subTest(passing_check=check_id):
-                self.assertIn(f"`{check_id}`", _roadmap())
-
-    def test_pr_genealogy_records_causal_phases(self) -> None:
-        text = _roadmap()
-        dash = "\N{EN DASH}"
-        required_ranges = (
-            f"#78{dash}#102",
-            f"#103{dash}#113",
-            f"#114{dash}#124",
-            f"#125{dash}#152",
-            f"#158{dash}#189",
-            f"#190{dash}#217",
-            f"#218{dash}#227",
-        )
-        for pr_range in required_ranges:
-            with self.subTest(pr_range=pr_range):
-                self.assertIn(pr_range, text)
-        for commit in ("c7be442", "17ef59a", "3d6d1fa", "33fadd6", "fcb4d86"):
-            with self.subTest(commit=commit):
-                self.assertIn(f"`{commit}`", text)
-        for pr_number in range(228, 234):
-            with self.subTest(pr_number=pr_number):
-                self.assertIn(f"#{pr_number}", text)
-
-    def test_responsibility_boundaries_are_explicit(self) -> None:
-        text = _roadmap()
-        required = (
-            "Human Principal / Constitutional Plane",
-            "Capital Agent / Teleological Control Plane",
-            "FinHarness Harness / Admissibility and Recovery Plane",
-            "Deterministic Financial Engines / Effect Plane",
-            "Outside the active mandate, Agent output is a candidate.",
-            "The Agent may own whether, when, why, and in what order to act.",
-            "Human approval is never inferred.",
-        )
-        for statement in required:
-            with self.subTest(statement=statement):
-                self.assertIn(statement, text)
-
-    def test_agent_native_north_star_keeps_control_owners_and_autonomy_ladder(self) -> None:
-        north_star = NORTH_STAR.read_text(encoding="utf-8")
-        adr = CONTROL_OWNERSHIP_ADR.read_text(encoding="utf-8")
-        combined = f"{north_star}\n{adr}"
-        required = (
-            "Agent-Native Personal Capital Operating System",
-            "Human Principal",
-            "Capital Agent",
-            "FinHarness Harness",
-            "Deterministic engines",
-            "AUT2 Observation-driven durable loop",
-            "AUT4 Autonomous paper capital manager",
-            "AUT5 Mandate-bound real-world operator",
-            "Human-over-the-loop",
-            "outside mandate -> Agent output is a candidate",
-            "inside mandate  -> Agent decision may become effective after Harness enforcement",
-        )
-        for statement in required:
-            with self.subTest(statement=statement):
-                self.assertIn(statement, combined)
-
-    def test_future_slices_have_ordered_gates(self) -> None:
-        text = _roadmap()
-        slices = (
-            "TRUTH-04",
-            "SEC-BOUNDARY-01",
-            "DEVEX-02",
-            "DEVEX-01",
-            "DEPS-01",
-            "LOOP-02",
-            "LOOP-03",
-            "LOOP-04",
-            "LOOP-05",
-            "LOOP-06",
-            "LOOP-07",
-            "STATECORE-01",
-            "FRONTEND-01",
-        )
-        for slice_id in slices:
-            with self.subTest(slice_id=slice_id):
-                self.assertIn(slice_id, text)
-        self.assertIn("Only here may naming graduate", text)
-        self.assertIn(
-            "Until all entry criteria exist, current implementation remains simulated.", text
+class EvolutionRoadmapRetirementTest(unittest.TestCase):
+    def test_markdown_roadmap_is_historical_and_not_a_work_authority(self) -> None:
+        roadmap = (
+            ROOT / "docs" / "architecture" / "finharness-evolution-roadmap.md"
+        ).read_text(encoding="utf-8")
+        catalog = yaml.safe_load(
+            (ROOT / "docs" / "architecture" / "system-catalog.yml").read_text(
+                encoding="utf-8"
+            )
         )
 
-    def test_roadmap_uses_contract_evidence_for_aut2(self) -> None:
-        text = _roadmap()
-        self.assertIn("15/15 acceptance contracts pass", text)
-        self.assertIn("This does not grant AUT3 decision authority", text)
+        self.assertIn("**Documentation lifecycle:** `historical`", roadmap)
+        self.assertIn("Do not restore a maintained Markdown implementation sequence", roadmap)
+        self.assertNotIn("implementation_sequence", catalog["fact_ownership"])
+        self.assertNotIn(
+            "evolution_roadmap",
+            {system["id"] for system in catalog["systems"]},
+        )
+        self.assertEqual(
+            catalog["fact_ownership"]["current_work_authorization"],
+            "https://github.com/zycxfyh/FinHarness/issues",
+        )
 
 
 if __name__ == "__main__":
