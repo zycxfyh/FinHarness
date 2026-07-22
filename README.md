@@ -17,11 +17,12 @@ external venue connectivity.
 > [Capital Workbench Roadmap](docs/product/capital-workbench-roadmap.md) ·
 > [North Star](docs/product-north-star.md).
 >
-> **New here?** Start with the [docs task map](docs/README.md), then run the
-> [Golden Path Tutorial](docs/tutorials/golden-path.md). It walks you through a
-> safe end-to-end flow and shows the governance model: human review, receipts,
-> and simulated-only execution substrate.
-
+> **New here?** Start with the [docs task map](docs/README.md). The
+> [Synthetic Golden Path Tutorial](docs/tutorials/golden-path.md) is an isolated
+> direct-seed proposal/review/receipt replay demo. It teaches governance mechanics,
+> but it is not the canonical imported-capital, readiness, Daily Brief, or
+> persistent first-capital-review journey planned under #455.
+>
 > **Need the framework in one screen?** Use the
 > [Framework Index](docs/architecture/framework-index.md). It summarizes each
 > FinHarness system, its runtime roots, mature-solution posture, and the check
@@ -123,10 +124,10 @@ runtime, API routes, Agent tools, or Taskfile tasks.
 | Part | What it owns | Start here |
 | --- | --- | --- |
 | State Core + Capital Map | Queryable personal capital state, exposure, daily brief, receipt-backed facts | [Framework Index](docs/architecture/framework-index.md), [Module Map](docs/architecture/module-map.md) |
-| IPS + Decision Workflow | User policy, candidate detection, governed proposals, and review gates | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Golden Path](docs/tutorials/golden-path.md) |
+| IPS + Decision Workflow | User policy, candidate detection, governed proposals, and review gates | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Synthetic Golden Path](docs/tutorials/golden-path.md) |
 | Review System | Human attestation, compare, archive/reopen, annual review, lesson-to-rule | [System Map](docs/architecture/system-map.md) |
 | Research Evidence + Mature Wheels | Cite-only evidence and mature adapters; external tools are inputs, not authority | [Research Assets](docs/research/README.md), [Mature Wheel Control Plane](docs/architecture/mature-wheel-control-plane.md) |
-| Cockpit/API + Agent Explanation | Local read/review product surface and tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md) |
+| Cockpit/API + Agent Explanation | Separate persistent read-only and governed-human-review cockpit modes plus tool-mediated explanations | [Interface Reference](docs/reference/interfaces.md), [Command Reference](docs/reference/commands.md) |
 | Execution Kernel | Canonical execution lifecycle on simulated substrate (OrderDraft → ExecutionReport) | [Capital OS Layering](docs/architecture/capital-os-layering.md), [Interface Reference](docs/reference/interfaces.md) |
 | EOS Governance + Security | Policy registry, docs-current guard, repo intelligence, hardening, release checks | [Documentation Fact Governance](docs/architecture/documentation-fact-governance.md), [Threat Model](docs/security/finharness-threat-model.md) |
 
@@ -134,32 +135,41 @@ If a change makes this table feel wrong, update the Framework Index, System Map,
 Module Map, and current entry docs in the same PR, then run
 `task docs:current-check`.
 
-The local B0 cockpit is served by the product API. The API exposes reads, governed
-human attestation, and the Execution Kernel lifecycle on a simulated substrate.
-The Execution Kernel models OrderDraft and ExecutionOrder and calls
-SimulatedBrokerAdapter.submit_order() — but no real broker SDK, credential,
-funded account, or external venue connectivity exists. Tests assert the
-simulated-only adapter boundary.
+The local B0 cockpit is served by the product API in two deliberately separate
+modes. Both default to `data/state/state-core/state-core.sqlite` and
+`data/receipts/state-core`; pass `--state-db`, `--receipt-root`, and `--port`
+after `--` to choose one explicit persistent workspace.
+
+Read-only mode:
 
 ```bash
 task api:serve
 # open http://127.0.0.1:8765/cockpit/
 ```
 
-`task api:serve` is explicitly read-only and fails closed for every write. To
-record a human confirm, reject, defer, scaffold revision, or review event in the
-persistent local state, start the loopback-only review mode instead:
+`task api:serve` fails closed for every write. It does not create attestations,
+rejections, deferrals, scaffold revisions, review events, orders, transfers, or
+execution effects.
+
+Governed human-review mode:
 
 ```bash
 task cockpit:review
 ```
 
-Both commands use `data/state/state-core/state-core.sqlite` and
-`data/receipts/state-core` by default. Pass the following arguments to either
-task to select another persistent local workspace:
+`task cockpit:review` is loopback-only and admits the bounded human confirm,
+reject, defer, scaffold-revision, and review-event writes. It still exposes no
+execution capability, real broker SDK, credential, funded account, or external
+venue connectivity.
+
+Use the same explicit paths across mode changes and restarts:
 
 ```bash
-task cockpit:review -- --state-db PATH --receipt-root PATH --port PORT
+STATE_DB="$PWD/.local/finharness-review/state-core.sqlite"
+RECEIPT_ROOT="$PWD/.local/finharness-review/receipts"
+task api:serve -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --port 8765
+# Stop the read-only server before reusing the port.
+task cockpit:review -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --port 8765
 ```
 
 The API exposes three deliberately different probes:
@@ -179,27 +189,25 @@ The API exposes three deliberately different probes:
 
 Review mode creates a missing database, identifies the process as
 `local-human`, and still exposes no execution capability. Stop and restart the
-same command to replay the same receipt-backed review state.
+same command with the same workspace arguments to replay the same receipt-backed
+review state.
 
 The browser surface shows Overview, Exposure, Proposals, and Timeline views.
 Proposal details include candidate evidence, options, attestations, and revision
 history.
 
 Personal-finance state can be mirrored without making FinHarness the ledger.
-There are two read-only adapters:
+There are two read-only source adapters:
 
 - A direct connection to a real Beancount ledger via `bean-query` (no
   intermediate file). This reads Assets holdings and Liabilities balances:
-
   ```bash
   task beancount:import -- path/to/ledger.beancount
   ```
-
 - A FinHarness-contract CSV import (the CSV shape is defined by FinHarness;
   produce it from your tool of choice). It supports holdings-only files and
   typed rows for liabilities, goals, cashflows, tax events, insurance policies,
   and document refs:
-
   ```bash
   task personal-finance:import -- path/to/export.csv
   ```
@@ -226,11 +234,18 @@ decision with receipt-backed evidence. High-risk proposal approval requires
 counter-evidence; rejection remains allowed so the review queue never pressures
 the system into fabricating a rationale.
 
-For a safe first run, use the isolated synthetic golden path:
+For a safe first observation of proposal/review/receipt mechanics, run the
+isolated synthetic demo:
 
 ```bash
 task decisions:golden-path
 ```
+
+The demo creates an ephemeral direct-seeded workspace and destroys it after the
+run. A later `task api:serve` or `task cockpit:review` opens a separate persistent
+workspace; it cannot reopen the demo. The demo does not prove canonical capital
+import, capital-truth readiness, Daily Brief, persistent review continuity,
+external validation, Agent dogfood, or live execution.
 
 For current task names, use:
 
