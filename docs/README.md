@@ -61,7 +61,8 @@ they do not require a new proposal, review, lesson, or module log by default.
 - Capital and execution layering: [Capital OS Layering](architecture/capital-os-layering.md)
 - Product direction: [Product Thesis](product/product-thesis.md) and
   [North Star](product-north-star.md)
-- Durable architectural decisions: [ADRs](adr/)
+- Durable architectural decisions are stored under `docs/adr/` and should be
+  read only when their decision context is relevant.
 
 Product direction, proposals, reviews, notes, and old roadmaps are context or
 historical evidence. They do not authorize current work or prove current
