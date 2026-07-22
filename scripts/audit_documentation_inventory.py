@@ -24,10 +24,11 @@ import re
 import subprocess
 import tempfile
 from collections import Counter, defaultdict, deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 import yaml
@@ -186,9 +187,7 @@ def tracked_paths(root: Path, baseline: str) -> tuple[str, ...]:
     raw = git(root, "ls-tree", "-r", "--name-only", "-z", baseline, text=False).stdout
     if not isinstance(raw, bytes):
         raise TypeError("git ls-tree must return bytes")
-    return tuple(
-        sorted(item.decode("utf-8") for item in raw.split(b"\0") if item)
-    )
+    return tuple(sorted(item.decode("utf-8") for item in raw.split(b"\0") if item))
 
 
 def git_text(root: Path, baseline: str, path: str) -> str:
@@ -327,7 +326,8 @@ def current_graph(
     catalog: dict[str, Any],
 ) -> set[str]:
     navigation = catalog.get("documentation", {}).get("navigation", {})
-    queue: deque[str] = deque(str(value) for value in navigation.get("entrypoints", ["README.md"]))
+    entrypoints = navigation.get("entrypoints", ["README.md"])
+    queue: deque[str] = deque(str(value) for value in entrypoints)
     historical = historical_prefixes(catalog)
     seen: set[str] = set()
     while queue:
@@ -410,7 +410,12 @@ def declared_lifecycle(document: Document) -> str | None:
     return match.group(1).lower() if match else None
 
 
-def lifecycle(path: str, document: Document, current: set[str], historical: tuple[str, ...]) -> str:
+def lifecycle(
+    path: str,
+    document: Document,
+    current: set[str],
+    historical: tuple[str, ...],
+) -> str:
     declared = declared_lifecycle(document)
     if under(path, historical):
         return declared if declared in {"historical", "archived"} else "historical"
@@ -458,7 +463,8 @@ def verification_class(document: Document, kind: str, current: bool) -> str:
     text = document.raw_text
     if "Generated from `" in text and "Do not edit" in text:
         return "generated"
-    if "schema" in text.lower() and any(name in text for name in ("Pydantic", "SQLModel", "OpenAPI")):
+    schema_owners = ("Pydantic", "SQLModel", "OpenAPI")
+    if "schema" in text.lower() and any(name in text for name in schema_owners):
         return "schema_compared"
     if kind in {"tutorial", "how_to", "runbook"} and TASK_RE.search(text):
         return "executable"
@@ -547,14 +553,17 @@ def similar_content_clusters(documents: dict[str, Document]) -> list[dict[str, A
                     {
                         "kind": "content_similarity",
                         "members": [left, right],
-                        "reason": f"token-set Jaccard similarity {score:.3f}; review required",
+                        "reason": (
+                            f"token-set Jaccard similarity {score:.3f}; review required"
+                        ),
                     }
                 )
     return pairs
 
 
 def repeated_task_clusters(
-    documents: dict[str, Document], known_tasks: set[str]
+    documents: dict[str, Document],
+    known_tasks: set[str],
 ) -> list[dict[str, Any]]:
     grouped: dict[str, set[str]] = defaultdict(set)
     for path, document in documents.items():
@@ -592,7 +601,13 @@ def link_findings(entries: list[dict[str, Any]]) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     for entry in entries:
         if entry["kind"] == "missing":
-            results.append(finding("broken_internal_link", "error", f"{entry['raw']} -> {entry['target']}"))
+            results.append(
+                finding(
+                    "broken_internal_link",
+                    "error",
+                    f"{entry['raw']} -> {entry['target']}",
+                )
+            )
         elif entry["kind"] == "outside_repo":
             results.append(finding("link_outside_repository", "error", str(entry["raw"])))
         elif entry["kind"] == "root_absolute":
@@ -610,23 +625,47 @@ def document_findings(
     historical: tuple[str, ...],
 ) -> list[dict[str, str]]:
     results = link_findings(entries)
-    results.extend(finding("hard_coded_local_path", "error", value) for value in local_paths(document.raw_text))
+    results.extend(
+        finding("hard_coded_local_path", "error", value)
+        for value in local_paths(document.raw_text)
+    )
     state = lifecycle(path, document, current, historical)
     if path not in current and state in {"current", "unclassified"}:
         results.append(
-            finding("current_looking_orphan", "warning", "not reachable from current entrypoints")
+            finding(
+                "current_looking_orphan",
+                "warning",
+                "not reachable from current entrypoints",
+            )
         )
     if path in current and state in {"historical", "archived", "superseded"}:
         results.append(
-            finding("noncurrent_page_in_current_graph", "error", f"lifecycle candidate is {state}")
+            finding(
+                "noncurrent_page_in_current_graph",
+                "error",
+                f"lifecycle candidate is {state}",
+            )
         )
     for entry in entries:
         target = entry["target"]
-        if path in current and entry["kind"] == "internal" and isinstance(target, str) and under(target, historical):
+        is_historical_link = (
+            path in current
+            and entry["kind"] == "internal"
+            and isinstance(target, str)
+            and under(target, historical)
+        )
+        if is_historical_link:
             results.append(
-                finding("current_links_historical", "warning", f"current page links {target}")
+                finding(
+                    "current_links_historical",
+                    "warning",
+                    f"current page links {target}",
+                )
             )
-    return sorted(results, key=lambda item: (item["severity"], item["code"], item["detail"]))
+    return sorted(
+        results,
+        key=lambda item: (item["severity"], item["code"], item["detail"]),
+    )
 
 
 def disposition(
@@ -692,7 +731,13 @@ def inventory_schema() -> dict[str, Any]:
         "required": ["cluster_id", "kind", "members", "reason"],
         "properties": {
             "cluster_id": {"type": "string"},
-            "kind": {"enum": ["duplicate_title", "content_similarity", "repeated_task_claim"]},
+            "kind": {
+                "enum": [
+                    "duplicate_title",
+                    "content_similarity",
+                    "repeated_task_claim",
+                ]
+            },
             "members": string_array(),
             "reason": {"type": "string"},
             "task": {"type": "string"},
@@ -728,7 +773,8 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
         if PurePosixPath(path).suffix.lower() in {".md", ".markdown"}
     )
     documents = {
-        path: parse_document(path, git_text(root, exact_sha, path)) for path in markdown_paths
+        path: parse_document(path, git_text(root, exact_sha, path))
+        for path in markdown_paths
     }
     resolved = {
         path: [
@@ -740,7 +786,8 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
     }
     catalog = load_yaml(root, exact_sha, "docs/architecture/system-catalog.yml")
     taskfile = load_yaml(root, exact_sha, "Taskfile.yml")
-    known_tasks = set(taskfile.get("tasks", {})) if isinstance(taskfile.get("tasks"), dict) else set()
+    task_mapping = taskfile.get("tasks", {})
+    known_tasks = set(task_mapping) if isinstance(task_mapping, dict) else set()
     current = current_graph(documents, resolved, catalog)
     historical = historical_prefixes(catalog)
     conflict_clusters = clusters(documents, known_tasks)
@@ -768,7 +815,11 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
             }
         )
         external = sorted(
-            {str(entry["raw"]) for entry in resolved[path] if entry["kind"] == "external"}
+            {
+                str(entry["raw"])
+                for entry in resolved[path]
+                if entry["kind"] == "external"
+            }
         )
         ids = sorted(cluster_ids[path])
         rows.append(
@@ -790,7 +841,12 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
                 "verifier_candidates": verifier_candidates(document, known_tasks),
                 "conflict_cluster_ids": ids,
                 "observed_findings": findings,
-                "recommended_disposition": disposition(state, path in current, findings, ids),
+                "recommended_disposition": disposition(
+                    state,
+                    path in current,
+                    findings,
+                    ids,
+                ),
                 "review_status": "machine_only",
             }
         )
@@ -816,12 +872,18 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
             for item in row["observed_findings"]
         ),
         "conflict_cluster_count": len(conflict_clusters),
-        "by_audience": dict(sorted(Counter(row["primary_audience"] for row in rows).items())),
-        "by_type": dict(sorted(Counter(row["document_type"] for row in rows).items())),
+        "by_audience": dict(
+            sorted(Counter(row["primary_audience"] for row in rows).items())
+        ),
+        "by_type": dict(
+            sorted(Counter(row["document_type"] for row in rows).items())
+        ),
         "by_lifecycle": dict(
             sorted(Counter(row["lifecycle_assessment"] for row in rows).items())
         ),
-        "by_owner_area": dict(sorted(Counter(row["owner_area"] for row in rows).items())),
+        "by_owner_area": dict(
+            sorted(Counter(row["owner_area"] for row in rows).items())
+        ),
         "by_verification_class": dict(
             sorted(Counter(row["verification_class"] for row in rows).items())
         ),
@@ -835,9 +897,16 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
         "tool": TOOL_VERSION,
         "baseline_sha": exact_sha,
         "scan_roots": ["Git tracked tree"],
-        "exclusions": ["untracked files", "ignored runtime artifacts", "non-Markdown files"],
+        "exclusions": [
+            "untracked files",
+            "ignored runtime artifacts",
+            "non-Markdown files",
+        ],
         "known_limitations": [
-            "classification fields are candidates until the historical report records manual review",
+            (
+                "classification fields are candidates until the historical report "
+                "records manual review"
+            ),
             "external URLs are recorded but not network-validated in Issue #450",
             "similarity and repeated-task clusters are discovery hints, not authority",
             "Git timestamps are intentionally excluded from lifecycle classification",
@@ -846,21 +915,29 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:
         "documents": rows,
         "conflict_clusters": conflict_clusters,
     }
-    errors = sorted(Draft202012Validator(inventory_schema()).iter_errors(inventory), key=str)
+    errors = sorted(
+        Draft202012Validator(inventory_schema()).iter_errors(inventory),
+        key=str,
+    )
     if errors:
         details = "\n".join(f"- {error.json_path}: {error.message}" for error in errors)
         raise ValueError(f"inventory schema validation failed:\n{details}")
-    if len(rows) != len(markdown_paths) or len({row["path"] for row in rows}) != len(rows):
+    unique_paths = {row["path"] for row in rows}
+    if len(rows) != len(markdown_paths) or len(unique_paths) != len(rows):
         raise ValueError("every tracked Markdown path must appear exactly once")
     return inventory
 
 
 def write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def render_report(inventory: dict[str, Any]) -> str:
     summary = inventory["summary"]
+    current_errors = summary["current_error_document_count"]
     lines = [
         "# Documentation Inventory — Machine Pass",
         "",
@@ -868,7 +945,7 @@ def render_report(inventory: dict[str, Any]) -> str:
         f"- Tool: `{inventory['tool']}`",
         f"- Tracked Markdown: **{summary['tracked_markdown_count']}**",
         f"- Current reachable: **{summary['current_navigation_reachable_count']}**",
-        f"- Current pages with machine error findings: **{summary['current_error_document_count']}**",
+        f"- Current pages with machine error findings: **{current_errors}**",
         f"- Broken internal links: **{summary['broken_internal_link_count']}**",
         f"- Hard-coded local paths: **{summary['hard_coded_local_path_count']}**",
         f"- Conflict candidates: **{summary['conflict_cluster_count']}**",
@@ -926,7 +1003,8 @@ def write_outputs(output_dir: Path, inventory: dict[str, Any]) -> None:
         },
     )
     (output_dir / "documentation-machine-report.md").write_text(
-        render_report(inventory), encoding="utf-8"
+        render_report(inventory),
+        encoding="utf-8",
     )
 
 
@@ -962,7 +1040,10 @@ def self_test() -> None:
             encoding="utf-8",
         )
         (root / "config.yml").write_text("enabled: true\n", encoding="utf-8")
-        (root / "README.md").write_text("# Entry\n\n[Guide](docs/guide.md)\n", encoding="utf-8")
+        (root / "README.md").write_text(
+            "# Entry\n\n[Guide](docs/guide.md)\n",
+            encoding="utf-8",
+        )
         (root / "docs" / "guide.md").write_text(
             "# Shared\n\nStatus: accepted\n\nHistorical summaries exist.\n\n"
             "Use `/root/projects/example` and `task check`.\n\n"
@@ -970,12 +1051,17 @@ def self_test() -> None:
             encoding="utf-8",
         )
         (root / "docs" / "archive" / "old.md").write_text(
-            "# Current-looking old page\n\n[Review](../reviews/only.md)\n", encoding="utf-8"
+            "# Current-looking old page\n\n[Review](../reviews/only.md)\n",
+            encoding="utf-8",
         )
         (root / "docs" / "reviews" / "only.md").write_text(
-            "# Shared\n\nHistorical evidence.\n", encoding="utf-8"
+            "# Shared\n\nHistorical evidence.\n",
+            encoding="utf-8",
         )
-        (root / "docs" / "orphan.md").write_text("# Orphan\n", encoding="utf-8")
+        (root / "docs" / "orphan.md").write_text(
+            "# Orphan\n",
+            encoding="utf-8",
+        )
         git(root, "add", ".")
         git(root, "commit", "-m", "fixture")
         inventory = build_inventory(root, "HEAD")
@@ -990,15 +1076,19 @@ def self_test() -> None:
             rows["docs/archive/old.md"]["lifecycle_assessment"] == "historical",
             "archive path was promoted",
         )
-        guide_codes = {item["code"] for item in rows["docs/guide.md"]["observed_findings"]}
+        guide_findings = rows["docs/guide.md"]["observed_findings"]
+        guide_codes = {item["code"] for item in guide_findings}
         require("broken_internal_link" in guide_codes, "missing link was not detected")
         require("hard_coded_local_path" in guide_codes, "local path was not detected")
         require(
-            all("config.yml" not in item["detail"] for item in rows["docs/guide.md"]["observed_findings"]),
+            all("config.yml" not in item["detail"] for item in guide_findings),
             "tracked non-Markdown target was reported missing",
         )
         require(
-            any(cluster["kind"] == "duplicate_title" for cluster in inventory["conflict_clusters"]),
+            any(
+                cluster["kind"] == "duplicate_title"
+                for cluster in inventory["conflict_clusters"]
+            ),
             "duplicate-title candidate was not detected",
         )
         require(
@@ -1012,7 +1102,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--baseline", default="HEAD")
     parser.add_argument(
-        "--output-dir", type=Path, default=Path(".artifacts/documentation-inventory")
+        "--output-dir",
+        type=Path,
+        default=Path(".artifacts/documentation-inventory"),
     )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
