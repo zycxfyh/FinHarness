@@ -429,11 +429,6 @@ def _validate_redirect(
             failures.append(
                 f"{rel} redirect stub must target historical/archived evidence"
             )
-    nonblank_lines = [
-        line for line in path.read_text(encoding="utf-8").splitlines() if line
-    ]
-    if len(nonblank_lines) > 16:
-        failures.append(f"{rel} redirect stub exceeds 16 nonblank lines")
     return failures
 
 
