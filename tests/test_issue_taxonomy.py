@@ -24,16 +24,20 @@ def _issue(number: int, *labels: str) -> dict[str, object]:
 
 
 class IssueTaxonomyAuditTest(unittest.TestCase):
-    def test_repository_entry_points_expose_live_read_only_audit(self) -> None:
+    def test_repository_exposes_one_live_read_only_issue_audit(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         taskfile = (ROOT / "Taskfile.yml").read_text(encoding="utf-8")
         command_reference = (ROOT / "docs" / "reference" / "commands.md").read_text(
             encoding="utf-8"
         )
-        how_to = (ROOT / "docs" / "how-to" / "audit-issue-backlog.md").read_text(encoding="utf-8")
+        how_to = (ROOT / "docs" / "how-to" / "audit-issue-backlog.md").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn("## Backlog Taxonomy Contract", agents)
-        self.assertIn("exactly one label in each dimension", agents)
+        self.assertIn("GitHub is the mutable work-state system", agents)
+        for lifecycle in ("status:active", "status:dormant", "status:deferred"):
+            with self.subTest(lifecycle=lifecycle):
+                self.assertIn(lifecycle, agents)
         self.assertIn("issues:audit:", taskfile)
         self.assertIn("scripts/audit_issue_taxonomy.py", taskfile)
         self.assertIn("task issues:audit", command_reference)
