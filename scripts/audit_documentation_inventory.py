@@ -74,6 +74,30 @@ DISPOSITIONS = (
     "owner_decision_required",
 )
 REVIEW_STATUSES = ("machine_only", "manually_reviewed")
+OWNER_AREAS = (
+    "product",
+    "capital",
+    "agent",
+    "architecture",
+    "engineering",
+    "operations",
+    "security",
+    "governance",
+    "research",
+    "documentation",
+    "repository",
+    "unclassified",
+)
+VERIFICATION_CLASSES = (
+    "generated",
+    "schema_compared",
+    "executable",
+    "static_fact_check",
+    "link_graph",
+    "review_only",
+    "none",
+    "unclassified",
+)
 
 LOCAL_PATH_PATTERNS = (
     re.compile(r"(?<![\w.-])/root/(?:[\w./-]+)"),
@@ -83,9 +107,12 @@ LOCAL_PATH_PATTERNS = (
 )
 TASK_RE = re.compile(r"\btask\s+([A-Za-z0-9:_-]+)")
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
-STATUS_RE = re.compile(
-    r"\b(current|preview|deprecated|superseded|historical|archived)\b",
-    re.IGNORECASE,
+DECLARED_LIFECYCLE_RE = re.compile(
+    r"(?mi)^\s*(?:>\s*)?(?:[-*]\s*)?(?:status|lifecycle)\s*:\s*"
+    r"(current|preview|deprecated|superseded|historical|archived)\b"
+)
+LIFECYCLE_BANNER_RE = re.compile(
+    r"(?mi)^\s*>\s*(historical|archived|superseded|deprecated)\b"
 )
 EXTERNAL_SCHEMES = frozenset({"http", "https", "mailto", "tel", "data", "app"})
 STOPWORDS = frozenset(
@@ -336,6 +363,15 @@ def _load_catalog(root: Path, baseline: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _load_task_names(root: Path, baseline: str) -> set[str]:
+    try:
+        data = yaml.safe_load(read_git_text(root, baseline, "Taskfile.yml")) or {}
+    except subprocess.CalledProcessError:
+        return set()
+    tasks = data.get("tasks", {}) if isinstance(data, dict) else {}
+    return {str(name) for name in tasks} if isinstance(tasks, dict) else set()
+
+
 def _historical_prefixes(catalog: dict[str, Any]) -> tuple[str, ...]:
     navigation = catalog.get("documentation", {}).get("navigation", {})
     values = [
@@ -375,13 +411,12 @@ def current_reachable_paths(
 def candidate_type(path: str, title: str) -> str:
     lower = path.lower()
     title_lower = title.lower()
+    name = PurePosixPath(path).name.lower()
     if "/tutorial" in lower or "tutorial" in title_lower or "golden path" in title_lower:
         return "tutorial"
     if "/how-to" in lower or "/how_to" in lower or title_lower.startswith("how to "):
         return "how_to"
-    if "/reference" in lower or title_lower.endswith(" reference"):
-        return "reference"
-    if "/runbook" in lower or "runbook" in title_lower:
+    if "/runbook" in lower or "/operations/" in lower or "/playbooks/" in lower:
         return "runbook"
     if "/adr/" in lower or PurePosixPath(path).parent.name == "adr":
         return "adr"
@@ -391,36 +426,108 @@ def candidate_type(path: str, title: str) -> str:
         return "review"
     if "/architecture/" in lower or "/modules/" in lower:
         return "architecture"
-    if any(part in lower for part in ("/explanation", "/think/", "/lessons/")):
+    if "/reference" in lower or title_lower.endswith(" reference"):
+        return "reference"
+    if "/templates/" in lower or "checklist" in title_lower or "standard" in title_lower:
+        return "reference"
+    if any(
+        marker in lower
+        for marker in (
+            "/engineering/",
+            "/explanation/",
+            "/think/",
+            "/lessons/",
+            "/product/",
+            "/security/",
+            "/research/",
+        )
+    ):
         return "explanation"
-    if PurePosixPath(path).name.lower() in {"readme.md", "context.md", "agents.md"}:
+    if name in {"contributing.md", "agents.md", "context.md", "readme.md"}:
         return "other"
-    return "unclassified"
+    if lower.startswith("ideas/"):
+        return "proposal"
+    if lower.startswith("data/"):
+        return "reference"
+    if lower.startswith("experiments/"):
+        return "explanation"
+    if lower.startswith("docs/"):
+        return "other"
+    return "other"
 
 
 def candidate_audience(path: str, doc_type: str) -> str:
     lower = path.lower()
-    if doc_type in {"tutorial", "how_to"}:
+    name = PurePosixPath(path).name.lower()
+    if path in {"README.md", "docs/README.md"}:
         return "user"
-    if doc_type == "runbook" or any(
-        value in lower for value in ("operations", "operator", "backup")
-    ):
-        return "operator"
-    if path in {"CONTRIBUTING.md", "AGENTS.md"} or any(
-        value in lower for value in ("developer", "contributing", "testing")
-    ):
+    if path in {"CONTRIBUTING.md", "AGENTS.md", "CONTEXT.md"}:
         return "developer"
-    if any(value in lower for value in ("/audits/", "/security/", "/governance/")):
+    if "/security/" in lower or "/audits/" in lower or "/governance/" in lower:
         return "auditor"
-    if doc_type in {"architecture", "adr", "proposal", "review"} or any(
-        value in lower for value in ("/notes/", "/think/", "/modules/")
+    if "/operations/" in lower or "/playbooks/" in lower or doc_type == "runbook":
+        return "operator"
+    if "/how-to/" in lower:
+        if any(
+            marker in name
+            for marker in (
+                "mature-wheel",
+                "issue-worktree",
+            )
+        ):
+            return "developer"
+        if any(
+            marker in name
+            for marker in (
+                "audit-issue",
+                "governance-inventories",
+                "lesson-to-rule",
+            )
+        ):
+            return "maintainer"
+        return "user"
+    if "/tutorial" in lower:
+        return "user"
+    if "/reference/" in lower:
+        return "operator"
+    if any(
+        marker in lower
+        for marker in (
+            "/architecture/",
+            "/engineering/",
+            "/adr/",
+            "/proposals/",
+            "/reviews/",
+            "/notes/",
+            "/think/",
+            "/lessons/",
+            "/modules/",
+            "/templates/",
+            "/research/",
+            "/product/",
+        )
     ):
         return "maintainer"
-    if path == "README.md":
+    if any(
+        marker in lower
+        for marker in (
+            "finance-operating-model",
+            "personal-governance",
+            "investing-first-principles",
+        )
+    ):
         return "user"
-    if doc_type == "reference":
+    if path in {"docs/week-01.md", "docs/wheels.md"}:
+        return "developer"
+    if lower.startswith(".github/"):
+        return "repository"
+    if lower.startswith("ideas/"):
+        return "maintainer"
+    if lower.startswith("data/"):
         return "operator"
-    return "unclassified"
+    if lower.startswith("experiments/"):
+        return "developer"
+    return "maintainer"
 
 
 def _declared_lifecycle(document: ParsedDocument) -> str | None:
@@ -429,8 +536,11 @@ def _declared_lifecycle(document: ParsedDocument) -> str | None:
         if isinstance(value, str) and value.lower() in LIFECYCLES:
             return value.lower()
     first = "\n".join(document.first_lines)
-    match = STATUS_RE.search(first)
-    return match.group(1).lower() if match else None
+    declared = DECLARED_LIFECYCLE_RE.search(first)
+    if declared:
+        return declared.group(1).lower()
+    banner = LIFECYCLE_BANNER_RE.search(first)
+    return banner.group(1).lower() if banner else None
 
 
 def candidate_lifecycle(
@@ -455,6 +565,60 @@ def candidate_lifecycle(
     return "unclassified"
 
 
+def candidate_owner_area(path: str, current: bool) -> str:
+    lower = path.lower()
+    if path in {"README.md", "docs/README.md"} or any(
+        marker in lower for marker in ("/tutorials/", "/how-to/", "/reference/")
+    ):
+        return "documentation"
+    if lower.startswith(".github/"):
+        return "repository"
+    if "/product/" in lower or "product-north-star" in lower:
+        return "product"
+    if any(marker in lower for marker in ("capital", "finance", "investing")):
+        return "capital"
+    if "agent" in lower:
+        return "agent"
+    if "/architecture/" in lower or "/adr/" in lower or "/modules/" in lower:
+        return "architecture"
+    if "/engineering/" in lower or path in {"AGENTS.md", "CONTRIBUTING.md", "CONTEXT.md"}:
+        return "engineering"
+    if "/operations/" in lower or "/playbooks/" in lower:
+        return "operations"
+    if "/security/" in lower:
+        return "security"
+    if "/governance/" in lower or "/audits/" in lower:
+        return "governance"
+    if "/research/" in lower:
+        return "research"
+    if current:
+        return "documentation"
+    return "unclassified"
+
+
+def candidate_verification_class(
+    document: ParsedDocument,
+    doc_type: str,
+    current: bool,
+) -> str:
+    text = "\n".join((*document.first_lines, *document.code_blocks))
+    if "Generated from `" in text and "Do not edit" in text:
+        return "generated"
+    if "schema" in text.lower() and any(
+        name in text for name in ("Pydantic", "SQLModel", "OpenAPI")
+    ):
+        return "schema_compared"
+    if doc_type in {"tutorial", "how_to", "runbook"} and TASK_RE.search(text):
+        return "executable"
+    if "task docs:current-check" in text or "task governance:check" in text:
+        return "static_fact_check"
+    if doc_type in {"adr", "proposal", "review"}:
+        return "review_only"
+    if current:
+        return "link_graph"
+    return "none"
+
+
 def canonical_source_candidates(document: ParsedDocument) -> list[str]:
     text = "\n".join((*document.first_lines, document.plain_text[:3000]))
     candidates: list[str] = []
@@ -474,9 +638,16 @@ def canonical_source_candidates(document: ParsedDocument) -> list[str]:
     return list(dict.fromkeys(candidates))
 
 
-def verifier_candidates(document: ParsedDocument) -> list[str]:
+def verifier_candidates(
+    document: ParsedDocument,
+    known_tasks: set[str],
+) -> list[str]:
     text = "\n".join((*document.first_lines, *document.code_blocks))
-    values = [f"task {name}" for name in TASK_RE.findall(text) if "check" in name]
+    values = [
+        f"task {name}"
+        for name in TASK_RE.findall(text)
+        if name in known_tasks and "check" in name
+    ]
     if "Do not edit" in text and "Generated from" in text:
         values.append("generated-output drift check")
     return list(dict.fromkeys(values))
@@ -556,12 +727,16 @@ def _title_clusters(documents: dict[str, ParsedDocument]) -> list[dict[str, Any]
     ]
 
 
-def _task_clusters(documents: dict[str, ParsedDocument]) -> list[dict[str, Any]]:
+def _task_clusters(
+    documents: dict[str, ParsedDocument],
+    known_tasks: set[str],
+) -> list[dict[str, Any]]:
     task_paths: dict[str, set[str]] = defaultdict(set)
     for path, document in documents.items():
         text = "\n".join((document.plain_text, *document.code_blocks))
         for task in TASK_RE.findall(text):
-            task_paths[task].add(path)
+            if task in known_tasks:
+                task_paths[task].add(path)
     return [
         {
             "kind": "repeated_task_claim",
@@ -602,6 +777,8 @@ def inventory_schema() -> dict[str, Any]:
             "document_type",
             "lifecycle_assessment",
             "canonical_source_candidates",
+            "owner_area",
+            "verification_class",
             "verifier_candidates",
             "conflict_cluster_ids",
             "observed_findings",
@@ -621,6 +798,8 @@ def inventory_schema() -> dict[str, Any]:
             "document_type": {"enum": list(DOC_TYPES)},
             "lifecycle_assessment": {"enum": list(LIFECYCLES)},
             "canonical_source_candidates": string_array,
+            "owner_area": {"enum": list(OWNER_AREAS)},
+            "verification_class": {"enum": list(VERIFICATION_CLASSES)},
             "verifier_candidates": string_array,
             "conflict_cluster_ids": string_array,
             "observed_findings": {"type": "array", "items": finding_schema},
@@ -717,13 +896,14 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:  # noqa: C901
         resolved_links[path] = entries
 
     catalog = _load_catalog(root, baseline_sha)
+    known_tasks = _load_task_names(root, baseline_sha)
     current = current_reachable_paths(documents, resolved_links, catalog)
     historical = _historical_prefixes(catalog)
 
     clusters = [
         *_title_clusters(documents),
         *similarity_clusters(documents),
-        *_task_clusters(documents),
+        *_task_clusters(documents, known_tasks),
     ]
     for index, cluster in enumerate(clusters, start=1):
         cluster["cluster_id"] = f"DOC-CONFLICT-{index:04d}"
@@ -838,7 +1018,13 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:  # noqa: C901
             "document_type": doc_type,
             "lifecycle_assessment": lifecycle,
             "canonical_source_candidates": canonical_source_candidates(document),
-            "verifier_candidates": verifier_candidates(document),
+            "owner_area": candidate_owner_area(path, path in current),
+            "verification_class": candidate_verification_class(
+                document,
+                doc_type,
+                path in current,
+            ),
+            "verifier_candidates": verifier_candidates(document, known_tasks),
             "conflict_cluster_ids": conflict_ids,
             "observed_findings": sorted(
                 findings,
@@ -886,6 +1072,10 @@ def build_inventory(root: Path, baseline: str) -> dict[str, Any]:  # noqa: C901
         ),
         "by_disposition": dict(
             sorted(Counter(row["recommended_disposition"] for row in rows).items())
+        ),
+        "by_owner_area": dict(sorted(Counter(row["owner_area"] for row in rows).items())),
+        "by_verification_class": dict(
+            sorted(Counter(row["verification_class"] for row in rows).items())
         ),
         "conflict_cluster_count": len(clusters),
         "manual_review_required_count": len(rows),
@@ -1072,12 +1262,18 @@ def self_test() -> None:
             ),
             encoding="utf-8",
         )
+        (root / "Taskfile.yml").write_text(
+            yaml.safe_dump({"tasks": {"check": {"cmds": ["echo ok"]}}}),
+            encoding="utf-8",
+        )
         (root / "README.md").write_text(
             "# Current Entry\n\n[Guide](docs/guide.md)\n",
             encoding="utf-8",
         )
         (root / "docs" / "guide.md").write_text(
-            "# Shared Meaning\n\nRun `/root/projects/example`.\n"
+            "# Shared Meaning\n\nStatus: accepted\n\n"
+            "Historical summaries are reference only.\n\n"
+            "Run `/root/projects/example` and `task check`.\n"
             "[Missing](missing.md)\n",
             encoding="utf-8",
         )
@@ -1115,6 +1311,10 @@ def self_test() -> None:
         _require(
             rows["docs/guide.md"]["current_navigation_reachable"] is True,
             "linked guide was not reachable",
+        )
+        _require(
+            rows["docs/guide.md"]["lifecycle_assessment"] == "current",
+            "accepted status or historical prose caused a false lifecycle downgrade",
         )
         _require(
             rows["docs/archive/old.md"]["lifecycle_assessment"] == "historical",
