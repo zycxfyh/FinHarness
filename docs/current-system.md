@@ -36,6 +36,14 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - `task decisions:scan` records capital-allocation candidates as governed proposals.
 - Exposure, positions, proposals, and timeline evidence are available through the local API and cockpit surfaces.
 
+### Canonical synthetic acceptance
+
+- `task acceptance:capital-review` proves canonical CSV import, admitted truth,
+  Exposure, Daily Brief, Decision scan, governed human review, blocked valuation,
+  durable receipts, application restart, and identity-preserving replay.
+- It uses checked-in synthetic templates with runtime clocks and never connects a
+  broker or grants execution authority.
+
 ### Human review
 
 - `task api:serve` starts the persistent local cockpit in read-only mode; all writes fail closed.

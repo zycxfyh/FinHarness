@@ -275,6 +275,11 @@ tasks:
     cmds:
       - uv run python scripts/run_research_smoke.py
 
+  acceptance:capital-review:
+    desc: Prove canonical import, blocked-data, governed review, restart, and replay paths
+    cmds:
+      - uv run python scripts/run_capital_review_acceptance.py {{.CLI_ARGS}}
+
   decisions:golden-path:
     desc: "MANUAL/DEMO: end-to-end receipt-consumption golden path on an isolated synthetic sample (offline; NOT in task check)"
     cmds:

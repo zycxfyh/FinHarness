@@ -78,6 +78,18 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="personal-finance-export",
     ),
     CapitalImportExposureSpec(
+        exposure_id="script-capital-review-acceptance",
+        exposure_kind="script",
+        exposure_ref="scripts/run_capital_review_acceptance.py",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
+        exposure_id="task-capital-review-acceptance",
+        exposure_kind="task",
+        exposure_ref="acceptance:capital-review",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="task-beancount-import",
         exposure_kind="task",
         exposure_ref="beancount:import",

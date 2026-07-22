@@ -19,6 +19,7 @@ journey.
 | --- | --- | --- |
 | [Add a mature-wheel adapter](add-mature-wheel-adapter.md) | You are replacing local heavy logic with a mature library. | [Mature Wheel Control Plane](../architecture/mature-wheel-control-plane.md) |
 | [Import a personal-finance export](import-personal-finance-export.md) | You have a Beancount ledger or a FinHarness-contract CSV to mirror into state core. | `task beancount:import` / `task personal-finance:import` |
+| [Complete the first synthetic capital review](complete-first-capital-review.md) | You need one repeatable proof of import, review, blocked data, restart, and replay. | `task acceptance:capital-review` |
 | [Manage issue worktrees](manage-issue-worktrees.md) | You are starting, publishing, or cleaning one numbered issue/PR slice. | `task issue:start` / `task pr:body` / `task issue:finish` |
 | [Audit the Issue backlog taxonomy](audit-issue-backlog.md) | Plane, kind, lifecycle, or Program status views may be stale or ambiguous. | `task issues:audit` / GitHub Issue searches |
 | [Promote a lesson draft into a rule change](promote-lesson-to-rule.md) | A human has reviewed a lesson and wants traceable rule lineage. | `task lessons:promote`, `task rules:audit` |
