@@ -115,8 +115,8 @@ current capability claims.
 | Schemas | Pydantic/SQLModel/receipt schema sources |
 | System ownership and lifecycle | `docs/architecture/system-catalog.yml` |
 | Verified engineering debt | `docs/governance/debt-register.json` |
-| Product direction | `docs/product/` and `docs/product-north-star.md` |
-| Historical decisions and evidence | ADRs, proposals, reviews, notes, and Git history |
+| Product direction | `docs/product/product-thesis.md` and `docs/product-north-star.md` |
+| Historical decisions and evidence | ADRs, proposals, reviews, notes, old roadmaps, and Git history |
 
 A document may explain a machine-owned fact or link to it. It must not become a
 second mutable registry.
