@@ -1,4 +1,4 @@
-"""Render or validate the concise FinHarness pull-request contract."""
+"""Render or inspect an optional concise pull-request summary."""
 
 from __future__ import annotations
 
@@ -8,93 +8,69 @@ import re
 import subprocess
 from pathlib import Path
 
-ISSUE_BRANCH_RE = re.compile(r"^agent/(?P<issue>[1-9][0-9]*)-[a-z0-9][a-z0-9-]*$")
 SECTION_RE = re.compile(r"^## (?P<name>[^\n]+)\n(?P<body>.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
-PLACEHOLDER_RE = re.compile(r"(?:TODO|TBD|<[^>]+>|Closes #\s*$)", re.IGNORECASE)
-REQUIRED_SECTIONS = {
-    "Issue linkage",
-    "Scope",
-    "Risk and classification",
-    "Validation evidence",
-    "Manual safety evidence",
-}
 
 
-class ContractError(RuntimeError):
-    """Raised when PR metadata cannot be rendered safely."""
-
-
-def validate_body(body: str) -> list[str]:
-    sections = {match["name"].strip(): match["body"].strip() for match in SECTION_RE.finditer(body)}
-    findings = [f"missing section: {name}" for name in sorted(REQUIRED_SECTIONS - set(sections))]
-    if findings:
-        return findings
-
-    if not re.search(r"(?m)^(?:Closes|Refs) #[1-9][0-9]*\s*$", sections["Issue linkage"]):
-        findings.append("Issue linkage must contain `Closes #N` or `Refs #N`")
-    _require_meaningful(sections, "Scope", findings)
-    risk = sections["Risk and classification"]
-    if not re.search(r"(?m)^Classification: C[0-3]\s*$", risk):
-        findings.append("Risk and classification must contain `Classification: C0` through `C3`")
-    if not re.search(r"(?mi)^Risk: (?:low|medium|high|critical)\s*$", risk):
-        findings.append("Risk and classification must contain a low/medium/high/critical Risk")
-    _require_meaningful(sections, "Validation evidence", findings)
-    manual = sections["Manual safety evidence"]
-    for label in ("Negative evidence", "Persistence/restart", "Rollback"):
-        match = re.search(rf"(?mi)^- {re.escape(label)}:\s*(.+)$", manual)
-        if match is None or not _meaningful(match.group(1)):
-            findings.append(f"Manual safety evidence needs a reasoned `{label}` value")
-    return findings
+class SummaryError(RuntimeError):
+    """Raised when optional PR metadata cannot be loaded or rendered."""
 
 
 def _meaningful(value: str) -> bool:
     without_comments = re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL).strip()
-    return bool(without_comments) and PLACEHOLDER_RE.search(without_comments) is None
+    return bool(without_comments)
 
 
-def _require_meaningful(sections: dict[str, str], name: str, findings: list[str]) -> None:
-    if not _meaningful(sections[name]):
-        findings.append(f"{name} must contain non-placeholder evidence")
+def validate_body(body: str) -> list[str]:
+    """Return advisory findings; PR prose never blocks a candidate."""
+    if not _meaningful(body):
+        return ["pull-request body has no human-readable summary"]
+
+    sections = {match["name"].strip(): match["body"].strip() for match in SECTION_RE.finditer(body)}
+    findings: list[str] = []
+    summary = sections.get("Summary") or sections.get("Scope") or ""
+    validation = sections.get("Validation") or sections.get("Validation evidence") or ""
+    if not _meaningful(summary):
+        findings.append("summary is empty")
+    if not _meaningful(validation):
+        findings.append("validation is not recorded")
+    return findings
 
 
 def render_contract(
     *,
-    issue: int,
     scope: str,
-    risk: str,
-    classification: str,
     validation: list[str],
-    negative_evidence: str,
-    persistence: str,
-    rollback: str,
     changed_files: list[str],
+    consequences: str | None = None,
+    issue: int | None = None,
+    risk: str | None = None,
+    classification: str | None = None,
+    negative_evidence: str | None = None,
+    persistence: str | None = None,
+    rollback: str | None = None,
 ) -> str:
+    """Render the new summary while accepting the former caller signature."""
+    del issue, risk, classification
     files = ", ".join(changed_files) if changed_files else "none"
-    checks = "\n".join(f"- {item}" for item in validation)
-    return f"""## Issue linkage
-
-Closes #{issue}
-
-## Scope
+    checks = "\n".join(f"- {item}" for item in validation) or "- Not recorded."
+    if consequences is None:
+        legacy = [item for item in (negative_evidence, persistence, rollback) if item]
+        consequences = "\n".join(f"- {item}" for item in legacy)
+    if not consequences:
+        consequences = "N/A — no persistent or external consequence recorded."
+    return f"""## Summary
 
 {scope}
 
 Changed files: {files}
 
-## Risk and classification
-
-Classification: {classification}
-Risk: {risk}
-
-## Validation evidence
+## Validation
 
 {checks}
 
-## Manual safety evidence
+## Consequences and recovery
 
-- Negative evidence: {negative_evidence}
-- Persistence/restart: {persistence}
-- Rollback: {rollback}
+{consequences}
 """
 
 
@@ -107,16 +83,8 @@ def _git(*args: str) -> str:
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
-        raise ContractError(f"git {' '.join(args)} failed: {detail}")
+        raise SummaryError(f"git {' '.join(args)} failed: {detail}")
     return completed.stdout.strip()
-
-
-def _derive_issue() -> int:
-    branch = _git("branch", "--show-current")
-    match = ISSUE_BRANCH_RE.fullmatch(branch)
-    if match is None:
-        raise ContractError(f"cannot derive issue number from branch: {branch}")
-    return int(match.group("issue"))
 
 
 def _changed_files() -> list[str]:
@@ -127,16 +95,22 @@ def _changed_files() -> list[str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    render = subparsers.add_parser("render", help="Render a PR body from branch metadata")
-    render.add_argument("--issue", type=int)
+
+    render = subparsers.add_parser("render", help="Render an optional concise PR summary")
     render.add_argument("--scope", required=True)
-    render.add_argument("--risk", choices=("low", "medium", "high", "critical"), required=True)
-    render.add_argument("--classification", choices=("C0", "C1", "C2", "C3"), required=True)
-    render.add_argument("--validation", action="append", required=True)
-    render.add_argument("--negative-evidence", required=True)
-    render.add_argument("--persistence", required=True)
-    render.add_argument("--rollback", required=True)
-    check = subparsers.add_parser("check", help="Validate a PR body")
+    render.add_argument("--validation", action="append", default=[])
+    render.add_argument("--consequences")
+    for name in (
+        "--issue",
+        "--risk",
+        "--classification",
+        "--negative-evidence",
+        "--persistence",
+        "--rollback",
+    ):
+        render.add_argument(name, help=argparse.SUPPRESS)
+
+    check = subparsers.add_parser("check", help="Report advisory PR-summary findings")
     source = check.add_mutually_exclusive_group(required=True)
     source.add_argument("--event", type=Path)
     source.add_argument("--body-file", type=Path)
@@ -148,11 +122,9 @@ def main() -> int:
     try:
         if args.command == "render":
             body = render_contract(
-                issue=args.issue or _derive_issue(),
                 scope=args.scope,
-                risk=args.risk,
-                classification=args.classification,
                 validation=args.validation,
+                consequences=args.consequences,
                 negative_evidence=args.negative_evidence,
                 persistence=args.persistence,
                 rollback=args.rollback,
@@ -160,22 +132,23 @@ def main() -> int:
             )
             print(body, end="")
             return 0
+
         if args.event:
             payload = json.loads(args.event.read_text(encoding="utf-8"))
             body = payload.get("pull_request", {}).get("body") or ""
         else:
             body = args.body_file.read_text(encoding="utf-8")
-    except (ContractError, OSError, json.JSONDecodeError) as exc:
-        print(f"PR contract error: {exc}")
-        return 1
+    except (SummaryError, OSError, json.JSONDecodeError) as exc:
+        print(f"PR summary inspection error: {exc}")
+        return 2
 
     findings = validate_body(body)
     if findings:
-        print("PR contract findings:")
+        print("PR summary advisory findings:")
         for finding in findings:
             print(f"  - {finding}")
-        return 1
-    print("PR contract is complete")
+    else:
+        print("PR summary is readable")
     return 0
 
 

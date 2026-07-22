@@ -1,24 +1,11 @@
-## Issue linkage
+## Summary
 
-Closes #
+<!-- What changed, why it matters, and who or what notices. -->
 
-## Scope
+## Validation
 
-<!-- What changed, who notices, and the main files/domains. -->
+<!-- Exact checks or observations actually used for this candidate. -->
 
-## Risk and classification
+## Consequences and recovery
 
-Classification: C
-Risk:
-
-## Validation evidence
-
-<!-- Name PR head, merge ref, or final main commit; include the full SHA and exact checks. -->
-
-## Manual safety evidence
-
-<!-- Use `N/A — reason` when a field truly does not apply. -->
-
-- Negative evidence:
-- Persistence/restart:
-- Rollback:
+<!-- Include persistent state, credentials, deployment, money, publishing, or other external effects when relevant. Otherwise use N/A. -->

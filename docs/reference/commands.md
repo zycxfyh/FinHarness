@@ -21,8 +21,8 @@ execution authorization.
 | `task issue:status -- [issue]` | Audit worktree numbering, cleanliness, and stale metadata. | Read-only. |
 | `task issue:finish -- <issue> [--apply]` | Preview or apply cleanup after verified PR merge. | Dry-run by default; refuses dirty, open, mismatched, or unmerged work. |
 | `task issues:audit [-- --repo OWNER/REPO]` | Report optional plane, kind, and lifecycle labels on live open Issues. | Advisory; findings do not fail the command. GitHub metadata load failure still exits non-zero. |
-| `task pr:body -- <fields>` | Render the concise PR contract with issue and changed-file metadata. | Derives the issue from the numbered branch unless `--issue` is supplied; manual risk and safety evidence remain required. |
-| `task pr:check -- --body-file <path>` | Validate issue linkage, scope, risk/classification, validation, and safety evidence. | Read-only; the required `Dependency review` check runs the same contract against the GitHub event. |
+| `task pr:body -- <fields>` | Render an optional concise PR summary from scope, validation, changed files, and relevant consequences. | Legacy risk/classification and Issue arguments are accepted for compatibility but no longer required or rendered. |
+| `task pr:check -- --body-file <path>` | Report advisory findings when a PR summary or validation note is absent. | Read-only; prose findings do not fail the command or block a Ready PR. Metadata read errors still fail. |
 | `task governance:inventory` | Check source-derived dependency consumers and attestation summary fields. | Read-only; prints the affected consumer and repair command on drift. |
 | `task governance:inventory:update` | Repair source-derived governance inventory fields. | Deterministic and idempotent; never invents manual policy or migration judgments. |
 | `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
