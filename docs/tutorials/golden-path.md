@@ -71,6 +71,8 @@ Expected shape:
   ],
   "timeline_entries": 2,
   "replayed": true,
+  "artifact_root": "/tmp/finharness-golden-path-...",
+  "cleanup_hint": "rm -rf /tmp/finharness-golden-path-...",
   "execution_allowed": false
 }
 ```
@@ -93,17 +95,24 @@ review_event_receipt_ref
 observability_receipt_ref
 replayed
 replay_gaps
+artifact_root
+cleanup_hint
 ```
 
 If `replayed` is `false`, read `replay_gaps`. A broken receipt chain is reported
 as a bounded data gap, not hidden behind a successful-looking summary.
 
+The temporary artifact directory remains on disk after the command exits so it
+can be inspected. Use the emitted `cleanup_hint` when that evidence is no longer
+needed.
+
 ## Step 4 - Keep The Workspace Boundary Explicit
 
-`task decisions:golden-path` creates and destroys an isolated temporary workspace.
-It does not expose its temporary State Core or receipt root for later commands.
-Starting `task api:serve` or `task cockpit:review` afterward does not open the
-demo's temporary workspace; either command opens a separate persistent workspace.
+`task decisions:golden-path` creates an isolated temporary artifact workspace and
+reports its `artifact_root`. It does not provide a supported `--state-db` /
+`--receipt-root` handoff to a later cockpit command. Starting `task api:serve` or
+`task cockpit:review` with their defaults therefore does not open the demo
+workspace; it opens the normal persistent workspace instead.
 
 To inspect a persistent cockpit, choose the workspace explicitly:
 
