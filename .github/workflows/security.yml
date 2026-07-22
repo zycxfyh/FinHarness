@@ -56,11 +56,15 @@ jobs:
             exit 0
           fi
 
-          mapfile -t files < <(
+          changed_files="$(
             gh api --paginate \
               "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
               --jq '.[].filename'
-          )
+          )"
+          files=()
+          if [[ -n "$changed_files" ]]; then
+            mapfile -t files <<< "$changed_files"
+          fi
           pr_commits="$(
             gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.commits'
           )"
@@ -107,8 +111,14 @@ jobs:
             esac
 
             case "$path" in
-              src/finharness/agent*|src/finharness/*agent*|prompts/*|evals/*|\
-              scripts/*redteam*|tests/*agent*)
+              src/finharness/agent*|src/finharness/*agent*|\
+              src/finharness/authorization.py|\
+              src/finharness/restricted_symbols.py|\
+              src/finharness/repo_intelligence.py|\
+              prompts/*|evals/*|data/redteam/*|\
+              data/security/restricted-symbols.json|\
+              scripts/*redteam*|tests/*agent*|tests/*redteam*|\
+              tests/*authorization*|tests/*restricted*)
                 agent=true
                 ;;
             esac
@@ -190,16 +200,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t python_files < <(
+          changed_files="$(
             gh api --paginate \
               "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
-              --jq '.[].filename' |
-              grep -E '\.py$' || true
-          )
+              --jq '.[].filename'
+          )"
           existing=()
-          for path in "${python_files[@]}"; do
-            [[ -f "$path" ]] && existing+=("$path")
-          done
+          while IFS= read -r path; do
+            if [[ "$path" == *.py && -f "$path" ]]; then
+              existing+=("$path")
+            fi
+          done <<< "$changed_files"
           if [[ ${#existing[@]} -gt 0 ]]; then
             uvx --from ruff==0.15.14 ruff check "${existing[@]}"
           fi
