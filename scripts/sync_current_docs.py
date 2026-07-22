@@ -379,103 +379,115 @@ def _display_path(path: Path, root: Path) -> str:
         return str(path)
 
 
-def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
-    failures: list[str] = []
-    root_resolved = root.resolve()
-    catalog = load_catalog(root)
-    navigation = catalog["documentation"]["navigation"]
+def _validate_authority(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    if lifecycle.state not in {"deprecated", "superseded"}:
+        return []
+    authority_target = _first_link_target(path, lifecycle.authority, root)
+    if authority_target is None:
+        return [
+            f"{rel} lifecycle {lifecycle.state} requires one "
+            "Current authority link"
+        ]
+    if not authority_target.exists():
+        return [
+            f"{rel} current authority target does not exist: "
+            f"{_display_path(authority_target, root)}"
+        ]
+    authority = _document_lifecycle(authority_target, root, catalog)
+    if authority.state not in MAINTAINED_DOCUMENT_LIFECYCLES:
+        return [
+            f"{rel} current authority is not maintained: "
+            f"{_display_path(authority_target, root)}"
+        ]
+    return []
 
+
+def _validate_redirect(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    if lifecycle.redirect is None:
+        return []
+    failures: list[str] = []
+    if lifecycle.state != "superseded":
+        failures.append(f"{rel} redirect stub must use lifecycle superseded")
+    redirect_target = _first_link_target(path, lifecycle.redirect, root)
+    if redirect_target is None or not redirect_target.exists():
+        failures.append(f"{rel} redirect stub target must exist")
+    else:
+        target_lifecycle = _document_lifecycle(redirect_target, root, catalog)
+        if target_lifecycle.state not in {"historical", "archived"}:
+            failures.append(
+                f"{rel} redirect stub must target historical/archived evidence"
+            )
+    nonblank_lines = [
+        line for line in path.read_text(encoding="utf-8").splitlines() if line
+    ]
+    if len(nonblank_lines) > 16:
+        failures.append(f"{rel} redirect stub exceeds 16 nonblank lines")
+    return failures
+
+
+def _validate_explicit_lifecycle(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    configured: str | None,
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    failures: list[str] = []
+    if lifecycle.state not in ALLOWED_DOCUMENT_LIFECYCLES:
+        return [
+            f"{rel} has unknown documentation lifecycle {lifecycle.state!r}"
+        ]
+    if configured is not None and lifecycle.state != configured:
+        failures.append(
+            f"{rel} cannot override catalog-owned {configured} placement "
+            f"with {lifecycle.state}"
+        )
+    if lifecycle.state != "current" and not lifecycle.reason:
+        failures.append(
+            f"{rel} lifecycle {lifecycle.state} requires a visible Reason"
+        )
+    failures.extend(_validate_authority(path, rel, root, catalog, lifecycle))
+    if lifecycle.state == "deprecated" and not lifecycle.removal_trigger:
+        failures.append(f"{rel} lifecycle deprecated requires a Removal trigger")
+    failures.extend(_validate_redirect(path, rel, root, catalog, lifecycle))
+    return failures
+
+
+def _validate_catalog_paths(
+    root: Path,
+    catalog: dict[str, Any],
+) -> list[str]:
+    navigation = catalog["documentation"]["navigation"]
     configured_paths = (
         *navigation.get("historical_roots", []),
         *navigation.get("historical_paths", []),
     )
-    for configured in configured_paths:
-        if not (root / configured).exists():
-            failures.append(f"catalog lifecycle path does not exist: {configured}")
+    return [
+        f"catalog lifecycle path does not exist: {configured}"
+        for configured in configured_paths
+        if not (root / configured).exists()
+    ]
 
-    for path in tracked_markdown_paths(root):
-        rel = path.relative_to(root_resolved).as_posix()
-        explicit = _explicit_lifecycle(path)
-        configured = _configured_lifecycle(path, root, catalog)
-        lifecycle = explicit or DocumentLifecycle(
-            state=configured or "current",
-            source="catalog" if configured else "default",
-        )
 
-        if lifecycle.state not in ALLOWED_DOCUMENT_LIFECYCLES:
-            failures.append(
-                f"{rel} has unknown documentation lifecycle {lifecycle.state!r}"
-            )
-            continue
-
-        if configured is not None and explicit is not None:
-            if explicit.state != configured:
-                failures.append(
-                    f"{rel} cannot override catalog-owned {configured} placement "
-                    f"with {explicit.state}"
-                )
-
-        if explicit is None:
-            continue
-
-        if lifecycle.state != "current" and not lifecycle.reason:
-            failures.append(
-                f"{rel} lifecycle {lifecycle.state} requires a visible Reason"
-            )
-
-        authority_target = _first_link_target(path, lifecycle.authority, root)
-        if lifecycle.state in {"deprecated", "superseded"}:
-            if authority_target is None:
-                failures.append(
-                    f"{rel} lifecycle {lifecycle.state} requires one "
-                    "Current authority link"
-                )
-            elif not authority_target.exists():
-                failures.append(
-                    f"{rel} current authority target does not exist: "
-                    f"{_display_path(authority_target, root)}"
-                )
-            elif _document_lifecycle(
-                authority_target,
-                root,
-                catalog,
-            ).state not in MAINTAINED_DOCUMENT_LIFECYCLES:
-                failures.append(
-                    f"{rel} current authority is not maintained: "
-                    f"{_display_path(authority_target, root)}"
-                )
-
-        if lifecycle.state == "deprecated" and not lifecycle.removal_trigger:
-            failures.append(
-                f"{rel} lifecycle deprecated requires a Removal trigger"
-            )
-
-        if lifecycle.redirect is not None:
-            if lifecycle.state != "superseded":
-                failures.append(
-                    f"{rel} redirect stub must use lifecycle superseded"
-                )
-            redirect_target = _first_link_target(path, lifecycle.redirect, root)
-            if redirect_target is None or not redirect_target.exists():
-                failures.append(f"{rel} redirect stub target must exist")
-            elif _document_lifecycle(
-                redirect_target,
-                root,
-                catalog,
-            ).state not in {"historical", "archived"}:
-                failures.append(
-                    f"{rel} redirect stub must target historical/archived evidence"
-                )
-            nonblank_lines = [
-                line
-                for line in path.read_text(encoding="utf-8").splitlines()
-                if line
-            ]
-            if len(nonblank_lines) > 16:
-                failures.append(
-                    f"{rel} redirect stub exceeds 16 nonblank lines"
-                )
-
+def _validate_entrypoints(
+    root: Path,
+    catalog: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    navigation = catalog["documentation"]["navigation"]
     for entrypoint in navigation["entrypoints"]:
         path = (root / entrypoint).resolve()
         if not path.is_file():
@@ -485,6 +497,33 @@ def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
             failures.append(
                 f"navigation entrypoint {entrypoint} is lifecycle {state}"
             )
+    return failures
+
+
+def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
+    failures: list[str] = []
+    root_resolved = root.resolve()
+    catalog = load_catalog(root)
+    failures.extend(_validate_catalog_paths(root, catalog))
+
+    for path in tracked_markdown_paths(root):
+        rel = path.relative_to(root_resolved).as_posix()
+        explicit = _explicit_lifecycle(path)
+        if explicit is None:
+            continue
+        configured = _configured_lifecycle(path, root, catalog)
+        failures.extend(
+            _validate_explicit_lifecycle(
+                path,
+                rel,
+                root,
+                catalog,
+                configured,
+                explicit,
+            )
+        )
+
+    failures.extend(_validate_entrypoints(root, catalog))
     return failures
 
 
