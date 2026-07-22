@@ -52,15 +52,6 @@ dev = []
             ],
         },
     )
-    _write_json(
-        base / "docs" / "governance" / "attestation-consumers.json",
-        {
-            "consumers": [
-                {"role": "state_gate", "disposition": "preserve", "risk": "high"}
-            ],
-            "summary": {},
-        },
-    )
     return base
 
 
@@ -81,7 +72,7 @@ class GovernanceInventoryGenerationTest(unittest.TestCase):
             self.assertEqual(dependency_path.read_text(encoding="utf-8"), before)
 
             updated = update_inventories(root)
-            self.assertEqual(len(updated), 2)
+            self.assertEqual(len(updated), 1)
             manifest = json.loads(dependency_path.read_text(encoding="utf-8"))
             entry = manifest["entries"][0]
             self.assertEqual(entry["requirement"], "fastapi>=1")

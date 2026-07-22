@@ -8,7 +8,6 @@ import copy
 import json
 import re
 import tomllib
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,6 @@ from finharness.paper_validation_boundary_audit import scan_paper_consumers
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCY_MANIFEST = Path("docs/governance/dependency-consumers.json")
-ATTESTATION_INVENTORY = Path("docs/governance/attestation-consumers.json")
 PYTHON_ROOTS = ("src", "scripts", "tests", "experiments")
 CORRECTIVE_COMMAND = "task governance:inventory:update"
 
@@ -141,21 +139,6 @@ def derive_dependency_manifest(root: Path, current: dict[str, Any]) -> dict[str,
     return result
 
 
-def derive_attestation_inventory(current: dict[str, Any]) -> dict[str, Any]:
-    result = copy.deepcopy(current)
-    consumers = result.get("consumers", [])
-    roles = Counter(item.get("role") for item in consumers)
-    dispositions = Counter(item.get("disposition") for item in consumers)
-    result["summary"] = {
-        "total_consumers": len(consumers),
-        "by_role": dict(sorted(roles.items())),
-        "by_disposition": dict(sorted(dispositions.items())),
-        "high_or_critical_count": sum(
-            item.get("risk") in {"high", "critical"} for item in consumers
-        ),
-    }
-    return result
-
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -174,24 +157,15 @@ def _dependency_findings(current: dict[str, Any], expected: dict[str, Any]) -> l
 
 def inspect_inventories(root: Path = ROOT) -> tuple[list[InventoryChange], list[str]]:
     dependency_path = root / DEPENDENCY_MANIFEST
-    attestation_path = root / ATTESTATION_INVENTORY
     dependency = _load_json(dependency_path)
-    attestation = _load_json(attestation_path)
     expected_dependency = derive_dependency_manifest(root, dependency)
-    expected_attestation = derive_attestation_inventory(attestation)
     changes = [
         InventoryChange(
             dependency_path,
             dependency,
             expected_dependency,
             tuple(_dependency_findings(dependency, expected_dependency)),
-        ),
-        InventoryChange(
-            attestation_path,
-            attestation,
-            expected_attestation,
-            ("attestation summary is stale",) if attestation != expected_attestation else (),
-        ),
+        )
     ]
     paper_findings = [
         f"paper consumer {finding.get('path')}: {finding.get('detail')}"
@@ -243,7 +217,7 @@ def main() -> int:
             print(f"  - {finding}")
         print(f"repair derived fields with: {CORRECTIVE_COMMAND}")
         return 1
-    print("governance inventories are current")
+    print("dependency and paper-boundary inventories are current")
     return 0
 
 

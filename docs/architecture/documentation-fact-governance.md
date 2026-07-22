@@ -38,7 +38,6 @@ non-current document.
 | System ownership and lifecycle | `system-catalog.yml` | Generate inventory views; do not add a parallel catalog. |
 | Documentation lifecycle | `documentation-lifecycle.md` plus catalog roots/paths and visible banners | Keep current and non-current material separate. |
 | Verified engineering debt | `debt-register.json` | Link to the register; do not copy counts or active lists. |
-| Consumer classification | `attestation-consumers.json` | Generate its audit view. |
 | Support-surface lifecycle | `support-surface-registry.yml` | Project the registered support boundary. |
 | Historical decisions and evidence | ADRs, proposals, reviews, notes, and Git history | Preserve context without rewriting it as current truth. |
 

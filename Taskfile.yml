@@ -66,12 +66,12 @@ tasks:
       - uv run python scripts/manage_pr_contract.py check {{.CLI_ARGS}}
 
   governance:inventory:
-    desc: Check source-derived governance inventory fields without modifying files
+    desc: Check derived dependency consumers and paper-validation boundaries
     cmds:
       - uv run python scripts/manage_governance_inventories.py
 
   governance:inventory:update:
-    desc: Update source-derived governance inventory fields deterministically
+    desc: Update derived dependency consumer fields deterministically
     cmds:
       - uv run python scripts/manage_governance_inventories.py --update
 
@@ -203,7 +203,7 @@ tasks:
       - node frontend/tests/browser/browser_stale_proposal_version.test.cjs
 
   governance:check:
-    desc: Run governance inventory drift checks not already owned by the Python/frontend gates
+    desc: Run remaining dependency and paper-boundary drift checks
     cmds:
       - task: governance:inventory
 

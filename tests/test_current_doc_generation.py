@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,36 +44,6 @@ def _catalog() -> dict:
     }
 
 
-def _inventory() -> dict:
-    return {
-        "schema": "finharness.attestation_consumer_inventory.v1",
-        "baseline_sha": "abc",
-        "scope": {
-            "source_roots": ["src"],
-            "scan_terms": ["Attestation"],
-        },
-        "summary": {
-            "total_consumers": 1,
-            "by_role": {"schema_model": 1},
-            "by_disposition": {"preserve": 1},
-            "high_or_critical_count": 1,
-        },
-        "consumers": [
-            {
-                "consumer_id": "ATT-CONS-001",
-                "path": "src/model.py",
-                "symbol": "Attestation",
-                "role": "schema_model",
-                "decision_semantics": "historical_evidence",
-                "version_binding": "proposal_id_only",
-                "risk": "high",
-                "disposition": "preserve",
-                "target_owner": "historical evidence",
-            }
-        ],
-        "exclusions": [],
-        "unclassified_hits": [],
-    }
 
 
 class CurrentDocGenerationTest(unittest.TestCase):
@@ -82,8 +51,6 @@ class CurrentDocGenerationTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
         (root / "docs" / "architecture").mkdir(parents=True)
-        (root / "docs" / "governance").mkdir(parents=True)
-        (root / "docs" / "audits").mkdir(parents=True)
         (root / "docs" / "archive").mkdir(parents=True)
         (root / "README.md").write_text("# Root\n", encoding="utf-8")
         catalog = root / "docs" / "architecture" / "system-catalog.yml"
@@ -100,33 +67,12 @@ class CurrentDocGenerationTest(unittest.TestCase):
             marker_doc,
             encoding="utf-8",
         )
-        inventory = root / "docs" / "governance" / "attestation-consumers.json"
-        inventory.write_text(json.dumps(_inventory()), encoding="utf-8")
-        generated = root / "docs" / "audits" / "attestation-consumer-inventory.md"
-        generated.write_text("stale", encoding="utf-8")
         for path, content in expected_outputs(root).items():
             path.write_text(content, encoding="utf-8")
         return temp, root
 
     def test_repository_views_are_current(self) -> None:
         self.assertEqual([], check())
-
-    def test_json_change_makes_attestation_markdown_stale(self) -> None:
-        temp, root = self._root()
-        try:
-            source = root / "docs" / "governance" / "attestation-consumers.json"
-            data = json.loads(source.read_text(encoding="utf-8"))
-            data["baseline_sha"] = "changed"
-            source.write_text(json.dumps(data), encoding="utf-8")
-            failures = check(root)
-            self.assertTrue(
-                any(
-                    "attestation-consumer-inventory.md is stale" in item
-                    for item in failures
-                )
-            )
-        finally:
-            temp.cleanup()
 
     def test_navigation_rejects_missing_reachable_document(self) -> None:
         temp, root = self._root()

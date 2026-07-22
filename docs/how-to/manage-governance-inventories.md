@@ -1,10 +1,9 @@
-# Manage Governance Inventories
+# Manage Derived Dependency Inventory
 
-Some inventory fields are observations and should not depend on memory. The
-repository derives dependency requirements, declared groups, imported modules,
-and Python consumer paths from `pyproject.toml` and maintained source roots. It
-also derives the attestation inventory summary from its reviewed consumer
-records.
+The dependency consumer manifest contains a small set of source-derived fields:
+requirements, dependency groups, imported modules, and Python consumer paths.
+The repository derives those fields from `pyproject.toml` and maintained source
+roots so they do not depend on memory.
 
 Check without modifying files:
 
@@ -12,18 +11,17 @@ Check without modifying files:
 task governance:inventory
 ```
 
-Repair derived drift in one step:
+Repair derived dependency drift:
 
 ```bash
 task governance:inventory:update
 ```
 
 The update is deterministic and idempotent. It does not invent dependency
-recommendations, task ownership, rationale, confidence, attestation risk, or
-migration disposition. A new dependency therefore fails with its exact name
-until a reviewer adds those policy fields. Paper-validation consumer relations
-and deletion gates also remain reviewed judgments; check mode reports the exact
-unregistered or stale path but does not synthesize a migration decision.
+recommendations, task ownership, rationale, or confidence. A new dependency
+therefore fails with its exact name until a maintainer records the few policy
+fields that cannot be derived from source.
 
-`task governance:check` includes the read-only drift check. CI never invokes the
-update mode.
+The same check reports paper-validation boundary drift, but it does not generate
+migration judgments. `task governance:check` includes the read-only command; CI
+never invokes update mode.
