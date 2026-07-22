@@ -27,12 +27,22 @@ BEGIN = "<!-- BEGIN GENERATED: system-catalog -->"
 END = "<!-- END GENERATED: system-catalog -->"
 LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 LIFECYCLE_RE = re.compile(
-    r"^> \*\*Documentation lifecycle:\*\* `([a-z]+)`\s*$", re.MULTILINE
+    r"^> \*\*Documentation lifecycle:\*\* `([^`]+)`\s*$",
+    re.MULTILINE,
 )
-AUTHORITY_RE = re.compile(r"^> \*\*Current authority:\*\* (.+?)\s*$", re.MULTILINE)
+AUTHORITY_RE = re.compile(
+    r"^> \*\*Current authority:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
 REASON_RE = re.compile(r"^> \*\*Reason:\*\* (.+?)\s*$", re.MULTILINE)
-REMOVAL_RE = re.compile(r"^> \*\*Removal trigger:\*\* (.+?)\s*$", re.MULTILINE)
-REDIRECT_RE = re.compile(r"^> \*\*Redirect stub:\*\* (.+?)\s*$", re.MULTILINE)
+REMOVAL_RE = re.compile(
+    r"^> \*\*Removal trigger:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
+REDIRECT_RE = re.compile(
+    r"^> \*\*Redirect stub:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
 
 ALLOWED_DOCUMENT_LIFECYCLES = {
     "current",
@@ -43,7 +53,6 @@ ALLOWED_DOCUMENT_LIFECYCLES = {
     "archived",
 }
 MAINTAINED_DOCUMENT_LIFECYCLES = {"current", "deprecated"}
-NONCURRENT_DOCUMENT_LIFECYCLES = ALLOWED_DOCUMENT_LIFECYCLES - MAINTAINED_DOCUMENT_LIFECYCLES
 
 
 @dataclass(frozen=True)
@@ -57,7 +66,8 @@ class DocumentLifecycle:
 
 
 def load_catalog(root: Path = ROOT) -> dict[str, Any]:
-    return yaml.safe_load((root / CATALOG_PATH.relative_to(ROOT)).read_text(encoding="utf-8"))
+    catalog = root / CATALOG_PATH.relative_to(ROOT)
+    return yaml.safe_load(catalog.read_text(encoding="utf-8"))
 
 
 def _cell(value: object) -> str:
@@ -85,7 +95,9 @@ def render_framework_systems(catalog: dict[str, Any]) -> str:
                     f"`{_cell(system['status'])}`",
                     _cell(system["summary"]),
                     _short_paths(system["runtime_roots"]),
-                    "<br>".join(f"`{_cell(check)}`" for check in system["checks"]),
+                    "<br>".join(
+                        f"`{_cell(check)}`" for check in system["checks"]
+                    ),
                 )
             )
             + " |"
@@ -120,7 +132,10 @@ def render_module_systems(catalog: dict[str, Any]) -> str:
 
 
 def _replace_generated(text: str, rendered: str) -> str:
-    pattern = re.compile(rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?", re.DOTALL)
+    pattern = re.compile(
+        rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?",
+        re.DOTALL,
+    )
     if not pattern.search(text):
         raise ValueError("generated system-catalog markers are missing")
     return pattern.sub(rendered, text, count=1)
@@ -144,20 +159,34 @@ def render_attestation_inventory(data: dict[str, Any]) -> str:
         f"- Baseline SHA: `{data['baseline_sha']}`",
         f"- Consumers: **{summary['total_consumers']}**",
         f"- High/critical consumers: **{summary['high_or_critical_count']}**",
-        f"- Exclusions: **{len(data.get('exclusions', []))}",
-        f"- Unclassified hits: **{len(data.get('unclassified_hits', []))}",
-        "- Scan roots: " + ", ".join(f"`{value}`" for value in data["scope"]["source_roots"]),
-        "- Scan terms: " + ", ".join(f"`{value}`" for value in data["scope"]["scan_terms"]),
+        f"- Exclusions: **{len(data.get('exclusions', []))}**",
+        f"- Unclassified hits: **{len(data.get('unclassified_hits', []))}**",
+        "- Scan roots: "
+        + ", ".join(f"`{value}`" for value in data["scope"]["source_roots"]),
+        "- Scan terms: "
+        + ", ".join(f"`{value}`" for value in data["scope"]["scan_terms"]),
         "",
         "## Summary by role",
         "",
         "| Role | Count |",
         "| --- | ---: |",
     ]
-    lines.extend(f"| `{key}` | {value} |" for key, value in sorted(summary["by_role"].items()))
-    lines.extend(("", "## Summary by disposition", "", "| Disposition | Count |", "| --- | ---: |"))
     lines.extend(
-        f"| `{key}` | {value} |" for key, value in sorted(summary["by_disposition"].items())
+        f"| `{key}` | {value} |"
+        for key, value in sorted(summary["by_role"].items())
+    )
+    lines.extend(
+        (
+            "",
+            "## Summary by disposition",
+            "",
+            "| Disposition | Count |",
+            "| --- | ---: |",
+        )
+    )
+    lines.extend(
+        f"| `{key}` | {value} |"
+        for key, value in sorted(summary["by_disposition"].items())
     )
     lines.extend(
         (
@@ -193,10 +222,10 @@ def render_attestation_inventory(data: dict[str, Any]) -> str:
             "",
             "## Interpretation boundary",
             "",
-            "This is a derived audit view. Classification, line ranges, exclusions, migration "
-            "recommendations, and evidence remain canonical in the machine JSON. Attestation "
-            "history is evidence; its existence is not a version-bound DecisionRecord or "
-            "execution authority.",
+            "This is a derived audit view. Classification, line ranges, exclusions, "
+            "migration recommendations, and evidence remain canonical in the machine "
+            "JSON. Attestation history is evidence; its existence is not a "
+            "version-bound DecisionRecord or execution authority.",
             "",
         )
     )
@@ -210,10 +239,12 @@ def expected_outputs(root: Path = ROOT) -> dict[Path, str]:
     attestation_json = root / ATTESTATION_JSON.relative_to(ROOT)
     return {
         framework: _replace_generated(
-            framework.read_text(encoding="utf-8"), render_framework_systems(catalog)
+            framework.read_text(encoding="utf-8"),
+            render_framework_systems(catalog),
         ),
         module_map: _replace_generated(
-            module_map.read_text(encoding="utf-8"), render_module_systems(catalog)
+            module_map.read_text(encoding="utf-8"),
+            render_module_systems(catalog),
         ),
         root / ATTESTATION_MARKDOWN.relative_to(ROOT): render_attestation_inventory(
             json.loads(attestation_json.read_text(encoding="utf-8"))
@@ -224,7 +255,9 @@ def expected_outputs(root: Path = ROOT) -> dict[Path, str]:
 def _link_target(path: Path, raw_target: str, root: Path) -> Path | None:
     target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
     target = target.split("#", 1)[0]
-    if not target or target.startswith(("http://", "https://", "mailto:", "app://")):
+    if not target or target.startswith(
+        ("http://", "https://", "mailto:", "app://")
+    ):
         return None
     resolved = (path.parent / target).resolve()
     try:
@@ -245,7 +278,11 @@ def _match_value(pattern: re.Pattern[str], text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-def _configured_lifecycle(path: Path, root: Path, catalog: dict[str, Any]) -> str | None:
+def _configured_lifecycle(
+    path: Path,
+    root: Path,
+    catalog: dict[str, Any],
+) -> str | None:
     rel = path.resolve().relative_to(root.resolve()).as_posix()
     navigation = catalog["documentation"]["navigation"]
     for prefix in navigation.get("historical_roots", []):
@@ -273,7 +310,9 @@ def _explicit_lifecycle(path: Path) -> DocumentLifecycle | None:
 
 
 def _document_lifecycle(
-    path: Path, root: Path, catalog: dict[str, Any]
+    path: Path,
+    root: Path,
+    catalog: dict[str, Any],
 ) -> DocumentLifecycle:
     explicit = _explicit_lifecycle(path)
     configured = _configured_lifecycle(path, root, catalog)
@@ -285,7 +324,11 @@ def _document_lifecycle(
 
 
 def document_lifecycle(path: Path, root: Path = ROOT) -> DocumentLifecycle:
-    return _document_lifecycle(path.resolve(), root.resolve(), load_catalog(root))
+    return _document_lifecycle(
+        path.resolve(),
+        root.resolve(),
+        load_catalog(root),
+    )
 
 
 def tracked_markdown_paths(root: Path = ROOT) -> tuple[Path, ...]:
@@ -316,7 +359,11 @@ def tracked_markdown_paths(root: Path = ROOT) -> tuple[Path, ...]:
     )
 
 
-def _first_link_target(path: Path, value: str | None, root: Path) -> Path | None:
+def _first_link_target(
+    path: Path,
+    value: str | None,
+    root: Path,
+) -> Path | None:
     if value is None:
         return None
     matches = LINK_RE.findall(value)
@@ -325,16 +372,24 @@ def _first_link_target(path: Path, value: str | None, root: Path) -> Path | None
     return _link_target(path, matches[0], root)
 
 
+def _display_path(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
     failures: list[str] = []
     root_resolved = root.resolve()
     catalog = load_catalog(root)
     navigation = catalog["documentation"]["navigation"]
 
-    for configured in (
+    configured_paths = (
         *navigation.get("historical_roots", []),
         *navigation.get("historical_paths", []),
-    ):
+    )
+    for configured in configured_paths:
         if not (root / configured).exists():
             failures.append(f"catalog lifecycle path does not exist: {configured}")
 
@@ -343,69 +398,93 @@ def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
         explicit = _explicit_lifecycle(path)
         configured = _configured_lifecycle(path, root, catalog)
         lifecycle = explicit or DocumentLifecycle(
-            state=configured or "current", source="catalog" if configured else "default"
+            state=configured or "current",
+            source="catalog" if configured else "default",
         )
 
         if lifecycle.state not in ALLOWED_DOCUMENT_LIFECYCLES:
-            failures.append(f"{rel} has unknown documentation lifecycle {lifecycle.state!r}")
+            failures.append(
+                f"{rel} has unknown documentation lifecycle {lifecycle.state!r}"
+            )
             continue
 
         if configured is not None and explicit is not None:
-            if explicit.state in {"current", "preview", "deprecated"}:
+            if explicit.state != configured:
                 failures.append(
-                    f"{rel} cannot override catalog-owned {configured} placement with "
-                    f"{explicit.state}"
+                    f"{rel} cannot override catalog-owned {configured} placement "
+                    f"with {explicit.state}"
                 )
 
         if explicit is None:
             continue
 
-        if lifecycle.state in NONCURRENT_DOCUMENT_LIFECYCLES and not lifecycle.reason:
-            failures.append(f"{rel} lifecycle {lifecycle.state} requires a visible Reason")
+        if lifecycle.state != "current" and not lifecycle.reason:
+            failures.append(
+                f"{rel} lifecycle {lifecycle.state} requires a visible Reason"
+            )
 
         authority_target = _first_link_target(path, lifecycle.authority, root)
         if lifecycle.state in {"deprecated", "superseded"}:
             if authority_target is None:
                 failures.append(
-                    f"{rel} lifecycle {lifecycle.state} requires one Current authority link"
+                    f"{rel} lifecycle {lifecycle.state} requires one "
+                    "Current authority link"
                 )
             elif not authority_target.exists():
                 failures.append(
                     f"{rel} current authority target does not exist: "
-                    f"{authority_target.relative_to(root_resolved)}"
+                    f"{_display_path(authority_target, root)}"
                 )
-            elif _document_lifecycle(authority_target, root, catalog).state not in (
-                MAINTAINED_DOCUMENT_LIFECYCLES
-            ):
+            elif _document_lifecycle(
+                authority_target,
+                root,
+                catalog,
+            ).state not in MAINTAINED_DOCUMENT_LIFECYCLES:
                 failures.append(
                     f"{rel} current authority is not maintained: "
-                    f"{authority_target.relative_to(root_resolved)}"
+                    f"{_display_path(authority_target, root)}"
                 )
 
         if lifecycle.state == "deprecated" and not lifecycle.removal_trigger:
-            failures.append(f"{rel} lifecycle deprecated requires a Removal trigger")
+            failures.append(
+                f"{rel} lifecycle deprecated requires a Removal trigger"
+            )
 
         if lifecycle.redirect is not None:
             if lifecycle.state != "superseded":
-                failures.append(f"{rel} redirect stub must use lifecycle superseded")
+                failures.append(
+                    f"{rel} redirect stub must use lifecycle superseded"
+                )
             redirect_target = _first_link_target(path, lifecycle.redirect, root)
             if redirect_target is None or not redirect_target.exists():
                 failures.append(f"{rel} redirect stub target must exist")
-            elif _document_lifecycle(redirect_target, root, catalog).state not in {
-                "historical",
-                "archived",
-            }:
-                failures.append(f"{rel} redirect stub must target historical/archived evidence")
-            nonblank_lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+            elif _document_lifecycle(
+                redirect_target,
+                root,
+                catalog,
+            ).state not in {"historical", "archived"}:
+                failures.append(
+                    f"{rel} redirect stub must target historical/archived evidence"
+                )
+            nonblank_lines = [
+                line
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line
+            ]
             if len(nonblank_lines) > 16:
-                failures.append(f"{rel} redirect stub exceeds 16 nonblank lines")
+                failures.append(
+                    f"{rel} redirect stub exceeds 16 nonblank lines"
+                )
 
     for entrypoint in navigation["entrypoints"]:
         path = (root / entrypoint).resolve()
-        if path.is_file():
-            state = _document_lifecycle(path, root, catalog).state
-            if state not in MAINTAINED_DOCUMENT_LIFECYCLES:
-                failures.append(f"navigation entrypoint {entrypoint} is lifecycle {state}")
+        if not path.is_file():
+            continue
+        state = _document_lifecycle(path, root, catalog).state
+        if state not in MAINTAINED_DOCUMENT_LIFECYCLES:
+            failures.append(
+                f"navigation entrypoint {entrypoint} is lifecycle {state}"
+            )
     return failures
 
 
@@ -418,7 +497,8 @@ def current_markdown_paths(root: Path = ROOT) -> tuple[Path, ...]:
         path = queue.pop(0).resolve()
         if path in seen or not path.is_file() or path.suffix.lower() != ".md":
             continue
-        if _document_lifecycle(path, root, catalog).state not in MAINTAINED_DOCUMENT_LIFECYCLES:
+        lifecycle = _document_lifecycle(path, root, catalog)
+        if lifecycle.state not in MAINTAINED_DOCUMENT_LIFECYCLES:
             continue
         seen.add(path)
         for raw_target in LINK_RE.findall(path.read_text(encoding="utf-8")):
@@ -440,22 +520,28 @@ def validate_navigation(root: Path = ROOT) -> list[str]:
                 rel_target = target.relative_to(root_resolved)
             except ValueError:
                 failures.append(
-                    f"{path.relative_to(root_resolved)} links outside repo: {raw_target}"
+                    f"{path.relative_to(root_resolved)} links outside repo: "
+                    f"{raw_target}"
                 )
                 continue
             if not target.exists():
                 failures.append(
-                    f"{path.relative_to(root_resolved)} links missing path {rel_target.as_posix()}"
+                    f"{path.relative_to(root_resolved)} links missing path "
+                    f"{rel_target.as_posix()}"
                 )
     return failures
 
 
 def check(root: Path = ROOT) -> list[str]:
-    failures = [*validate_document_lifecycle(root), *validate_navigation(root)]
+    failures = [
+        *validate_document_lifecycle(root),
+        *validate_navigation(root),
+    ]
     for path, expected in expected_outputs(root).items():
         if path.read_text(encoding="utf-8") != expected:
             failures.append(
-                f"{path.relative_to(root)} is stale; run task docs:generate-current-views"
+                f"{path.relative_to(root)} is stale; "
+                "run task docs:generate-current-views"
             )
     return failures
 
@@ -471,7 +557,10 @@ def main() -> int:
             for failure in failures:
                 print(f"  {failure}")
             return 1
-        print(f"OK: {len(current_markdown_paths())} navigation-reachable maintained docs")
+        print(
+            f"OK: {len(current_markdown_paths())} "
+            "navigation-reachable maintained docs"
+        )
         return 0
     for path, content in expected_outputs().items():
         path.write_text(content, encoding="utf-8")
