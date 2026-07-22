@@ -6,7 +6,8 @@ explaining the whole architecture.
 
 To observe the isolated proposal/review/receipt mechanics first, use the
 [Synthetic Golden Path Tutorial](../tutorials/golden-path.md). That tutorial is
-an ephemeral direct-seed demo, not a canonical imported-capital review journey.
+an isolated temporary direct-seed demo, not a canonical imported-capital review
+journey.
 
 ## Available Now
 
