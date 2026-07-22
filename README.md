@@ -241,11 +241,13 @@ isolated synthetic demo:
 task decisions:golden-path
 ```
 
-The demo creates an ephemeral direct-seeded workspace and destroys it after the
-run. A later `task api:serve` or `task cockpit:review` opens a separate persistent
-workspace; it cannot reopen the demo. The demo does not prove canonical capital
-import, capital-truth readiness, Daily Brief, persistent review continuity,
-external validation, Agent dogfood, or live execution.
+The demo creates an isolated temporary direct-seeded artifact workspace and
+prints its `artifact_root` plus a `cleanup_hint`. The directory remains until it
+is cleaned explicitly. A later `task api:serve` or `task cockpit:review` with
+default arguments opens a separate persistent workspace; it does not
+automatically reopen the demo. The demo does not prove canonical capital import,
+capital-truth readiness, Daily Brief, persistent review continuity, external
+validation, Agent dogfood, or live execution.
 
 For current task names, use:
 
