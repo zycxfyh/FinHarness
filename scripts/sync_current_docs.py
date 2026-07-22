@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +26,48 @@ GENERATED_NOTICE = (
 BEGIN = "<!-- BEGIN GENERATED: system-catalog -->"
 END = "<!-- END GENERATED: system-catalog -->"
 LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
+LIFECYCLE_RE = re.compile(
+    r"^> \*\*Documentation lifecycle:\*\* `([^`]+)`\s*$",
+    re.MULTILINE,
+)
+AUTHORITY_RE = re.compile(
+    r"^> \*\*Current authority:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
+REASON_RE = re.compile(r"^> \*\*Reason:\*\* (.+?)\s*$", re.MULTILINE)
+REMOVAL_RE = re.compile(
+    r"^> \*\*Removal trigger:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
+REDIRECT_RE = re.compile(
+    r"^> \*\*Redirect stub:\*\* (.+?)\s*$",
+    re.MULTILINE,
+)
+
+ALLOWED_DOCUMENT_LIFECYCLES = {
+    "current",
+    "preview",
+    "deprecated",
+    "superseded",
+    "historical",
+    "archived",
+}
+MAINTAINED_DOCUMENT_LIFECYCLES = {"current", "deprecated"}
+
+
+@dataclass(frozen=True)
+class DocumentLifecycle:
+    state: str
+    source: str
+    authority: str | None = None
+    reason: str | None = None
+    removal_trigger: str | None = None
+    redirect: str | None = None
 
 
 def load_catalog(root: Path = ROOT) -> dict[str, Any]:
-    return yaml.safe_load((root / CATALOG_PATH.relative_to(ROOT)).read_text(encoding="utf-8"))
+    catalog = root / CATALOG_PATH.relative_to(ROOT)
+    return yaml.safe_load(catalog.read_text(encoding="utf-8"))
 
 
 def _cell(value: object) -> str:
@@ -55,7 +95,9 @@ def render_framework_systems(catalog: dict[str, Any]) -> str:
                     f"`{_cell(system['status'])}`",
                     _cell(system["summary"]),
                     _short_paths(system["runtime_roots"]),
-                    "<br>".join(f"`{_cell(check)}`" for check in system["checks"]),
+                    "<br>".join(
+                        f"`{_cell(check)}`" for check in system["checks"]
+                    ),
                 )
             )
             + " |"
@@ -90,7 +132,10 @@ def render_module_systems(catalog: dict[str, Any]) -> str:
 
 
 def _replace_generated(text: str, rendered: str) -> str:
-    pattern = re.compile(rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?", re.DOTALL)
+    pattern = re.compile(
+        rf"{re.escape(BEGIN)}.*?{re.escape(END)}\n?",
+        re.DOTALL,
+    )
     if not pattern.search(text):
         raise ValueError("generated system-catalog markers are missing")
     return pattern.sub(rendered, text, count=1)
@@ -116,18 +161,32 @@ def render_attestation_inventory(data: dict[str, Any]) -> str:
         f"- High/critical consumers: **{summary['high_or_critical_count']}**",
         f"- Exclusions: **{len(data.get('exclusions', []))}**",
         f"- Unclassified hits: **{len(data.get('unclassified_hits', []))}**",
-        "- Scan roots: " + ", ".join(f"`{value}`" for value in data["scope"]["source_roots"]),
-        "- Scan terms: " + ", ".join(f"`{value}`" for value in data["scope"]["scan_terms"]),
+        "- Scan roots: "
+        + ", ".join(f"`{value}`" for value in data["scope"]["source_roots"]),
+        "- Scan terms: "
+        + ", ".join(f"`{value}`" for value in data["scope"]["scan_terms"]),
         "",
         "## Summary by role",
         "",
         "| Role | Count |",
         "| --- | ---: |",
     ]
-    lines.extend(f"| `{key}` | {value} |" for key, value in sorted(summary["by_role"].items()))
-    lines.extend(("", "## Summary by disposition", "", "| Disposition | Count |", "| --- | ---: |"))
     lines.extend(
-        f"| `{key}` | {value} |" for key, value in sorted(summary["by_disposition"].items())
+        f"| `{key}` | {value} |"
+        for key, value in sorted(summary["by_role"].items())
+    )
+    lines.extend(
+        (
+            "",
+            "## Summary by disposition",
+            "",
+            "| Disposition | Count |",
+            "| --- | ---: |",
+        )
+    )
+    lines.extend(
+        f"| `{key}` | {value} |"
+        for key, value in sorted(summary["by_disposition"].items())
     )
     lines.extend(
         (
@@ -163,10 +222,10 @@ def render_attestation_inventory(data: dict[str, Any]) -> str:
             "",
             "## Interpretation boundary",
             "",
-            "This is a derived audit view. Classification, line ranges, exclusions, migration "
-            "recommendations, and evidence remain canonical in the machine JSON. Attestation "
-            "history is evidence; its existence is not a version-bound DecisionRecord or "
-            "execution authority.",
+            "This is a derived audit view. Classification, line ranges, exclusions, "
+            "migration recommendations, and evidence remain canonical in the machine "
+            "JSON. Attestation history is evidence; its existence is not a "
+            "version-bound DecisionRecord or execution authority.",
             "",
         )
     )
@@ -180,10 +239,12 @@ def expected_outputs(root: Path = ROOT) -> dict[Path, str]:
     attestation_json = root / ATTESTATION_JSON.relative_to(ROOT)
     return {
         framework: _replace_generated(
-            framework.read_text(encoding="utf-8"), render_framework_systems(catalog)
+            framework.read_text(encoding="utf-8"),
+            render_framework_systems(catalog),
         ),
         module_map: _replace_generated(
-            module_map.read_text(encoding="utf-8"), render_module_systems(catalog)
+            module_map.read_text(encoding="utf-8"),
+            render_module_systems(catalog),
         ),
         root / ATTESTATION_MARKDOWN.relative_to(ROOT): render_attestation_inventory(
             json.loads(attestation_json.read_text(encoding="utf-8"))
@@ -194,7 +255,9 @@ def expected_outputs(root: Path = ROOT) -> dict[Path, str]:
 def _link_target(path: Path, raw_target: str, root: Path) -> Path | None:
     target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
     target = target.split("#", 1)[0]
-    if not target or target.startswith(("http://", "https://", "mailto:", "app://")):
+    if not target or target.startswith(
+        ("http://", "https://", "mailto:", "app://")
+    ):
         return None
     resolved = (path.parent / target).resolve()
     try:
@@ -206,21 +269,275 @@ def _link_target(path: Path, raw_target: str, root: Path) -> Path | None:
     return resolved
 
 
+def _header(text: str) -> str:
+    return "\n".join(text.splitlines()[:18])
+
+
+def _match_value(pattern: re.Pattern[str], text: str) -> str | None:
+    match = pattern.search(_header(text))
+    return match.group(1).strip() if match else None
+
+
+def _configured_lifecycle(
+    path: Path,
+    root: Path,
+    catalog: dict[str, Any],
+) -> str | None:
+    rel = path.resolve().relative_to(root.resolve()).as_posix()
+    navigation = catalog["documentation"]["navigation"]
+    for prefix in navigation.get("historical_roots", []):
+        normalized = prefix.rstrip("/")
+        if rel == normalized or rel.startswith(normalized + "/"):
+            return "archived" if normalized == "docs/archive" else "historical"
+    if rel in navigation.get("historical_paths", []):
+        return "historical"
+    return None
+
+
+def _explicit_lifecycle(path: Path) -> DocumentLifecycle | None:
+    text = path.read_text(encoding="utf-8")
+    state = _match_value(LIFECYCLE_RE, text)
+    if state is None:
+        return None
+    return DocumentLifecycle(
+        state=state,
+        source="banner",
+        authority=_match_value(AUTHORITY_RE, text),
+        reason=_match_value(REASON_RE, text),
+        removal_trigger=_match_value(REMOVAL_RE, text),
+        redirect=_match_value(REDIRECT_RE, text),
+    )
+
+
+def _document_lifecycle(
+    path: Path,
+    root: Path,
+    catalog: dict[str, Any],
+) -> DocumentLifecycle:
+    explicit = _explicit_lifecycle(path)
+    configured = _configured_lifecycle(path, root, catalog)
+    if explicit is not None:
+        return explicit
+    if configured is not None:
+        return DocumentLifecycle(state=configured, source="catalog")
+    return DocumentLifecycle(state="current", source="default")
+
+
+def document_lifecycle(path: Path, root: Path = ROOT) -> DocumentLifecycle:
+    return _document_lifecycle(
+        path.resolve(),
+        root.resolve(),
+        load_catalog(root),
+    )
+
+
+def tracked_markdown_paths(root: Path = ROOT) -> tuple[Path, ...]:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.md", "*.markdown"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        excluded = {".git", ".venv", "node_modules", "vendor"}
+        return tuple(
+            sorted(
+                path.resolve()
+                for path in root.rglob("*")
+                if path.is_file()
+                and path.suffix.lower() in {".md", ".markdown"}
+                and not excluded.intersection(path.relative_to(root).parts)
+            )
+        )
+    return tuple(
+        sorted(
+            (root / raw.decode("utf-8")).resolve()
+            for raw in completed.stdout.split(b"\0")
+            if raw
+        )
+    )
+
+
+def _first_link_target(
+    path: Path,
+    value: str | None,
+    root: Path,
+) -> Path | None:
+    if value is None:
+        return None
+    matches = LINK_RE.findall(value)
+    if not matches:
+        return None
+    return _link_target(path, matches[0], root)
+
+
+def _display_path(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _validate_authority(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    if lifecycle.state not in {"deprecated", "superseded"}:
+        return []
+    authority_target = _first_link_target(path, lifecycle.authority, root)
+    if authority_target is None:
+        return [
+            f"{rel} lifecycle {lifecycle.state} requires one "
+            "Current authority link"
+        ]
+    if not authority_target.exists():
+        return [
+            f"{rel} current authority target does not exist: "
+            f"{_display_path(authority_target, root)}"
+        ]
+    authority = _document_lifecycle(authority_target, root, catalog)
+    if authority.state not in MAINTAINED_DOCUMENT_LIFECYCLES:
+        return [
+            f"{rel} current authority is not maintained: "
+            f"{_display_path(authority_target, root)}"
+        ]
+    return []
+
+
+def _validate_redirect(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    if lifecycle.redirect is None:
+        return []
+    failures: list[str] = []
+    if lifecycle.state != "superseded":
+        failures.append(f"{rel} redirect stub must use lifecycle superseded")
+    redirect_target = _first_link_target(path, lifecycle.redirect, root)
+    if redirect_target is None or not redirect_target.exists():
+        failures.append(f"{rel} redirect stub target must exist")
+    else:
+        target_lifecycle = _document_lifecycle(redirect_target, root, catalog)
+        if target_lifecycle.state not in {"historical", "archived"}:
+            failures.append(
+                f"{rel} redirect stub must target historical/archived evidence"
+            )
+    nonblank_lines = [
+        line for line in path.read_text(encoding="utf-8").splitlines() if line
+    ]
+    if len(nonblank_lines) > 16:
+        failures.append(f"{rel} redirect stub exceeds 16 nonblank lines")
+    return failures
+
+
+def _validate_explicit_lifecycle(
+    path: Path,
+    rel: str,
+    root: Path,
+    catalog: dict[str, Any],
+    configured: str | None,
+    lifecycle: DocumentLifecycle,
+) -> list[str]:
+    failures: list[str] = []
+    if lifecycle.state not in ALLOWED_DOCUMENT_LIFECYCLES:
+        return [
+            f"{rel} has unknown documentation lifecycle {lifecycle.state!r}"
+        ]
+    if configured is not None and lifecycle.state != configured:
+        failures.append(
+            f"{rel} cannot override catalog-owned {configured} placement "
+            f"with {lifecycle.state}"
+        )
+    if lifecycle.state != "current" and not lifecycle.reason:
+        failures.append(
+            f"{rel} lifecycle {lifecycle.state} requires a visible Reason"
+        )
+    failures.extend(_validate_authority(path, rel, root, catalog, lifecycle))
+    if lifecycle.state == "deprecated" and not lifecycle.removal_trigger:
+        failures.append(f"{rel} lifecycle deprecated requires a Removal trigger")
+    failures.extend(_validate_redirect(path, rel, root, catalog, lifecycle))
+    return failures
+
+
+def _validate_catalog_paths(
+    root: Path,
+    catalog: dict[str, Any],
+) -> list[str]:
+    navigation = catalog["documentation"]["navigation"]
+    configured_paths = (
+        *navigation.get("historical_roots", []),
+        *navigation.get("historical_paths", []),
+    )
+    return [
+        f"catalog lifecycle path does not exist: {configured}"
+        for configured in configured_paths
+        if not (root / configured).exists()
+    ]
+
+
+def _validate_entrypoints(
+    root: Path,
+    catalog: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    navigation = catalog["documentation"]["navigation"]
+    for entrypoint in navigation["entrypoints"]:
+        path = (root / entrypoint).resolve()
+        if not path.is_file():
+            continue
+        state = _document_lifecycle(path, root, catalog).state
+        if state not in MAINTAINED_DOCUMENT_LIFECYCLES:
+            failures.append(
+                f"navigation entrypoint {entrypoint} is lifecycle {state}"
+            )
+    return failures
+
+
+def validate_document_lifecycle(root: Path = ROOT) -> list[str]:
+    failures: list[str] = []
+    root_resolved = root.resolve()
+    catalog = load_catalog(root)
+    failures.extend(_validate_catalog_paths(root, catalog))
+
+    for path in tracked_markdown_paths(root):
+        rel = path.relative_to(root_resolved).as_posix()
+        explicit = _explicit_lifecycle(path)
+        if explicit is None:
+            continue
+        configured = _configured_lifecycle(path, root, catalog)
+        failures.extend(
+            _validate_explicit_lifecycle(
+                path,
+                rel,
+                root,
+                catalog,
+                configured,
+                explicit,
+            )
+        )
+
+    failures.extend(_validate_entrypoints(root, catalog))
+    return failures
+
+
 def current_markdown_paths(root: Path = ROOT) -> tuple[Path, ...]:
     catalog = load_catalog(root)
     navigation = catalog["documentation"]["navigation"]
-    historical = (
-        *navigation["historical_roots"],
-        *navigation.get("historical_paths", []),
-    )
     queue = [root / path for path in navigation["entrypoints"]]
     seen: set[Path] = set()
     while queue:
         path = queue.pop(0).resolve()
         if path in seen or not path.is_file() or path.suffix.lower() != ".md":
             continue
-        rel = path.relative_to(root.resolve()).as_posix()
-        if any(rel == prefix or rel.startswith(prefix.rstrip("/") + "/") for prefix in historical):
+        lifecycle = _document_lifecycle(path, root, catalog)
+        if lifecycle.state not in MAINTAINED_DOCUMENT_LIFECYCLES:
             continue
         seen.add(path)
         for raw_target in LINK_RE.findall(path.read_text(encoding="utf-8")):
@@ -242,22 +559,28 @@ def validate_navigation(root: Path = ROOT) -> list[str]:
                 rel_target = target.relative_to(root_resolved)
             except ValueError:
                 failures.append(
-                    f"{path.relative_to(root_resolved)} links outside repo: {raw_target}"
+                    f"{path.relative_to(root_resolved)} links outside repo: "
+                    f"{raw_target}"
                 )
                 continue
             if not target.exists():
                 failures.append(
-                    f"{path.relative_to(root_resolved)} links missing path {rel_target.as_posix()}"
+                    f"{path.relative_to(root_resolved)} links missing path "
+                    f"{rel_target.as_posix()}"
                 )
     return failures
 
 
 def check(root: Path = ROOT) -> list[str]:
-    failures = validate_navigation(root)
+    failures = [
+        *validate_document_lifecycle(root),
+        *validate_navigation(root),
+    ]
     for path, expected in expected_outputs(root).items():
         if path.read_text(encoding="utf-8") != expected:
             failures.append(
-                f"{path.relative_to(root)} is stale; run task docs:generate-current-views"
+                f"{path.relative_to(root)} is stale; "
+                "run task docs:generate-current-views"
             )
     return failures
 
@@ -273,7 +596,10 @@ def main() -> int:
             for failure in failures:
                 print(f"  {failure}")
             return 1
-        print(f"OK: {len(current_markdown_paths())} navigation-reachable current docs")
+        print(
+            f"OK: {len(current_markdown_paths())} "
+            "navigation-reachable maintained docs"
+        )
         return 0
     for path, content in expected_outputs().items():
         path.write_text(content, encoding="utf-8")
