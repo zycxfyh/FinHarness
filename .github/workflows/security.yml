@@ -29,6 +29,7 @@ jobs:
       dependencies: ${{ steps.classify.outputs.dependencies }}
       security_surface: ${{ steps.classify.outputs.security_surface }}
       agent: ${{ steps.classify.outputs.agent }}
+      gitleaks_depth: ${{ steps.classify.outputs.gitleaks_depth }}
     steps:
       - id: classify
         name: Classify changed paths
@@ -50,6 +51,7 @@ jobs:
               echo "dependencies=true"
               echo "security_surface=true"
               echo "agent=true"
+              echo "gitleaks_depth=1"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -59,6 +61,10 @@ jobs:
               "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
               --jq '.[].filename'
           )
+          pr_commits="$(
+            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.commits'
+          )"
+          gitleaks_depth=$((pr_commits + 1))
 
           docs_only=true
           python=false
@@ -120,6 +126,7 @@ jobs:
             echo "dependencies=$dependencies"
             echo "security_surface=$security_surface"
             echo "agent=$agent"
+            echo "gitleaks_depth=$gitleaks_depth"
           } >> "$GITHUB_OUTPUT"
 
   fast-feedback:
@@ -326,7 +333,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: ${{ github.event_name == 'schedule' && '0' || '1' }}
+          fetch-depth: ${{ github.event_name == 'schedule' && '0' || needs.scope.outputs.gitleaks_depth }}
 
       - name: Verify Gitleaks checkout identity
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -334,7 +341,7 @@ jobs:
         with:
           claim: ${{ github.event_name == 'pull_request' && 'pr_head' || 'main_commit' }}
           expected_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          command: gitleaks changed-content scan
+          command: gitleaks PR commit-range scan
 
       - name: Install gitleaks CLI
         env:
@@ -357,42 +364,29 @@ jobs:
           install -m 0755 "$RUNNER_TEMP/gitleaks/gitleaks" "$RUNNER_TEMP/bin/gitleaks"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Scan pull request changed content
+      - name: Scan pull request commit range
         if: github.event_name == 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          scan_root="$RUNNER_TEMP/gitleaks-pr"
-          mkdir -p "$scan_root"
-
-          gh api --paginate \
-            "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
-            --jq '.[] | select(.status != "removed") | .filename' |
-          while IFS= read -r path; do
-            if [[ -f "$path" ]]; then
-              mkdir -p "$scan_root/$(dirname "$path")"
-              cp "$path" "$scan_root/$path"
-            fi
-          done
-
-          gitleaks detect \
-            --no-git \
-            --source "$scan_root" \
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          gitleaks git \
+            --log-opts="${BASE_SHA}..${HEAD_SHA}" \
             --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
             --redact \
-            --verbose
+            --verbose \
+            .
 
       - name: Scan current main tree
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
+        run: gitleaks dir --config .gitleaks.toml --redact --verbose .
 
       - name: Scan full history on schedule
         if: github.event_name == 'schedule'
-        run: gitleaks detect --source . --config .gitleaks.toml --redact --verbose
+        run: gitleaks git --config .gitleaks.toml --redact --verbose .
 
   trivy:
     name: Trivy filesystem scan
