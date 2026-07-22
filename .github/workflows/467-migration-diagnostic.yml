@@ -1,0 +1,59 @@
+name: 467-migration-diagnostic
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/467-migration-diagnostic.yml"
+      - "docs/**"
+      - "tests/test_documentation_lifecycle_migration_family.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unittest-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify migration diagnostic checkout identity
+        uses: ./.github/actions/verify-commit-identity
+        with:
+          claim: pr_head
+          expected_sha: ${{ github.event.pull_request.head.sha }}
+          command: capture migration unittest diagnostics
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          run_install: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - uses: go-task/setup-task@01a4adf9db2d14c1de7a560f09170b6e0df736aa # v2.1.0
+      - name: Set up locked environment
+        run: task setup
+      - name: Capture unittest output
+        id: unittest
+        continue-on-error: true
+        run: |
+          mkdir -p .artifacts/467-migration
+          set -o pipefail
+          task test:unittest 2>&1 | tee .artifacts/467-migration/unittest.log
+      - name: Upload unittest diagnostic
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: 467-migration-diagnostic
+          path: .artifacts/467-migration/unittest.log
+          if-no-files-found: error
+          retention-days: 3
+      - name: Preserve unittest result
+        if: steps.unittest.outcome != 'success'
+        run: exit 1
