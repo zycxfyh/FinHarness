@@ -24,7 +24,7 @@ class LeanGovernanceP0Test(unittest.TestCase):
         ):
             with self.subTest(workflow=name):
                 classify = load_workflow(name)["jobs"]["scope"]["steps"][0]["run"]
-                self.assertIn('changed_files="$(' , classify)
+                self.assertIn('changed_files="$(', classify)
                 self.assertIn("gh api --paginate", classify)
                 self.assertNotIn("done < <(", classify)
                 self.assertNotIn("mapfile -t files < <(", classify)
