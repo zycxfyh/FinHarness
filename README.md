@@ -36,11 +36,11 @@ Current main does **not** include a real broker SDK, funded account, external
 venue submission, live trading, transfer, tax submission, public hosted Product
 Agent, or delegated autonomous capital manager.
 
-Product direction is documented separately in the
-[Product Thesis](docs/product/product-thesis.md),
-[Product Roadmap](docs/product/product-roadmap.md), and
-[North Star](docs/product-north-star.md). Direction is not a current capability
-claim.
+Stable product direction is documented in the
+[Product Thesis](docs/product/product-thesis.md) and
+[North Star](docs/product-north-star.md). Current investment order and work
+authorization belong only to GitHub Issue/PR state. Direction is not a current
+capability claim.
 
 ## Setup
 
