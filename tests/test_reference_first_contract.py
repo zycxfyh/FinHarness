@@ -1,4 +1,4 @@
-"""Structural contract for the Reference-First design gate."""
+"""Structural contract for reference-first mechanism selection."""
 
 from __future__ import annotations
 
@@ -12,22 +12,18 @@ TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
 
 
 class ReferenceFirstContractTest(unittest.TestCase):
-    def test_agent_and_contributor_entry_points_name_the_gate(self) -> None:
+    def test_agent_and_contributor_entry_points_preserve_the_selection_order(self) -> None:
         agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
 
-        self.assertIn("## Reference-First Design Gate", agents)
-        for term in ("A — Adopt", "B — Adapt", "C — Own", "Adopt:", "Adapt:", "Own:"):
-            with self.subTest(term=term):
-                self.assertIn(term, agents)
         for anchor in (
-            "Before changing code",
-            "cross-cutting mechanism",
-            "bounded correction with no mechanism choice",
-            "Delete or retire a duplicate mechanism",
-            "Add a new abstraction only after",
+            "delete or retire a duplicate mechanism",
+            "use the existing canonical repository boundary",
+            "standard-library, platform, official, or mature-project capability",
+            "add a new abstraction only after",
             '"Future flexibility" is not evidence',
-            "documented and reviewed gap",
+            "observed gap",
+            "named replacement/deletion target",
         ):
             with self.subTest(anchor=anchor):
                 self.assertIn(anchor, agents)
