@@ -49,7 +49,10 @@ def _inventory() -> dict:
     return {
         "schema": "finharness.attestation_consumer_inventory.v1",
         "baseline_sha": "abc",
-        "scope": {"source_roots": ["src"], "scan_terms": ["Attestation"]},
+        "scope": {
+            "source_roots": ["src"],
+            "scan_terms": ["Attestation"],
+        },
         "summary": {
             "total_consumers": 1,
             "by_role": {"schema_model": 1},
@@ -83,22 +86,24 @@ class CurrentDocGenerationTest(unittest.TestCase):
         (root / "docs" / "audits").mkdir(parents=True)
         (root / "docs" / "archive").mkdir(parents=True)
         (root / "README.md").write_text("# Root\n", encoding="utf-8")
-        (root / "docs" / "architecture" / "system-catalog.yml").write_text(
-            yaml.safe_dump(_catalog(), sort_keys=False), encoding="utf-8"
+        catalog = root / "docs" / "architecture" / "system-catalog.yml"
+        catalog.write_text(
+            yaml.safe_dump(_catalog(), sort_keys=False),
+            encoding="utf-8",
         )
         marker_doc = f"# View\n\n{BEGIN}\nstale\n{END}\n"
         (root / "docs" / "architecture" / "framework-index.md").write_text(
-            marker_doc, encoding="utf-8"
+            marker_doc,
+            encoding="utf-8",
         )
         (root / "docs" / "architecture" / "module-map.md").write_text(
-            marker_doc, encoding="utf-8"
+            marker_doc,
+            encoding="utf-8",
         )
-        (root / "docs" / "governance" / "attestation-consumers.json").write_text(
-            json.dumps(_inventory()), encoding="utf-8"
-        )
-        (root / "docs" / "audits" / "attestation-consumer-inventory.md").write_text(
-            "stale", encoding="utf-8"
-        )
+        inventory = root / "docs" / "governance" / "attestation-consumers.json"
+        inventory.write_text(json.dumps(_inventory()), encoding="utf-8")
+        generated = root / "docs" / "audits" / "attestation-consumer-inventory.md"
+        generated.write_text("stale", encoding="utf-8")
         for path, content in expected_outputs(root).items():
             path.write_text(content, encoding="utf-8")
         return temp, root
@@ -113,8 +118,12 @@ class CurrentDocGenerationTest(unittest.TestCase):
             data = json.loads(source.read_text(encoding="utf-8"))
             data["baseline_sha"] = "changed"
             source.write_text(json.dumps(data), encoding="utf-8")
+            failures = check(root)
             self.assertTrue(
-                any("attestation-consumer-inventory.md is stale" in item for item in check(root))
+                any(
+                    "attestation-consumer-inventory.md is stale" in item
+                    for item in failures
+                )
             )
         finally:
             temp.cleanup()
@@ -122,9 +131,15 @@ class CurrentDocGenerationTest(unittest.TestCase):
     def test_navigation_rejects_missing_reachable_document(self) -> None:
         temp, root = self._root()
         try:
-            (root / "README.md").write_text("[Missing](docs/missing.md)\n", encoding="utf-8")
+            (root / "README.md").write_text(
+                "[Missing](docs/missing.md)\n",
+                encoding="utf-8",
+            )
             self.assertTrue(
-                any("links missing path docs/missing.md" in item for item in check(root))
+                any(
+                    "links missing path docs/missing.md" in item
+                    for item in check(root)
+                )
             )
         finally:
             temp.cleanup()
@@ -140,8 +155,14 @@ class CurrentDocGenerationTest(unittest.TestCase):
                 "> **Reason:** Preserved delivery evidence.\n",
                 encoding="utf-8",
             )
-            (root / "README.md").write_text("[History](docs/history.md)\n", encoding="utf-8")
-            paths = {path.relative_to(root).as_posix() for path in current_markdown_paths(root)}
+            (root / "README.md").write_text(
+                "[History](docs/history.md)\n",
+                encoding="utf-8",
+            )
+            paths = {
+                path.relative_to(root).as_posix()
+                for path in current_markdown_paths(root)
+            }
             self.assertEqual({"README.md"}, paths)
         finally:
             temp.cleanup()
@@ -151,8 +172,14 @@ class CurrentDocGenerationTest(unittest.TestCase):
         try:
             archived = root / "docs" / "archive" / "old.md"
             archived.write_text("# Old\n", encoding="utf-8")
-            (root / "README.md").write_text("[Old](docs/archive/old.md)\n", encoding="utf-8")
-            paths = {path.relative_to(root).as_posix() for path in current_markdown_paths(root)}
+            (root / "README.md").write_text(
+                "[Old](docs/archive/old.md)\n",
+                encoding="utf-8",
+            )
+            paths = {
+                path.relative_to(root).as_posix()
+                for path in current_markdown_paths(root)
+            }
             self.assertEqual({"README.md"}, paths)
         finally:
             temp.cleanup()
@@ -168,7 +195,10 @@ class CurrentDocGenerationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertTrue(
-                any("requires one Current authority link" in item for item in check(root))
+                any(
+                    "requires one Current authority link" in item
+                    for item in check(root)
+                )
             )
         finally:
             temp.cleanup()
@@ -184,7 +214,30 @@ class CurrentDocGenerationTest(unittest.TestCase):
                 "> **Reason:** Supported only for compatibility.\n",
                 encoding="utf-8",
             )
-            self.assertTrue(any("requires a Removal trigger" in item for item in check(root)))
+            self.assertTrue(
+                any(
+                    "requires a Removal trigger" in item
+                    for item in check(root)
+                )
+            )
+        finally:
+            temp.cleanup()
+
+    def test_unknown_lifecycle_fails_closed(self) -> None:
+        temp, root = self._root()
+        try:
+            unknown = root / "docs" / "unknown.md"
+            unknown.write_text(
+                "# Unknown\n\n"
+                "> **Documentation lifecycle:** `retired`\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(
+                any(
+                    "unknown documentation lifecycle 'retired'" in item
+                    for item in check(root)
+                )
+            )
         finally:
             temp.cleanup()
 
@@ -197,7 +250,10 @@ class CurrentDocGenerationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertTrue(
-                any("cannot override catalog-owned archived" in item for item in check(root))
+                any(
+                    "cannot override catalog-owned archived" in item
+                    for item in check(root)
+                )
             )
         finally:
             temp.cleanup()
