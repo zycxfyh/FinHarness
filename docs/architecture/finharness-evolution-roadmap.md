@@ -8,6 +8,12 @@ This path is retained only to explain the transition. The complete authored
 roadmap remains available in Git history at
 `df0f4317ca6194aaf56ecd4f92c0a9b5e64f4cb2` and earlier commits.
 
+The historical **Canonical plane model** vocabulary was **Truth**,
+**Knowledge**, **Judgment**, **Control**, **Agent**, **Action/Learning**,
+**Product**, and **Assurance**. Its canonical semantics remain owned by the
+architecture layer matrix and its ADR; this historical page does not redefine
+or sequence those planes.
+
 Current responsibilities are intentionally separated:
 
 - current capability, boundaries, and fact ownership:
