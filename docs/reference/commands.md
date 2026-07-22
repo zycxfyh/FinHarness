@@ -65,7 +65,7 @@ explicit alternative workspace. Reuse the same values across restarts.
 | `task db:migrate` | Apply State Core schema migrations. | Deliberate state change; inspect first. |
 | `task brief:daily` | Compute and archive the unified daily brief. | Descriptive summary only. |
 | `task decisions:scan` | Record capital-allocation candidates as governed proposals. | No execution authority. |
-| `task decisions:golden-path` | Run the isolated direct-seed proposal/review/receipt replay demo. | Ephemeral synthetic workspace; it does not expose a DB/receipt root for a later cockpit and does not prove canonical import, capital-truth readiness, or Daily Brief. |
+| `task decisions:golden-path` | Run the isolated direct-seed proposal/review/receipt replay demo. | Temporary artifact workspace retained until explicit cleanup; output includes `artifact_root` and `cleanup_hint`, but no supported cockpit handoff. It does not prove canonical import, capital-truth readiness, or Daily Brief. |
 | `task decisions:research-smoke` | Run opt-in live research smoke. | Manual/network; not in `task check`. |
 | `task review:annual` | Record an annual decision retrospective. | Review evidence. |
 | `task lessons:draft` | Draft lesson candidates from receipts. | Human promotion still required. |
