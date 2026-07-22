@@ -1,125 +1,25 @@
 name: Architecture / ADR
-description: Freeze a domain boundary, ontology, invariant, or architectural decision.
+description: Record a durable boundary decision whose rationale must outlive implementation.
 title: "ADR: "
 labels:
   - type:adr
 body:
-  - type: input
-    id: baseline
-    attributes:
-      label: Current main SHA
-      description: Resolve current remote main when the issue starts; an audit checkpoint is not a branch base.
-      placeholder: main@<sha>
-    validations:
-      required: true
   - type: textarea
     id: problem
     attributes:
-      label: Problem and decision
-      description: State the ambiguity, competing models, and the decision this ADR must freeze.
+      label: Problem
+      description: What durable ambiguity or boundary needs a decision?
     validations:
       required: true
   - type: textarea
-    id: source
+    id: decision
     attributes:
-      label: Source / audit
-      description: Link the program issue, audit, prior ADR, or incident that produced this work.
-    validations:
-      required: true
-  - type: dropdown
-    id: primary_plane
-    attributes:
-      label: Primary backlog plane
-      description: This declaration does not apply a label; after creation, a reviewer must apply the matching plane:* label.
-      options:
-        - plane:truth — capital facts, imports, reconciliation, and verified projections
-        - plane:knowledge — observations, claims, provenance, and evidence admission
-        - plane:judgment — cases, scenarios, readiness, decisions, and validity
-        - plane:control — identity, mandate, authorization, admission, and capability
-        - plane:agent — bounded context, tools, observations, evaluation, and stop
-        - plane:action-learning — execution, outcome review, lessons, and governed learning
-        - plane:product — human discovery, decision, review, and learning journeys
-        - plane:assurance — transactions, recovery, indexes, CI, proof, and engineering governance
-    validations:
-      required: true
-  - type: dropdown
-    id: lifecycle
-    attributes:
-      label: Backlog lifecycle
-      description: This declaration does not apply a label; active still follows dependency order, while dormant and deferred do not authorize implementation.
-      options:
-        - status:active — authorized only in canonical dependency order
-        - status:dormant — valid scope whose activation gate is not satisfied
-        - status:deferred — explicit closed gate
-        - status:temporary — limited owner with an exit condition
-    validations:
-      required: true
-
-  - type: dropdown
-    id: adoption_mode
-    attributes:
-      label: Reference-First adoption mode
-      description: Classify the mechanism before proposing architecture.
-      options:
-        - A — adopt a mature library, standard, or platform capability
-        - B — adapt a mature protocol or architecture pattern
-        - C — own FinHarness-specific domain or product semantics
+      label: Decision
+      description: State the chosen boundary and the alternatives that materially matter.
     validations:
       required: true
   - type: textarea
-    id: adopt_adapt_own
+    id: consequences
     attributes:
-      label: Adopt / Adapt / Own and rejected alternatives
-      description: Name the canonical repository owner, primary references, directly adopted capabilities, adapted invariants, FinHarness-owned meaning, forbidden reinvention, and why rejected mature alternatives are insufficient.
-    validations:
-      required: true
-  - type: textarea
-    id: dependencies
-    attributes:
-      label: Native dependencies
-      description: Add GitHub blocked-by relationships after creation; explain why each dependency is required.
-    validations:
-      required: true
-  - type: textarea
-    id: scope
-    attributes:
-      label: Scope and non-goals
-    validations:
-      required: true
-  - type: textarea
-    id: acceptance
-    attributes:
-      label: Acceptance criteria and invariant fixtures
-      description: Include at least one counterexample that must fail.
-    validations:
-      required: true
-  - type: dropdown
-    id: evidence
-    attributes:
-      label: Required evidence level
-      options:
-        - Semantic
-        - Runtime
-        - Restart
-        - Clean-env
-        - Product
-    validations:
-      required: true
-  - type: textarea
-    id: rollout
-    attributes:
-      label: Rollout, rollback, and affected claims
-      description: Include migration/rollback and current documentation or product claims that change.
-    validations:
-      required: true
-  - type: dropdown
-    id: executor
-    attributes:
-      label: Primary executor
-      options:
-        - Human
-        - Codex
-        - DeepSeek
-        - Deterministic
-    validations:
-      required: true
+      label: Consequences
+      description: Note important trade-offs, hard-to-reverse effects, or recovery needs. Leave blank when none apply.
