@@ -1,79 +1,82 @@
-# FinHarness Docs
+# FinHarness Documentation
 
-This is the task map for FinHarness documentation. Start with the job you are
-trying to do, not with the architecture.
+Start with the task you are trying to complete. For the shortest maintained
+statement of current capability, boundaries, fact ownership, and restart
+context, read [FinHarness Current System](current-system.md).
 
-FinHarness is a personal capital governance harness: state, IPS,
-proposal/review, execution kernel (OrderDraft → PreTradeCheck → Approval
-→ ExecutionOrder → SimulatedBrokerAdapter → ExecutionReport → Reconciliation),
-Agent explanation, and cockpit surfaces. The execution spine uses a live-shaped
-model on a simulated substrate — no real broker, credentials, or external
-connectivity.
+## Use FinHarness
 
-## Start Here
+- Import a FinHarness-contract CSV or Beancount ledger: [How-to guides](how-to/README.md)
+- Look up supported commands: [Command Reference](reference/commands.md)
+- Inspect API, receipt, and configuration facts: [Reference](reference/README.md)
+- Learn proposal/review/receipt mechanics in an isolated demo:
+  [Synthetic Golden Path](tutorials/golden-path.md)
 
-- Understand the product direction and category: [Product Thesis](product/product-thesis.md), [Product Roadmap](product/product-roadmap.md), [Capital Workbench Roadmap](product/capital-workbench-roadmap.md), [North Star](product-north-star.md)
-- Understand how work should advance: [Operating Model](engineering/operating-model.md), [Change Control](engineering/change-control.md), [Gate Checklists](engineering/gate-checklists.md)
-- Need the framework in one screen: [Framework Index](architecture/framework-index.md)
-- Need the engineering leverage / future-tooling map: [Engineering Leverage Map](architecture/engineering-leverage-map.md)
-- New to the project mechanics: [Synthetic Golden Path Tutorial](tutorials/golden-path.md)
-- Need to perform one task: [How-to Guides](how-to/README.md)
-- Need exact facts, commands, or schemas: [Reference](reference/README.md)
-- Need the "why" and design context: [Explanation](explanation/README.md)
+The synthetic tutorial is a direct-seeded mechanics demo. It does not prove
+canonical capital import, capital-truth readiness, Daily Brief, persistent
+review continuity, or a complete first-capital-review journey.
 
-## I Want To
+## Operate FinHarness
 
-| Goal | Use this |
-| --- | --- |
-| Run the isolated proposal/review/receipt replay demo | [Synthetic Golden Path Tutorial](tutorials/golden-path.md) |
-| See every system's core summary | [Framework Index](architecture/framework-index.md) |
-| Shape and release a bounded PR | [Operating Model](engineering/operating-model.md), [mini-RFC template](templates/mini-rfc.md) |
-| See which engineering layers prevent future drag | [Engineering Leverage Map](architecture/engineering-leverage-map.md) |
-| Understand current architecture layering | [Capital OS Layering](architecture/capital-os-layering.md) |
-| Add a mature-wheel adapter | [Add A Mature-Wheel Adapter](how-to/add-mature-wheel-adapter.md) |
-| Promote a lesson into a rule | [Promote Lesson To Rule](how-to/promote-lesson-to-rule.md) |
-| Understand the mature-wheel migration | [Mature Wheel Control Plane](architecture/mature-wheel-control-plane.md) |
-| Check current machine guardrails | `task governance:policies`, [Documentation Fact Governance](architecture/documentation-fact-governance.md) |
-| Check current module ownership | [Module Map](architecture/module-map.md) |
-| Look up commands | [Command Reference](reference/commands.md) |
-| Look up interfaces | [Interface Reference](reference/interfaces.md) |
-| Look up receipt fields and locations | [Receipt Reference](reference/receipts.md) |
-| Look up config/env vars | [Config And Environment Reference](reference/config-env.md) |
-| Understand the system layering (L0–L8) | [Capital OS Layering](architecture/capital-os-layering.md) |
-| Keep current docs synchronized with code | [Documentation Fact Governance](architecture/documentation-fact-governance.md) |
-| Read runtime operations reports | [Operations](operations/) |
-| Read reviews and lessons | [Reviews](reviews/README.md), [Lessons](lessons/README.md) |
-| Contribute without letting docs rot | [Contributing](../CONTRIBUTING.md) |
+- Run the local read-only or governed-review cockpit:
+  [Command Reference](reference/commands.md)
+- Inspect readiness, interfaces, and error boundaries:
+  [Interface Reference](reference/interfaces.md)
+- Inspect receipts and persistence locations:
+  [Receipt Reference](reference/receipts.md)
+- Diagnose and recover operational state: [Operations](operations/)
 
-The synthetic tutorial proves only direct-seeded proposal/review/receipt replay in
-an isolated temporary artifact workspace. It does not prove canonical capital
-import, capital-truth readiness, Daily Brief, or a persistent first-capital-review
-journey; that executable journey remains separately owned by #455.
+Read-only mode rejects every write. Governed review mode remains loopback-only
+and provides no real broker, funded-account, or external execution capability.
 
-## Documentation Types
+## Develop FinHarness
 
-| Type | Purpose | Local path |
-| --- | --- | --- |
-| Tutorial | Learn by following a safe, working path. | `docs/tutorials/` |
-| How-to | Complete one job after you know the basics. | `docs/how-to/` |
-| Reference | Look up factual commands, interfaces, receipts, and config. | `docs/reference/` |
-| Explanation | Understand architecture, trade-offs, decisions, and doctrine. | `docs/explanation/` plus existing `architecture/`, `adr/`, `think/`, and `notes/` |
+- Set up and verify the locked environment: root [`README.md`](../README.md)
+- Follow repository execution rules: [`AGENTS.md`](../AGENTS.md)
+- Contribute changes: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+- Inspect current system ownership and runtime roots:
+  [System Catalog](architecture/system-catalog.yml)
+- Inspect generated module and framework views:
+  [Module Map](architecture/module-map.md) and
+  [Framework Index](architecture/framework-index.md)
 
-Runtime evidence such as receipts, reports, reviews, lessons, and operations
-outputs is related to documentation, but it is not the same thing as authored
-guidance.
+Prefer vertical slices and existing canonical boundaries. Ordinary reversible
+implementation details belong in code, tests, Git history, and the owning Issue;
+they do not require a new proposal, review, lesson, or module log by default.
 
-## Safety Rule
+## Audit FinHarness
 
-Tutorials and how-tos must teach the brakes as first-class behavior:
+- Current product and capability boundary: [Current System](current-system.md)
+- Documentation lifecycle and current graph:
+  [Documentation Lifecycle](architecture/documentation-lifecycle.md)
+- Documentation fact ownership:
+  [Documentation Fact Governance](architecture/documentation-fact-governance.md)
+- Security boundary: [Threat Model](security/finharness-threat-model.md)
+- Verified engineering debt: [`debt-register.json`](governance/debt-register.json)
+- Historical reviews and evidence: [Reviews](reviews/README.md)
 
-- default no live execution;
-- `execution_allowed=false` throughout current mainline receipts and records;
-- human review before proposal/review promotion;
-- external data, Riskfolio/vectorbt-style tools, and research assets are
-  evidence, not authority;
-- lesson drafts do not become rules until a human promotes them.
+## Understand FinHarness
 
-Current navigation docs are checked by `task docs:current-check`. Historical
-notes, reviews, and archived docs may preserve old commands as historical
-evidence; current entry points must match `Taskfile.yml`.
+- Current architecture shape: [System Map](architecture/system-map.md)
+- Capital and execution layering: [Capital OS Layering](architecture/capital-os-layering.md)
+- Product direction: [Product Thesis](product/product-thesis.md) and
+  [North Star](product-north-star.md)
+- Durable architectural decisions: [ADRs](adr/)
+
+Product direction, proposals, reviews, notes, and old roadmaps are context or
+historical evidence. They do not authorize current work or prove current
+capability.
+
+## Fact ownership
+
+- GitHub Issue/PR state and labels own mutable work authorization and sequence.
+- `Taskfile.yml` owns commands.
+- FastAPI routes and models own API facts.
+- Source models own schemas and persisted fields.
+- `architecture/system-catalog.yml` owns system lifecycle and runtime ownership.
+- Maintained prose explains tasks, decisions, and boundaries; it does not become
+  a second machine-fact registry.
+
+Current navigation is checked by `task docs:current-check`. Historical material
+may preserve old commands and claims as authored evidence, but it must not enter
+the maintained task path as current authority.
