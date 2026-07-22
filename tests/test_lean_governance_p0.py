@@ -34,6 +34,10 @@ class LeanGovernanceP0Test(unittest.TestCase):
         self.assertIn("scripts/run_browser_*", classify)
         self.assertIn("scripts/run_local_review_smoke_server.py", classify)
 
+    def test_fuzz_scope_includes_default_corpus(self) -> None:
+        classify = load_workflow("fuzz.yml")["jobs"]["scope"]["steps"][0]["run"]
+        self.assertIn("data/security/fuzzing/*", classify)
+
     def test_redteam_scope_includes_corpus_and_authority_boundaries(self) -> None:
         classify = load_workflow("security.yml")["jobs"]["scope"]["steps"][0]["run"]
         for path in (
