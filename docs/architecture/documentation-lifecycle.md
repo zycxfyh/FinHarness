@@ -78,9 +78,9 @@ When an important path moves, the old path may become a short redirect stub:
 # Previous title
 
 > **Documentation lifecycle:** `superseded`
-> **Current authority:** [Current authority](../current.md)
+> **Current authority:** [Documentation fact governance](documentation-fact-governance.md)
 > **Reason:** The authored evidence moved into the archive without being duplicated.
-> **Redirect stub:** [Archived evidence](../archive/family/original.md)
+> **Redirect stub:** [Archived evidence](../archive/legacy-rust-crate/ARCHIVED.md)
 ```
 
 A redirect stub is not a second editable copy. It contains no duplicated body,
