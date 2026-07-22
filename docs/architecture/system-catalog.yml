@@ -12,7 +12,6 @@ documentation:
   generated_views:
     - docs/architecture/framework-index.md
     - docs/architecture/module-map.md
-    - docs/audits/attestation-consumer-inventory.md
   update_command: task docs:generate-current-views
   check_command: task docs:current-check
   navigation:

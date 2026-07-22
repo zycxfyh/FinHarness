@@ -23,8 +23,8 @@ execution authorization.
 | `task issues:audit [-- --repo OWNER/REPO]` | Report optional plane, kind, and lifecycle labels on live open Issues. | Advisory; findings do not fail the command. GitHub metadata load failure still exits non-zero. |
 | `task pr:body -- <fields>` | Render an optional concise PR summary from scope, validation, changed files, and relevant consequences. | Legacy risk/classification and Issue arguments are accepted for compatibility but no longer required or rendered. |
 | `task pr:check -- --body-file <path>` | Report advisory findings when a PR summary or validation note is absent. | Read-only; prose findings do not fail the command or block a Ready PR. Metadata read errors still fail. |
-| `task governance:inventory` | Check source-derived dependency consumers and attestation summary fields. | Read-only; prints the affected consumer and repair command on drift. |
-| `task governance:inventory:update` | Repair source-derived governance inventory fields. | Deterministic and idempotent; never invents manual policy or migration judgments. |
+| `task governance:inventory` | Check source-derived dependency consumers and paper-validation boundary drift. | Read-only; prints the affected source and repair command on drift. |
+| `task governance:inventory:update` | Repair source-derived dependency inventory fields. | Deterministic and idempotent; never invents manual dependency policy. |
 | `task capital:reconcile -- --receipt-root <path>` | Audit capital-import receipt/DB consistency. | Read-only; exits non-zero on findings. |
 | `task capital:reconcile -- --receipt-root <path> --apply` | Apply deterministic import repairs and write a recovery receipt. | Never invents missing evidence or grants authority. |
 | `task check` | Standard local verification suite. | Alias for the `check:ci` merge gate. |
