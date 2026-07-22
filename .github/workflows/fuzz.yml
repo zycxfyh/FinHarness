@@ -4,20 +4,76 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "17 8 * * 2"
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  scope:
+    name: Fuzz change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.classify.outputs.ready }}
+      relevant: ${{ steps.classify.outputs.relevant }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            {
+              echo "ready=true"
+              echo "relevant=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(
+            gh api --paginate \
+              "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+              --jq '.[].filename'
+          )"
+          relevant=false
+          while IFS= read -r path; do
+            case "$path" in
+              src/*.py|src/*/*.py|src/*/*/*.py|scripts/*.py|tests/*.py|\
+              data/security/fuzzing/*|pyproject.toml|uv.lock|Taskfile.yml|\
+              .github/workflows/fuzz.yml)
+                relevant=true
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          ready=true
+          [[ "$PR_DRAFT" == "true" ]] && ready=false
+          {
+            echo "ready=$ready"
+            echo "relevant=$relevant"
+          } >> "$GITHUB_OUTPUT"
+
   deterministic-fuzz-baseline:
     name: Deterministic fuzz baseline
+    needs: scope
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.scope.outputs.ready == 'true' &&
+       needs.scope.outputs.relevant == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

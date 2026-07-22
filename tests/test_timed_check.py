@@ -32,7 +32,10 @@ class TimedCheckTest(unittest.TestCase):
         def leaf_tasks(task_name: str) -> list[str]:
             task = tasks[task_name]
             commands = task.get("cmds", [])
-            if any(not isinstance(command, dict) or "task" not in command for command in commands):
+            if any(
+                not isinstance(command, dict) or "task" not in command
+                for command in commands
+            ):
                 return [task_name]
             refs = [str(name) for name in task.get("deps", [])]
             refs.extend(
@@ -46,12 +49,13 @@ class TimedCheckTest(unittest.TestCase):
 
         self.assertEqual([stage.task for stage in CHECK_STAGES], leaf_tasks("check:ci"))
 
-    def test_success_writes_stable_machine_readable_evidence_and_summary(self) -> None:
+    def test_success_writes_timing_logs_and_summary(self) -> None:
         stages = (CheckStage("first", "lint"), CheckStage("second", "typecheck"))
         calls: list[str] = []
 
-        def runner(stage: CheckStage, _cwd: Path) -> int:
+        def runner(stage: CheckStage, _cwd: Path, log_path: Path) -> int:
             calls.append(stage.task)
+            log_path.write_text(f"{stage.name} output\n", encoding="utf-8")
             return 0
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,10 +78,13 @@ class TimedCheckTest(unittest.TestCase):
             self.assertEqual(persisted["status"], "passed")
             self.assertEqual(persisted["stage_count"], 2)
             self.assertEqual(persisted["stages"][0]["duration_seconds"], 1.5)
+            self.assertTrue(Path(persisted["stages"][0]["log_path"]).is_file())
             self.assertEqual(payload["total_duration_seconds"], 6.0)
-            self.assertIn("| first | `lint` | passed | 1.500 |", summary.read_text())
+            summary_text = summary.read_text(encoding="utf-8")
+            self.assertIn("| first | `lint` | passed | 1.500 |", summary_text)
+            self.assertIn("01-first.log", summary_text)
 
-    def test_failure_stops_and_preserves_the_original_exit_code(self) -> None:
+    def test_failure_preserves_exit_code_and_excerpt(self) -> None:
         stages = (
             CheckStage("first", "lint"),
             CheckStage("broken", "typecheck"),
@@ -85,8 +92,12 @@ class TimedCheckTest(unittest.TestCase):
         )
         calls: list[str] = []
 
-        def runner(stage: CheckStage, _cwd: Path) -> int:
+        def runner(stage: CheckStage, _cwd: Path, log_path: Path) -> int:
             calls.append(stage.task)
+            log_path.write_text(
+                "ordinary output\nspecific failure detail\n",
+                encoding="utf-8",
+            )
             return 7 if stage.name == "broken" else 0
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -103,8 +114,12 @@ class TimedCheckTest(unittest.TestCase):
             self.assertEqual(payload["status"], "failed")
             self.assertEqual(payload["failed_stage"], "broken")
             self.assertEqual(payload["stage_count"], 2)
-            self.assertEqual(json.loads(output.read_text())["returncode"], 7)
-            self.assertIn("Stopped after failed stage", render_step_summary(payload))
+            self.assertIn("specific failure detail", payload["failure_excerpt"])
+            persisted = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["returncode"], 7)
+            summary = render_step_summary(payload)
+            self.assertIn("Stopped after failed stage", summary)
+            self.assertIn("specific failure detail", summary)
 
 
 if __name__ == "__main__":

@@ -4,24 +4,78 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  scope:
+    name: Dependency change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.classify.outputs.ready }}
+      relevant: ${{ steps.classify.outputs.relevant }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            {
+              echo "ready=true"
+              echo "relevant=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(
+            gh api --paginate \
+              "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+              --jq '.[].filename'
+          )"
+          relevant=false
+          while IFS= read -r path; do
+            case "$path" in
+              *.py|pyproject.toml|uv.lock|Taskfile.yml|\
+              .github/workflows/dependency-profiles.yml)
+                relevant=true
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          ready=true
+          [[ "$PR_DRAFT" == "true" ]] && ready=false
+          {
+            echo "ready=$ready"
+            echo "relevant=$relevant"
+          } >> "$GITHUB_OUTPUT"
+
   isolated-profile:
     name: Isolated ${{ matrix.profile }} profile
+    needs: scope
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.scope.outputs.ready == 'true' &&
+       needs.scope.outputs.relevant == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        # Base isolation is owned once by Local verification / check:ci.
         profile: [data, research, agent, eval]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

@@ -489,7 +489,7 @@ class HardeningGateTest(unittest.TestCase):
         self.assertNotIn(r"^src/", configured_paths)
         self.assertNotIn(r"^tests/", configured_paths)
 
-    def test_security_workflow_runs_redteam_and_configured_gitleaks(self) -> None:
+    def test_security_workflow_runs_redteam_and_layered_gitleaks(self) -> None:
         workflow = (REPO_ROOT / ".github" / "workflows" / "security.yml").read_text(
             encoding="utf-8"
         )
@@ -504,9 +504,16 @@ class HardeningGateTest(unittest.TestCase):
         self.assertIn("task eval:redteam-boundary", workflow)
         self.assertIn("github/codeql-action/init", workflow)
         self.assertNotIn("gitleaks/gitleaks-action", workflow)
-        self.assertIn("GITLEAKS_VERSION: \"8.28.0\"", workflow)
+        self.assertIn('GITLEAKS_VERSION: "8.28.0"', workflow)
+        self.assertIn("Scan pull request commit range", workflow)
+        self.assertIn('git fetch --no-tags --depth=1 origin "$BASE_SHA"', workflow)
+        self.assertIn('--log-opts="${BASE_SHA}..${HEAD_SHA}"', workflow)
         self.assertIn(
-            "gitleaks detect --source . --config .gitleaks.toml --redact --verbose",
+            "gitleaks dir --config .gitleaks.toml --redact --verbose .",
+            workflow,
+        )
+        self.assertIn(
+            "gitleaks git --config .gitleaks.toml --redact --verbose .",
             workflow,
         )
         self.assertIn("aquasecurity/trivy-action", workflow)
