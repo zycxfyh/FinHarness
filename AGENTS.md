@@ -44,10 +44,10 @@ verified engineering debt:
   docs/governance/debt-register.json
 
 product direction:
-  docs/product/ and docs/product-north-star.md
+  docs/product/product-thesis.md and docs/product-north-star.md
 
 historical evidence:
-  ADRs, proposals, reviews, notes, archived files, and Git history
+  ADRs, proposals, reviews, notes, old roadmaps, archived files, and Git history
 ```
 
 A prose document may explain or link to a machine-owned fact. It must not become
