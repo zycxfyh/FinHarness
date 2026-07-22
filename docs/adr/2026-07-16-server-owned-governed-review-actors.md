@@ -36,9 +36,8 @@ commit protocol is introduced.
 
 ## Executable invariant
 
-For the five routes listed in
-`docs/governance/receipt-backed-write-registry.json` under
-`authenticated_actor_contract`:
+For the governed routes exercised by
+`tests/test_authenticated_review_actors.py`:
 
 1. caller actor and caller identity-receipt fields are forbidden;
 2. the admitted actor is `OperatorContext.authoritative_actor_id`;
@@ -49,8 +48,8 @@ For the five routes listed in
 5. legacy display labels remain explicitly unverified and non-authoritative;
 6. all objects continue to carry no capital or execution authority.
 
-The route inventory is exact rather than count-only: route, request model,
-forbidden fields, domain actor field, and receipt context are frozen together.
+The executable contract verifies request DTO denial, server-owned actor binding,
+receipt identity, reconciliation, and restart replay directly.
 
 ## Adversarial cases
 

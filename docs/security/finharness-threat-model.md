@@ -370,10 +370,8 @@ Direct consumers of the PaperValidation surface (`2026-07-10`):
 | `test_action_intents.py` | Test client | `tests/test_action_intents.py` | Replace with Execution Kernel API tests. |
 | `test_legacy_route_headers.py` | Deprecation test | `tests/test_legacy_route_headers.py` | Keep until routes are deleted. |
 | `test_pretrade_packet.py` | Legacy projection test | `tests/test_pretrade_packet.py` | Delete when pretrade_packet is deleted. |
-| `test_receipt_backed_write_registry.py` | Write registry | `tests/test_receipt_backed_write_registry.py` | Remove paper entries when routes are deleted. |
 | `abstraction-inventory.yml` | Architecture inventory | `docs/engineering/abstraction-inventory.yml` | Keep classification; point to deletion conditions. |
 | `debt-register.json` | Governance | `docs/governance/debt-register.json` | Close ENG-DEBT-0002 when boundary is complete. |
-| `receipt-backed-write-registry.json` | Write registry | `docs/governance/receipt-backed-write-registry.json` | Remove paper entries when routes are deleted. |
 
 ### Deletion Criteria
 

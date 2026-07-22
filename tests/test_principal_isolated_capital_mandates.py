@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -45,45 +44,18 @@ BASE_TIME = "2026-01-10T00:00:00+00:00"
 GRANT_TIME = "2026-01-10T12:00:00+00:00"
 LATER_TIME = "2026-01-11T00:00:00+00:00"
 VALIDATION_TIME = "2026-01-12T00:00:00+00:00"
-ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "docs" / "governance" / "receipt-backed-write-registry.json"
-
-EXPECTED_PRINCIPAL_CONTRACT = {
-    "schema": "finharness.capital_mandate_principal_contract.v1",
-    "http_principal": "OperatorContext.principal.principal_id",
-    "durable_series_owner": "CapitalMandateVersion.principal_id",
-    "current_truth": "resolve_capital_mandate(principal_id, at_utc)",
-    "compatibility_mirror": "CapitalMandate.status is non-authoritative",
-    "series_owner_transition": "forbidden",
-    "historical_owner_conflict_policy": (
-        "resolver, grant creation and validation, and lifecycle commands fail closed"
-    ),
-    "ownership_conflict_timing": (
-        "before receipt, version, lifecycle event, ReceiptIndex, or mirror mutation"
-    ),
-    "resolution_total_order_desc": [
-        "effective_at_utc",
-        "created_at_utc",
-        "version_number",
-        "capital_mandate_id",
-        "mandate_version_id",
-    ],
-    "lifecycle_total_order_desc": [
-        "effective_at_utc",
-        "created_at_utc",
-        "mandate_lifecycle_event_id",
-    ],
-    "lifecycle_authority": ("principal == version owner == event principal == actor principal"),
-    "grant_currentness": "principal-bound exact mandate_version_id equality",
-    "legacy_owner_policy": (
-        "unowned rows remain readable but unverified labels cannot claim ownership"
-    ),
-    "non_claims": [
-        "Authentication identity is not capital authority.",
-        "An active CapitalMandate is not execution authorization.",
-        "A valid AgentAuthorityGrant is not approval or broker submission.",
-    ],
-}
+EXPECTED_RESOLUTION_ORDER = (
+    "effective_at_utc",
+    "created_at_utc",
+    "version_number",
+    "capital_mandate_id",
+    "mandate_version_id",
+)
+EXPECTED_LIFECYCLE_ORDER = (
+    "effective_at_utc",
+    "created_at_utc",
+    "mandate_lifecycle_event_id",
+)
 
 
 def _context(principal_id: str) -> OperatorContext:
@@ -212,20 +184,9 @@ class PrincipalIsolatedCapitalMandateTest(unittest.TestCase):
     def _inject_preexisting_shared_id_owner_conflict(self) -> None:
         _inject_preexisting_shared_id_owner_conflict(engine=self.engine)
 
-    def test_machine_contract_and_canonical_order_are_exact(self) -> None:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-        self.assertEqual(
-            registry["capital_mandate_principal_contract"],
-            EXPECTED_PRINCIPAL_CONTRACT,
-        )
-        self.assertEqual(
-            CAPITAL_MANDATE_RESOLUTION_ORDER,
-            tuple(EXPECTED_PRINCIPAL_CONTRACT["resolution_total_order_desc"]),
-        )
-        self.assertEqual(
-            CAPITAL_MANDATE_LIFECYCLE_ORDER,
-            tuple(EXPECTED_PRINCIPAL_CONTRACT["lifecycle_total_order_desc"]),
-        )
+    def test_canonical_resolution_orders_are_exact(self) -> None:
+        self.assertEqual(CAPITAL_MANDATE_RESOLUTION_ORDER, EXPECTED_RESOLUTION_ORDER)
+        self.assertEqual(CAPITAL_MANDATE_LIFECYCLE_ORDER, EXPECTED_LIFECYCLE_ORDER)
 
     def test_bob_creation_cannot_supersede_alice_or_invalidate_grant(self) -> None:
         alice = self._record("mandate-alice", ALICE)

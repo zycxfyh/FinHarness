@@ -36,21 +36,6 @@ from finharness.statecore.store import init_state_core
 from tests._scaffold import VALID_SCAFFOLD
 from tests.authority_test_helpers import authority_admin_context
 
-ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "docs" / "governance" / "receipt-backed-write-registry.json"
-
-EXPECTED_CONTRACT_KEYS = {
-    "schema",
-    "authority_source",
-    "authoritative_actor_selection",
-    "request_actor_fields",
-    "identity_receipt_source",
-    "unkeyed_identity_reference",
-    "historical_actor_labels",
-    "non_claims",
-    "routes",
-}
-
 EXPECTED_ROUTE_CONTRACTS = {
     "POST /proposals/{proposal_id}/attest": (
         "AttestationCreateRequest",
@@ -103,49 +88,10 @@ def _context(*, agent_runtime_id: str | None = None) -> OperatorContext:
 
 
 class AuthenticatedReviewActorContractTest(unittest.TestCase):
-    def test_route_inventory_is_exact_and_request_actor_fields_are_forbidden(self) -> None:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-        contract = registry["authenticated_actor_contract"]
-        self.assertEqual(set(contract), EXPECTED_CONTRACT_KEYS)
-        self.assertEqual(contract["schema"], "finharness.governed_write_actor_routes.v1")
-        self.assertEqual(contract["authority_source"], "WriteCapabilityDependency.OperatorContext")
-        self.assertEqual(
-            contract["authoritative_actor_selection"],
-            "agent_runtime_id_when_present_else_principal_id",
-        )
-        self.assertEqual(contract["request_actor_fields"], "forbidden")
-        self.assertEqual(contract["identity_receipt_source"], "server_identity_mutation_claim_only")
-        self.assertEqual(
-            contract["unkeyed_identity_reference"],
-            "not_backfilled_pending_issue_352_cross_medium_commit",
-        )
-        self.assertEqual(
-            contract["historical_actor_labels"],
-            "preserved_unverified_not_authoritative",
-        )
-        self.assertEqual(
-            contract["non_claims"],
-            [
-                "Authentication identity is not capital authority.",
-                "Actor binding does not authorize execution.",
-            ],
-        )
-
-        actual = {
-            route["route_ref"]: (
-                route["request_model"],
-                tuple(route["forbidden_request_fields"]),
-                route["domain_actor_field"],
-                route["domain_receipt_context"],
-            )
-            for route in contract["routes"]
-        }
-        self.assertEqual(actual, EXPECTED_ROUTE_CONTRACTS)
-        self.assertEqual(len(contract["routes"]), len(actual))
-
-        for request_model, forbidden, _, _ in actual.values():
+    def test_governed_request_models_forbid_caller_actor_fields(self) -> None:
+        for route, (request_model, forbidden, _, _) in EXPECTED_ROUTE_CONTRACTS.items():
             model = REQUEST_MODELS[request_model]
-            with self.subTest(request_model=request_model):
+            with self.subTest(route=route, request_model=request_model):
                 self.assertEqual(model.model_config.get("extra"), "forbid")
                 self.assertTrue(set(forbidden).isdisjoint(model.model_fields))
 

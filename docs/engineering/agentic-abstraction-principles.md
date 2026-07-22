@@ -150,7 +150,6 @@ Trace 是审计与证据材料；它不直接授予权限，但可以作为 Eval
 | gate-checklists.md | Skill (checklist form) |
 | debt-register.json | Loop backlog |
 | support-surface-registry.yml | Resource (governance config) |
-| receipt-backed-write-registry.json | Evaluator input |
 | removal-ledger.yml | Trace (deletion record) |
 | _graph_registry.py | Resource (graph asset catalog) |
 | _policy_registry.py | Guardrail registry |

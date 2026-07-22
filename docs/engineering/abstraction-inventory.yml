@@ -655,19 +655,6 @@ registries:
   - never — debt tracking is essential
   risk_level: low
   risk_reason: low — but don't let it grow into an object system
-- name: WriteRegistry (receipt-backed-write-registry)
-  current_form:
-  - registry
-  - json_file
-  - machine_checked
-  target_layer:
-  - evaluator
-  target_form: WriteRegistry (remain; feed into release evaluator)
-  migration_path: upgrade_to_evaluator_input
-  delete_condition:
-  - never — write surface audit is essential
-  risk_level: none
-  risk_reason: none — but it must become evaluator input, not just docs
 - name: SupportSurfaceRegistry
   current_form:
   - registry
