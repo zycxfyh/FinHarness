@@ -15,4 +15,5 @@ tests/test_capital_world_audit.py
 tests/test_capital_world_audit_work_loop.py
 tests/test_openai_capital_audit_port.py
 tests/test_capital_readonly_dogfood.py
+tests/test_local_capital_agent.py
 tests/test_pytest_runner_sentinel.py

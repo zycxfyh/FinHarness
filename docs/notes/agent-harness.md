@@ -53,16 +53,17 @@ Run tool-level tests without any model or API key:
 task smoke
 ```
 
-Run the real SDK `Runner` only when `OPENAI_API_KEY` is already present in the environment:
+Run the bounded local Capital World audit after loading any private provider variables:
 
 ```bash
+set -a && source .env && set +a
 task agent:run
-FINHARNESS_AGENT_PROFILE=review-draft task agent:run
-FINHARNESS_AGENT_PROFILE=review-note task agent:run
-FINHARNESS_AGENT_PROFILE=scaffold-candidate task agent:run
 ```
 
-If `OPENAI_API_KEY` is not set, the script exits cleanly and does not attempt to read secret files.
+The command audits the local StateCore, persists evidence under ignored `.artifacts/`,
+and never grants execution authority. Without `OPENAI_API_KEY`, deterministic audit and
+replay still run and the provider attempt is recorded as unavailable. The historical
+market-research SDK example remains available separately as `task agent:research`.
 
 ## Safety Defaults
 

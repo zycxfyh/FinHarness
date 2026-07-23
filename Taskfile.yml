@@ -384,12 +384,17 @@ tasks:
   agent:describe:
     desc: Describe registered OpenAI Agents SDK tools
     cmds:
-      - uv run python scripts/describe_agent_tools.py {{.CLI_ARGS}}
+      - uv run --group data --group research --group agent python scripts/describe_agent_tools.py {{.CLI_ARGS}}
 
   agent:run:
-    desc: Run the real agent when OPENAI_API_KEY is configured
+    desc: Audit the local StateCore with the bounded read-only Capital Agent and configured model
     cmds:
-      - uv run python scripts/run_agent_once.py {{.CLI_ARGS}}
+      - uv run --group data --group research --group agent python scripts/run_local_capital_agent.py {{.CLI_ARGS}}
+
+  agent:research:
+    desc: Run the legacy market-research Agent example with its supported dependency profiles
+    cmds:
+      - uv run --group data --group research --group agent python scripts/run_agent_once.py {{.CLI_ARGS}}
 
   agent:work-loop-acceptance:
     desc: Prove bounded Agent Work Loop semantic closure and persisted artifact links

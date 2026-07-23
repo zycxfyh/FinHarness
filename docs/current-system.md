@@ -57,9 +57,11 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
   read-only Agent Work Loop, preserves budgeted typed observations, emits a
   `CapitalWorldAudit` with Observed/Inferred/Unsupported claims and semantic stop
   conditions, replays the same audit from persisted tool artifacts, and proves that
-  the logical StateCore digest and domain receipts do not change. It attempts one
-  bounded OpenAI structured-output review only when `OPENAI_API_KEY` is configured;
-  otherwise the evidence records the provider as unavailable rather than simulated.
+  the logical StateCore digest and domain receipts do not change.
+- `task agent:run` applies the same bounded audit to the local StateCore, writes Agent
+  evidence only under ignored `.artifacts/agent-runs/`, verifies the StateCore and
+  domain receipt tree are unchanged, and attempts one OpenAI-compatible JSON review
+  using `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and `FINHARNESS_AGENT_MODEL`.
 - `task benchmark:capital-world` reports bounded local resolver latency for explicit
   synthetic source counts. It is not a production SLO and must not be generalized to
   concurrent, remote-Artifact, or all-workload performance.
@@ -100,9 +102,8 @@ Current main does not provide:
 - a public hosted Product Agent or delegated autonomous capital manager;
 - cross-cycle Agent session/resume, scheduler, daemon, or general multi-Agent runtime;
 - a longitudinal real-user capital-review pilot with outcome follow-up;
-- a provider-backed real-model Capital World Audit verified in the current supported
-  environment; the deterministic typed audit and replay path are implemented, while
-  an environment without `OPENAI_API_KEY` records the model attempt as unavailable.
+- a real household Capital World and longitudinal outcome review; provider-backed
+  model acceptance currently uses public-data dogfood or a typed empty-world stop.
 
 Future direction documents may discuss these possibilities. They are not current capability claims.
 
