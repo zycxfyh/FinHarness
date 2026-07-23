@@ -114,6 +114,18 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="personal-finance-export",
     ),
     CapitalImportExposureSpec(
+        exposure_id="script-agent-shell-acceptance",
+        exposure_kind="script",
+        exposure_ref="scripts/run_agent_shell_acceptance.py",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
+        exposure_id="task-agent-shell-acceptance",
+        exposure_kind="task",
+        exposure_ref="acceptance:agent-shell",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="script-scf-capital-dogfood",
         exposure_kind="script",
         exposure_ref="scripts/run_scf_capital_dogfood.py",

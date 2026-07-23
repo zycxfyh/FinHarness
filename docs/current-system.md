@@ -40,7 +40,17 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - `task decisions:scan` records capital-allocation candidates as governed proposals.
 - Exposure, positions, proposals, and timeline evidence are available through the local API and cockpit surfaces.
 
+### Local Agent Shell
+
+- `task agent:shell` builds the recoverable Runtime and serves the loopback-only product shell at `/agent-ui/`.
+- The process creates one explicit local Principal and AgentRuntimeIdentity, reads provider/model configuration from environment only, and never asks the browser for an API key.
+- The supported journey is: inspect the admitted Capital World → start one idempotent Mission and Delegation → use read-only conversation → submit a structured offline paper Effect → inspect Runtime Job/Attempt and reconciliation results.
+- Free-text conversation cannot create Effects. The browser cannot select an executable, environment, credential, authoritative price, or pre-trade position. Live external execution remains unavailable.
+- Paper Effects create an identity-bound pending domain receipt before Runtime dispatch and atomically complete it after reconciliation. If either domain-receipt completion or the outer identity terminal acknowledgement is lost, the identity receipt remains pending; the typed resolver observes the same Runtime Job, verifies Mission, EffectIntent, Admission, ExecutionReport, PositionDelta, and matched Reconciliation, completes the domain receipt, and reconstructs the original response without redispatching the Runtime.
+
 ### Canonical synthetic acceptance
+
+- `task acceptance:agent-shell` proves the first product-complete local journey through authenticated HTTP and the real Rust Runtime: bootstrap → Mission replay → read-only conversation → structured paper Effect → systemd Worker → reconciliation → idempotent replay. It also proves browser secret input and live execution remain closed.
 
 - `task acceptance:capital-runtime` proves the first real Agent-native execution trunk:
   authenticated Principal and Agent Runtime → admitted Effect → registered Rust Runtime operation
@@ -114,7 +124,7 @@ Current main does not provide:
 
 - a real broker SDK, funded-account connection, or external venue submission;
 - live trading, transfers, tax submission, or other funded external effects;
-- a public hosted Product Agent or live delegated autonomous capital manager;
+- a public hosted Product Agent, multi-user login system, or live delegated autonomous capital manager; the current Agent Shell is one explicit loopback-only local session;
 - a scheduler, daemon, automatic trigger engine, or general multi-Agent runtime; explicit local Mission checkpoint/resume is the only cross-cycle Agent state;
 - a longitudinal real-user capital-review pilot with outcome follow-up;
 - a real household Capital World and longitudinal outcome review; provider-backed

@@ -1928,7 +1928,14 @@ _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS = (
 
 def identity_mutation_reconciliation_dispatcher_contracts(
 ) -> tuple[IdentityMutationResolverContract, ...]:
-    return _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS
+    from finharness.api.routes_agent_shell import (
+        agent_shell_identity_mutation_reconciliation_dispatcher_contracts,
+    )
+
+    return (
+        *_IDENTITY_MUTATION_RECONCILIATION_CONTRACTS,
+        *agent_shell_identity_mutation_reconciliation_dispatcher_contracts(),
+    )
 
 
 def _require_identity_mutation_resolver_contract(
@@ -1939,7 +1946,7 @@ def _require_identity_mutation_resolver_contract(
 ) -> IdentityMutationResolverContract:
     try:
         _by_route, by_resolver = identity_mutation_resolver_contract_maps(
-            _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS
+            identity_mutation_reconciliation_dispatcher_contracts()
         )
     except KeyedMutationCapabilityError as exc:
         raise IdentityMutationError(str(exc)) from exc
@@ -1988,6 +1995,7 @@ def reconcile_identity_mutation_from_domain_truth(
     receipt_root: str | Path,
     reconciled_by: str,
     reason: str,
+    agent_shell_service: object | None = None,
 ) -> dict[str, Any]:
     """Dispatch one pending mutation to its typed resolver."""
 
@@ -2006,17 +2014,19 @@ def reconcile_identity_mutation_from_domain_truth(
         resolver_id=resolver_id,
         request_binding=request_binding,
     )
-    return contract.handler(
-        mutation_path,
-        mutation=mutation,
-        receipt_id=receipt_id,
-        request_binding=request_binding,
-        proposal_id=proposal_id,
-        engine=engine,
-        receipt_root=Path(receipt_root),
-        reconciled_by=reconciled_by,
-        reason=reason,
-    )
+    handler_kwargs: dict[str, Any] = {
+        "mutation": mutation,
+        "receipt_id": receipt_id,
+        "request_binding": request_binding,
+        "proposal_id": proposal_id,
+        "engine": engine,
+        "receipt_root": Path(receipt_root),
+        "reconciled_by": reconciled_by,
+        "reason": reason,
+    }
+    if contract.resolver_id == "finharness.api.agent_shell.paper_effect.v1":
+        handler_kwargs["agent_shell_service"] = agent_shell_service
+    return contract.handler(mutation_path, **handler_kwargs)
 
 
 class AttestationCreateRequest(BaseModel):

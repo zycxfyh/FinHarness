@@ -1,10 +1,10 @@
 {
   "schema": "finharness.keyed_mutation_route_capability_registry.v1",
-  "registry_version": "2026-07-24.v1",
+  "registry_version": "2026-07-24.v3",
   "capabilities": [
     {
       "capability_id": "finharness.api.proposals.create.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/proposals",
       "mode": "typed_domain_reconciliation",
@@ -18,7 +18,7 @@
     },
     {
       "capability_id": "finharness.api.proposals.attest.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/proposals/{proposal_id}/attest",
       "mode": "typed_domain_reconciliation",
@@ -32,7 +32,7 @@
     },
     {
       "capability_id": "finharness.api.proposals.scaffold-revision.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "PATCH",
       "canonical_path_template": "/proposals/{proposal_id}/decision-scaffold",
       "mode": "typed_domain_reconciliation",
@@ -46,7 +46,7 @@
     },
     {
       "capability_id": "finharness.api.proposals.review-event.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/proposals/{proposal_id}/review-events",
       "mode": "typed_domain_reconciliation",
@@ -60,7 +60,7 @@
     },
     {
       "capability_id": "finharness.api.scaffold-candidate.apply.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/scaffold-revision-candidates/{candidate_id}/apply",
       "mode": "keyed_mutation_prohibited",
@@ -74,7 +74,7 @@
     },
     {
       "capability_id": "finharness.api.agent-grant.create.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/agent-authority-grants",
       "mode": "keyed_mutation_prohibited",
@@ -88,7 +88,7 @@
     },
     {
       "capability_id": "finharness.api.agent-grant.validate.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/agent-authority-grants/{grant_id}/validate",
       "mode": "keyed_mutation_prohibited",
@@ -102,7 +102,7 @@
     },
     {
       "capability_id": "finharness.api.agent-grant.consume.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/agent-authority-grants/{grant_id}/consume",
       "mode": "keyed_mutation_prohibited",
@@ -116,7 +116,7 @@
     },
     {
       "capability_id": "finharness.api.agent-grant.revoke.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/agent-authority-grants/{grant_id}/revoke",
       "mode": "keyed_mutation_prohibited",
@@ -130,7 +130,7 @@
     },
     {
       "capability_id": "finharness.api.capital-mandate.create.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/capital-mandates",
       "mode": "keyed_mutation_prohibited",
@@ -144,7 +144,7 @@
     },
     {
       "capability_id": "finharness.api.capital-mandate.suspend.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/capital-mandates/{capital_mandate_id}/suspend",
       "mode": "keyed_mutation_prohibited",
@@ -158,7 +158,7 @@
     },
     {
       "capability_id": "finharness.api.capital-mandate.resume.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/capital-mandates/{capital_mandate_id}/resume",
       "mode": "keyed_mutation_prohibited",
@@ -172,7 +172,7 @@
     },
     {
       "capability_id": "finharness.api.capital-mandate.revoke.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/capital-mandates/{capital_mandate_id}/revoke",
       "mode": "keyed_mutation_prohibited",
@@ -186,7 +186,7 @@
     },
     {
       "capability_id": "finharness.api.ips.draft.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/ips/draft",
       "mode": "keyed_mutation_prohibited",
@@ -200,7 +200,7 @@
     },
     {
       "capability_id": "finharness.api.execution.order-draft.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/execution/order-drafts",
       "mode": "keyed_mutation_prohibited",
@@ -214,7 +214,7 @@
     },
     {
       "capability_id": "finharness.api.execution.pretrade-check.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/execution/order-drafts/{order_draft_id}/pretrade-checks",
       "mode": "keyed_mutation_prohibited",
@@ -228,7 +228,7 @@
     },
     {
       "capability_id": "finharness.api.execution.approval.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/execution/order-drafts/{order_draft_id}/approvals",
       "mode": "keyed_mutation_prohibited",
@@ -242,7 +242,7 @@
     },
     {
       "capability_id": "finharness.api.execution.stage.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/execution/order-drafts/{order_draft_id}/stage",
       "mode": "keyed_mutation_prohibited",
@@ -256,7 +256,7 @@
     },
     {
       "capability_id": "finharness.api.execution.submit.keyed.v1",
-      "registry_version": "2026-07-24.v1",
+      "registry_version": "2026-07-24.v3",
       "method": "POST",
       "canonical_path_template": "/execution/orders/{execution_order_id}/submit",
       "mode": "keyed_mutation_prohibited",
@@ -265,6 +265,48 @@
       "max_request_bytes": 1048576,
       "max_response_bytes": 1048576,
       "resolver_id": null,
+      "no_ambiguous_effect_contract": null,
+      "execution_allowed": false
+    },
+    {
+      "capability_id": "finharness.api.agent-shell.mission-create.keyed.v1",
+      "registry_version": "2026-07-24.v3",
+      "method": "POST",
+      "canonical_path_template": "/agent/missions",
+      "mode": "terminal_replay_only",
+      "owning_domain": "agent",
+      "request_identity_policy_id": "finharness.api.request_identity.v1",
+      "max_request_bytes": 65536,
+      "max_response_bytes": 262144,
+      "resolver_id": null,
+      "no_ambiguous_effect_contract": "Stable request_id creates one launch record first, then deterministic immutable Constitution, Mission, Belief, and Delegation ids; retry resumes or returns the same bundle.",
+      "execution_allowed": false
+    },
+    {
+      "capability_id": "finharness.api.agent-shell.message.keyed.v1",
+      "registry_version": "2026-07-24.v3",
+      "method": "POST",
+      "canonical_path_template": "/agent/missions/{mission_id}/messages",
+      "mode": "terminal_replay_only",
+      "owning_domain": "agent",
+      "request_identity_policy_id": "finharness.api.request_identity.v1",
+      "max_request_bytes": 65536,
+      "max_response_bytes": 262144,
+      "resolver_id": null,
+      "no_ambiguous_effect_contract": "The turn id is stable by Mission and request_id; conversation is read-only decision support and the completed reply is persisted before acknowledgement.",
+      "execution_allowed": false
+    },
+    {
+      "capability_id": "finharness.api.agent-shell.paper-effect.keyed.v1",
+      "registry_version": "2026-07-24.v3",
+      "method": "POST",
+      "canonical_path_template": "/agent/missions/{mission_id}/paper-effects",
+      "mode": "typed_domain_reconciliation",
+      "owning_domain": "execution",
+      "request_identity_policy_id": "finharness.api.request_identity.v1",
+      "max_request_bytes": 65536,
+      "max_response_bytes": 524288,
+      "resolver_id": "finharness.api.agent_shell.paper_effect.v1",
       "no_ambiguous_effect_contract": null,
       "execution_allowed": false
     }

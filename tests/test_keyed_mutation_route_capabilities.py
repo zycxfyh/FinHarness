@@ -469,18 +469,19 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(audit["non_safe_route_count"], 19)
+        self.assertEqual(audit["non_safe_route_count"], 22)
         self.assertEqual(
             audit["mode_counts"],
             {
-                "typed_domain_reconciliation": 4,
-                "terminal_replay_only": 0,
+                "typed_domain_reconciliation": 5,
+                "terminal_replay_only": 2,
                 "keyed_mutation_prohibited": 15,
             },
         )
         self.assertEqual(
             audit["typed_resolver_ids"],
             [
+                "finharness.api.agent_shell.paper_effect.v1",
                 "finharness.api.attestation_create.v1",
                 "finharness.api.proposal_create.v1",
                 "finharness.api.proposal_scaffold_revision.v1",
