@@ -10,6 +10,10 @@ operating objects, not bare JSON.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from finharness.agent_runtime import AgentToolRuntimeResult
@@ -37,6 +41,13 @@ class AgentToolResultEnvelope(BaseModel):
     toolset: str
     ok: bool
     result_summary: str | None = None
+    observation_payload: dict[str, Any] | None = None
+    observation_sha256: str | None = None
+    world_id: str | None = None
+    basis_digest: str | None = None
+    world_status: str | None = None
+    trust: dict[str, Any] | None = None
+    capital_truth: dict[str, Any] | None = None
     source_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     provider_refs: list[str] = Field(default_factory=list)
@@ -111,10 +122,36 @@ def build_tool_result_envelope(
     if result.error is not None:
         data_gaps.append(f"{result.tool_name}: {result.error.code}")
 
+    # Preserve the already profile-budgeted runtime payload. This is the typed
+    # observation consumed by cognition; it is not a second unbounded raw result.
+    observation_payload = dict(result.result) if result.result is not None else None
+    observation_sha256 = (
+        hashlib.sha256(
+            json.dumps(
+                observation_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        if observation_payload is not None
+        else None
+    )
+    capital = _find_capital_summary(observation_payload)
+    world_id = _optional_text(capital.get("world_id")) if capital else None
+    basis_digest = _optional_text(capital.get("basis_digest")) if capital else None
+    world_status = _optional_text(capital.get("world_status")) if capital else None
+    trust = capital.get("trust") if capital and isinstance(capital.get("trust"), dict) else None
+    capital_truth = (
+        capital.get("capital_truth")
+        if capital and isinstance(capital.get("capital_truth"), dict)
+        else None
+    )
+
     # Result summary
     result_summary: str | None = None
     if result.ok and result.result:
-        status = result.result.get("status", "")
+        status = world_status or result.result.get("status", "")
         result_summary = str(status) if status else None
     elif not result.ok and result.error:
         result_summary = result.error.code
@@ -126,6 +163,13 @@ def build_tool_result_envelope(
         toolset=toolset,
         ok=result.ok,
         result_summary=result_summary,
+        observation_payload=observation_payload,
+        observation_sha256=observation_sha256,
+        world_id=world_id,
+        basis_digest=basis_digest,
+        world_status=world_status,
+        trust=trust,
+        capital_truth=capital_truth,
         source_refs=source_refs,
         evidence_refs=evidence_refs,
         provider_refs=provider_refs,
@@ -167,3 +211,22 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(v)
             out.append(v)
     return out
+
+
+def _find_capital_summary(value: object) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if value.get("name") == "capital_summary":
+            summary = value.get("summary")
+            return summary if isinstance(summary, dict) else None
+        packs = value.get("packs")
+        if isinstance(packs, list):
+            for pack in packs:
+                found = _find_capital_summary(pack)
+                if found is not None:
+                    return found
+    return None
+
+
+def _optional_text(value: object) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None

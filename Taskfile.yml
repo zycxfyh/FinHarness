@@ -285,6 +285,11 @@ tasks:
     cmds:
       - uv run python scripts/run_scf_capital_dogfood.py {{.CLI_ARGS}}
 
+  dogfood:capital-readonly:
+    desc: Run the typed read-only Capital Agent audit and replay proof over pinned Federal Reserve SCF data
+    cmds:
+      - uv run --group data --group research --group agent python scripts/run_capital_readonly_dogfood.py {{.CLI_ARGS}}
+
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths
     cmds:
@@ -387,7 +392,7 @@ tasks:
       - uv run python scripts/run_agent_once.py {{.CLI_ARGS}}
 
   agent:work-loop-acceptance:
-    desc: "EXPECTED RED: require Agent Work Loop semantic closure (not in task check)"
+    desc: Prove bounded Agent Work Loop semantic closure and persisted artifact links
     cmds:
       - uv run python scripts/run_agent_work_loop_acceptance.py
 

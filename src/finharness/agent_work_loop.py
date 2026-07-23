@@ -63,6 +63,9 @@ AgentWorkStopReason = Literal[
     "evaluation_blocked",
     "human_review_required",
     "data_gap_unresolved",
+    "semantic_partial",
+    "semantic_stop",
+    "no_progress_detected",
     "internal_error",
 ]
 
@@ -138,6 +141,8 @@ class AgentWorkResult(BaseModel):
     agent_run_receipt_ref: str | None = None
     evaluation_report_ref: str | None = None
     authority_transition_ref: str | None = None
+    capital_world_audit_ref: str | None = None
+    audit_disposition: str | None = None
     review_workspace_ref: str | None = None
     search_index_ref: str | None = None
     data_gaps: list[str] = Field(default_factory=list)
@@ -194,6 +199,10 @@ class AgentWorkObservation(BaseModel):
     error_code: str | None = None
     artifact_ref: str | None = None
     autonomy_admission_ref: str | None = None
+    observation_sha256: str | None = None
+    world_id: str | None = None
+    basis_digest: str | None = None
+    world_status: str | None = None
     data_gaps: tuple[str, ...] = ()
 
 
@@ -328,6 +337,7 @@ def run_bounded_tool_dispatch_loop(  # noqa: C901
     step_count = 0
     pending = deque(request.normalized_tool_requests())
     using_default_port = decision_port is None
+    dispatch_fingerprints: dict[str, int] = {}
 
     def queued_port(state: AgentWorkDecisionState) -> AgentWorkDecision:
         del state
@@ -380,6 +390,22 @@ def run_bounded_tool_dispatch_loop(  # noqa: C901
             data_gaps.append("decision_port_error: dispatch decision omitted tool_request")
             stop_reason = "internal_error"
             break
+        canonical_request = json.dumps(
+            {"tool_name": tool_request.tool_name, "arguments": tool_request.arguments},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        request_fingerprint = sha256(canonical_request.encode("utf-8")).hexdigest()
+        prior_count = dispatch_fingerprints.get(request_fingerprint, 0)
+        if prior_count >= 2:
+            data_gaps.append(
+                f"no_progress_detected: repeated {tool_request.tool_name} "
+                "with identical arguments"
+            )
+            stop_reason = "no_progress_detected"
+            break
+        dispatch_fingerprints[request_fingerprint] = prior_count + 1
         step_count += 1
 
         entry = AGENT_TOOL_ENTRIES.get(tool_request.tool_name)
@@ -500,6 +526,10 @@ def run_bounded_tool_dispatch_loop(  # noqa: C901
             error_code=env.error_code,
             artifact_ref=relative_artifact.as_posix(),
             autonomy_admission_ref=admission_ref,
+            observation_sha256=env.observation_sha256,
+            world_id=env.world_id,
+            basis_digest=env.basis_digest,
+            world_status=env.world_status,
             data_gaps=tuple(env.data_gaps),
         )
         if unavailable:
@@ -531,26 +561,64 @@ def run_cognition_flow_from_work_result(
     tool_envelopes: list[dict[str, object]],
     receipt_root: str | Path,
 ) -> dict[str, object]:
-    """Run cognition flow from a work loop's tool results."""
+    """Run semantic cognition from typed tool observations."""
     from finharness.agent_cognition_flow import run_agent_cognition_flow
+    from finharness.capital_world_audit import (
+        build_capital_world_audit,
+        write_capital_world_audit,
+    )
 
     source_refs: list[str] = []
-    for env_dict in tool_envelopes:
-        src = env_dict.get("source_refs", [])
-        if isinstance(src, list):
-            source_refs.extend(str(r) for r in src)
-    context_refs = context_snapshot.context_refs
+    for envelope in tool_envelopes:
+        value = envelope.get("source_refs", [])
+        if isinstance(value, list):
+            source_refs.extend(str(ref) for ref in value)
     all_source_refs = list(dict.fromkeys([*source_refs, *context_snapshot.source_refs]))
+    has_capital_observation = any(
+        envelope.get("world_id") or envelope.get("world_status")
+        for envelope in tool_envelopes
+    )
+    audit_ref: str | None = None
+    audit_disposition: str | None = None
+    if has_capital_observation:
+        audit = build_capital_world_audit(
+            goal=request.goal,
+            tool_envelopes=tool_envelopes,
+        )
+        audit_ref = write_capital_world_audit(audit, receipt_root=receipt_root)
+        audit_disposition = audit.disposition
+        option_claims = [
+            *[claim.statement for claim in audit.observed[:4]],
+            *[claim.statement for claim in audit.inferred[:2]],
+            *[claim.statement for claim in audit.unsupported[:2]],
+        ] or [audit.human_handoff]
+        plan_steps = [
+            "Verify the exact Capital World identity and ContextTrust.",
+            "Review observed facts separately from inferences and unsupported claims.",
+            audit.human_handoff,
+        ]
+        stop_conditions = audit.stop_conditions
+        required_evaluations = audit.required_evaluations
+        all_source_refs = list(
+            dict.fromkeys([*all_source_refs, *audit.source_refs, audit_ref])
+        )
+    else:
+        option_claims = [f"Tool result analysis for: {request.goal}"]
+        plan_steps = [f"Review results from {len(tool_envelopes)} tool calls"]
+        stop_conditions = ["Stop before any external effect or authority transition."]
+        required_evaluations = ["read_only_boundary_check"]
 
     flow = run_agent_cognition_flow(
         goal=request.goal,
         profile_name=request.profile_name,
         objective=request.objective,
-        option_claims=[f"Tool result analysis for: {request.goal}"],
-        plan_steps=[f"Review results from {len(tool_envelopes)} tool calls"],
+        option_claims=option_claims,
+        plan_steps=plan_steps,
         receipt_root=Path(receipt_root),
-        context_refs=context_refs if context_refs else None,
-        source_refs=all_source_refs if all_source_refs else None,
+        stop_conditions=stop_conditions,
+        required_evaluations=required_evaluations,
+        context_refs=context_snapshot.context_refs or None,
+        source_refs=all_source_refs or None,
     )
     return {
         "flow_id": flow.flow_id,
@@ -560,6 +628,8 @@ def run_cognition_flow_from_work_result(
         "plan_draft_ref": flow.plan_draft_ref,
         "option_set_ref": flow.option_set_ref,
         "agent_run_receipt_ref": flow.agent_run_receipt_ref,
+        "capital_world_audit_ref": audit_ref,
+        "audit_disposition": audit_disposition,
         "execution_allowed": False,
     }
 
@@ -704,6 +774,37 @@ def _persist_preflight_stop(
     return result
 
 
+
+def reduce_semantic_stop_reason(current: str, flow: dict[str, object]) -> str:
+    disposition = flow.get("audit_disposition")
+    if disposition == "stopped":
+        return "semantic_stop"
+    if disposition == "partial":
+        return "semantic_partial"
+    return current
+
+
+def _derive_work_outcome(
+    *, stop_reason: str, has_envelopes: bool, has_data_gaps: bool,
+) -> AgentWorkOutcome:
+    if stop_reason in {
+        "evaluation_blocked",
+        "human_review_required",
+        "semantic_stop",
+        "internal_error",
+    }:
+        return "stopped"
+    if stop_reason == "tool_unavailable":
+        return "failed"
+    if has_data_gaps or stop_reason in {
+        "max_steps_reached",
+        "max_tool_calls_reached",
+        "semantic_partial",
+        "no_progress_detected",
+    }:
+        return "partial" if has_envelopes else "failed"
+    return "succeeded"
+
 def run_agent_work_loop(
     *,
     request: AgentWorkRequest,
@@ -803,15 +904,14 @@ def run_agent_work_loop(
             tool_envelopes=envelopes,
             receipt_root=request.receipt_root,
         )
+        stop_reason = reduce_semantic_stop_reason(stop_reason, flow)
 
     # 4. Determine outcome
-    outcome: AgentWorkOutcome = "succeeded"
-    if stop_reason in {"evaluation_blocked", "human_review_required", "internal_error"}:
-        outcome = "stopped"
-    elif stop_reason == "tool_unavailable":
-        outcome = "failed"
-    elif data_gaps or stop_reason in {"max_steps_reached", "max_tool_calls_reached"}:
-        outcome = "partial" if envelopes else "failed"
+    outcome = _derive_work_outcome(
+        stop_reason=stop_reason,
+        has_envelopes=bool(envelopes),
+        has_data_gaps=bool(data_gaps),
+    )
 
     # 5. Link and persist the terminal work package, then increment search.
     root = Path(request.receipt_root)
@@ -874,6 +974,8 @@ def run_agent_work_loop(
         agent_run_receipt_ref=dispatch_run_ref,
         evaluation_report_ref=flow.get("evaluation_report_ref"),
         authority_transition_ref=flow.get("authority_transition_ref"),
+        capital_world_audit_ref=flow.get("capital_world_audit_ref"),
+        audit_disposition=flow.get("audit_disposition"),
         review_workspace_ref=workspace_ref,
         search_index_ref=str(index_path),
         data_gaps=data_gaps,
@@ -896,6 +998,7 @@ def run_agent_work_loop(
             "evaluation_report_ref",
             "authority_transition_ref",
             "agent_run_receipt_ref",
+            "capital_world_audit_ref",
         )
         if (ref := flow.get(key)) is not None
     ]

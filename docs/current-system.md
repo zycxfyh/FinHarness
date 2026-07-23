@@ -53,6 +53,13 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
   aggregate balance sheet into the production importer, and verifies the resulting
   Capital World and Agent context. It is a mature public-data interoperability
   dogfood, not a current household truth claim or a production workload benchmark.
+- `task dogfood:capital-readonly` extends the pinned SCF path through the bounded
+  read-only Agent Work Loop, preserves budgeted typed observations, emits a
+  `CapitalWorldAudit` with Observed/Inferred/Unsupported claims and semantic stop
+  conditions, replays the same audit from persisted tool artifacts, and proves that
+  the logical StateCore digest and domain receipts do not change. It attempts one
+  bounded OpenAI structured-output review only when `OPENAI_API_KEY` is configured;
+  otherwise the evidence records the provider as unavailable rather than simulated.
 - `task benchmark:capital-world` reports bounded local resolver latency for explicit
   synthetic source counts. It is not a production SLO and must not be generalized to
   concurrent, remote-Artifact, or all-workload performance.
@@ -93,7 +100,9 @@ Current main does not provide:
 - a public hosted Product Agent or delegated autonomous capital manager;
 - cross-cycle Agent session/resume, scheduler, daemon, or general multi-Agent runtime;
 - a longitudinal real-user capital-review pilot with outcome follow-up;
-- a completed real-model Capital World Audit with semantic trust and stop evidence.
+- a provider-backed real-model Capital World Audit verified in the current supported
+  environment; the deterministic typed audit and replay path are implemented, while
+  an environment without `OPENAI_API_KEY` records the model attempt as unavailable.
 
 Future direction documents may discuss these possibilities. They are not current capability claims.
 

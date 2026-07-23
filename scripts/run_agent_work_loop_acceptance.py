@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Executable semantic-closure gate for the Agent Work Loop.
 
-This command is expected to fail while the deterministic work orchestrator is
-still scaffolded. Use ``--report-only`` to collect the same evidence without a
-non-zero process exit.
+This command proves the deterministic work orchestrator's bounded semantic
+closure. Use ``--report-only`` to print the same evidence without a non-zero
+process exit.
 """
 
 from __future__ import annotations
@@ -25,8 +25,10 @@ from finharness.agent_work_loop import (
     AgentWorkStopReason,
     AgentWorkToolRequest,
     freeze_work_context,
+    reduce_semantic_stop_reason,
     run_agent_work_loop,
     run_bounded_tool_dispatch_loop,
+    run_cognition_flow_from_work_result,
 )
 from finharness.autonomy_control import (
     AgentAutonomyLevel,
@@ -427,6 +429,113 @@ def _collect_acceptance_checks() -> list[AcceptanceCheck]:
             decision_port=failing_decision_port,
         )
 
+        semantic_stop_result = run_agent_work_loop(
+            request=AgentWorkRequest(
+                goal="Acceptance: semantic stop",
+                profile_name="default",
+                objective="Stop on an unresolved Capital World",
+                work_type="evidence_triage",
+                receipt_root=str(root),
+                tool_requests=[AgentWorkToolRequest(
+                    tool_name="get_capital_context_projection",
+                    arguments={"open_proposals_limit": 1},
+                )],
+            )
+        )
+
+        def repeating_port(_state: AgentWorkDecisionState) -> AgentWorkDecision:
+            return AgentWorkDecision(
+                action="dispatch",
+                tool_request=AgentWorkToolRequest(
+                    tool_name="get_capital_context_projection",
+                    arguments={"open_proposals_limit": 1},
+                ),
+            )
+
+        no_progress_request = AgentWorkRequest(
+            goal="Acceptance: no progress",
+            profile_name="default",
+            objective="Stop repeated identical reads",
+            work_type="evidence_triage",
+            receipt_root=str(root),
+            max_steps=8,
+            max_tool_calls=8,
+        )
+        no_progress_snapshot = freeze_work_context(
+            work_id=no_progress_request.work_id,
+            profile_name=no_progress_request.profile_name,
+        )
+        _, no_progress_stop, _ = run_bounded_tool_dispatch_loop(
+            request=no_progress_request,
+            context_snapshot=no_progress_snapshot,
+            decision_port=repeating_port,
+        )
+
+        partial_request = AgentWorkRequest(
+            goal="Acceptance: semantic partial",
+            profile_name="default",
+            objective="Preserve a truncated but admitted typed observation",
+            work_type="evidence_triage",
+            receipt_root=str(root),
+        )
+        partial_snapshot = freeze_work_context(
+            work_id=partial_request.work_id,
+            profile_name=partial_request.profile_name,
+        )
+        partial_flow = run_cognition_flow_from_work_result(
+            request=partial_request,
+            context_snapshot=partial_snapshot,
+            tool_envelopes=[{
+                "tool_name": "get_capital_summary_context",
+                "toolset": "capital_context",
+                "ok": True,
+                "observation_payload": {
+                    "name": "capital_summary",
+                    "available": True,
+                    "summary": {
+                        "world_id": "capital_world_0123456789abcdef01234567",
+                        "basis_digest": "0" * 64,
+                        "world_status": "admitted",
+                        "trust": {
+                            "source_type": "system_computed",
+                            "trust_level": "high",
+                            "verification_status": "derived",
+                            "allowed_uses": [
+                                "read", "cite", "plan_from", "use_as_evidence"
+                            ],
+                            "source_refs": ["statecore://acceptance"],
+                            "receipt_refs": [],
+                        },
+                        "capital_truth": {"status": "admitted", "blockers": []},
+                        "net_worth": "1",
+                    },
+                    "source_refs": ["statecore://acceptance"],
+                    "context_pack_refs": ["context_pack://capital_summary"],
+                    "execution_allowed": False,
+                },
+                "observation_sha256": "0" * 64,
+                "world_id": "capital_world_0123456789abcdef01234567",
+                "basis_digest": "0" * 64,
+                "world_status": "admitted",
+                "source_refs": ["statecore://acceptance"],
+                "context_refs": ["context_pack://capital_summary"],
+                "artifact_refs": [],
+                "receipt_refs": [],
+                "data_gaps": [],
+                "side_effect": "read",
+                "output_kind": "context",
+                "truncated": True,
+                "artifact_ref": "agent-tool-results/acceptance-partial.json",
+                "execution_allowed": False,
+                "authority_transition": False,
+            }],
+            receipt_root=root,
+        )
+        semantic_partial_stop = reduce_semantic_stop_reason(
+            "completed",
+            partial_flow,
+        )
+
         run_receipt_linked = _ref_exists(root, full_result.agent_run_receipt_ref)
         checks.append(
             _check(
@@ -520,6 +629,9 @@ def _collect_acceptance_checks() -> list[AcceptanceCheck]:
         evaluation_blocked_result.stop_reason,
         human_review_result.stop_reason,
         internal_error_result.stop_reason,
+        semantic_stop_result.stop_reason,
+        semantic_partial_stop,
+        no_progress_stop,
     }
     reducer_coverage = declared_reasons.issubset(observed_reasons)
     checks.append(

@@ -15,6 +15,7 @@ from sqlalchemy import desc
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
+from finharness.context_trust import trust_for_system_computed
 from finharness.exposure import compute_exposure
 from finharness.ips import IPS_NON_CLAIMS, check_ips_compliance, current_ips
 from finharness.review_read import read_proposal_timeline
@@ -33,6 +34,12 @@ AGENT_CONTEXT_NON_CLAIMS = (
 )
 
 CAPITAL_ADMISSION_SUMMARY_KEYS = (
+    "world_id",
+    "basis_digest",
+    "world_status",
+    "selected_batch_ids",
+    "trust",
+    "capital_truth",
     "asset_valuation_admitted",
     "net_worth_admitted",
     "per_currency_totals",
@@ -160,7 +167,10 @@ def build_capital_summary_context(engine: Engine) -> AgentContextPack:
         "basis_digest": report.basis_digest,
         "world_status": report.world_status,
         "selected_batch_ids": list(report.selected_batch_ids),
-        "trust": {
+        "trust": trust_for_system_computed(
+            source_refs=list(report.source_refs),
+        ).model_dump(),
+        "capital_truth": {
             "status": report.world_status,
             "blockers": list(report.world_blockers),
             "asset_valuation_admitted": report.asset_valuation_admitted,
@@ -321,8 +331,6 @@ def build_open_proposals_context(engine: Engine, *, limit: int = 10) -> AgentCon
     data_gaps: list[str] = []
     if len(open_proposals) > len(items):
         data_gaps.append(f"open proposals truncated to {len(items)} items")
-    from finharness.context_trust import trust_for_system_computed
-
     summary = {
         "open_count": len(open_proposals),
         "returned_count": len(items),

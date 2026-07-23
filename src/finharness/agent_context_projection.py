@@ -115,6 +115,12 @@ class AgentContextProjectionProfile:
 
 
 DEFAULT_CAPITAL_SUMMARY_KEYS = (
+    "world_id",
+    "basis_digest",
+    "world_status",
+    "selected_batch_ids",
+    "trust",
+    "capital_truth",
     "as_of_date",
     "base_currency",
     "asset_valuation_admitted",
@@ -160,7 +166,7 @@ CURRENT_IPS_KEYS = (
 )
 
 IPS_CHECK_KEYS = ("ips_id", "as_of_date", "violations", "blocked", "results")
-OPEN_PROPOSALS_KEYS = ("open_count", "returned_count", "items")
+OPEN_PROPOSALS_KEYS = ("open_count", "returned_count", "items", "trust")
 
 
 CONTEXT_PROJECTION_PROFILES: dict[str, AgentContextProjectionProfile] = {
@@ -485,6 +491,10 @@ def _projection_bundle(
             "packs": [*included, pack],
             "projection": _bundle_projection(profile, original_pack_count, False),
             "source_refs": list(_refs(_pack_refs([*included, pack], "source_refs"))),
+            "receipt_refs": list(_refs([
+                *_pack_refs([*included, pack], "receipt_refs"),
+                *_pack_refs([*included, pack], "receipt_ref"),
+            ])),
             "context_pack_refs": list(_refs(_pack_refs([*included, pack], "context_pack_refs"))),
             "data_gaps": bundle_gaps,
             "non_claims": list(profile.non_claims),
@@ -504,6 +514,10 @@ def _projection_bundle(
         "packs": included,
         "projection": _bundle_projection(profile, original_pack_count, bool(bundle_gaps)),
         "source_refs": list(_refs(_pack_refs(included, "source_refs"))),
+        "receipt_refs": list(_refs([
+            *_pack_refs(included, "receipt_refs"),
+            *_pack_refs(included, "receipt_ref"),
+        ])),
         "context_pack_refs": list(_refs(_pack_refs(included, "context_pack_refs"))),
         "data_gaps": list(_refs(bundle_gaps)),
         "non_claims": list(profile.non_claims),
