@@ -31,13 +31,36 @@ from finharness.statecore.execution_models import (
     ExecutionAccount,
     ExecutionEnvironment,
 )
+from finharness.statecore.models import Position
 from finharness.statecore.receipt_io import ReceiptIntegrityError
 from finharness.statecore.store import init_state_core, write_records
 from tests.asgi_test_client import AsgiTestClient
 
 
-def _world(label: str, *, blockers: tuple[str, ...] = ()) -> CapitalWorld:
+def _world(
+    label: str,
+    *,
+    blockers: tuple[str, ...] = (),
+    quantity: Decimal = Decimal("9"),
+    unit_price: Decimal = Decimal("100"),
+) -> CapitalWorld:
     basis = (label * 64)[:64]
+    position = Position(
+        position_id=f"position_{label}",
+        snapshot_id=f"snapshot_{label}",
+        account_id="exec:test",
+        instrument_id="instrument:SPY",
+        symbol="SPY",
+        quantity=quantity,
+        market_value=quantity * unit_price,
+        cost_basis=quantity * Decimal("90"),
+        valuation_currency="USD",
+        unit_price=unit_price,
+        price_currency="USD",
+        valued_at_utc="2026-07-24T00:00:00+00:00",
+        price_source_ref="test:price",
+        valuation_status="valued",
+    )
     return CapitalWorld(
         world_id=f"world_{label}",
         basis_digest=basis,
@@ -48,7 +71,7 @@ def _world(label: str, *, blockers: tuple[str, ...] = ()) -> CapitalWorld:
             use_case="agent_context",
         ),
         selected_sources=(),
-        records=(),
+        records=({"record_type": "Position", "payload": position.model_dump(mode="python")},),
         trust=CapitalWorldTrust(
             status="blocked" if blockers else "admitted",
             evidence_integrity="intact",
@@ -152,7 +175,6 @@ class CapitalAgentStoreTest(unittest.TestCase):
                 effect_intent_id=intent.effect_intent_id,
                 admission_id=admission.admission_id,
                 current_world=_world("b"),
-                position_quantity_before=Decimal("9"),
             )
 
     def test_effect_intent_is_idempotent_and_conflicts_on_changed_payload(self) -> None:
@@ -215,7 +237,6 @@ class CapitalAgentStoreTest(unittest.TestCase):
             effect_intent_id=intent.effect_intent_id,
             admission_id=admission.admission_id,
             current_world=self.world,
-            position_quantity_before=Decimal("9"),
         )
         replay = self.store.execute_simulated_effect(
             engine=engine,
@@ -223,7 +244,6 @@ class CapitalAgentStoreTest(unittest.TestCase):
             effect_intent_id=intent.effect_intent_id,
             admission_id=admission.admission_id,
             current_world=self.world,
-            position_quantity_before=Decimal("9"),
         )
         self.assertEqual(execution, replay)
         self.assertEqual(execution.state, "completed")
@@ -271,7 +291,6 @@ class CapitalAgentStoreTest(unittest.TestCase):
                 effect_intent_id=intent.effect_intent_id,
                 admission_id=admission.admission_id,
                 current_world=self.world,
-                position_quantity_before=Decimal("9"),
             )
         execution_id = Path(caught.exception.execution_ref).stem
         recovered = self.store.reconcile_claimed_execution(

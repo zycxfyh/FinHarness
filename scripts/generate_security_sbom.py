@@ -192,19 +192,33 @@ def manifest_components(root: Path = ROOT) -> list[dict[str, Any]]:
                 extra={"license": data.get("license")},
             )
         )
-    cargo_toml = root / "crates" / "finharness-cli" / "Cargo.toml"
+    cargo_toml = root / "crates" / "finharness-runtime" / "Cargo.toml"
     if cargo_toml.exists():
         data = tomllib.loads(cargo_toml.read_text(encoding="utf-8"))
         package = data.get("package", {})
+        workspace = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+        workspace_package = workspace.get("workspace", {}).get("package", {})
+        raw_version = package.get("version")
+        version = (
+            workspace_package.get("version", "0.0.0")
+            if isinstance(raw_version, dict) and raw_version.get("workspace") is True
+            else raw_version or workspace_package.get("version", "0.0.0")
+        )
+        raw_license = package.get("license")
+        license_name = (
+            workspace_package.get("license")
+            if isinstance(raw_license, dict) and raw_license.get("workspace") is True
+            else raw_license or workspace_package.get("license")
+        )
         items.append(
             component(
                 ecosystem="local",
-                name=str(package.get("name", "finharness-cli")),
-                version=str(package.get("version", "0.0.0")),
-                source_file="crates/finharness-cli/Cargo.toml",
+                name=str(package.get("name", "finharness-runtime")),
+                version=str(version),
+                source_file="crates/finharness-runtime/Cargo.toml",
                 scope="root",
                 package_type="application",
-                extra={"license": package.get("license")},
+                extra={"license": license_name},
             )
         )
     return items
@@ -231,13 +245,14 @@ def build_sbom(root: Path = ROOT) -> dict[str, Any]:
         "formal_standard": "local_baseline_not_cyclonedx_or_spdx",
         "component_count": len(ordered),
         "component_counts_by_ecosystem": counts,
-        # Rust crate archived 2026-06-13 (docs/archive/legacy-rust-crate); the
-        # SBOM now describes only the built/shipped Python + JS surface.
         "source_files": [
             "pyproject.toml",
             "uv.lock",
             "package.json",
             "pnpm-lock.yaml",
+            "Cargo.toml",
+            "Cargo.lock",
+            "crates/finharness-runtime/Cargo.toml",
         ],
         "components": ordered,
         "execution_allowed": False,

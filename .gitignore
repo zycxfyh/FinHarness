@@ -55,3 +55,4 @@ docs/architecture/generated/
 
 # D8 browser smoke artifacts (screenshots/DOM dumps) — triage only, never committed.
 frontend/tests/browser/artifacts/
+.finharness-runtime-inputs/

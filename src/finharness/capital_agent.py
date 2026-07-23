@@ -187,6 +187,7 @@ class EffectAdmission(_Artifact):
     constitution_ref: str
     world_id: str
     world_basis_digest: str
+    verified_reference_price: Decimal = Field(gt=0)
     admitted_notional: Decimal
     created_at_utc: str
 
@@ -197,6 +198,8 @@ class EffectExecutionRecord(_Artifact):
     effect_intent_ref: str
     admission_ref: str
     state: ExecutionState
+    runtime_job_id: str | None = None
+    runtime_attempt_id: str | None = None
     order_draft_id: str | None = None
     execution_order_id: str | None = None
     execution_report_id: str | None = None
@@ -262,6 +265,27 @@ def _id(prefix: str) -> str:
 
 def _stable_id(prefix: str, material: dict[str, Any]) -> str:
     return f"{prefix}_{canonical_json_sha256(material)[:32]}"
+
+
+def _verified_position_basis(intent: EffectIntent, world: CapitalWorld) -> tuple[Decimal, Decimal]:
+    matching = [
+        position
+        for position in world.positions
+        if position.symbol.strip().upper() == intent.symbol.strip().upper()
+    ]
+    if len(matching) != 1:
+        raise EffectAdmissionDenied("world_position_not_uniquely_resolved")
+    position = matching[0]
+    if position.valuation_status not in {"valued", "valued_converted"}:
+        raise EffectAdmissionDenied("world_position_not_valued")
+    price = position.unit_price
+    if price is None and position.market_value is not None and position.quantity != 0:
+        price = position.market_value / position.quantity
+    if price is None or price <= 0:
+        raise EffectAdmissionDenied("world_reference_price_unavailable")
+    if intent.side == "sell" and position.quantity < intent.quantity:
+        raise EffectAdmissionDenied("insufficient_world_position")
+    return position.quantity, price
 
 
 def _seal[T: _Artifact](model: T) -> T:
@@ -605,6 +629,9 @@ class CapitalAgentStore:
     def read_effect_intent(self, effect_intent_id: str) -> EffectIntent:
         return self._read(EffectIntent, effect_intent_id)
 
+    def read_effect_admission(self, admission_id: str) -> EffectAdmission:
+        return self._read(EffectAdmission, admission_id)
+
     def _admission_count(self, delegation_id: str) -> int:
         directory = self.root / _DIR[EffectAdmission]
         if not directory.exists():
@@ -645,15 +672,25 @@ class CapitalAgentStore:
             reasons.append("effect_outside_delegation")
         if intent.effect_type in constitution.prohibited_effects:
             reasons.append("effect_prohibited_by_constitution")
+        verified_price: Decimal | None = None
+        try:
+            _position_quantity, verified_price = _verified_position_basis(intent, current_world)
+        except EffectAdmissionDenied as exc:
+            reasons.append(str(exc))
+        admitted_notional = (
+            intent.quantity * verified_price if verified_price is not None else intent.notional
+        )
         if (
-            intent.notional > delegation.max_notional
-            or intent.notional > constitution.max_simulated_notional
+            admitted_notional > delegation.max_notional
+            or admitted_notional > constitution.max_simulated_notional
         ):
             reasons.append("notional_exceeds_limit")
         if self._admission_count(delegation.delegation_id) >= delegation.max_uses:
             reasons.append("delegation_use_limit_reached")
         if reasons:
             raise EffectAdmissionDenied(",".join(reasons))
+        if verified_price is None:
+            raise EffectAdmissionDenied("world_reference_price_unavailable")
         admission = EffectAdmission(
             admission_id=admission_id,
             effect_intent_ref=self.ref(EffectIntent, effect_intent_id),
@@ -663,7 +700,8 @@ class CapitalAgentStore:
             constitution_ref=delegation.constitution_ref,
             world_id=current_world.world_id,
             world_basis_digest=current_world.basis_digest,
-            admitted_notional=intent.notional,
+            verified_reference_price=verified_price,
+            admitted_notional=admitted_notional,
             created_at_utc=_now(),
         )
         return self._create(admission, admission_id)
@@ -676,7 +714,6 @@ class CapitalAgentStore:
         effect_intent_id: str,
         admission_id: str,
         current_world: CapitalWorld,
-        position_quantity_before: Decimal,
     ) -> EffectExecutionRecord:
         intent = self.read_effect_intent(effect_intent_id)
         admission = self._read(EffectAdmission, admission_id)
@@ -693,6 +730,14 @@ class CapitalAgentStore:
         delegation = self.read_delegation(intent.delegation_id)
         if mission.state != "active" or delegation.state != "active":
             raise EffectAdmissionDenied("mission_or_delegation_not_active")
+        if _parse_utc(delegation.expires_at_utc, "expires_at_utc") <= datetime.now(UTC):
+            raise EffectAdmissionDenied("delegation_expired")
+        position_quantity_before, verified_price = _verified_position_basis(intent, current_world)
+        if (
+            admission.verified_reference_price != verified_price
+            or admission.admitted_notional != intent.quantity * verified_price
+        ):
+            raise EffectAdmissionDenied("admission_price_basis_changed")
         execution_id = _stable_id("effect_execution", {"effect_intent_id": effect_intent_id})
         execution_ref = self.ref(EffectExecutionRecord, execution_id)
         if self._path(EffectExecutionRecord, execution_id).exists():
@@ -791,6 +836,43 @@ class CapitalAgentStore:
             execution_report_id=report.execution_report_id,
             position_delta_id=delta.position_delta_id,
             reconciliation_id=reconciliation.reconciliation_id,
+            updated_at_utc=_now(),
+        )
+
+    def effect_execution_id(self, effect_intent_id: str) -> str:
+        self.read_effect_intent(effect_intent_id)
+        return _stable_id("effect_execution", {"effect_intent_id": effect_intent_id})
+
+    def read_effect_execution(self, execution_id: str) -> EffectExecutionRecord:
+        return self._read(EffectExecutionRecord, execution_id)
+
+    def bind_runtime_execution(
+        self,
+        execution_id: str,
+        *,
+        runtime_job_id: str,
+        runtime_attempt_id: str | None,
+    ) -> EffectExecutionRecord:
+        execution = self._read(EffectExecutionRecord, execution_id)
+        clean_job = _text(runtime_job_id, "runtime_job_id")
+        clean_attempt = (
+            _text(runtime_attempt_id, "runtime_attempt_id")
+            if runtime_attempt_id is not None
+            else None
+        )
+        if execution.runtime_job_id is not None:
+            if (
+                execution.runtime_job_id != clean_job
+                or execution.runtime_attempt_id != clean_attempt
+            ):
+                raise CapitalAgentConflictError("execution already bound to another Runtime Job")
+            return execution
+        return self._transition(
+            execution,
+            execution_id,
+            execution.state,
+            runtime_job_id=clean_job,
+            runtime_attempt_id=clean_attempt,
             updated_at_utc=_now(),
         )
 
