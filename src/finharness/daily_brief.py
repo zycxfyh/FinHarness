@@ -18,11 +18,16 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import Engine, desc
+from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from finharness.exposure import ExposureReport, compute_exposure
 from finharness.project_paths import ROOT
+from finharness.statecore.capital_world import (
+    CapitalWorld,
+    resolve_capital_world,
+    resolve_previous_capital_world,
+)
 from finharness.statecore.diff import diff_snapshots
 from finharness.statecore.models import (
     Attestation,
@@ -127,6 +132,10 @@ class BriefSection(BaseModel):
 
 
 class DailyBrief(BaseModel):
+    world_id: str | None = None
+    basis_digest: str | None = None
+    before_world_id: str | None = None
+    world_status: str = "legacy_unresolved"
     as_of_date: str
     headline: str
     net_worth: float | None
@@ -183,6 +192,54 @@ def _change_section(
     return BriefSection(title=title, lines=tuple(lines)), diff.total_market_value_delta
 
 
+def _world_position_key(position: Position) -> tuple[str, str]:
+    return (
+        position.account_id,
+        position.instrument_id or f"legacy-symbol:{position.symbol.upper()}",
+    )
+
+
+def _change_section_worlds(
+    before: CapitalWorld | None,
+    after: CapitalWorld,
+    thresholds: ObservationThresholds,
+) -> tuple[BriefSection, float | None]:
+    del thresholds  # World v1 reports deterministic total change; threshold details remain legacy.
+    title = "Change since last"
+    if before is None or not before.positions:
+        return BriefSection(title=title, lines=("No prior Capital World to compare.",)), None
+    before_map = {_world_position_key(item): item for item in before.positions}
+    after_map = {_world_position_key(item): item for item in after.positions}
+    if any(item.market_value is None for item in [*before_map.values(), *after_map.values()]):
+        return (
+            BriefSection(
+                title=title,
+                lines=(
+                    "Holdings change cannot be unified/valued from the current Capital World.",
+                ),
+            ),
+            None,
+        )
+    before_total = sum((item.market_value or 0) for item in before_map.values())
+    after_total = sum((item.market_value or 0) for item in after_map.values())
+    delta = after_total - before_total
+    changed = sum(
+        1
+        for key in set(before_map) | set(after_map)
+        if before_map.get(key) != after_map.get(key)
+    )
+    return (
+        BriefSection(
+            title=title,
+            lines=(
+                f"Capital World holdings value moved by {float(delta):,.2f}; "
+                f"{changed} holding identity change(s).",
+            ),
+        ),
+        float(delta),
+    )
+
+
 def _currency_total_lines(label: str, totals: dict[str, float]) -> list[str]:
     return [
         f"{label} {currency}: {_money(value, currency)}"
@@ -209,21 +266,36 @@ def compute_daily_brief(
     *,
     as_of_date: date | None = None,
     thresholds: ObservationThresholds | None = None,
+    capital_world: CapitalWorld | None = None,
+    known_at_utc: str | None = None,
 ) -> DailyBrief:
-    """Assemble a read-only unified daily brief from the state core."""
+    """Assemble a read-only unified daily brief from one Capital World basis."""
     active_thresholds = thresholds or ObservationThresholds()
-    exposure = compute_exposure(engine, as_of_date=as_of_date, thresholds=active_thresholds)
-    with Session(engine) as session:
-        portfolio_snapshots = list(
-            session.exec(
-                select(Snapshot)
-                .where(Snapshot.kind == "portfolio")
-                .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
-                .limit(2)
-            ).all()
-        )
-    change_section, holdings_change = _change_section(
-        engine, portfolio_snapshots, active_thresholds
+    current_world = capital_world or resolve_capital_world(
+        engine=engine,
+        as_of_utc=(
+            datetime.combine(as_of_date, datetime.max.time(), tzinfo=UTC).isoformat()
+            if as_of_date is not None
+            else None
+        ),
+        known_at_utc=known_at_utc,
+        use_case="daily_brief",
+    )
+    exposure = compute_exposure(
+        engine,
+        as_of_date=as_of_date,
+        thresholds=active_thresholds,
+        capital_world=current_world,
+        known_at_utc=known_at_utc,
+    )
+    previous_world = resolve_previous_capital_world(
+        engine=engine,
+        current_world=current_world,
+    )
+    change_section, holdings_change = _change_section_worlds(
+        previous_world,
+        current_world,
+        active_thresholds,
     )
     open_reviews = _open_reviews(engine)
 
@@ -383,6 +455,10 @@ def compute_daily_brief(
     )
 
     return DailyBrief(
+        world_id=exposure.world_id,
+        basis_digest=exposure.basis_digest,
+        before_world_id=(previous_world.world_id if previous_world is not None else None),
+        world_status=exposure.world_status,
         as_of_date=exposure.as_of_date,
         headline=headline,
         net_worth=exposure.net_worth,

@@ -11,6 +11,7 @@ from finharness.statecore.model_base import (
     StateCoreBase,
     json_dict_column,
     json_list_column,
+    utc_now_iso,
 )
 
 IMPORT_COVERAGE_MODES: tuple[str, ...] = ("full", "delta")
@@ -22,6 +23,38 @@ IMPORT_COMPLETENESS_STATUSES: tuple[str, ...] = (
     "legacy_unknown",
 )
 CORPORATE_ACTION_STATUSES: tuple[str, ...] = ("not_applicable", "unsupported_gap")
+
+
+class CapitalImportSource(StateCoreBase, table=True):
+    """Stable logical identity for one external capital source."""
+
+    __tablename__ = "capital_import_sources"
+
+    source_id: str = Field(primary_key=True)
+    source_kind: str = Field(index=True)
+    display_name: str = ""
+    identity_version: str = "finharness.capital_import_source.v1"
+    source_refs: list[str] = Field(default_factory=list, sa_column=json_list_column())
+    created_at_utc: str = Field(default_factory=utc_now_iso)
+
+
+class CapitalImportSourceAlias(StateCoreBase, table=True):
+    """Discovery alias that never owns canonical source identity."""
+
+    __tablename__ = "capital_import_source_aliases"
+    __table_args__ = (
+        UniqueConstraint(
+            "alias_kind",
+            "alias_value",
+            name="uq_capital_import_source_alias",
+        ),
+    )
+
+    alias_id: str = Field(primary_key=True)
+    source_id: str = Field(foreign_key="capital_import_sources.source_id", index=True)
+    alias_kind: str = Field(index=True)
+    alias_value: str
+    created_at_utc: str = Field(default_factory=utc_now_iso)
 
 
 class ImportBatch(StateCoreBase, table=True):
@@ -56,9 +89,24 @@ class ImportBatch(StateCoreBase, table=True):
     batch_id: str = Field(primary_key=True)
     source_kind: str = Field(index=True)
     source_id: str
+    stable_source_id: str | None = Field(
+        default=None,
+        foreign_key="capital_import_sources.source_id",
+        index=True,
+    )
     coverage_mode: str
     source_sha256: str = Field(index=True)
     source_artifact_id: str
+    projection_artifact_id: str | None = None
+    projection_sha256: str | None = Field(default=None, index=True)
+    projection_schema_version: str | None = None
+    projection_payload: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=json_dict_column(),
+    )
+    effective_at_utc: str | None = Field(default=None, index=True)
+    observed_at_utc: str | None = Field(default=None, index=True)
+    recorded_at_utc: str | None = Field(default=None, index=True)
     adapter_version: str
     import_schema_version: str
     record_counts: dict[str, Any] = Field(default_factory=dict, sa_column=json_dict_column())
@@ -88,6 +136,7 @@ class ImportTombstone(StateCoreBase, table=True):
     tombstone_id: str = Field(primary_key=True)
     batch_id: str = Field(foreign_key="import_batches.batch_id", index=True)
     source_kind: str = Field(index=True)
+    stable_source_id: str | None = Field(default=None, index=True)
     record_type: str
     record_id: str
     reason: str

@@ -12,6 +12,7 @@ from sqlmodel import Session, col, select
 from finharness.api.dependencies import EngineDependency
 from finharness.daily_brief import DailyBrief, compute_daily_brief
 from finharness.exposure import ExposureReport, compute_exposure
+from finharness.statecore.capital_world import resolve_capital_world
 from finharness.statecore.models import (
     Account,
     Attestation,
@@ -40,6 +41,9 @@ BRIEF_KINDS = {"daily_change_brief"}
 class DashboardSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    world_id: str | None = None
+    basis_digest: str | None = None
+    world_status: str = "legacy_unresolved"
     account_count: int
     latest_snapshot_id: str | None
     latest_snapshot_as_of_utc: str | None
@@ -96,15 +100,6 @@ class ControlsLimitsResponse(BaseModel):
     non_claims: tuple[str, ...] = PRODUCT_NON_CLAIMS
 
 
-def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
-    return session.exec(
-        select(Snapshot)
-        .where(Snapshot.kind == "portfolio")
-        .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
-        .limit(1)
-    ).first()
-
-
 def _latest_brief_receipt(session: Session) -> ReceiptIndex | None:
     return session.exec(
         select(ReceiptIndex)
@@ -156,37 +151,49 @@ async def daily_brief(engine: EngineDependency) -> DailyBrief:
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryResponse:
-    capital = compute_exposure(engine)
+    world = resolve_capital_world(engine=engine, use_case="capital_review")
+    world_backed = bool(world.selected_sources)
+    capital = compute_exposure(engine, capital_world=world)
     with Session(engine) as session:
-        account_count = session.scalar(select(func.count()).select_from(Account)) or 0
         open_proposal_count = _open_proposal_count(session)
         receipt_count = session.scalar(select(func.count()).select_from(ReceiptIndex)) or 0
         latest_brief = _latest_brief_receipt(session)
-        liability_count = session.scalar(select(func.count()).select_from(Liability)) or 0
-        goal_count = session.scalar(select(func.count()).select_from(FinancialGoal)) or 0
-        cashflow_count = session.scalar(select(func.count()).select_from(CashflowEvent)) or 0
-        tax_event_count = session.scalar(select(func.count()).select_from(TaxEvent)) or 0
-        insurance_policy_count = (
-            session.scalar(select(func.count()).select_from(InsurancePolicy)) or 0
-        )
-        document_count = session.scalar(select(func.count()).select_from(DocumentRef)) or 0
-        latest_snapshot = _latest_portfolio_snapshot(session)
-        position_count = 0
-        if latest_snapshot is not None:
+        if world_backed:
+            account_count = len(world.models("Account", Account))
+            liability_count = len(world.liabilities)
+            goal_count = len(world.models("FinancialGoal", FinancialGoal))
+            cashflow_count = len(world.cashflows)
+            tax_event_count = len(world.taxes)
+            insurance_policy_count = len(world.insurance)
+            document_count = len(world.models("DocumentRef", DocumentRef))
+            position_count = len(world.positions)
+        else:
+            account_count = session.scalar(select(func.count()).select_from(Account)) or 0
+            liability_count = session.scalar(select(func.count()).select_from(Liability)) or 0
+            goal_count = session.scalar(select(func.count()).select_from(FinancialGoal)) or 0
+            cashflow_count = session.scalar(select(func.count()).select_from(CashflowEvent)) or 0
+            tax_event_count = session.scalar(select(func.count()).select_from(TaxEvent)) or 0
+            insurance_policy_count = (
+                session.scalar(select(func.count()).select_from(InsurancePolicy)) or 0
+            )
+            document_count = session.scalar(select(func.count()).select_from(DocumentRef)) or 0
             position_count = (
                 session.scalar(
                     select(func.count())
                     .select_from(Position)
-                    .where(Position.snapshot_id == latest_snapshot.snapshot_id)
+                    .where(Position.snapshot_id == capital.portfolio_snapshot_id)
                 )
-                or 0
-            )
+                if capital.portfolio_snapshot_id
+                else 0
+            ) or 0
 
-    source_refs = tuple(sorted(set(latest_snapshot.source_refs if latest_snapshot else ())))
     return DashboardSummaryResponse(
+        world_id=capital.world_id,
+        basis_digest=capital.basis_digest,
+        world_status=capital.world_status,
         account_count=int(account_count),
-        latest_snapshot_id=latest_snapshot.snapshot_id if latest_snapshot else None,
-        latest_snapshot_as_of_utc=latest_snapshot.as_of_utc if latest_snapshot else None,
+        latest_snapshot_id=capital.portfolio_snapshot_id,
+        latest_snapshot_as_of_utc=capital.portfolio_as_of_utc,
         position_count=int(position_count),
         total_market_value=capital.total_assets,
         open_proposal_count=open_proposal_count,
@@ -199,7 +206,7 @@ async def dashboard_summary(engine: EngineDependency) -> DashboardSummaryRespons
         tax_event_count=int(tax_event_count),
         insurance_policy_count=int(insurance_policy_count),
         document_count=int(document_count),
-        source_refs=source_refs,
+        source_refs=capital.source_refs,
     )
 
 

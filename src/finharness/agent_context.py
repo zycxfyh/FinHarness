@@ -156,6 +156,16 @@ def build_capital_summary_context(engine: Engine) -> AgentContextPack:
         data_gaps.append(f"upcoming obligations truncated to {len(obligations)} items")
     top_holding = holdings[0] if holdings else None
     summary = {
+        "world_id": report.world_id,
+        "basis_digest": report.basis_digest,
+        "world_status": report.world_status,
+        "selected_batch_ids": list(report.selected_batch_ids),
+        "trust": {
+            "status": report.world_status,
+            "blockers": list(report.world_blockers),
+            "asset_valuation_admitted": report.asset_valuation_admitted,
+            "net_worth_admitted": report.net_worth_admitted,
+        },
         "as_of_date": report.as_of_date,
         "base_currency": report.base_currency,
         "asset_valuation_admitted": report.asset_valuation_admitted,

@@ -603,6 +603,16 @@ def record_allocation_candidates(
         attachment = active_enricher.enrich(candidate)
         evidence = {
             **candidate.evidence,
+            **(
+                {
+                    "capital_world_id": report.world_id,
+                    "capital_world_basis_digest": report.basis_digest,
+                    "capital_world_status": report.world_status,
+                    "selected_batch_ids": list(report.selected_batch_ids),
+                }
+                if report.world_id is not None
+                else {}
+            ),
             "dimension": candidate.dimension,
             "options": [option.model_dump() for option in candidate.options],
             "key_risks": list(candidate.key_risks),
@@ -616,6 +626,10 @@ def record_allocation_candidates(
         if attachment.data_gaps:
             evidence["research_evidence_gaps"] = list(attachment.data_gaps)
         source_refs = list(candidate.evidence.get("source_refs", []))
+        if report.world_id is not None:
+            for ref in report.source_refs:
+                if ref not in source_refs:
+                    source_refs.append(ref)
         for ref in attachment.source_refs:
             if ref not in source_refs:
                 source_refs.append(ref)

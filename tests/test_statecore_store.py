@@ -6,7 +6,7 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import inspect, text
+from sqlalchemy import create_engine, inspect, text
 from sqlmodel import Session
 
 from finharness.statecore.models import (
@@ -531,6 +531,64 @@ class StateCoreStoreTest(unittest.TestCase):
         )
         # Idempotent: a second run is a no-op.
         migrate_state_core(engine)
+
+    def test_v14_migration_adds_capital_world_contract_without_forging_identity(self) -> None:
+        engine = create_engine(f"sqlite:///{self.db_path}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE liabilities ("
+                "liability_id VARCHAR PRIMARY KEY, "
+                "source VARCHAR NOT NULL DEFAULT '')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO liabilities (liability_id, source) "
+                "VALUES ('legacy_liability', 'personal_finance_export')"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE import_tombstones (tombstone_id VARCHAR PRIMARY KEY)"
+            )
+            connection.exec_driver_sql(
+                "CREATE TABLE import_batches (batch_id VARCHAR PRIMARY KEY)"
+            )
+            connection.exec_driver_sql("PRAGMA user_version = 13")
+
+        migrate_state_core(engine)
+        inspector = inspect(engine)
+        self.assertTrue(
+            {"capital_import_sources", "capital_import_source_aliases"}.issubset(
+                set(inspector.get_table_names())
+            )
+        )
+        liability_columns = {item["name"] for item in inspector.get_columns("liabilities")}
+        batch_columns = {item["name"] for item in inspector.get_columns("import_batches")}
+        tombstone_columns = {
+            item["name"] for item in inspector.get_columns("import_tombstones")
+        }
+        self.assertIn("source_id", liability_columns)
+        self.assertTrue(
+            {
+                "stable_source_id",
+                "projection_artifact_id",
+                "projection_sha256",
+                "projection_schema_version",
+                "projection_payload",
+                "effective_at_utc",
+                "observed_at_utc",
+                "recorded_at_utc",
+            }.issubset(batch_columns)
+        )
+        self.assertIn("stable_source_id", tombstone_columns)
+        with engine.connect() as connection:
+            version = int(connection.execute(text("PRAGMA user_version")).scalar_one())
+            legacy_source_id = connection.execute(
+                text(
+                    "SELECT source_id FROM liabilities "
+                    "WHERE liability_id = 'legacy_liability'"
+                )
+            ).scalar_one()
+        self.assertEqual(version, CURRENT_STATE_CORE_USER_VERSION)
+        self.assertEqual(legacy_source_id, "")
+        engine.dispose()
 
     def test_write_records_is_atomic(self) -> None:
         engine = init_state_core(self.db_path)

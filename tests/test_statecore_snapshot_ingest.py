@@ -144,8 +144,9 @@ class StateCoreSnapshotIngestTest(unittest.TestCase):
         positions = sorted(read_all(Position, engine=self.engine), key=lambda row: row.symbol)
         receipts = read_all(ReceiptIndex, engine=self.engine)
 
+        self.assertIsNotNone(batches[0].stable_source_id)
         version = hashlib.sha256(
-            f"{receipt.resolve()}\x00{source_sha}".encode()
+            f"{batches[0].stable_source_id}\x00{source_sha}".encode()
         ).hexdigest()[:24]
         self.assertEqual(result.snapshot_id, f"snap_broker_read_{version}")
         self.assertEqual(result.batch_id, batches[0].batch_id)

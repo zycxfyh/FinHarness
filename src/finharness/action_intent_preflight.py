@@ -13,14 +13,16 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from sqlalchemy import Engine, desc
+from sqlalchemy import Engine
 from sqlmodel import Session, select
 
+from finharness.exposure import compute_exposure
 from finharness.ips import current_ips
 from finharness.statecore.action_intent_authority_bindings import (
     latest_action_intent_authority_binding,
 )
 from finharness.statecore.action_intents import forbidden_action_intent_marker
+from finharness.statecore.capital_world import resolve_capital_world
 from finharness.statecore.models import (
     ACTION_INTENT_NEXT_STEPS,
     ACTION_INTENT_TYPES,
@@ -95,6 +97,9 @@ class ActionIntentPreflightReport:
     action_intent_receipt_ref: str | None
     source_proposal_receipt_ref: str | None
     current_proposal_receipt_ref: str | None
+    expected_capital_world_id: str | None
+    current_capital_world_id: str | None
+    capital_world_status: str
     freshness_status: str
     authority_status: str
     authority_binding_id: str | None
@@ -120,18 +125,39 @@ def preflight_action_intent(
 ) -> ActionIntentPreflightReport | None:
     """Recompute readiness checks for an ActionIntentCandidate."""
 
+    capital_world = resolve_capital_world(engine=engine, use_case="action_preflight")
+    exposure = compute_exposure(engine, capital_world=capital_world)
     with Session(engine) as session:
         action_intent = session.get(ActionIntent, action_intent_id)
         if action_intent is None:
             return None
         proposal = session.get(Proposal, action_intent.proposal_id)
-        portfolio_snapshot = _latest_portfolio_snapshot(session)
-        portfolio_refs = _portfolio_refs(session, portfolio_snapshot)
+        portfolio_snapshot = (
+            session.get(Snapshot, exposure.portfolio_snapshot_id)
+            if exposure.portfolio_snapshot_id
+            else None
+        )
+        portfolio_refs = (
+            _dedupe(
+                [
+                    *capital_world.recovery_refs,
+                    *(ref for position in capital_world.positions for ref in position.source_refs),
+                ]
+            )
+            if capital_world.selected_sources
+            else _portfolio_refs(session, portfolio_snapshot)
+        )
         authority_binding = latest_action_intent_authority_binding(
             action_intent.action_intent_id,
             engine=engine,
         )
     ips = current_ips(engine)
+    expected_capital_world_id = (
+        str(proposal.evidence.get("capital_world_id") or "") or None
+        if proposal is not None and isinstance(proposal.evidence, dict)
+        else None
+    )
+    current_capital_world_id = exposure.world_id
 
     source_refs = _dedupe([*action_intent.source_refs])
     authority_binding_receipt_refs = (
@@ -155,6 +181,16 @@ def preflight_action_intent(
         source_refs=source_refs,
         receipt_refs=receipt_refs,
     )
+    world_findings = _capital_world_findings(
+        expected_world_id=expected_capital_world_id,
+        current_world_id=current_capital_world_id,
+        world_status=exposure.world_status,
+        world_blockers=list(exposure.world_blockers),
+        source_refs=source_refs,
+        receipt_refs=receipt_refs,
+    )
+    if any(finding.code == "stale_capital_world" for finding in world_findings):
+        freshness_status = "stale_capital_world"
     authority_status, authority_findings = _authority_findings(
         action_intent=action_intent,
         authority_binding=authority_binding,
@@ -185,6 +221,7 @@ def preflight_action_intent(
     )
     findings = [
         *freshness_findings,
+        *world_findings,
         *_closed_set_findings(
             action_intent=action_intent,
             source_refs=source_refs,
@@ -221,6 +258,9 @@ def preflight_action_intent(
     return _report(
         action_intent=action_intent,
         proposal=proposal,
+        expected_capital_world_id=expected_capital_world_id,
+        current_capital_world_id=current_capital_world_id,
+        capital_world_status=exposure.world_status,
         freshness_status=freshness_status,
         authority_status=authority_status,
         authority_binding=authority_binding,
@@ -235,15 +275,6 @@ def preflight_action_intent(
     )
 
 
-def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
-    return session.exec(
-        select(Snapshot)
-        .where(Snapshot.kind == "portfolio")
-        .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
-        .limit(1)
-    ).first()
-
-
 def _portfolio_refs(session: Session, snapshot: Snapshot | None) -> list[str]:
     if snapshot is None:
         return []
@@ -254,6 +285,44 @@ def _portfolio_refs(session: Session, snapshot: Snapshot | None) -> list[str]:
     for position in positions:
         refs.extend(position.source_refs)
     return _dedupe(refs)
+
+
+def _capital_world_findings(
+    *,
+    expected_world_id: str | None,
+    current_world_id: str | None,
+    world_status: str,
+    world_blockers: list[str],
+    source_refs: list[str],
+    receipt_refs: list[str],
+) -> list[ActionIntentPreflightFinding]:
+    findings: list[ActionIntentPreflightFinding] = []
+    if expected_world_id is not None and expected_world_id != current_world_id:
+        findings.append(
+            _finding(
+                code="stale_capital_world",
+                severity="blocking",
+                message="The source proposal was created against a different Capital World.",
+                recovery_hint="Recompute the proposal and action intent from the current world.",
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    if current_world_id is not None and world_status != "admitted":
+        findings.append(
+            _finding(
+                code="capital_world_not_admitted",
+                severity="blocking",
+                message=(
+                    "Current Capital World is not admitted: "
+                    + ", ".join(world_blockers or [world_status])
+                ),
+                recovery_hint="Resolve Capital World blockers before progressing.",
+                source_refs=source_refs,
+                receipt_refs=receipt_refs,
+            )
+        )
+    return findings
 
 
 def _freshness_findings(
@@ -781,6 +850,9 @@ def _report(
     *,
     action_intent: ActionIntent,
     proposal: Proposal | None,
+    expected_capital_world_id: str | None,
+    current_capital_world_id: str | None,
+    capital_world_status: str,
     freshness_status: str,
     authority_status: str,
     authority_binding: ActionIntentAuthorityBinding | None,
@@ -808,6 +880,9 @@ def _report(
         action_intent_receipt_ref=action_intent.receipt_ref,
         source_proposal_receipt_ref=action_intent.source_proposal_receipt_ref,
         current_proposal_receipt_ref=proposal.receipt_ref if proposal else None,
+        expected_capital_world_id=expected_capital_world_id,
+        current_capital_world_id=current_capital_world_id,
+        capital_world_status=capital_world_status,
         freshness_status=freshness_status,
         authority_status=authority_status,
         authority_binding_id=(
@@ -846,6 +921,9 @@ def _report_hash(report: ActionIntentPreflightReport) -> str:
         "action_intent_receipt_ref": report.action_intent_receipt_ref,
         "source_proposal_receipt_ref": report.source_proposal_receipt_ref,
         "current_proposal_receipt_ref": report.current_proposal_receipt_ref,
+        "expected_capital_world_id": report.expected_capital_world_id,
+        "current_capital_world_id": report.current_capital_world_id,
+        "capital_world_status": report.capital_world_status,
         "freshness_status": report.freshness_status,
         "authority_status": report.authority_status,
         "authority_binding_id": report.authority_binding_id,

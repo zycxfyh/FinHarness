@@ -15,12 +15,11 @@ disclosed as data gaps, not silently guessed.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
 from pydantic import BaseModel
-from sqlalchemy import Engine, desc
-from sqlmodel import Session, select
+from sqlalchemy import Engine
 
 from finharness.position_valuation import (
     PositionValuationError,
@@ -28,6 +27,7 @@ from finharness.position_valuation import (
     reconcile_position_totals,
     valuation_blockers,
 )
+from finharness.statecore.capital_world import CapitalWorld, resolve_capital_world
 from finharness.statecore.models import (
     CashflowEvent,
     InsurancePolicy,
@@ -108,6 +108,13 @@ class ExposureProvenance(BaseModel):
 
 
 class ExposureReport(BaseModel):
+    world_id: str | None = None
+    basis_digest: str | None = None
+    world_status: str = "legacy_unresolved"
+    world_blockers: tuple[str, ...] = ()
+    selected_batch_ids: tuple[str, ...] = ()
+    portfolio_snapshot_id: str | None = None
+    portfolio_as_of_utc: str | None = None
     as_of_date: str
     base_currency: str | None
     asset_valuation_admitted: bool
@@ -142,15 +149,6 @@ class ExposureReport(BaseModel):
     provenance: ExposureProvenance = ExposureProvenance()
     non_claims: tuple[str, ...] = NON_CLAIMS
     execution_allowed: bool = False
-
-
-def _latest_portfolio_snapshot(session: Session) -> Snapshot | None:
-    return session.exec(
-        select(Snapshot)
-        .where(Snapshot.kind == "portfolio")
-        .order_by(desc(Snapshot.as_of_utc), desc(Snapshot.snapshot_id))
-        .limit(1)
-    ).first()
 
 
 def _parse_snapshot_clock(snapshot: Snapshot) -> datetime | None:
@@ -410,23 +408,35 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
     as_of_date: date | None = None,
     horizon_days: int = DEFAULT_OBLIGATION_HORIZON_DAYS,
     thresholds: ObservationThresholds | None = None,
+    capital_world: CapitalWorld | None = None,
+    known_at_utc: str | None = None,
 ) -> ExposureReport:
     """Compute a read-only personal exposure map from the state core."""
     active_thresholds = thresholds or ObservationThresholds()
     reference_date = as_of_date or datetime.now(UTC).date()
-    with Session(engine) as session:
-        snapshot = _latest_portfolio_snapshot(session)
-        positions: list[Position] = []
-        if snapshot is not None:
-            positions = list(
-                session.exec(
-                    select(Position).where(Position.snapshot_id == snapshot.snapshot_id)
-                ).all()
-            )
-        liabilities = list(session.exec(select(Liability)).all())
-        cashflows = list(session.exec(select(CashflowEvent)).all())
-        tax_events = list(session.exec(select(TaxEvent)).all())
-        insurance = list(session.exec(select(InsurancePolicy)).all())
+    query_as_of = (
+        datetime.combine(reference_date, time.max, tzinfo=UTC).isoformat()
+        if as_of_date is not None
+        else None
+    )
+    resolved_world = capital_world or resolve_capital_world(
+        engine=engine,
+        as_of_utc=query_as_of,
+        known_at_utc=known_at_utc,
+        use_case="exposure",
+    )
+    world_backed = bool(resolved_world.selected_sources)
+    snapshots = list(resolved_world.snapshots)
+    snapshot = (
+        max(snapshots, key=lambda item: (item.as_of_utc, item.snapshot_id))
+        if snapshots
+        else None
+    )
+    positions = list(resolved_world.positions)
+    liabilities = list(resolved_world.liabilities)
+    cashflows = list(resolved_world.cashflows)
+    tax_events = list(resolved_world.taxes)
+    insurance = list(resolved_world.insurance)
 
     data_gaps: list[str] = []
     # Cash total is only verifiable when a portfolio snapshot exists (the snapshot
@@ -450,6 +460,8 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
         evaluated_at=snapshot_evaluated_at,
     )
     asset_blockers = list(position_totals.blockers)
+    if world_backed:
+        asset_blockers.extend(resolved_world.trust.blockers)
     if snapshot_clock_invalid:
         asset_blockers.append("snapshot_time_invalid")
     if snapshot is None:
@@ -588,13 +600,29 @@ def compute_exposure(  # noqa: C901 -- one auditable capital-admission orchestra
         tax=tuple(sorted(tax_refs)),
         insurance=tuple(sorted(insurance_refs)),
     )
+    world_refs = set(resolved_world.recovery_refs) if world_backed else set()
     source_refs = tuple(
         sorted(
-            portfolio_refs | cash_refs | cashflow_refs | liability_refs | tax_refs | insurance_refs
+            portfolio_refs
+            | cash_refs
+            | cashflow_refs
+            | liability_refs
+            | tax_refs
+            | insurance_refs
+            | world_refs
         )
     )
 
     return ExposureReport(
+        world_id=resolved_world.world_id if world_backed else None,
+        basis_digest=resolved_world.basis_digest if world_backed else None,
+        world_status=(resolved_world.trust.status if world_backed else "legacy_unresolved"),
+        world_blockers=(resolved_world.trust.blockers if world_backed else ()),
+        selected_batch_ids=tuple(
+            item.batch_id for item in resolved_world.selected_sources
+        ) if world_backed else (),
+        portfolio_snapshot_id=snapshot.snapshot_id if snapshot is not None else None,
+        portfolio_as_of_utc=snapshot.as_of_utc if snapshot is not None else None,
         as_of_date=reference_date.isoformat(),
         base_currency=base_currency,
         asset_valuation_admitted=asset_admitted,

@@ -13,8 +13,10 @@ only holds a read-only mirror plus a receipt.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import os
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -37,9 +39,22 @@ from finharness.capital_import_valuation import (
     merge_valuation_findings,
     valuation_assessment_summary,
 )
-from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.capital_projection import (
+    CAPITAL_PROJECTION_SCHEMA_VERSION,
+    build_capital_projection,
+    persist_capital_projection,
+)
+from finharness.import_provenance import (
+    derive_import_batch_id,
+    persist_source_evidence,
+    prepare_import,
+)
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
+from finharness.statecore.capital_sources import (
+    canonical_path_alias,
+    resolve_or_register_import_source,
+)
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
@@ -55,14 +70,14 @@ from finharness.statecore.models import (
     Position,
     ReceiptIndex,
     Snapshot,
+    SourcedStateCoreBase,
     utc_now_iso,
 )
-from finharness.statecore.store import (
-    materialize_import_batch,
-)
+from finharness.statecore.store import StateCoreRecord, materialize_import_batch
 
 DEFAULT_BEANCOUNT_RECEIPT_ROOT = ROOT / "data" / "receipts" / "beancount"
 ADAPTER_VERSION = "finharness.beancount_ledger.v3"
+BEANCOUNT_SOURCE_BUNDLE_SCHEMA = "finharness.beancount_source_bundle.v1"
 LEDGER_KIND = "beancount_ledger"
 DEFAULT_ASSETS_ROOT = "Assets"
 DEFAULT_LIABILITIES_ROOT = "Liabilities"
@@ -142,6 +157,9 @@ def _ledger_metadata(
         )
     included = options_map.get("include") or [str(source_path)]
     loaded_files = sorted({str(Path(raw_path).resolve()) for raw_path in included})
+    source_tree_root = Path(
+        os.path.commonpath([str(Path(path).parent) for path in loaded_files])
+    )
     try:
         operating = {currency_code(value) for value in options_map.get("operating_currency", [])}
     except CapitalImportContractError as exc:
@@ -164,9 +182,17 @@ def _ledger_metadata(
         if not quote or number is None:
             continue
         meta = getattr(entry, "meta", None) or {}
-        filename = str(meta.get("filename") or source_path)
+        filename = Path(str(meta.get("filename") or source_path)).resolve()
         lineno = int(meta.get("lineno") or 0)
-        locator = f"{display_path(Path(filename))}#price:{base}/{quote}@{entry.date}:L{lineno}"
+        try:
+            source_relative = filename.relative_to(source_tree_root).as_posix()
+        except ValueError as exc:
+            raise BeancountLedgerError(
+                "beancount price evidence is outside the loaded source tree"
+            ) from exc
+        locator = (
+            f"{source_relative}#price:{base}/{quote}@{entry.date}:L{lineno}"
+        )
         by_key.setdefault((base, quote), []).append(
             (entry.date, Decimal(str(number)), locator, lineno)
         )
@@ -221,18 +247,52 @@ def _select_direct_price(
     return candidates[0]
 
 
-def _ledger_evidence_bytes(files: list[str]) -> bytes:
-    """Canonical byte stream over the loaded ledger and every included file."""
-    evidence = bytearray()
-    for path in files:
-        evidence.extend(Path(path).read_bytes())
-        evidence.extend(b"\x00")
-    return bytes(evidence)
+def _ledger_evidence_bytes(root_ledger: Path, files: list[str]) -> bytes:
+    """Return a path-move-stable, recoverable bundle of the loaded ledger tree."""
+    resolved_files = sorted({Path(path).resolve() for path in files})
+    if not resolved_files:
+        raise BeancountLedgerError("beancount source bundle has no files")
+    common_root = Path(
+        os.path.commonpath([str(path.parent) for path in resolved_files])
+    )
+    root_resolved = root_ledger.resolve()
+    try:
+        root_relative = root_resolved.relative_to(common_root).as_posix()
+    except ValueError as exc:
+        raise BeancountLedgerError(
+            "beancount root ledger is outside the loaded source tree"
+        ) from exc
+    entries = []
+    for path in resolved_files:
+        try:
+            relative = path.relative_to(common_root).as_posix()
+        except ValueError as exc:
+            raise BeancountLedgerError(
+                "beancount include is outside the recoverable source tree"
+            ) from exc
+        content = path.read_bytes()
+        if len(relative) > 1024:
+            raise BeancountLedgerError("beancount source path is too long to bundle")
+        entries.append(
+            {
+                "path": relative,
+                "content_base64": base64.b64encode(content).decode("ascii"),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    payload = {
+        "schema": BEANCOUNT_SOURCE_BUNDLE_SCHEMA,
+        "root_ledger": root_relative,
+        "files": entries,
+    }
+    return (
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
 
 
-def _combined_ledger_hash(files: list[str]) -> str:
-    """Content hash over the whole ledger so any included file change is reflected."""
-    return hashlib.sha256(_ledger_evidence_bytes(files)).hexdigest()
+def _combined_ledger_hash(root_ledger: Path, files: list[str]) -> str:
+    """Content hash over the recoverable ledger bundle."""
+    return hashlib.sha256(_ledger_evidence_bytes(root_ledger, files)).hexdigest()
 
 
 def _amount(inventory: Any) -> tuple[Decimal, str] | None:
@@ -359,6 +419,7 @@ def _records_from_rows(
     snapshot_id: str,
     as_of_utc: str,
     source_refs: list[str],
+    source_namespace: str,
     assets_root: str,
     liabilities_root: str,
     operating_currencies: set[str],
@@ -381,7 +442,6 @@ def _records_from_rows(
     liabilities: list[Liability] = []
     data_gaps: list[str] = []
     unresolved_identities: list[str] = []
-    source_namespace = f"beancount:{source_refs[-1]}"
     ledger_ref = source_refs[-1]
     for index, (account, currency, units_inv, market_inv) in enumerate(rows, start=1):
         units = _amount(units_inv)
@@ -573,6 +633,7 @@ def ingest_beancount_ledger(
     snapshot_id: str | None = None,
     assets_root: str = DEFAULT_ASSETS_ROOT,
     liabilities_root: str = DEFAULT_LIABILITIES_ROOT,
+    source_id: str | None = None,
 ) -> BeancountImportResult:
     """Mirror a real Beancount ledger's holdings and liabilities into state core."""
     source_path = Path(ledger_path)
@@ -582,8 +643,8 @@ def ingest_beancount_ledger(
         source_path
     )
     rows = _query_rows(source_path)
-    source_content = _ledger_evidence_bytes(source_files)
-    source_hash = _combined_ledger_hash(source_files)
+    source_content = _ledger_evidence_bytes(source_path, source_files)
+    source_hash = _combined_ledger_hash(source_path, source_files)
     active_artifact_store = artifact_store or LocalArtifactStore(
         Path(receipt_root) / "artifact-store"
     )
@@ -594,6 +655,15 @@ def ingest_beancount_ledger(
         artifact_store=active_artifact_store,
         created_at_utc=utc_now_iso(),
     )
+    source_record = resolve_or_register_import_source(
+        engine=engine,
+        source_kind=LEDGER_KIND,
+        alias_kind="path",
+        alias_value=canonical_path_alias(source_path),
+        source_id=source_id,
+        display_name=source_path.name,
+    )
+    stable_source_id = source_record.source_id
     # Provisional clocks without batch-level valued_at; Position owns valuation times.
     try:
         time_contract, time_findings = build_time_semantics(
@@ -610,7 +680,7 @@ def ingest_beancount_ledger(
     receipt_id = f"receipt_beancount_ledger_{base_id}"
     receipt_path = Path(receipt_root) / f"{receipt_id}.json"
     receipt_ref = display_path(receipt_path)
-    source_refs = [receipt_ref, display_path(source_path)]
+    source_refs = [receipt_ref, stable_source_id]
     (
         accounts,
         account_identities,
@@ -625,6 +695,7 @@ def ingest_beancount_ledger(
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
         source_refs=source_refs,
+        source_namespace=f"beancount:{stable_source_id}",
         assets_root=assets_root,
         liabilities_root=liabilities_root,
         operating_currencies=operating_currencies,
@@ -744,13 +815,51 @@ def ingest_beancount_ledger(
         cashflow_count=len(cashflows),
         data_gaps=data_gaps,
     )
+    receipt_payload["source_ref"] = stable_source_id
+    receipt_payload["source_bundle_schema"] = BEANCOUNT_SOURCE_BUNDLE_SCHEMA
+    receipt_payload.pop("source_files", None)
     receipt_payload["valuation_assessment"] = valuation_assessment_summary(
         positions,
         evaluated_at_utc=as_of_utc,
     )
+    all_records: list[StateCoreRecord] = [
+        *account_identities,
+        *instrument_identities,
+        *identity_aliases,
+        *accounts,
+        snapshot,
+        *positions,
+        *liabilities,
+        *cashflows,
+    ]
+    for record in all_records:
+        if isinstance(record, SourcedStateCoreBase):
+            record.source_id = stable_source_id
+    batch_id = derive_import_batch_id(
+        source_kind=LEDGER_KIND,
+        source_id=stable_source_id,
+        source_sha256=source_hash,
+        adapter_version=ADAPTER_VERSION,
+        coverage_mode="full",
+    )
+    projection = build_capital_projection(
+        batch_id=batch_id,
+        stable_source_id=stable_source_id,
+        source_kind=LEDGER_KIND,
+        coverage_mode="full",
+        covered_domains=["account", "position", "liability", "cashflow"],
+        time_semantics=time_semantics,
+        records=all_records,
+    )
+    projection_descriptor = persist_capital_projection(
+        artifact_store=active_artifact_store,
+        projection=projection,
+        source_artifact_id=source_descriptor.artifact_id,
+        created_at_utc=source_descriptor.created_at_utc,
+    )
     prepared = prepare_import(
         source_kind=LEDGER_KIND,
-        source_id=display_path(source_path),
+        source_id=stable_source_id,
         source_content=source_content,
         source_sha256=source_hash,
         adapter_version=ADAPTER_VERSION,
@@ -773,27 +882,22 @@ def ingest_beancount_ledger(
         findings=[finding.as_dict() for finding in findings],
         covered_domains=["account", "position", "liability", "cashflow"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
+        stable_source_id=stable_source_id,
+        projection_artifact_id=projection_descriptor.artifact_id,
+        projection_sha256=projection_descriptor.content_sha256,
+        projection_schema_version=CAPITAL_PROJECTION_SCHEMA_VERSION,
+        projection_payload=projection,
     )
     receipt_index = ReceiptIndex(
         receipt_id=receipt_id,
         kind=LEDGER_KIND,
         path=receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
-        source_refs=source_refs,
+        source_refs=[receipt_ref, stable_source_id],
         refs=[display_path(source_path)],
     )
     materialize_import_batch(
-        [
-            receipt_index,
-            *account_identities,
-            *instrument_identities,
-            *identity_aliases,
-            *accounts,
-            snapshot,
-            *positions,
-            *liabilities,
-            *cashflows,
-        ],
+        [receipt_index, *all_records],
         source=LEDGER_KIND,
         batch=prepared.batch,
         manifest=prepared.manifest,

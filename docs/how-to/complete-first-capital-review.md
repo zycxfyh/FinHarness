@@ -27,6 +27,13 @@ blocked valuation import
 -> unsupported totals suppressed
 -> no decision candidate
 -> bounded repair action
+
+multi-world import
+-> stable source identity survives a path move
+-> historical as-of excludes later evidence
+-> current world selects the later legal batch
+-> Ready / Exposure / Cockpit / Agent / Proposal share one world_id
+-> backup restore preserves the same world identity
 ```
 
 By default the workspace is temporary. Preserve the SQLite databases, source
@@ -44,6 +51,9 @@ Expected stable outcomes:
 - blocked journey: `capital_truth_admission=blocked`, intact source evidence,
   `total_assets=null`, `net_worth=null`, zero candidates, and explicit valuation
   blockers;
+- multi-world journey: path movement reuses source and batch identity, historical
+  queries prevent look-ahead, all current consumers bind one `world_id`, and a
+  verified backup restore reproduces that identity;
 - every response and Artifact keeps `execution_allowed=false`.
 
 This is synthetic product acceptance, not investment advice, performance proof,
