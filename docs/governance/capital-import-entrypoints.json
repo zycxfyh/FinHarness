@@ -82,6 +82,20 @@
       "production": true
     },
     {
+      "adapter_id": "personal-finance-export",
+      "exposure_id": "script-capital-readonly-dogfood",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/run_capital_readonly_dogfood.py",
+      "production": true
+    },
+    {
+      "adapter_id": "personal-finance-export",
+      "exposure_id": "task-capital-readonly-dogfood",
+      "exposure_kind": "task",
+      "exposure_ref": "dogfood:capital-readonly",
+      "production": true
+    },
+    {
       "adapter_id": "beancount-ledger",
       "exposure_id": "task-beancount-import",
       "exposure_kind": "task",

@@ -102,6 +102,18 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="personal-finance-export",
     ),
     CapitalImportExposureSpec(
+        exposure_id="script-capital-readonly-dogfood",
+        exposure_kind="script",
+        exposure_ref="scripts/run_capital_readonly_dogfood.py",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
+        exposure_id="task-capital-readonly-dogfood",
+        exposure_kind="task",
+        exposure_ref="dogfood:capital-readonly",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="task-beancount-import",
         exposure_kind="task",
         exposure_ref="beancount:import",
