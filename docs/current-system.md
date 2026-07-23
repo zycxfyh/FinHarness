@@ -28,7 +28,7 @@ The current request or assigned task owns the immediate result. GitHub Issues, l
 - `task beancount:import -- path/to/ledger.beancount` mirrors a Beancount ledger read-only through `bean-query`.
 - `GET /ready/truth` reports capital-truth admission separately from evidence integrity and fails closed on missing, corrupt, stale, partial, or blocked evidence.
 - Production capital imports bind a stable logical source identity, immutable raw and normalized Projection Artifacts, and one deterministic Capital World selected by business and knowledge time.
-- Exposure, Daily Brief, Cockpit, Decision scan, Agent capital context, readiness, Scenario admission, and ActionIntent preflight consume or bind the server-resolved Capital World rather than selecting independent latest snapshots.
+- Exposure, Daily Brief, Cockpit, Decision scan, Agent capital context, readiness, and Scenario admission consume or bind the server-resolved Capital World rather than selecting independent latest snapshots.
 
 The canonical command list is `Taskfile.yml`; route and response truth belongs to the effective FastAPI route graph and models, not this page.
 
@@ -39,6 +39,13 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - Exposure, positions, proposals, and timeline evidence are available through the local API and cockpit surfaces.
 
 ### Canonical synthetic acceptance
+
+- `task acceptance:capital-agent-core` proves the thin personal-capital path:
+  admitted Capital World → immutable Constitution → durable Mission and Belief
+  checkpoint → bounded Delegation → idempotent simulated Effect → Execution Kernel
+  → updated Capital World → Consequence → checkpoint/restart/close. It also proves
+  stale-world rejection, revocation, duplicate suppression, and explicit claimed-effect
+  reconciliation. It uses isolated synthetic state and has no live external effect.
 
 - `task acceptance:capital-review` proves canonical CSV import, admitted truth,
   Exposure, Daily Brief, Decision scan, governed human review, blocked valuation,
@@ -91,7 +98,7 @@ external capital evidence
 -> reconciliation / review evidence
 ```
 
-A bounded Agent operating cycle and read/explain tool surface exist, but Agent output remains evidence or a candidate at current capital authority levels. FinHarness owns admission, state, consequence authority, dispatch, receipts, stop conditions, and replay; external model runtimes do not own canonical capital state or unauthorized external effects.
+A bounded read/explain Agent loop remains available. In addition, the thin personal-capital core now supports explicit durable Mission/checkpoint/resume, selected Belief artifacts, a single-principal simulated-order Delegation, world-bound Effect admission, idempotent simulated execution, Consequence recording, and pause/revoke/reconcile recovery. FinHarness still owns canonical capital state and deterministic effects; no model runtime gains live external authority.
 
 ## Explicit non-capabilities
 
@@ -99,8 +106,8 @@ Current main does not provide:
 
 - a real broker SDK, funded-account connection, or external venue submission;
 - live trading, transfers, tax submission, or other funded external effects;
-- a public hosted Product Agent or delegated autonomous capital manager;
-- cross-cycle Agent session/resume, scheduler, daemon, or general multi-Agent runtime;
+- a public hosted Product Agent or live delegated autonomous capital manager;
+- a scheduler, daemon, automatic trigger engine, or general multi-Agent runtime; explicit local Mission checkpoint/resume is the only cross-cycle Agent state;
 - a longitudinal real-user capital-review pilot with outcome follow-up;
 - a real household Capital World and longitudinal outcome review; provider-backed
   model acceptance currently uses public-data dogfood or a typed empty-world stop.

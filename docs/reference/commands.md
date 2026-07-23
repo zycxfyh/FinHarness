@@ -105,7 +105,6 @@ task cockpit:review -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --p
 | `task experiments` | Run mature-wheel local Riskfolio experiment. | Experiment evidence only. |
 | `task agent:describe` | Describe registered OpenAI Agents SDK tools; pass `-- --profile review-draft` or `-- --profile review-note` to inspect a non-default profile. | Tool inventory. |
 | `task agent:run` | Audit the local StateCore with the bounded read-only Capital Agent; optionally use the configured OpenAI-compatible model. | Writes only ignored Agent artifacts; state and domain receipts must remain unchanged. |
-| `task agent:research` | Run the legacy provider-backed market-research example. | Research evidence only; not Capital World truth or authority. |
 | `task eval:smoke` | Run promptfoo local echo eval. | Eval harness check. |
 | `task eval:risk` | Evaluate generated finance risk note. | Overclaim/risk-note check. |
 | `task eval:redteam-boundary` | Export and run local red-team boundary corpus smoke eval. | Boundary evidence. |
@@ -126,8 +125,6 @@ task cockpit:review -- --state-db "$STATE_DB" --receipt-root "$RECEIPT_ROOT" --p
 | `task smoke` | Run minimal local smoke (`test` + `experiments`). |
 | `task ideas:list` | Show Idea Lab backlog. |
 | `task ideas:evolve` | Placeholder for manual idea evolution. |
-| `task workflow:cognitive` | Run cognitive engineering flow. |
-| `task workflow:engineering-delivery` | Run Engineering Delivery Graph. |
 
 ## Archived / Removed Entry Points
 

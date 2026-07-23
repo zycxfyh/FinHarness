@@ -1,3 +1,0 @@
-[workspace]
-members = ["crates/finharness-cli"]
-resolver = "2"

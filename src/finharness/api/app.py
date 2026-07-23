@@ -21,7 +21,6 @@ from finharness.api.keyed_mutation_capabilities import (
     load_keyed_mutation_route_capabilities,
     match_api_route,
 )
-from finharness.api.routes_action_intents import router as action_intent_router
 from finharness.api.routes_agent_authority_grants import (
     router as agent_authority_grant_router,
 )
@@ -30,7 +29,6 @@ from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
 from finharness.api.routes_identity import router as identity_router
 from finharness.api.routes_ips import router as ips_router
-from finharness.api.routes_paper_validation import router as paper_validation_router
 from finharness.api.routes_proposals import (
     identity_mutation_reconciliation_dispatcher_contracts,
 )
@@ -784,8 +782,6 @@ def create_app(
     api.include_router(proposal_router)
     api.include_router(review_router)
     api.include_router(risk_router)
-    api.include_router(action_intent_router)
-    api.include_router(paper_validation_router)
     api.include_router(agent_authority_grant_router)
     api.include_router(capital_mandate_router)
     api.include_router(ips_router)

@@ -139,7 +139,7 @@ SIMULATION_AGENT_PROFILE = AgentCapabilityProfile(
     name="simulation",
     description=(
         "Future simulation posture. Today it exposes only existing read/explain tools; "
-        "ActionIntent and PreTradeImpactReport tools are not implemented."
+        "EffectIntent and simulated execution tools are not exposed by this profile."
     ),
     capabilities=(
         AgentCapability.CAPITAL_READ,

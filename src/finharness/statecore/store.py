@@ -36,9 +36,6 @@ from finharness.statecore.model_base import SourcedStateCoreBase
 from finharness.statecore.models import (
     Account,
     AccountIdentity,
-    ActionIntent,
-    ActionIntentAuthorityBinding,
-    ActionIntentSimulationReport,
     AgentAuthorityGrant,
     AgentAuthorityGrantConsumption,
     Attestation,
@@ -47,7 +44,6 @@ from finharness.statecore.models import (
     CapitalMandate,
     CapitalMandateLifecycleEvent,
     CapitalMandateVersion,
-    CapitalObjectiveFit,
     CashflowEvent,
     DocumentRef,
     FinancialGoal,
@@ -58,10 +54,6 @@ from finharness.statecore.models import (
     InsurancePolicy,
     InvestmentPolicyStatement,
     Liability,
-    PaperAccount,
-    PaperExecutionReceipt,
-    PaperOrderTicketCandidate,
-    PaperPosition,
     Position,
     Proposal,
     ReceiptIndex,
@@ -69,8 +61,6 @@ from finharness.statecore.models import (
     ReviewEvent,
     Snapshot,
     TaxEvent,
-    TradePlanCandidate,
-    TradePlanReviewGate,
 )
 
 STATE_CORE_DB_ENV_VAR = "FINHARNESS_STATE_CORE_DB_PATH"
@@ -79,17 +69,11 @@ DEFAULT_STATE_CORE_DB_PATH = ROOT / "data" / "state" / "state-core" / "state-cor
 StateCoreRecord = (
     Account
     | AccountIdentity
-    | ActionIntent
-    | ActionIntentAuthorityBinding
-    | ActionIntentSimulationReport
     | AgentAuthorityGrant
     | AgentAuthorityGrantConsumption
     | CapitalMandate
     | CapitalMandateLifecycleEvent
     | CapitalMandateVersion
-    | CapitalObjectiveFit
-    | TradePlanCandidate
-    | TradePlanReviewGate
     | Position
     | Liability
     | FinancialGoal
@@ -101,10 +85,6 @@ StateCoreRecord = (
     | IdentityAlias
     | InstrumentIdentity
     | DocumentRef
-    | PaperAccount
-    | PaperExecutionReceipt
-    | PaperOrderTicketCandidate
-    | PaperPosition
     | Snapshot
     | ReceiptIndex
     | Proposal

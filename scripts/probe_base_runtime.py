@@ -54,7 +54,6 @@ def main() -> int:
         "uvicorn",
         "finharness.project_paths",
         "finharness.statecore.store",
-        "finharness.api.routes_paper_validation",
         "finharness.api.app",
     ]
     for module in required:
@@ -72,7 +71,7 @@ def main() -> int:
         from finharness.api.app import app
 
         paths = set(app.openapi()["paths"])
-        for required_path in ("/health", "/paper-accounts", "/execution/orders"):
+        for required_path in ("/health", "/execution/orders"):
             if required_path not in paths:
                 errors.append(f"MISSING base API route: {required_path}")
         if "/data/catalog" in paths or app.state.data_surface_available:

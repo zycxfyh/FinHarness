@@ -124,9 +124,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         matrix = yaml.safe_load(CAPABILITY_MATRIX)
         if mutate is not None:
             mutate(matrix)
-        (root / "matrix.yml").write_text(
-            yaml.safe_dump(matrix, sort_keys=False), encoding="utf-8"
-        )
+        (root / "matrix.yml").write_text(yaml.safe_dump(matrix, sort_keys=False), encoding="utf-8")
         return temp, root
 
     def test_relative_imports_resolve_to_canonical_modules(self) -> None:
@@ -233,9 +231,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             with self.subTest(label=label):
                 temp, root = self._capability_repo(files)
                 try:
-                    audit = audit_architecture(
-                        root=root, matrix_path=root / "matrix.yml"
-                    )
+                    audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
                 finally:
                     temp.cleanup()
                 matches = [
@@ -265,9 +261,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 with self.subTest(provider=provider, hidden=hidden):
                     files = {
                         "src/finharness/research_probe.py": (
-                            "import finharness.neutral_helper\n"
-                            if hidden
-                            else f"import {target}\n"
+                            "import finharness.neutral_helper\n" if hidden else f"import {target}\n"
                         )
                     }
                     expected_path: tuple[str, ...] = (
@@ -283,18 +277,12 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                         )
                     temp, root = self._capability_repo(files)
                     try:
-                        audit = audit_architecture(
-                            root=root, matrix_path=root / "matrix.yml"
-                        )
+                        audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
                     finally:
                         temp.cleanup()
                     violation = audit["violations"][0]
-                    self.assertEqual(
-                        violation["capability_id"], "statecore.canonical_mutation"
-                    )
-                    self.assertEqual(
-                        violation["kind"], "transitive" if hidden else "direct"
-                    )
+                    self.assertEqual(violation["capability_id"], "statecore.canonical_mutation")
+                    self.assertEqual(violation["kind"], "transitive" if hidden else "direct")
                     self.assertEqual(tuple(violation["path"]), expected_path)
 
     def test_new_capability_provider_is_enforced_without_rule_change(self) -> None:
@@ -309,9 +297,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         temp, root = self._capability_repo(
             {
                 "src/finharness/statecore/new_writer.py": "",
-                "src/finharness/research_probe.py": (
-                    "import finharness.statecore.new_writer\n"
-                ),
+                "src/finharness/research_probe.py": ("import finharness.statecore.new_writer\n"),
             },
             mutate=add_provider,
         )
@@ -335,8 +321,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                     "import finharness.statecore.decision_scaffold\n"
                 ),
                 "src/finharness/agent_probe.py": (
-                    "import finharness.agent_capabilities\n"
-                    "import finharness.statecore.models\n"
+                    "import finharness.agent_capabilities\nimport finharness.statecore.models\n"
                 ),
             }
         )
@@ -358,9 +343,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         corruptions: tuple[tuple[str, Callable[[dict[str, Any]], None], str], ...] = (
             (
                 "unknown capability reference",
-                lambda matrix: matrix["rules"][0][
-                    "forbidden_target_capabilities"
-                ].append("execution.unknown"),
+                lambda matrix: matrix["rules"][0]["forbidden_target_capabilities"].append(
+                    "execution.unknown"
+                ),
                 "references unknown capabilities",
             ),
             (
@@ -379,16 +364,12 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             ),
             (
                 "empty provider set",
-                lambda matrix: mutation_capability(matrix).__setitem__(
-                    "provider_modules", []
-                ),
+                lambda matrix: mutation_capability(matrix).__setitem__("provider_modules", []),
                 "provider_modules as a non-empty string list",
             ),
             (
                 "unknown owner layer",
-                lambda matrix: mutation_capability(matrix).__setitem__(
-                    "owner_layer", "unknown"
-                ),
+                lambda matrix: mutation_capability(matrix).__setitem__("owner_layer", "unknown"),
                 "unknown owner layer",
             ),
             (
@@ -489,15 +470,10 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         temp, root = self._capability_repo(
             {
                 "src/finharness/agent_probe.py": (
-                    "import finharness.neutral_helper\n"
-                    "import finharness.second_helper\n"
+                    "import finharness.neutral_helper\nimport finharness.second_helper\n"
                 ),
-                "src/finharness/neutral_helper.py": (
-                    "import finharness.execution.broker\n"
-                ),
-                "src/finharness/second_helper.py": (
-                    "import finharness.execution.broker\n"
-                ),
+                "src/finharness/neutral_helper.py": ("import finharness.execution.broker\n"),
+                "src/finharness/second_helper.py": ("import finharness.execution.broker\n"),
             },
             mutate=add_exception,
         )
@@ -540,16 +516,14 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.assertEqual(audit["record_surface_migration_count"], 9)
         self.assertEqual(audit["record_surface_component_count"], 14)
         self.assertEqual(audit["capability_count"], 3)
-        self.assertEqual(audit["capability_provider_count"], 18)
+        self.assertEqual(audit["capability_provider_count"], 9)
         self.assertEqual(audit["capability_exception_count"], 0)
         self.assertEqual(audit["agent_mature_runtime_capability_count"], 6)
         self.assertEqual(audit["agent_delegated_decision_mechanic_count"], 5)
         self.assertEqual(audit["agent_dispatch_crossing_count"], 4)
         self.assertEqual(audit["agent_harness_semantic_count"], 10)
         self.assertEqual(audit["agent_first_task_output_count"], 5)
-        self.assertEqual(
-            audit["agent_first_task_evaluation_criterion_count"], 8
-        )
+        self.assertEqual(audit["agent_first_task_evaluation_criterion_count"], 8)
         self.assertEqual(audit["agent_first_task_case_basis_count"], 4)
         self.assertEqual(audit["agent_authority_context_binding_count"], 3)
         self.assertTrue(audit["ok"])
@@ -646,9 +620,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "forbidden_unless_explicitly_allowed",
         )
         self.assertEqual(model["allowed_namespace_substitutions"], [])
-        nodes = {
-            node["name"]: node for node in model["version_graph"]["nodes"]
-        }
+        nodes = {node["name"]: node for node in model["version_graph"]["nodes"]}
         self.assertEqual(
             nodes["DecisionCaseVersion"]["depends_on"],
             [
@@ -658,12 +630,8 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 "ProposalVersion",
             ],
         )
-        self.assertNotIn(
-            "ScenarioVersion", nodes["DecisionCaseVersion"]["depends_on"]
-        )
-        self.assertEqual(
-            nodes["ScenarioVersion"]["depends_on"], ["DecisionCaseVersion"]
-        )
+        self.assertNotIn("ScenarioVersion", nodes["DecisionCaseVersion"]["depends_on"])
+        self.assertEqual(nodes["ScenarioVersion"]["depends_on"], ["DecisionCaseVersion"])
         self.assertEqual(nodes["DecisionRecord"]["may_cite"], ["ScenarioVersion"])
 
     def _identity_model(self) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
@@ -692,13 +660,10 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             with self.subTest(source=source, target=target):
                 model, planes = self._identity_model()
                 barriers = {
-                    barrier["source"]: barrier
-                    for barrier in model["substitution_barriers"]
+                    barrier["source"]: barrier for barrier in model["substitution_barriers"]
                 }
                 barriers[source]["cannot_replace"].remove(target)
-                with self.assertRaisesRegex(
-                    ValueError, "substitution barriers are incomplete"
-                ):
+                with self.assertRaisesRegex(ValueError, "substitution barriers are incomplete"):
                     validate_identity_model(model, planes=planes)
 
     def test_identity_namespaces_are_mutually_non_substitutable(self) -> None:
@@ -711,9 +676,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(source=source, target=target):
                 model, planes = self._identity_model()
-                model["allowed_namespace_substitutions"] = [
-                    {"source": source, "target": target}
-                ]
+                model["allowed_namespace_substitutions"] = [{"source": source, "target": target}]
                 with self.assertRaisesRegex(ValueError, "mutually non-substitutable"):
                     validate_identity_model(model, planes=planes)
 
@@ -725,9 +688,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 model, planes = self._identity_model()
-                namespaces = {
-                    namespace["name"]: namespace for namespace in model["namespaces"]
-                }
+                namespaces = {namespace["name"]: namespace for namespace in model["namespaces"]}
                 namespaces[name]["authority"] = authority
                 with self.assertRaisesRegex(ValueError, f"namespace {name} requires"):
                     validate_identity_model(model, planes=planes)
@@ -748,9 +709,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(node=node_name, field=field):
                 model, planes = self._identity_model()
-                nodes = {
-                    node["name"]: node for node in model["version_graph"]["nodes"]
-                }
+                nodes = {node["name"]: node for node in model["version_graph"]["nodes"]}
                 nodes[node_name][field] = value
                 with self.assertRaisesRegex(
                     ValueError, f"node {node_name} violates canonical contract"
@@ -780,10 +739,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
 
     def test_freshness_effect_redistribution_is_rejected(self) -> None:
         model, planes = self._identity_model()
-        rules = {
-            rule["trigger"]: rule
-            for rule in model["version_graph"]["freshness_rules"]
-        }
+        rules = {rule["trigger"]: rule for rule in model["version_graph"]["freshness_rules"]}
         rules["capital_state_admission"]["affects"] = ["CapitalStateVersion"]
         rules["review_event"]["affects"] = [
             "ReviewStateVersion",
@@ -848,15 +804,10 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             for field in fields:
                 with self.subTest(category=category_name, field=field):
                     taxonomy = self._record_taxonomy()
-                    categories = {
-                        category["name"]: category
-                        for category in taxonomy["categories"]
-                    }
+                    categories = {category["name"]: category for category in taxonomy["categories"]}
                     current = categories[category_name][field]
                     categories[category_name][field] = (
-                        list(reversed(current))
-                        if isinstance(current, list)
-                        else f"{current} drift"
+                        list(reversed(current)) if isinstance(current, list) else f"{current} drift"
                     )
                     with self.assertRaisesRegex(
                         ValueError, f"record category {category_name} violates"
@@ -867,10 +818,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         for field in ("domain_authority_effect", "decision_validity_effect"):
             with self.subTest(field=field):
                 taxonomy = self._record_taxonomy()
-                categories = {
-                    category["name"]: category
-                    for category in taxonomy["categories"]
-                }
+                categories = {category["name"]: category for category in taxonomy["categories"]}
                 categories["OperationReceipt"][field] = "granted"
                 with self.assertRaisesRegex(ValueError, "OperationReceipt violates"):
                     validate_record_taxonomy(taxonomy)
@@ -879,10 +827,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         for category_name in ("AgentRunTrace", "BuildAttestation"):
             with self.subTest(category=category_name):
                 taxonomy = self._record_taxonomy()
-                categories = {
-                    category["name"]: category
-                    for category in taxonomy["categories"]
-                }
+                categories = {category["name"]: category for category in taxonomy["categories"]}
                 categories[category_name]["financial_evidence_admission"] = "automatic"
                 with self.assertRaisesRegex(ValueError, f"{category_name} violates"):
                     validate_record_taxonomy(taxonomy)
@@ -896,10 +841,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(field=field):
                 taxonomy = self._record_taxonomy()
-                categories = {
-                    category["name"]: category
-                    for category in taxonomy["categories"]
-                }
+                categories = {category["name"]: category for category in taxonomy["categories"]}
                 categories["ProjectionIndex"][field] = value
                 with self.assertRaisesRegex(ValueError, "ProjectionIndex violates"):
                     validate_record_taxonomy(taxonomy)
@@ -925,9 +867,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "statecore_receipt_backed_domain_writes", "canonical_domain_state"
         )
         component["target_category"] = ["DomainRecord", "OperationReceipt"]
-        with self.assertRaisesRegex(
-            ValueError, "target_category must be a single string"
-        ):
+        with self.assertRaisesRegex(ValueError, "target_category must be a single string"):
             validate_record_taxonomy(taxonomy)
 
     def test_migration_component_exact_owner_issues(self) -> None:
@@ -935,9 +875,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "statecore_receipt_backed_domain_writes", "canonical_domain_state"
         )
         component["owner_issues"].remove(258)
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_migration_component_no_spurious_owner_issue(self) -> None:
@@ -945,9 +883,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "statecore_receipt_backed_domain_writes", "canonical_domain_state"
         )
         component["owner_issues"].append(395)
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_parent_owner_pool_is_rejected(self) -> None:
@@ -969,9 +905,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "commit_identity_verification_manifest",
         )
         component["current_conformance"] = "conforming"
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_prerequisite_386_cannot_be_removed(self) -> None:
@@ -980,9 +914,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "commit_identity_verification_manifest",
         )
         component["completed_prerequisites"] = []
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_386_is_prerequisite_not_remaining_migration_owner(self) -> None:
@@ -992,9 +924,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         )
         component["completed_prerequisites"] = []
         component["owner_issues"] = [379, 386]
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_commit_identity_not_domain_record(self) -> None:
@@ -1003,9 +933,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "commit_identity_verification_manifest",
         )
         component["target_category"] = "DomainRecord"
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     def test_disposition_cannot_claim_authenticated_build_attestation(self) -> None:
@@ -1013,12 +941,8 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "commit_identity_manifest_and_ci_artifacts",
             "commit_identity_verification_manifest",
         )
-        component["disposition"] = (
-            "current manifest is already an authenticated BuildAttestation"
-        )
-        with self.assertRaisesRegex(
-            ValueError, "migrations are incomplete"
-        ):
+        component["disposition"] = "current manifest is already an authenticated BuildAttestation"
+        with self.assertRaisesRegex(ValueError, "migrations are incomplete"):
             validate_record_taxonomy(taxonomy)
 
     # --- AgentRunTrace canonical trace tests ---
@@ -1049,37 +973,27 @@ class ArchitectureBoundaryTest(unittest.TestCase):
     def test_otel_export_authority_not_authoritative(self) -> None:
         taxonomy = self._record_taxonomy()
         taxonomy["agent_trace_observability_export"]["authority"] = "authoritative"
-        with self.assertRaisesRegex(
-            ValueError, "agent_trace_observability_export.authority"
-        ):
+        with self.assertRaisesRegex(ValueError, "agent_trace_observability_export.authority"):
             validate_record_taxonomy(taxonomy)
 
     def test_otel_export_sampling_not_canonical_trace(self) -> None:
         taxonomy = self._record_taxonomy()
-        taxonomy["agent_trace_observability_export"]["sampling"] = (
-            "canonical trace may be sampled"
-        )
-        with self.assertRaisesRegex(
-            ValueError, "agent_trace_observability_export.sampling"
-        ):
+        taxonomy["agent_trace_observability_export"]["sampling"] = "canonical trace may be sampled"
+        with self.assertRaisesRegex(ValueError, "agent_trace_observability_export.sampling"):
             validate_record_taxonomy(taxonomy)
 
     def test_otel_export_cannot_satisfy_restart_hydration(self) -> None:
         taxonomy = self._record_taxonomy()
         cannot = taxonomy["agent_trace_observability_export"]["cannot_satisfy"]
         cannot.remove("restart hydration")
-        with self.assertRaisesRegex(
-            ValueError, "agent_trace_observability_export.cannot_satisfy"
-        ):
+        with self.assertRaisesRegex(ValueError, "agent_trace_observability_export.cannot_satisfy"):
             validate_record_taxonomy(taxonomy)
 
     def test_otel_export_cannot_satisfy_canonical_trace_completeness(self) -> None:
         taxonomy = self._record_taxonomy()
         cannot = taxonomy["agent_trace_observability_export"]["cannot_satisfy"]
         cannot.remove("canonical trace completeness")
-        with self.assertRaisesRegex(
-            ValueError, "agent_trace_observability_export.cannot_satisfy"
-        ):
+        with self.assertRaisesRegex(ValueError, "agent_trace_observability_export.cannot_satisfy"):
             validate_record_taxonomy(taxonomy)
 
     # --- Unknown field and category guard tests ---
@@ -1105,9 +1019,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "statecore_receipt_backed_domain_writes", "canonical_domain_state"
         )
         component["runtime_classifier"] = "suffix_based"
-        with self.assertRaisesRegex(
-            ValueError, "component fields violate canonical contract"
-        ):
+        with self.assertRaisesRegex(ValueError, "component fields violate canonical contract"):
             validate_record_taxonomy(taxonomy)
 
     def test_migration_component_unknown_category_rejected(self) -> None:
@@ -1137,9 +1049,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                     validate_record_taxonomy(taxonomy)
 
     def _agent_harness_boundary(self) -> dict[str, object]:
-        return copy.deepcopy(
-            load_layer_matrix()["plane_model"]["agent_harness_boundary"]
-        )
+        return copy.deepcopy(load_layer_matrix()["plane_model"]["agent_harness_boundary"])
 
     def test_agent_harness_unknown_top_level_fields_are_rejected(self) -> None:
         for field in ("runtime_registry", "second_loop", "memory_platform"):
@@ -1178,9 +1088,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(crossing=crossing):
                 boundary = self._agent_harness_boundary()
-                boundary["primary_runtime_path"][
-                    "all_tool_dispatch_must_cross"
-                ].remove(crossing)
+                boundary["primary_runtime_path"]["all_tool_dispatch_must_cross"].remove(crossing)
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
@@ -1193,9 +1101,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(responsibility=responsibility):
                 boundary = self._agent_harness_boundary()
-                boundary["delegated_behind_current_decision_port"].append(
-                    responsibility
-                )
+                boundary["delegated_behind_current_decision_port"].append(responsibility)
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
@@ -1265,9 +1171,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(protected=protected):
                 boundary = self._agent_harness_boundary()
-                boundary["mcp_boundary"][
-                    "transport_authorization_cannot_substitute_for"
-                ].remove(protected)
+                boundary["mcp_boundary"]["transport_authorization_cannot_substitute_for"].remove(
+                    protected
+                )
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
@@ -1333,9 +1239,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         ):
             with self.subTest(version=version):
                 boundary = self._agent_harness_boundary()
-                boundary["first_evaluation_task"]["required_case_basis"].remove(
-                    version
-                )
+                boundary["first_evaluation_task"]["required_case_basis"].remove(version)
                 with self.assertRaisesRegex(ValueError, "violates canonical contract"):
                     validate_agent_harness_boundary(boundary)
 
@@ -1439,9 +1343,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         )
         for relative in paths:
             with self.subTest(path=relative):
-                text = (Path(__file__).resolve().parents[1] / relative).read_text(
-                    encoding="utf-8"
-                )
+                text = (Path(__file__).resolve().parents[1] / relative).read_text(encoding="utf-8")
                 self.assertIn("Canonical plane model", text)
                 self.assertIn("Truth", text)
                 self.assertIn("Knowledge", text)
@@ -1470,11 +1372,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             ]
 
         temp, root = self._capability_repo(
-            {
-                "src/finharness/neutral_helper.py": (
-                    "import finharness.execution.broker\n"
-                )
-            },
+            {"src/finharness/neutral_helper.py": ("import finharness.execution.broker\n")},
             mutate=add_wrong_layer_exception,
         )
         self.addCleanup(temp.cleanup)
@@ -1500,9 +1398,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 for rule in matrix["rules"]
                 if rule["id"] == "agent-does-not-bypass-execution-commands"
             )
-            agent_rule["forbidden_target_modules"] = [
-                "finharness.execution.adapters.*"
-            ]
+            agent_rule["forbidden_target_modules"] = ["finharness.execution.adapters.*"]
 
         cases = (
             (
@@ -1536,20 +1432,15 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         )
         for kind, files, expected_path in cases:
             with self.subTest(kind=kind):
-                temp, root = self._capability_repo(
-                    files, mutate=retain_adapter_fallback
-                )
+                temp, root = self._capability_repo(files, mutate=retain_adapter_fallback)
                 try:
-                    audit = audit_architecture(
-                        root=root, matrix_path=root / "matrix.yml"
-                    )
+                    audit = audit_architecture(root=root, matrix_path=root / "matrix.yml")
                 finally:
                     temp.cleanup()
                 violations = [
                     violation
                     for violation in audit["violations"]
-                    if violation["target_module"]
-                    == "finharness.execution.adapters.future_broker"
+                    if violation["target_module"] == "finharness.execution.adapters.future_broker"
                 ]
                 self.assertEqual(len(violations), 1)
                 self.assertIsNone(violations[0]["capability_id"])
@@ -1584,8 +1475,7 @@ class ArchitectureBoundaryTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         with self.assertRaisesRegex(
             ValueError,
-            "absent import edge: finharness.neutral_helper -> "
-            "finharness.execution.broker",
+            "absent import edge: finharness.neutral_helper -> finharness.execution.broker",
         ):
             audit_architecture(root=root, matrix_path=root / "matrix.yml")
 

@@ -90,6 +90,18 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="personal-finance-export",
     ),
     CapitalImportExposureSpec(
+        exposure_id="script-capital-agent-core-acceptance",
+        exposure_kind="script",
+        exposure_ref="scripts/run_capital_agent_core_acceptance.py",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
+        exposure_id="task-capital-agent-core-acceptance",
+        exposure_kind="task",
+        exposure_ref="acceptance:capital-agent-core",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="script-scf-capital-dogfood",
         exposure_kind="script",
         exposure_ref="scripts/run_scf_capital_dogfood.py",
@@ -147,8 +159,7 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         exposure_id="function-broker-receipt-compat",
         exposure_kind="function",
         exposure_ref=(
-            "finharness.statecore.snapshot_ingest."
-            "ingest_portfolio_snapshot_from_receipt"
+            "finharness.statecore.snapshot_ingest.ingest_portfolio_snapshot_from_receipt"
         ),
         adapter_id="broker-read-receipt",
     ),
@@ -179,8 +190,7 @@ PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES = frozenset(
     spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 )
 _MATERIALIZED_SOURCE_BY_SOURCE_KIND = {
-    spec.source_kind: spec.materialized_source
-    for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
+    spec.source_kind: spec.materialized_source for spec in PRODUCTION_CAPITAL_IMPORT_ADAPTERS
 }
 
 

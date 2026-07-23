@@ -18,7 +18,6 @@ documentation:
       - README.md
       - docs/README.md
     historical_roots:
-      - docs/archive
       - docs/notes
       - docs/proposals
       - docs/reviews
@@ -170,49 +169,6 @@ systems:
       - uv run python -m unittest tests.test_risk_register
     upgrade_trigger: Review flows become collaborative or need role/permission separation.
 
-  - id: capital_action_intent
-    name: Capital Action Intent
-    status: legacy
-    summary: Superseded ActionIntent/TradePlan compatibility chain retained for historical receipt readability and migration through the Execution Kernel legacy bridge; no new callers.
-    docs:
-      - docs/architecture/system-map.md
-      - docs/reference/interfaces.md
-      - docs/adr/2026-07-03-action-intent-authority-bindings-admit-only-to-next-governance-step.md
-      - docs/adr/2026-07-04-capital-objective-fit-before-order-ticket.md
-    runtime_roots:
-      - src/finharness/statecore/action_intents.py
-      - src/finharness/statecore/action_intent_authority_bindings.py
-      - src/finharness/statecore/action_intent_simulations.py
-      - src/finharness/statecore/trade_plan_candidates.py
-      - src/finharness/statecore/capital_objective_fits.py
-      - src/finharness/statecore/trade_plan_review_gates.py
-      - src/finharness/action_intent_preflight.py
-      - src/finharness/api/routes_action_intents.py
-    mature_posture: Compatibility-only. Preserve historical reads and migration evidence; do not add new objects, callers, or product capability to this chain.
-    checks:
-      - uv run python -m unittest tests.test_action_intents
-      - uv run python -m unittest tests.test_action_intent_authority_bindings
-      - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Remove legacy writes after a real consumer audit proves no current callers; retain only bounded readers and migration support.
-
-  - id: paper_validation_runtime
-    name: Paper Validation Runtime
-    status: legacy
-    summary: "Superseded paper-order/account compatibility runtime retained for historical reads; new simulated execution uses the canonical Execution Kernel."
-    docs:
-      - docs/architecture/system-map.md
-      - docs/product/capital-workbench-roadmap.md
-    runtime_roots:
-      - src/finharness/statecore/paper_order_tickets.py
-      - src/finharness/statecore/paper_executions.py
-      - src/finharness/statecore/paper_accounts.py
-      - src/finharness/api/routes_paper_validation.py
-    mature_posture: Compatibility-only. Preserve historical receipts and bridge projections while new callers use the Execution Kernel simulated substrate.
-    checks:
-      - uv run python -m unittest tests.test_action_intents
-      - uv run python -m unittest tests.test_statecore_api
-    upgrade_trigger: Remove legacy writes after consumer and receipt migration audits; build future paper review over canonical execution reports.
-
   - id: execution_kernel
     name: Execution Kernel
     status: canonical
@@ -307,12 +263,13 @@ systems:
   - id: agent_cognition_runtime
     name: Agent Cognition Runtime / Work Orchestrator
     status: current
-    summary: Agent Operating Cycle v0.1 passes the 15-contract AUT2 foundation gate with typed arguments, observation-driven decisions, independent budgets, playbook preflight, autonomy admission, terminal receipts/results/search/workspace, and all declared stop reducers. Session, resume, scheduling, and AUT3 authority are absent.
+    summary: The bounded read/explain cycle remains, plus a thin artifact-first personal-capital core with immutable Constitution, durable Mission/checkpoint/resume, selected Beliefs, bounded single-principal Delegation, world-bound idempotent simulated Effects, Consequences, and explicit pause/revoke/reconcile recovery. Scheduler, daemon, multi-Agent governance, and live external effects are absent.
     docs:
       - docs/architecture/agent-native-target-space.md
       - docs/architecture/agent-operating-surface.md
       - docs/architecture/agent-work-loop-plan.md
     runtime_roots:
+      - src/finharness/capital_agent.py
       - src/finharness/agent_cognition_flow.py
       - src/finharness/agent_run_receipts.py
       - src/finharness/agent_runtime_receipts.py
@@ -333,7 +290,8 @@ systems:
       - task test:pytest
       - uv run python scripts/run_agent_operating_surface_smoke.py
       - uv run python scripts/run_agent_work_loop_smoke.py
-    upgrade_trigger: Add session/checkpoint/resume only for measured long-running recovery needs; AUT3 requires W1/W2 world prerequisites and a separately tested delegated-review mandate.
+      - uv run python scripts/run_capital_agent_core_acceptance.py
+    upgrade_trigger: Add scheduling, concurrent reservation, multi-principal governance, non-trade effects, Observer Agents, or live authority only after concrete dogfood exposes that need.
 
   - id: agent_autonomy_control
     name: Agent Autonomy Control Plane
@@ -393,16 +351,3 @@ systems:
       - task security:scan
       - task security:fuzz
     upgrade_trigger: Add a mechanism only after a repeated observed failure survives direct tests, Git recovery, backup, receipt, or reconciliation.
-  - id: archived_live_trading_legacy
-    name: Archived Live-Trading Legacy
-    status: archived
-    summary: Historical OKX, Alpaca, trading guard, and market-access code; no mainline runtime edge.
-    docs:
-      - experiments/archive/live_trading_legacy/README.md
-      - docs/architecture/capital-os-layering.md
-    runtime_roots:
-      - experiments/archive/live_trading_legacy/
-    mature_posture: If revived, redesign as a separately gated capability rather than inheriting mainline authority.
-    checks:
-      - task docs:current-check
-    upgrade_trigger: Any future live-read/live-write capability needs a new C3 design and threat model.

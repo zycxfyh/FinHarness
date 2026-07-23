@@ -30,9 +30,7 @@ and its non-current roots/paths:
 - `documentation.navigation.entrypoints` start current traversal;
 - `historical_roots` and `historical_paths` are excluded from current-fact
   traversal;
-- `docs/archive/**` is interpreted as `archived`;
-- the remaining configured historical roots/paths are interpreted as
-  `historical`.
+- configured historical roots/paths are interpreted as `historical`; deleted archive material remains recoverable through Git history.
 
 A document outside those configured roots is `current` unless it carries the
 visible lifecycle banner defined below. There is no separate lifecycle JSON,
@@ -79,8 +77,8 @@ When an important path moves, the old path may become a short redirect stub:
 
 > **Documentation lifecycle:** `superseded`
 > **Current authority:** [Documentation fact governance](documentation-fact-governance.md)
-> **Reason:** The authored evidence moved into the archive without being duplicated.
-> **Redirect stub:** [Archived evidence](../archive/legacy-rust-crate/ARCHIVED.md)
+> **Reason:** The authored evidence was removed from the current worktree and remains recoverable from Git history.
+> **Redirect stub:** Reference the exact historical commit or pull request.
 ```
 
 A redirect stub is not a second editable copy. It contains no duplicated body,

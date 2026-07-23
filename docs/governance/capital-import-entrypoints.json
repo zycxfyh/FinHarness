@@ -69,6 +69,20 @@
     },
     {
       "adapter_id": "personal-finance-export",
+      "exposure_id": "script-capital-agent-core-acceptance",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/run_capital_agent_core_acceptance.py",
+      "production": true
+    },
+    {
+      "adapter_id": "personal-finance-export",
+      "exposure_id": "task-capital-agent-core-acceptance",
+      "exposure_kind": "task",
+      "exposure_ref": "acceptance:capital-agent-core",
+      "production": true
+    },
+    {
+      "adapter_id": "personal-finance-export",
       "exposure_id": "script-scf-capital-dogfood",
       "exposure_kind": "script",
       "exposure_ref": "scripts/run_scf_capital_dogfood.py",
