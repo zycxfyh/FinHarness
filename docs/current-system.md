@@ -6,16 +6,18 @@ This page is the shortest maintained orientation for FinHarness. It answers what
 
 ## Product identity
 
-FinHarness is a local-first personal capital review and decision system. It mirrors capital evidence into a receipt-backed state model, derives bounded observations and decision candidates, supports governed human review, and keeps execution on a simulated substrate.
+FinHarness is a local-first personal capital Agent system. It mirrors capital evidence into a receipt-backed Capital World, carries durable Missions and bounded Delegations, and executes only registered simulated Effects through a recoverable local Runtime. Governed human review remains available while the new Agent-native path becomes the primary product trunk.
 
 The current product objective is the verified material capital decision review owned by [Program #277](https://github.com/zycxfyh/FinHarness/issues/277):
 
 ```text
-trusted capital state
--> admitted evidence
--> reviewable decision candidate
--> human decide / defer / reject
--> outcome review and learning
+trusted Capital World
+-> durable Mission and Belief
+-> bounded Delegation
+-> admitted registered Effect
+-> recoverable Job / Attempt
+-> simulated execution and reconciliation
+-> Consequence, report, and learning
 ```
 
 The current request or assigned task owns the immediate result. GitHub Issues, labels, relationships, and pull requests coordinate durable shared work when useful; they are not a per-change permission system. Maintained Markdown must not copy changing child status or maintain a second implementation roadmap.
@@ -39,6 +41,12 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - Exposure, positions, proposals, and timeline evidence are available through the local API and cockpit surfaces.
 
 ### Canonical synthetic acceptance
+
+- `task acceptance:capital-runtime` proves the first real Agent-native execution trunk:
+  authenticated Principal and Agent Runtime → admitted Effect → registered Rust Runtime operation
+  → idempotent Job/Attempt → systemd/cgroup-owned Python Worker → simulated Execution Kernel
+  → PositionDelta and Reconciliation → Effect bound back to its Runtime Job. The caller cannot
+  select an executable, environment, pre-trade position, or authoritative reference price.
 
 - `task acceptance:capital-agent-core` proves the thin personal-capital path:
   admitted Capital World → immutable Constitution → durable Mission and Belief
@@ -89,16 +97,16 @@ Review evidence does not grant execution authority.
 
 ```text
 external capital evidence
--> production importer
--> receipt-backed State Core
--> exposure / Daily Brief
--> decision candidates
--> governed human review
+-> receipt-backed State Core and Capital World
+-> Mission / Belief / Delegation
+-> registered Effect admission
+-> recoverable Rust Job / Attempt
+-> systemd-owned Python capital Worker
 -> simulated Execution Kernel
--> reconciliation / review evidence
+-> reconciliation / Consequence / report
 ```
 
-A bounded read/explain Agent loop remains available. In addition, the thin personal-capital core now supports explicit durable Mission/checkpoint/resume, selected Belief artifacts, a single-principal simulated-order Delegation, world-bound Effect admission, idempotent simulated execution, Consequence recording, and pause/revoke/reconcile recovery. FinHarness still owns canonical capital state and deterministic effects; no model runtime gains live external authority.
+A bounded read/explain Agent loop remains available. The personal-capital core now connects durable Mission/checkpoint/resume, selected Belief artifacts, a single-principal simulated-order Delegation, world-bound Effect admission, and system-derived position/price facts to a transplanted Rust execution kernel. The kernel owns idempotent Job/Attempt dispatch, process-tree ownership, cancellation, bounded Artifacts, terminal commit, and restart/orphan recovery; Python retains Capital World, Mission, Delegation, Risk, broker reconciliation, Consequence, and reports. No model runtime gains live external authority.
 
 ## Explicit non-capabilities
 

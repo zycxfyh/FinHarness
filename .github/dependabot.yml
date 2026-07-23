@@ -59,5 +59,11 @@ updates:
           - "pytest"
           - "ruff"
 
-  # Rust crate archived 2026-06-13 (docs/archive/legacy-rust-crate); no cargo
-  # manifest on the build path, so the cargo ecosystem entry was removed.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      runtime:
+        patterns:
+          - "*"

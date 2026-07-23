@@ -1,6 +1,6 @@
 schema: finharness.system_catalog.v3
 status: current
-updated: "2026-07-22"
+updated: "2026-07-24"
 allowed_statuses: [canonical, current, thin, scaffolded, legacy, planned, archived]
 fact_ownership:
   system_ownership_and_lifecycle: docs/architecture/system-catalog.yml
@@ -263,13 +263,16 @@ systems:
   - id: agent_cognition_runtime
     name: Agent Cognition Runtime / Work Orchestrator
     status: current
-    summary: The bounded read/explain cycle remains, plus a thin artifact-first personal-capital core with immutable Constitution, durable Mission/checkpoint/resume, selected Beliefs, bounded single-principal Delegation, world-bound idempotent simulated Effects, Consequences, and explicit pause/revoke/reconcile recovery. Scheduler, daemon, multi-Agent governance, and live external effects are absent.
+    summary: The bounded read/explain cycle remains, plus a thin personal-capital core with immutable Constitution, durable Mission/checkpoint/resume, selected Beliefs, bounded single-principal Delegation, world-bound simulated Effects, and a recoverable Rust Job/Attempt Runtime for registered capital Workers. Scheduler, multi-Agent governance, and live external effects are absent.
     docs:
       - docs/architecture/agent-native-target-space.md
       - docs/architecture/agent-operating-surface.md
       - docs/architecture/agent-work-loop-plan.md
     runtime_roots:
       - src/finharness/capital_agent.py
+      - src/finharness/capital_runtime.py
+      - src/finharness/runtime_worker.py
+      - crates/finharness-runtime/
       - src/finharness/agent_cognition_flow.py
       - src/finharness/agent_run_receipts.py
       - src/finharness/agent_runtime_receipts.py
@@ -284,13 +287,15 @@ systems:
       - src/finharness/agent_operating_flow.py
       - src/finharness/review_workspace.py
       - src/finharness/agent_work_loop.py
-    mature_posture: Keep domain cognition contracts provider-neutral. Reuse mature runner/checkpoint infrastructure only after the local action-observation-decision reducer and artifact chain are semantically proven.
+    mature_posture: Python owns capital and Agent semantics; the transplanted Rust kernel owns only execution identity, idempotency, process lifecycle, bounded Artifacts, and recovery. Registered operations prevent model-selected executables or environment, while broker and capital reconciliation remain domain-owned.
     checks:
       - task test:all
       - task test:pytest
       - uv run python scripts/run_agent_operating_surface_smoke.py
       - uv run python scripts/run_agent_work_loop_smoke.py
       - uv run python scripts/run_capital_agent_core_acceptance.py
+      - task test:runtime
+      - task acceptance:capital-runtime
     upgrade_trigger: Add scheduling, concurrent reservation, multi-principal governance, non-trade effects, Observer Agents, or live authority only after concrete dogfood exposes that need.
 
   - id: agent_autonomy_control

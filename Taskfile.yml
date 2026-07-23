@@ -78,6 +78,7 @@ tasks:
       - task: lint
       - task: typecheck
       - task: test:all
+      - task: test:runtime
 
   check:ci:
     desc: CI merge gate — fast checks + base profile + integration + frontend + governance + rules
@@ -114,6 +115,17 @@ tasks:
     desc: Read a local observability trace-index receipt (bounded summary, no raw payloads)
     cmds:
       - uv run python scripts/read_observability_trace.py {{.CLI_ARGS}}
+
+  test:runtime:
+    desc: Verify the recoverable Rust execution kernel and capitalized request boundary
+    cmds:
+      - cargo fmt --all --check
+      - cargo test -p finharness-runtime --all-features
+
+  runtime:build:
+    desc: Build the FinHarness Runtime, Runner, and inherited recovery fixtures
+    cmds:
+      - cargo build -p finharness-runtime --all-features --bins
 
   test:frontend:
     desc: Run jsdom-based frontend DOM tests
@@ -294,6 +306,12 @@ tasks:
     desc: Prove the thin Constitution, Mission, Delegation, simulated Effect, Consequence, and recovery loop
     cmds:
       - uv run python scripts/run_capital_agent_core_acceptance.py
+
+  acceptance:capital-runtime:
+    desc: Prove Mission/Effect dispatch through Rust Job/Attempt, systemd, Worker, and domain reconciliation
+    cmds:
+      - task: runtime:build
+      - uv run python scripts/run_capital_runtime_acceptance.py
 
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths

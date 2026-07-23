@@ -50,8 +50,8 @@ jobs:
           relevant=false
           while IFS= read -r path; do
             case "$path" in
-              *.py|pyproject.toml|uv.lock|Taskfile.yml|\
-              .github/workflows/dependency-profiles.yml)
+              *.py|pyproject.toml|uv.lock|Cargo.toml|Cargo.lock|\
+              crates/*/Cargo.toml|Taskfile.yml|.github/workflows/dependency-profiles.yml)
                 relevant=true
                 ;;
             esac

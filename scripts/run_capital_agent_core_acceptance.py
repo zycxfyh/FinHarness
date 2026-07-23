@@ -164,7 +164,6 @@ def run_acceptance() -> dict[str, object]:
             effect_intent_id=intent.effect_intent_id,
             admission_id=admission.admission_id,
             current_world=before,
-            position_quantity_before=Decimal("9"),
         )
         replay = store.execute_simulated_effect(
             engine=engine,
@@ -172,7 +171,6 @@ def run_acceptance() -> dict[str, object]:
             effect_intent_id=intent.effect_intent_id,
             admission_id=admission.admission_id,
             current_world=before,
-            position_quantity_before=Decimal("9"),
         )
         _require(execution == replay, "duplicate effect executed twice")
 
@@ -307,7 +305,6 @@ def run_acceptance() -> dict[str, object]:
                 effect_intent_id=recovery_intent.effect_intent_id,
                 admission_id=recovery_admission.admission_id,
                 current_world=after,
-                position_quantity_before=Decimal("7"),
             )
         except EffectRecoveryRequired as exc:
             recovered = store.reconcile_claimed_execution(
