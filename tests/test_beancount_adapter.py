@@ -7,10 +7,15 @@ import unittest
 from decimal import Decimal
 from pathlib import Path
 
+from sqlmodel import Session, select
+
+from finharness.artifact_store import LocalArtifactStore
 from finharness.beancount_adapter import (
     BeancountLedgerError,
     ingest_beancount_ledger,
 )
+from finharness.capital_import_recovery import recover_capital_imports
+from finharness.statecore.capital_world import resolve_capital_world
 from finharness.statecore.models import (
     Account,
     CashflowEvent,
@@ -105,6 +110,65 @@ class BeancountAdapterTest(unittest.TestCase):
         changed = ingest_beancount_ledger(main, engine=self.engine, receipt_root=self.receipt_root)
         self.assertNotEqual(first.snapshot_id, changed.snapshot_id)
         self.assertNotEqual(first.receipt_id, changed.receipt_id)
+
+    def test_included_ledger_tree_replays_from_raw_artifact(self) -> None:
+        accounts = self.root / "accounts.beancount"
+        main = self.root / "main.beancount"
+        accounts.write_text(
+            "2026-01-01 open Assets:Brokerage\n"
+            "2026-01-01 open Assets:Cash USD\n",
+            encoding="utf-8",
+        )
+        main.write_text(
+            'include "accounts.beancount"\n\n'
+            '2026-01-02 * "Buy"\n'
+            "  Assets:Brokerage  10 SPY {500.00 USD}\n"
+            "  Assets:Cash      -5000.00 USD\n\n"
+            "2026-06-18 price SPY 600.00 USD\n",
+            encoding="utf-8",
+        )
+        result = ingest_beancount_ledger(
+            main,
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+        )
+        before = resolve_capital_world(
+            engine=self.engine,
+            as_of_utc="2099-01-01T00:00:00+00:00",
+            known_at_utc="2099-01-01T00:00:00+00:00",
+        )
+        self.assertTrue(before.selected_sources)
+
+        accounts.unlink()
+        main.unlink()
+        with Session(self.engine) as session:
+            for position in session.exec(
+                select(Position).where(Position.snapshot_id == result.snapshot_id)
+            ).all():
+                session.delete(position)
+            snapshot = session.get(Snapshot, result.snapshot_id)
+            self.assertIsNotNone(snapshot)
+            session.delete(snapshot)
+            session.commit()
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=LocalArtifactStore(self.receipt_root / "artifact-store"),
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        self.assertTrue(any(item.startswith("replayed:") for item in recovered.actions))
+        staged_roots = list(
+            (self.receipt_root / "recovery" / "sources").glob("*/main.beancount")
+        )
+        self.assertEqual(len(staged_roots), 1)
+        self.assertTrue((staged_roots[0].parent / "accounts.beancount").is_file())
+        after = resolve_capital_world(
+            engine=self.engine,
+            as_of_utc="2099-01-01T00:00:00+00:00",
+            known_at_utc="2099-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(after.world_id, before.world_id)
 
     def test_main_file_change_changes_content_hash(self) -> None:
         ledger = self.root / "main-only.beancount"

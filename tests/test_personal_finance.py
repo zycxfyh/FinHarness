@@ -429,12 +429,12 @@ class PersonalFinanceExportAdapterTest(unittest.TestCase):
             )
         artifact_store = LocalArtifactStore(self.receipt_root / "artifact-store")
         self.assertTrue(artifact_store.audit().ok)
-        self.assertEqual(artifact_store.audit().descriptor_count, 2)
+        self.assertEqual(artifact_store.audit().descriptor_count, 3)
         self.assertEqual(read_all(ImportBatch, engine=self.engine), [])
         recovered = ingest_personal_finance_export(
             export, engine=self.engine, receipt_root=self.receipt_root
         )
-        self.assertEqual(artifact_store.audit().descriptor_count, 2)
+        self.assertEqual(artifact_store.audit().descriptor_count, 3)
         self.assertEqual(
             receipt_provenance(recovered.receipt_id, engine=self.engine).status,
             "materialized",

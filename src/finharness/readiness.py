@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Session, select
 
 from finharness.artifact_store import (
     ArtifactNotFoundError,
@@ -26,6 +27,8 @@ from finharness.capital_truth import (
     CapitalTruthAdmissionStatus,
     EvidenceIntegrityStatus,
 )
+from finharness.statecore.capital_world import resolve_capital_world
+from finharness.statecore.models import ImportBatch, ReceiptIndex, ReceiptManifest, Snapshot
 from finharness.statecore.receipt_io import resolve_under
 from finharness.statecore.store import CURRENT_STATE_CORE_USER_VERSION
 
@@ -74,10 +77,14 @@ class CapitalTruthReadiness(BaseModel):
     capital_truth_admission: CapitalTruthAdmissionStatus
     current: bool
     checked_manifest_id: str | None
+    world_id: str | None = None
+    basis_digest: str | None = None
+    selected_batch_ids: tuple[str, ...] = ()
+    checked_manifest_ids: tuple[str, ...] = ()
     findings: tuple[TruthFinding, ...]
     execution_allowed: Literal[False] = False
     non_claims: tuple[str, ...] = (
-        "Bounded latest-import evidence check only.",
+        "Bounded resolved Capital World evidence check.",
         "Not accounting reconciliation.",
         "Not execution authorization.",
     )
@@ -243,7 +250,9 @@ def _binding_findings(row: Mapping[str, Any], receipt_root: Path) -> list[TruthF
     return findings
 
 
-def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[TruthFinding]:
+def _artifact_findings(  # noqa: C901 -- validates three immutable evidence classes
+    row: Mapping[str, Any], receipt_root: Path
+) -> list[TruthFinding]:
     findings: list[TruthFinding] = []
     store = LocalArtifactStore(receipt_root / "artifact-store")
     try:
@@ -261,6 +270,32 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
         findings.append(_finding("source_artifact_missing_or_corrupt", "corrupt", str(exc)))
     except OSError as exc:
         findings.append(_finding("source_artifact_unavailable", "unavailable", str(exc)))
+    projection_artifact_id = row.get("projection_artifact_id")
+    projection_sha256 = row.get("projection_sha256")
+    if projection_artifact_id:
+        try:
+            projection_descriptor = store.descriptor(str(projection_artifact_id))
+            store.read(str(projection_artifact_id))
+            if projection_descriptor.content_sha256 != projection_sha256:
+                findings.append(
+                    _finding(
+                        "projection_artifact_hash_mismatch",
+                        "corrupt",
+                        "projection hash differs",
+                    )
+                )
+        except ArtifactNotFoundError as exc:
+            findings.append(
+                _finding("projection_artifact_missing_or_corrupt", "missing", str(exc))
+            )
+        except (ValidationError, UnicodeDecodeError, ArtifactStoreError) as exc:
+            findings.append(
+                _finding("projection_artifact_missing_or_corrupt", "corrupt", str(exc))
+            )
+        except OSError as exc:
+            findings.append(
+                _finding("projection_artifact_unavailable", "unavailable", str(exc))
+            )
     try:
         receipt_descriptor = store.descriptor(str(row["receipt_artifact_id"]))
         store.read(str(row["receipt_artifact_id"]))
@@ -277,6 +312,146 @@ def _artifact_findings(row: Mapping[str, Any], receipt_root: Path) -> list[Truth
     except OSError as exc:
         findings.append(_finding("receipt_artifact_unavailable", "unavailable", str(exc)))
     return findings
+
+
+def _resolved_world_readiness(
+    *,
+    engine: Engine,
+    receipt_root: Path,
+    evaluated_at: datetime,
+) -> CapitalTruthReadiness | None:
+    world = resolve_capital_world(
+        engine=engine,
+        as_of_utc=evaluated_at.isoformat(),
+        known_at_utc=evaluated_at.isoformat(),
+        use_case="capital_review",
+    )
+    if not world.selected_sources:
+        return None
+    findings: list[TruthFinding] = []
+    manifest_ids: list[str] = []
+    current = True
+    with Session(engine) as session:
+        for selection in world.selected_sources:
+            batch = session.get(ImportBatch, selection.batch_id)
+            manifest = session.exec(
+                select(ReceiptManifest).where(
+                    ReceiptManifest.batch_id == selection.batch_id
+                )
+            ).one_or_none()
+            if batch is None or manifest is None:
+                findings.append(
+                    _finding(
+                        "world_manifest_missing",
+                        "missing",
+                        f"selected batch has no manifest: {selection.batch_id}",
+                    )
+                )
+                continue
+            manifest_ids.append(manifest.manifest_id)
+            receipt_index = session.get(ReceiptIndex, manifest.receipt_id)
+            snapshot = session.get(Snapshot, manifest.snapshot_id)
+            row: dict[str, Any] = {
+                "manifest_id": manifest.manifest_id,
+                "receipt_id": manifest.receipt_id,
+                "receipt_ref": manifest.receipt_ref,
+                "receipt_sha256": manifest.receipt_sha256,
+                "receipt_artifact_id": manifest.receipt_artifact_id,
+                "manifest_source_artifact_id": manifest.source_artifact_id,
+                "snapshot_id": manifest.snapshot_id,
+                "source_artifact_id": batch.source_artifact_id,
+                "source_sha256": batch.source_sha256,
+                "projection_artifact_id": batch.projection_artifact_id,
+                "projection_sha256": batch.projection_sha256,
+                "completeness_status": batch.completeness_status,
+                "time_semantics": batch.time_semantics,
+                "indexed_receipt_ref": receipt_index.path if receipt_index else None,
+                "snapshot_as_of_utc": snapshot.as_of_utc if snapshot else None,
+            }
+            findings.extend(_binding_findings(row, receipt_root))
+            findings.extend(_artifact_findings(row, receipt_root))
+            try:
+                observed_at = datetime.fromisoformat(
+                    selection.observed_at_utc.replace("Z", "+00:00")
+                ).astimezone(UTC)
+            except ValueError:
+                findings.append(
+                    _finding(
+                        "observation_time_missing",
+                        "missing",
+                        f"selected batch clock invalid: {selection.batch_id}",
+                    )
+                )
+                current = False
+            else:
+                age = evaluated_at - observed_at
+                if age < timedelta(0):
+                    findings.append(
+                        _finding(
+                            "capital_snapshot_in_future",
+                            "corrupt",
+                            f"selected batch is in the future: {selection.batch_id}",
+                        )
+                    )
+                    current = False
+                elif age > _CAPITAL_MAX_AGE:
+                    findings.append(
+                        _finding(
+                            "capital_snapshot_stale",
+                            "stale",
+                            f"selected batch exceeds 24 hours: {selection.batch_id}",
+                        )
+                    )
+                    current = False
+
+    for blocker in world.trust.blockers:
+        category: TruthCategory = (
+            "corrupt"
+            if "mismatch" in blocker or "invalid" in blocker
+            else "blocked"
+        )
+        findings.append(_finding(blocker, category, "Capital World resolver blocked admission"))
+
+    categories = {item.category for item in findings}
+    unavailable = "unavailable" in categories
+    blocked = bool(categories & {"missing", "corrupt", "stale", "blocked", "unavailable"})
+    partial = world.trust.completeness == "partial"
+    status: Literal["usable", "partial", "blocked", "unavailable"] = (
+        "unavailable"
+        if unavailable
+        else "blocked"
+        if blocked
+        else "partial"
+        if partial
+        else "usable"
+    )
+    evidence_integrity = (
+        EvidenceIntegrityStatus.UNAVAILABLE
+        if unavailable
+        else EvidenceIntegrityStatus.CORRUPT
+        if "corrupt" in categories
+        else EvidenceIntegrityStatus.MISSING
+        if "missing" in categories
+        else EvidenceIntegrityStatus.INTACT
+    )
+    admission = {
+        "usable": CapitalTruthAdmissionStatus.ADMITTED,
+        "partial": CapitalTruthAdmissionStatus.PARTIAL,
+        "blocked": CapitalTruthAdmissionStatus.BLOCKED,
+        "unavailable": CapitalTruthAdmissionStatus.UNAVAILABLE,
+    }[status]
+    return CapitalTruthReadiness(
+        status=status,
+        evidence_integrity=evidence_integrity,
+        capital_truth_admission=admission,
+        current=current,
+        checked_manifest_id=manifest_ids[0] if len(manifest_ids) == 1 else None,
+        world_id=world.world_id,
+        basis_digest=world.basis_digest,
+        selected_batch_ids=tuple(item.batch_id for item in world.selected_sources),
+        checked_manifest_ids=tuple(sorted(manifest_ids)),
+        findings=tuple(dict.fromkeys(findings)),
+    )
 
 
 def capital_truth_readiness(
@@ -296,6 +471,14 @@ def capital_truth_readiness(
             checked_manifest_id=None,
             findings=(_finding("state_core_unavailable", "unavailable", db_check.detail),),
         )
+    if engine is not None:
+        resolved = _resolved_world_readiness(
+            engine=engine,
+            receipt_root=receipt_root,
+            evaluated_at=(evaluated_at or datetime.now(UTC)).astimezone(UTC),
+        )
+        if resolved is not None:
+            return resolved
     try:
         with _connection(engine=engine, db_path=db_path) as (connection, is_sa):
             row = _mapping(connection, is_sa, _LATEST_IMPORT_QUERY)

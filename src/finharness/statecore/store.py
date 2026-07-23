@@ -42,6 +42,8 @@ from finharness.statecore.models import (
     AgentAuthorityGrant,
     AgentAuthorityGrantConsumption,
     Attestation,
+    CapitalImportSource,
+    CapitalImportSourceAlias,
     CapitalMandate,
     CapitalMandateLifecycleEvent,
     CapitalMandateVersion,
@@ -92,6 +94,8 @@ StateCoreRecord = (
     | Liability
     | FinancialGoal
     | CashflowEvent
+    | CapitalImportSource
+    | CapitalImportSourceAlias
     | TaxEvent
     | InsurancePolicy
     | IdentityAlias
@@ -212,7 +216,7 @@ def ensure_state_core_schema(engine: Engine) -> None:
     migrate_state_core(engine)
 
 
-CURRENT_STATE_CORE_USER_VERSION = 13
+CURRENT_STATE_CORE_USER_VERSION = 14
 
 _SOURCE_COLUMN_ALTERS: tuple[tuple[str, str], ...] = (
     ("liabilities", "ALTER TABLE liabilities ADD COLUMN source TEXT NOT NULL DEFAULT ''"),
@@ -519,6 +523,67 @@ def _migrate_add_version_binding_columns(connection: Connection) -> None:
                 )
 
 
+
+def _migrate_add_capital_world_contract(connection: Connection) -> None:
+    """Add stable source ownership and immutable projection bindings."""
+    for table_name in ("capital_import_sources", "capital_import_source_aliases"):
+        SQLModel.metadata.tables[table_name].create(connection, checkfirst=True)
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    for model, _id_field, _table_name, _domain in _SOURCE_OWNED_MODELS:
+        model_table_name = cast(str, model.__tablename__)
+        if model_table_name not in tables:
+            continue
+        columns = {item["name"] for item in inspector.get_columns(model_table_name)}
+        if "source_id" not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE {model_table_name} ADD COLUMN source_id VARCHAR NOT NULL DEFAULT ''"
+            )
+        connection.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_{model_table_name}_source_id "
+            f"ON {model_table_name} (source_id)"
+        )
+    if "import_tombstones" in tables:
+        tombstone_columns = {
+            item["name"] for item in inspector.get_columns("import_tombstones")
+        }
+        if "stable_source_id" not in tombstone_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE import_tombstones ADD COLUMN stable_source_id VARCHAR"
+            )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_import_tombstones_stable_source_id "
+            "ON import_tombstones (stable_source_id)"
+        )
+    if "import_batches" not in tables:
+        return
+    columns = {item["name"] for item in inspector.get_columns("import_batches")}
+    additions = {
+        "stable_source_id": "VARCHAR",
+        "projection_artifact_id": "VARCHAR",
+        "projection_sha256": "VARCHAR",
+        "projection_schema_version": "VARCHAR",
+        "projection_payload": "JSON NOT NULL DEFAULT '{}'",
+        "effective_at_utc": "VARCHAR",
+        "observed_at_utc": "VARCHAR",
+        "recorded_at_utc": "VARCHAR",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE import_batches ADD COLUMN {name} {declaration}"
+            )
+    for name in (
+        "stable_source_id",
+        "projection_sha256",
+        "effective_at_utc",
+        "observed_at_utc",
+        "recorded_at_utc",
+    ):
+        connection.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_import_batches_{name} ON import_batches ({name})"
+        )
+
 def migrate_state_core(engine: Engine) -> None:
     """Apply versioned, idempotent state-core migrations via ``PRAGMA user_version``."""
     migrations: tuple[tuple[int, Callable[[Connection], None]], ...] = (
@@ -535,6 +600,7 @@ def migrate_state_core(engine: Engine) -> None:
         (11, _migrate_add_import_correction_semantics),
         (12, _migrate_add_agent_authority_currency_bindings),
         (13, _migrate_add_version_binding_columns),
+        (14, _migrate_add_capital_world_contract),
     )
     try:
         with engine.connect() as connection:
@@ -877,6 +943,10 @@ def _validate_receipt_binding(
         "correction_reason": batch.correction_reason,
         "corporate_action_status": batch.corporate_action_status,
         "corporate_action_gaps": batch.corporate_action_gaps,
+        "stable_source_id": batch.stable_source_id,
+        "projection_artifact_id": batch.projection_artifact_id,
+        "projection_sha256": batch.projection_sha256,
+        "projection_schema_version": batch.projection_schema_version,
     }
     if any(receipt_payload.get(key) != value for key, value in expected_receipt_fields.items()):
         raise StateCoreStoreError("receipt artifact does not bind the import envelope")
@@ -898,6 +968,7 @@ def _tombstone(
         tombstone_id=_tombstone_id(batch.batch_id, record_type, record_id),
         batch_id=batch.batch_id,
         source_kind=batch.source_kind,
+        stable_source_id=batch.stable_source_id,
         record_type=record_type,
         record_id=record_id,
         reason=reason,
@@ -945,7 +1016,12 @@ def _automatic_full_tombstones(
         incoming_ids = {
             str(getattr(record, id_field)) for record in records if isinstance(record, model)
         }
-        existing = session.exec(select(model).where(model.source == batch.source_kind)).all()
+        ownership_clause = (
+            model.source_id == batch.stable_source_id
+            if batch.stable_source_id
+            else model.source == batch.source_kind
+        )
+        existing = session.exec(select(model).where(ownership_clause)).all()
         for record in existing:
             record_id = str(getattr(record, id_field))
             if record_id not in incoming_ids:
@@ -995,10 +1071,15 @@ def _apply_explicit_tombstones(
                 f"unsupported import tombstone record type: {tombstone.record_type}"
             )
         model, id_field = target
+        ownership_clause = (
+            col(model.source_id) == tombstone.stable_source_id
+            if tombstone.stable_source_id
+            else col(model.source) == source
+        )
         session.execute(
             delete(model).where(
                 col(getattr(model, id_field)) == tombstone.record_id,
-                col(model.source) == source,
+                ownership_clause,
             )
         )
 
@@ -1032,11 +1113,21 @@ def _validate_existing_import_lineage(
 
 
 def _delete_covered_source_records(
-    session: Session, *, source: str, covered_domains: Sequence[str]
+    session: Session,
+    *,
+    source: str,
+    stable_source_id: str | None,
+    covered_domains: Sequence[str],
 ) -> None:
     for model, _id_field, _table, domain in _SOURCE_OWNED_MODELS:
-        if domain in covered_domains:
-            session.execute(delete(model).where(col(model.source) == source))
+        if domain not in covered_domains:
+            continue
+        ownership_clause = (
+            col(model.source_id) == stable_source_id
+            if stable_source_id
+            else col(model.source) == source
+        )
+        session.execute(delete(model).where(ownership_clause))
 
 
 def materialize_import_batch(
@@ -1105,7 +1196,10 @@ def materialize_import_batch(
                 }
                 if batch.coverage_mode == "full":
                     _delete_covered_source_records(
-                        session, source=source, covered_domains=batch.covered_domains
+                        session,
+                        source=source,
+                        stable_source_id=batch.stable_source_id,
+                        covered_domains=batch.covered_domains,
                     )
                 _apply_explicit_tombstones(
                     session, source=source, tombstones=list(tombstones_by_id.values())

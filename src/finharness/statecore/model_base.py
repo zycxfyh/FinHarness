@@ -68,6 +68,7 @@ class StateCoreBase(SQLModel):
 
 
 class SourcedStateCoreBase(StateCoreBase):
-    """StateCore tables fully owned by the import source that produced them."""
+    """StateCore rows owned by one stable logical import source."""
 
     source: str = Field(default="")
+    source_id: str = Field(default="", index=True)

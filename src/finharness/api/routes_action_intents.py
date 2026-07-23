@@ -169,6 +169,9 @@ class ActionIntentPreflightResponse(BaseModel):
     action_intent_receipt_ref: str | None
     source_proposal_receipt_ref: str | None
     current_proposal_receipt_ref: str | None
+    expected_capital_world_id: str | None
+    current_capital_world_id: str | None
+    capital_world_status: str
     freshness_status: str
     authority_status: str
     authority_binding_id: str | None
@@ -533,6 +536,9 @@ async def get_action_intent_preflight(
         action_intent_receipt_ref=report.action_intent_receipt_ref,
         source_proposal_receipt_ref=report.source_proposal_receipt_ref,
         current_proposal_receipt_ref=report.current_proposal_receipt_ref,
+        expected_capital_world_id=report.expected_capital_world_id,
+        current_capital_world_id=report.current_capital_world_id,
+        capital_world_status=report.capital_world_status,
         freshness_status=report.freshness_status,
         authority_status=report.authority_status,
         authority_binding_id=report.authority_binding_id,

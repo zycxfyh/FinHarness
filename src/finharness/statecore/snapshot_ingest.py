@@ -26,9 +26,22 @@ from finharness.capital_import_valuation import (
     merge_valuation_findings,
     valuation_assessment_summary,
 )
-from finharness.import_provenance import persist_source_evidence, prepare_import
+from finharness.capital_projection import (
+    CAPITAL_PROJECTION_SCHEMA_VERSION,
+    build_capital_projection,
+    persist_capital_projection,
+)
+from finharness.import_provenance import (
+    derive_import_batch_id,
+    persist_source_evidence,
+    prepare_import,
+)
 from finharness.position_valuation import ValuationEvidence, assess_position_valuation
 from finharness.project_paths import ROOT
+from finharness.statecore.capital_sources import (
+    canonical_path_alias,
+    resolve_or_register_import_source,
+)
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
@@ -586,6 +599,7 @@ def _ingest_broker_read_receipt_with_snapshot(
     receipt_root: str | Path | None = None,
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
+    source_id: str | None = None,
 ) -> tuple[BrokerReadImportResult, Snapshot]:
     target = Path(path)
     try:
@@ -610,7 +624,16 @@ def _ingest_broker_read_receipt_with_snapshot(
         artifact_store=active_artifact_store,
         created_at_utc=datetime.now(UTC).isoformat(),
     )
-    version_fragment = _broker_import_version(source_ref, source_sha256)
+    source_record = resolve_or_register_import_source(
+        engine=engine,
+        source_kind=BROKER_READ_SOURCE_KIND,
+        alias_kind="path",
+        alias_value=canonical_path_alias(target),
+        source_id=source_id,
+        display_name=target.name,
+    )
+    stable_source_id = source_record.source_id
+    version_fragment = _broker_import_version(stable_source_id, source_sha256)
     expected_snapshot_id = f"snap_broker_read_{version_fragment}"
     if snapshot_id is not None and snapshot_id != expected_snapshot_id:
         raise StateCoreStoreError(
@@ -638,7 +661,7 @@ def _ingest_broker_read_receipt_with_snapshot(
         "receipt_id": import_receipt_id,
         "kind": BROKER_READ_SOURCE_KIND,
         "adapter_version": BROKER_READ_ADAPTER_VERSION,
-        "source_ref": source_ref,
+        "source_ref": stable_source_id,
         "source_sha256": source_sha256,
         "upstream_receipt_id": (
             str(payload["receipt_id"]) if payload.get("receipt_id") is not None else None
@@ -653,9 +676,41 @@ def _ingest_broker_read_receipt_with_snapshot(
         positions,
         evaluated_at_utc=snapshot.as_of_utc,
     )
+    lineage_refs = [import_receipt_ref, source_ref]
+    all_records: list[StateCoreRecord] = [
+        account_identity_record,
+        *instrument_identities,
+        *aliases,
+        account,
+        snapshot,
+        *positions,
+    ]
+    _set_lineage_refs(all_records, lineage_refs)
+    batch_id = derive_import_batch_id(
+        source_kind=BROKER_READ_SOURCE_KIND,
+        source_id=stable_source_id,
+        source_sha256=source_sha256,
+        adapter_version=BROKER_READ_ADAPTER_VERSION,
+        coverage_mode="full",
+    )
+    projection = build_capital_projection(
+        batch_id=batch_id,
+        stable_source_id=stable_source_id,
+        source_kind=BROKER_READ_SOURCE_KIND,
+        coverage_mode="full",
+        covered_domains=["position"],
+        time_semantics=dict(snapshot.payload["time_semantics"]),
+        records=all_records,
+    )
+    projection_descriptor = persist_capital_projection(
+        artifact_store=active_artifact_store,
+        projection=projection,
+        source_artifact_id=source_descriptor.artifact_id,
+        created_at_utc=source_descriptor.created_at_utc,
+    )
     prepared = prepare_import(
         source_kind=BROKER_READ_SOURCE_KIND,
-        source_id=source_ref,
+        source_id=stable_source_id,
         source_content=source_content,
         source_sha256=source_sha256,
         adapter_version=BROKER_READ_ADAPTER_VERSION,
@@ -673,17 +728,12 @@ def _ingest_broker_read_receipt_with_snapshot(
         findings=list(snapshot.payload["findings"]),
         covered_domains=["position"],
         corporate_action_status="unsupported_gap" if positions else "not_applicable",
+        stable_source_id=stable_source_id,
+        projection_artifact_id=projection_descriptor.artifact_id,
+        projection_sha256=projection_descriptor.content_sha256,
+        projection_schema_version=CAPITAL_PROJECTION_SCHEMA_VERSION,
+        projection_payload=projection,
     )
-    lineage_refs = [import_receipt_ref, source_ref]
-    all_records: list[StateCoreRecord] = [
-        account_identity_record,
-        *instrument_identities,
-        *aliases,
-        account,
-        snapshot,
-        *positions,
-    ]
-    _set_lineage_refs(all_records, lineage_refs)
     snapshot.payload = {
         **snapshot.payload,
         "import_batch_id": prepared.batch.batch_id,
@@ -700,7 +750,7 @@ def _ingest_broker_read_receipt_with_snapshot(
         source_kind=BROKER_READ_SOURCE_KIND,
         receipt_ref=import_receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
-        source_ref=source_ref,
+        source_ref=stable_source_id,
         upstream_receipt_id=cast(str | None, receipt_payload.get("upstream_receipt_id")),
         source_artifact_id=prepared.batch.source_artifact_id,
     )
@@ -748,6 +798,7 @@ def ingest_broker_read_receipt(
     receipt_root: str | Path | None = None,
     artifact_store: ArtifactStore | None = None,
     snapshot_id: str | None = None,
+    source_id: str | None = None,
 ) -> BrokerReadImportResult:
     """Materialize one broker-read receipt through the canonical import envelope."""
     result, _snapshot = _ingest_broker_read_receipt_with_snapshot(
@@ -756,6 +807,7 @@ def ingest_broker_read_receipt(
         receipt_root=receipt_root,
         artifact_store=artifact_store,
         snapshot_id=snapshot_id,
+        source_id=source_id,
     )
     return result
 

@@ -19,7 +19,14 @@ from finharness.capital_import_recovery import (
     recover_capital_imports,
 )
 from finharness.personal_finance import ingest_personal_finance_export
-from finharness.statecore.models import Position, ReceiptIndex, ReceiptManifest, Snapshot
+from finharness.statecore.capital_world import resolve_capital_world
+from finharness.statecore.models import (
+    ImportBatch,
+    Position,
+    ReceiptIndex,
+    ReceiptManifest,
+    Snapshot,
+)
 from finharness.statecore.store import (
     StateCoreStoreError,
     init_state_core,
@@ -164,6 +171,67 @@ class CapitalImportRecoveryTest(unittest.TestCase):
         )
         self.assertTrue(replay.after.ok)
         self.assertFalse(any(action.startswith("replayed:") for action in replay.actions))
+
+    def test_missing_source_path_replays_from_raw_artifact_and_preserves_world(self) -> None:
+        result = self.ingest()
+        before_world = resolve_capital_world(
+            engine=self.engine,
+            as_of_utc="2026-07-13T00:00:00+00:00",
+            known_at_utc="2099-01-01T00:00:00+00:00",
+        )
+        self.source.unlink()
+        with Session(self.engine) as session:
+            for position in session.exec(
+                select(Position).where(Position.snapshot_id == result.snapshot_id)
+            ).all():
+                session.delete(position)
+            snapshot = session.get(Snapshot, result.snapshot_id)
+            assert snapshot is not None
+            session.delete(snapshot)
+            session.commit()
+
+        recovered = recover_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertTrue(recovered.after.ok, recovered.after)
+        self.assertTrue(any(action.startswith("replayed:") for action in recovered.actions))
+        staged_sources = list((self.receipt_root / "recovery" / "sources").glob("*.csv"))
+        self.assertEqual(len(staged_sources), 1)
+        after_world = resolve_capital_world(
+            engine=self.engine,
+            as_of_utc="2026-07-13T00:00:00+00:00",
+            known_at_utc="2099-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(after_world.world_id, before_world.world_id)
+        self.assertEqual(after_world.selected_sources[0].batch_id, result.batch_id)
+
+    def test_missing_projection_artifact_blocks_verified_state(self) -> None:
+        result = self.ingest()
+        with Session(self.engine) as session:
+            batch = session.get(ImportBatch, result.batch_id)
+            assert batch is not None and batch.projection_artifact_id
+        descriptor = self.store.descriptor(batch.projection_artifact_id)
+        object_path = (
+            self.receipt_root
+            / "artifact-store"
+            / "objects"
+            / descriptor.content_sha256[:2]
+            / f"{descriptor.content_sha256}.bin"
+        )
+        object_path.unlink()
+        report = audit_capital_imports(
+            engine=self.engine,
+            receipt_root=self.receipt_root,
+            artifact_store=self.store,
+        )
+        self.assertFalse(report.ok)
+        self.assertNotIn(result.batch_id, report.verified_batch_ids)
+        self.assertIn(
+            "projection_artifact_missing_or_corrupt",
+            {item.code for item in report.findings},
+        )
 
     def test_db_rows_without_immutable_receipt_bytes_never_verify(self) -> None:
         result = self.ingest()

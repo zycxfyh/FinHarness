@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +39,7 @@ from finharness.statecore.receipt_io import atomic_write_bytes, atomic_write_jso
 CAPITAL_IMPORT_AUDIT_SCHEMA = "finharness.capital_import_audit.v1"
 CAPITAL_IMPORT_RECOVERY_SCHEMA = "finharness.capital_import_recovery.v1"
 CAPITAL_IMPORT_RECOVERY_ARTIFACT_SCHEMA = "finharness.capital_import_recovery_receipt"
+BEANCOUNT_SOURCE_BUNDLE_SCHEMA = "finharness.beancount_source_bundle.v1"
 PRODUCTION_IMPORT_KINDS = set(PRODUCTION_CAPITAL_IMPORT_MATERIALIZED_SOURCES)
 
 
@@ -205,6 +208,22 @@ def _audit_manifest_evidence(
                 recovery_action="restore_source_artifact",
             )
         )
+    if batch.projection_artifact_id and batch.projection_sha256:
+        try:
+            projection_content = store.read(batch.projection_artifact_id)
+        except ArtifactStoreError:
+            projection_content = b""
+        if hashlib.sha256(projection_content).hexdigest() != batch.projection_sha256:
+            findings.append(
+                _finding(
+                    "projection_artifact_missing_or_corrupt",
+                    batch_id=batch.batch_id,
+                    receipt_id=manifest.receipt_id,
+                    artifact_id=batch.projection_artifact_id,
+                    recoverable=False,
+                    recovery_action="restore_projection_artifact",
+                )
+            )
     receipt_path = _read_path(manifest.receipt_ref)
     try:
         receipt_bytes = receipt_path.read_bytes()
@@ -513,14 +532,131 @@ def batch_is_verified(
     return batch_id in report.verified_batch_ids
 
 
-def _source_path(payload: dict[str, Any]) -> Path:
+def _stage_beancount_source_bundle(
+    *,
+    source_artifact_id: str,
+    source_content: bytes,
+    receipt_root: Path,
+) -> Path:
+    try:
+        payload = json.loads(source_content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CapitalImportRecoveryError(
+            "Beancount source Artifact is not a valid recovery bundle"
+        ) from exc
+    if payload.get("schema") != BEANCOUNT_SOURCE_BUNDLE_SCHEMA:
+        raise CapitalImportRecoveryError("Beancount source bundle schema is unsupported")
+    root_ledger = payload.get("root_ledger")
+    files = payload.get("files")
+    if not isinstance(root_ledger, str) or not isinstance(files, list) or not files:
+        raise CapitalImportRecoveryError("Beancount source bundle is incomplete")
+    if len(files) > 10000:
+        raise CapitalImportRecoveryError("Beancount source bundle has too many files")
+
+    staging_root = resolve_under(
+        receipt_root,
+        "recovery",
+        "sources",
+        source_artifact_id,
+    )
+    staged_paths: set[str] = set()
+    for item in files:
+        if not isinstance(item, dict):
+            raise CapitalImportRecoveryError("Beancount bundle file entry is invalid")
+        raw_path = item.get("path")
+        encoded = item.get("content_base64")
+        expected_sha = item.get("sha256")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise CapitalImportRecoveryError("Beancount bundle file path is missing")
+        if not isinstance(encoded, str) or not encoded:
+            raise CapitalImportRecoveryError("Beancount bundle file content is missing")
+        if not isinstance(expected_sha, str) or not expected_sha:
+            raise CapitalImportRecoveryError("Beancount bundle file hash is missing")
+        relative = PurePosixPath(raw_path)
+        if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+            raise CapitalImportRecoveryError("Beancount bundle path is unsafe")
+        if raw_path in staged_paths:
+            raise CapitalImportRecoveryError("Beancount bundle contains duplicate paths")
+        staged_paths.add(raw_path)
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise CapitalImportRecoveryError(
+                "Beancount bundle file content is invalid base64"
+            ) from exc
+        if hashlib.sha256(content).hexdigest() != expected_sha:
+            raise CapitalImportRecoveryError("Beancount bundle file hash mismatch")
+        target = resolve_under(staging_root, *relative.parts)
+        atomic_write_bytes(target, content)
+
+    root_relative = PurePosixPath(root_ledger)
+    if (
+        root_relative.is_absolute()
+        or any(part in {"", ".", ".."} for part in root_relative.parts)
+        or root_ledger not in staged_paths
+    ):
+        raise CapitalImportRecoveryError("Beancount bundle root ledger is unsafe or missing")
+    root_path = resolve_under(staging_root, *root_relative.parts)
+    if not root_path.is_file():
+        raise CapitalImportRecoveryError("Beancount bundle root ledger was not staged")
+    return root_path
+
+
+def _source_path(
+    payload: dict[str, Any],
+    *,
+    engine: Engine,
+    store: ArtifactStore,
+    receipt_root: Path,
+    kind: str,
+) -> Path:
+    from finharness.statecore.models import CapitalImportSourceAlias
+
+    stable_source_id = str(payload.get("stable_source_id") or "")
+    if stable_source_id:
+        with Session(engine) as session:
+            aliases = list(
+                session.exec(
+                    select(CapitalImportSourceAlias).where(
+                        CapitalImportSourceAlias.source_id == stable_source_id,
+                        CapitalImportSourceAlias.alias_kind == "path",
+                    )
+                ).all()
+            )
+        for alias in sorted(aliases, key=lambda item: item.created_at_utc, reverse=True):
+            path = Path(alias.alias_value)
+            if path.is_file():
+                return path
     raw = payload.get("source_ref")
-    if not isinstance(raw, str) or not raw:
-        raise CapitalImportRecoveryError("receipt has no replayable source_ref")
-    path = _read_path(raw)
-    if not path.is_file():
-        raise CapitalImportRecoveryError(f"replay source is missing: {path}")
-    return path
+    if isinstance(raw, str) and raw:
+        path = _read_path(raw)
+        if path.is_file():
+            return path
+
+    source_artifact_id = str(payload.get("source_artifact_id") or "")
+    if kind not in {"personal_finance_export", "broker_read", "beancount_ledger"}:
+        raise CapitalImportRecoveryError("source Artifact kind is not replayable")
+    if not source_artifact_id:
+        raise CapitalImportRecoveryError("receipt has no source Artifact binding")
+    try:
+        source_content = store.read(source_artifact_id)
+    except ArtifactStoreError as exc:
+        raise CapitalImportRecoveryError("source Artifact is unavailable for replay") from exc
+    if kind == "beancount_ledger":
+        return _stage_beancount_source_bundle(
+            source_artifact_id=source_artifact_id,
+            source_content=source_content,
+            receipt_root=receipt_root,
+        )
+    suffix = ".csv" if kind == "personal_finance_export" else ".json"
+    staged = resolve_under(
+        receipt_root,
+        "recovery",
+        "sources",
+        f"{source_artifact_id}{suffix}",
+    )
+    atomic_write_bytes(staged, source_content)
+    return staged
 
 
 def _replay_receipt(
@@ -532,7 +668,13 @@ def _replay_receipt(
 ) -> str:
     payload = _receipt_payload(store, descriptor)
     kind = str(payload.get("kind") or "")
-    source_path = _source_path(payload)
+    source_path = _source_path(
+        payload,
+        engine=engine,
+        store=store,
+        receipt_root=receipt_root,
+        kind=kind,
+    )
     if kind == "personal_finance_export":
         from finharness.personal_finance import ImportDeletion, ingest_personal_finance_export
 
@@ -561,6 +703,7 @@ def _replay_receipt(
             correction_reason=payload.get("correction_reason"),
             tombstones=deletions,
             covered_domains=payload.get("covered_domains"),
+            source_id=(str(payload.get("stable_source_id") or "") or None),
         )
     elif kind == "beancount_ledger":
         from finharness.beancount_adapter import ingest_beancount_ledger
@@ -571,6 +714,7 @@ def _replay_receipt(
             receipt_root=receipt_root,
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
+            source_id=(str(payload.get("stable_source_id") or "") or None),
         )
     elif kind == "broker_read":
         from finharness.statecore.snapshot_ingest import ingest_broker_read_receipt
@@ -581,6 +725,7 @@ def _replay_receipt(
             receipt_root=receipt_root,
             artifact_store=store,
             snapshot_id=str(payload["snapshot_id"]),
+            source_id=(str(payload.get("stable_source_id") or "") or None),
         )
     else:
         raise CapitalImportRecoveryError(f"unsupported replay import kind: {kind}")

@@ -184,6 +184,11 @@ def prepare_import(
     correction_reason: str | None = None,
     corporate_action_status: str = "unsupported_gap",
     corporate_action_gaps: list[str] | None = None,
+    stable_source_id: str | None = None,
+    projection_artifact_id: str | None = None,
+    projection_sha256: str | None = None,
+    projection_schema_version: str | None = None,
+    projection_payload: dict[str, Any] | None = None,
 ) -> PreparedImport:
     """Persist immutable evidence and construct the DB transaction envelope."""
     if coverage_mode not in {"full", "delta"}:
@@ -247,6 +252,10 @@ def prepare_import(
         "correction_reason": correction_reason,
         "corporate_action_status": corporate_action_status,
         "corporate_action_gaps": resolved_corporate_action_gaps,
+        "stable_source_id": stable_source_id,
+        "projection_artifact_id": projection_artifact_id,
+        "projection_sha256": projection_sha256,
+        "projection_schema_version": projection_schema_version,
         "created_at_utc": stable_created_at,
     }
     receipt_bytes = canonical_json_bytes(complete_receipt)
@@ -267,9 +276,17 @@ def prepare_import(
         batch_id=batch_id,
         source_kind=source_kind,
         source_id=source_id,
+        stable_source_id=stable_source_id,
         coverage_mode=coverage_mode,
         source_sha256=source_sha256,
         source_artifact_id=source_artifact_id,
+        projection_artifact_id=projection_artifact_id,
+        projection_sha256=projection_sha256,
+        projection_schema_version=projection_schema_version,
+        projection_payload=dict(projection_payload or {}),
+        effective_at_utc=str(time_semantics.get("effective_at_utc") or "") or None,
+        observed_at_utc=str(time_semantics.get("observed_at_utc") or "") or None,
+        recorded_at_utc=str(time_semantics.get("recorded_at_utc") or "") or None,
         adapter_version=adapter_version,
         import_schema_version=IMPORT_MANIFEST_SCHEMA_VERSION,
         record_counts=record_counts,

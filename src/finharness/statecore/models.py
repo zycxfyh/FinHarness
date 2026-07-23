@@ -15,6 +15,8 @@ from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlmodel import Field
 
 from finharness.statecore.import_models import (  # noqa: F401
+    CapitalImportSource,
+    CapitalImportSourceAlias,
     ImportBatch,
     ImportTombstone,
     ReceiptManifest,

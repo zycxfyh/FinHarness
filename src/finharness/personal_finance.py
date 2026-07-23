@@ -39,6 +39,11 @@ from finharness.capital_import_valuation import (
     merge_valuation_findings,
     valuation_assessment_summary,
 )
+from finharness.capital_projection import (
+    CAPITAL_PROJECTION_SCHEMA_VERSION,
+    build_capital_projection,
+    persist_capital_projection,
+)
 from finharness.import_provenance import (
     derive_import_batch_id,
     persist_source_evidence,
@@ -50,6 +55,10 @@ from finharness.position_valuation import (
     assess_position_valuation,
 )
 from finharness.project_paths import ROOT
+from finharness.statecore.capital_sources import (
+    canonical_path_alias,
+    resolve_or_register_import_source,
+)
 from finharness.statecore.identities import (
     account_identity,
     instrument_identity,
@@ -658,6 +667,7 @@ def _records_from_rows(
     snapshot_id: str,
     as_of_utc: str,
     source_path: Path,
+    stable_source_id: str,
     time_semantics: dict[str, str | None],
     findings: list[ImportFinding],
     coverage_mode: str,
@@ -670,7 +680,7 @@ def _records_from_rows(
         account_identities={},
         instrument_identities={},
         aliases={},
-        source_namespace=f"{EXPORT_KIND}:{display_path(source_path)}",
+        source_namespace=f"{EXPORT_KIND}:{stable_source_id}",
     )
     built: list[StateCoreRecord] = [
         _ROW_BUILDERS[_row_type(row)](row, index, ctx) for index, row in enumerate(rows, start=1)
@@ -679,6 +689,7 @@ def _records_from_rows(
     for record in built:
         if isinstance(record, SourcedStateCoreBase):
             record.source = EXPORT_KIND
+            record.source_id = stable_source_id
     # Only stamp a portfolio snapshot when holdings are present; otherwise a
     # liabilities-only (or goals-only) export would shadow the latest real
     # holdings snapshot and zero out the cockpit's positions view.
@@ -877,6 +888,7 @@ def _import_tombstones(
                 tombstone_id=f"import_tombstone_{digest}",
                 batch_id=batch.batch_id,
                 source_kind=batch.source_kind,
+                stable_source_id=batch.stable_source_id,
                 record_type=deletion.record_type,
                 record_id=deletion.record_id,
                 reason=deletion.reason.strip(),
@@ -926,6 +938,7 @@ def ingest_personal_finance_export(
     correction_reason: str | None = None,
     tombstones: Sequence[ImportDeletion] = (),
     covered_domains: Sequence[str] | None = None,
+    source_id: str | None = None,
 ) -> PersonalFinanceImportResult:
     """Mirror a FinHarness-contract CSV export into the state core.
 
@@ -957,7 +970,15 @@ def ingest_personal_finance_export(
         raise PersonalFinanceExportError("covered_domains must use supported record types")
     source_hash = _file_hash(source_path)
     source_content = source_path.read_bytes()
-    source_id = display_path(source_path)
+    source_record = resolve_or_register_import_source(
+        engine=engine,
+        source_kind=EXPORT_KIND,
+        alias_kind="path",
+        alias_value=canonical_path_alias(source_path),
+        source_id=source_id,
+        display_name=source_path.name,
+    )
+    source_id = source_record.source_id
     active_artifact_store = artifact_store or LocalArtifactStore(
         Path(receipt_root) / "artifact-store"
     )
@@ -995,6 +1016,7 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         record_counts=record_counts,
     )
+    receipt_payload["source_ref"] = source_id
     receipt_payload["deletions"] = [asdict(tombstone) for tombstone in tombstones]
     receipt_ref = display_path(receipt_path)
     batch_id = derive_import_batch_id(
@@ -1013,6 +1035,7 @@ def ingest_personal_finance_export(
         snapshot_id=active_snapshot_id,
         as_of_utc=as_of_utc,
         source_path=source_path,
+        stable_source_id=source_id,
         time_semantics=time_semantics,
         findings=list(findings),
         coverage_mode=coverage_mode,
@@ -1048,6 +1071,21 @@ def ingest_personal_finance_export(
         [record for record in records if isinstance(record, Position)],
         evaluated_at_utc=as_of_utc,
     )
+    projection = build_capital_projection(
+        batch_id=batch_id,
+        stable_source_id=source_id,
+        source_kind=EXPORT_KIND,
+        coverage_mode=coverage_mode,
+        covered_domains=resolved_covered_domains,
+        time_semantics=time_semantics,
+        records=records,
+    )
+    projection_descriptor = persist_capital_projection(
+        artifact_store=active_artifact_store,
+        projection=projection,
+        source_artifact_id=source_descriptor.artifact_id,
+        created_at_utc=source_descriptor.created_at_utc,
+    )
     prepared = prepare_import(
         source_kind=EXPORT_KIND,
         source_id=source_id,
@@ -1072,6 +1110,11 @@ def ingest_personal_finance_export(
         corporate_action_status=(
             "unsupported_gap" if final_position_count else "not_applicable"
         ),
+        stable_source_id=source_id,
+        projection_artifact_id=projection_descriptor.artifact_id,
+        projection_sha256=projection_descriptor.content_sha256,
+        projection_schema_version=CAPITAL_PROJECTION_SCHEMA_VERSION,
+        projection_payload=projection,
     )
     if prepared.batch.batch_id != batch_id:
         raise PersonalFinanceExportError(
@@ -1082,7 +1125,7 @@ def ingest_personal_finance_export(
         kind=EXPORT_KIND,
         path=receipt_ref,
         created_at_utc=source_descriptor.created_at_utc,
-        source_refs=source_refs,
+        source_refs=[receipt_ref, source_id],
         refs=[display_path(source_path)],
     )
     deletion_records = _import_tombstones(batch=prepared.batch, deletions=tombstones)

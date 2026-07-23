@@ -27,6 +27,8 @@ The current request or assigned task owns the immediate result. GitHub Issues, l
 - `task personal-finance:import -- path/to/export.csv` imports a FinHarness-contract CSV through the production import boundary.
 - `task beancount:import -- path/to/ledger.beancount` mirrors a Beancount ledger read-only through `bean-query`.
 - `GET /ready/truth` reports capital-truth admission separately from evidence integrity and fails closed on missing, corrupt, stale, partial, or blocked evidence.
+- Production capital imports bind a stable logical source identity, immutable raw and normalized Projection Artifacts, and one deterministic Capital World selected by business and knowledge time.
+- Exposure, Daily Brief, Cockpit, Decision scan, Agent capital context, readiness, and ActionIntent preflight consume the server-resolved Capital World rather than selecting independent latest snapshots.
 
 The canonical command list is `Taskfile.yml`; route and response truth belongs to the effective FastAPI route graph and models, not this page.
 
@@ -40,7 +42,9 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 
 - `task acceptance:capital-review` proves canonical CSV import, admitted truth,
   Exposure, Daily Brief, Decision scan, governed human review, blocked valuation,
-  durable receipts, application restart, and identity-preserving replay.
+  stable source identity across a path move, historical/current Capital World
+  resolution, durable receipts, application restart, Artifact replay, and
+  backup-restore identity preservation.
 - It uses checked-in synthetic templates with runtime clocks and never connects a
   broker or grants execution authority.
 
