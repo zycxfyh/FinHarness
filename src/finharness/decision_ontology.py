@@ -119,6 +119,9 @@ class ScenarioVersion(FrozenContract):
     scenario_version_id: UUID
     decision_case_version_id: UUID
     verified_capital_projection_ref: str = Field(min_length=1)
+    capital_world_id: str = Field(pattern=r"^capital_world_[0-9a-f]{24}$")
+    capital_world_basis_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    capital_world_status: str = Field(pattern=r"^admitted$")
     assumption_set_version_id: str = Field(min_length=1)
     calculator_version_id: str = Field(min_length=1)
     evidence_bundle_version_id: str | None = Field(default=None, min_length=1)
@@ -223,6 +226,9 @@ def new_scenario_version(
     scenario_id: str,
     decision_case_version_id: UUID,
     verified_capital_projection_ref: str,
+    capital_world_id: str,
+    capital_world_basis_digest: str,
+    capital_world_status: str,
     assumption_set_version_id: str,
     calculator_version_id: str,
     evidence_bundle_version_id: str | None = None,
@@ -232,6 +238,9 @@ def new_scenario_version(
         scenario_version_id=uuid7(),
         decision_case_version_id=decision_case_version_id,
         verified_capital_projection_ref=verified_capital_projection_ref,
+        capital_world_id=capital_world_id,
+        capital_world_basis_digest=capital_world_basis_digest,
+        capital_world_status=capital_world_status,
         assumption_set_version_id=assumption_set_version_id,
         calculator_version_id=calculator_version_id,
         evidence_bundle_version_id=evidence_bundle_version_id,

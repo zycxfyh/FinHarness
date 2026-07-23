@@ -247,24 +247,27 @@ def _record_identity(item: dict[str, Any]) -> tuple[str, str] | None:
     return (record_type, str(value)) if value else None
 
 
-def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution boundary
-    *,
-    engine: Engine,
-    as_of_utc: str | None = None,
-    known_at_utc: str | None = None,
-    base_currency: str = "USD",
-    use_case: CapitalWorldUseCase = "capital_review",
-) -> CapitalWorld:
-    """Resolve one deterministic, read-only Capital World from manifested imports."""
-    now = datetime.now(UTC).isoformat()
-    resolved_as_of = canonical_utc(as_of_utc or now, field="as_of_utc")
-    resolved_known_at = canonical_utc(known_at_utc or now, field="known_at_utc")
-    clean_currency = base_currency.strip().upper()
-    if len(clean_currency) != 3 or not clean_currency.isalpha():
-        raise CapitalWorldResolutionError("base_currency must be a three-letter code")
 
+@dataclass(frozen=True)
+class _ResolutionInputs:
+    batches: tuple[ImportBatch, ...]
+    legacy_snapshot: Snapshot | None
+    legacy_snapshot_time_invalid: bool
+    legacy_models: tuple[BaseModel, ...]
+
+
+@dataclass(frozen=True)
+class _ProjectedComposition:
+    selections: tuple[CapitalWorldSourceSelection, ...]
+    records: tuple[dict[str, Any], ...]
+    recovery_refs: tuple[str, ...]
+    completeness_values: tuple[str, ...]
+    evidence_failed: bool
+
+
+def _load_resolution_inputs(engine: Engine, resolved_as_of: str) -> _ResolutionInputs:
     with Session(engine) as session:
-        batches = list(
+        batches = tuple(
             session.exec(
                 select(ImportBatch)
                 .join(
@@ -274,7 +277,7 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
                 .where(ReceiptManifest.materialization_status == "materialized")
             ).all()
         )
-        portfolio_snapshots = list(
+        portfolio_snapshots = tuple(
             session.exec(
                 select(Snapshot).where(Snapshot.kind == "portfolio")
             ).all()
@@ -292,7 +295,6 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
             else:
                 if candidate_clock <= resolved_as_of:
                     valid_legacy_snapshots.append((candidate_clock, candidate))
-        legacy_snapshot_time_invalid = bool(invalid_legacy_snapshots)
         if invalid_legacy_snapshots:
             legacy_snapshot = max(
                 invalid_legacy_snapshots,
@@ -328,8 +330,21 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
                     ).all(),
                 ]
             )
+    return _ResolutionInputs(
+        batches=batches,
+        legacy_snapshot=legacy_snapshot,
+        legacy_snapshot_time_invalid=bool(invalid_legacy_snapshots),
+        legacy_models=tuple(legacy_models),
+    )
 
-    blockers: list[str] = []
+
+def _eligible_batches(
+    batches: tuple[ImportBatch, ...],
+    *,
+    resolved_as_of: str,
+    resolved_known_at: str,
+    blockers: list[str],
+) -> dict[str, list[ImportBatch]]:
     eligible: dict[str, list[ImportBatch]] = defaultdict(list)
     legacy_count = 0
     for batch in batches:
@@ -345,7 +360,13 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
             eligible[batch.stable_source_id].append(batch)
     if legacy_count and not eligible:
         blockers.append("legacy_projection_missing")
+    return eligible
 
+
+def _select_domain_heads(
+    eligible: dict[str, list[ImportBatch]],
+    blockers: list[str],
+) -> list[tuple[ImportBatch, tuple[str, ...]]]:
     selected_by_batch: dict[str, tuple[ImportBatch, set[str]]] = {}
     for source_id in sorted(eligible):
         domains = sorted(
@@ -366,7 +387,7 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
                 continue
             entry = selected_by_batch.setdefault(head.batch_id, (head, set()))
             entry[1].add(domain)
-    selected_entries = sorted(
+    return sorted(
         (
             (batch, tuple(sorted(domains)))
             for batch, domains in selected_by_batch.values()
@@ -378,96 +399,61 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
         ),
     )
 
-    selections: list[CapitalWorldSourceSelection] = []
-    records: list[dict[str, Any]] = []
-    if not selected_entries and legacy_models:
-        blockers.append("legacy_projection_missing")
-        if legacy_snapshot_time_invalid:
-            blockers.append("legacy_snapshot_time_invalid")
-        records.extend(
-            {
-                "record_type": type(record).__name__,
-                "payload": record.model_dump(mode="python"),
-            }
-            for record in legacy_models
-        )
-    recovery_refs: set[str] = set()
-    completeness_values: list[str] = []
-    evidence_failed = False
-    record_candidates: list[
-        tuple[str, tuple[str, str, str], dict[str, Any]]
-    ] = []
-    for batch, selected_domains in selected_entries:
-        payload = dict(batch.projection_payload or {})
-        expected = batch.projection_sha256 or ""
-        actual = projection_sha256(payload) if payload else ""
-        if not expected or actual != expected:
-            blockers.append(f"projection_digest_mismatch:{batch.batch_id}")
-            evidence_failed = True
-            continue
-        if payload.get("batch_id") != batch.batch_id:
-            blockers.append(f"projection_batch_mismatch:{batch.batch_id}")
-            evidence_failed = True
-            continue
-        if payload.get("stable_source_id") != batch.stable_source_id:
-            blockers.append(f"projection_source_mismatch:{batch.batch_id}")
-            evidence_failed = True
-            continue
-        batch_records = payload.get("records")
-        if not isinstance(batch_records, list):
-            blockers.append(f"projection_records_invalid:{batch.batch_id}")
-            evidence_failed = True
-            continue
-        for item in batch_records:
-            if not isinstance(item, dict) or item.get("record_type") not in _WORLD_RECORD_MODELS:
-                blockers.append(f"projection_record_unsupported:{batch.batch_id}")
-                evidence_failed = True
-                continue
-            record_domain = _record_domain(item)
-            if record_domain == "" or (
-                record_domain is not None and record_domain not in selected_domains
-            ):
-                continue
-            record_type = str(item["record_type"])
-            try:
-                _WORLD_RECORD_MODELS[record_type].model_validate(item.get("payload"))
-            except Exception:
-                blockers.append(f"projection_record_invalid:{batch.batch_id}:{record_type}")
-                evidence_failed = True
-                continue
-            record_candidates.append(
-                (str(batch.stable_source_id), _batch_rank(batch), item)
-            )
-        observed = _batch_observed(batch) or ""
-        recorded = _batch_recorded(batch) or ""
-        selections.append(
-            CapitalWorldSourceSelection(
-                stable_source_id=str(batch.stable_source_id),
-                source_kind=batch.source_kind,
-                batch_id=batch.batch_id,
-                projection_artifact_id=str(batch.projection_artifact_id or ""),
-                projection_sha256=expected,
-                covered_domains=selected_domains,
-                observed_at_utc=observed,
-                recorded_at_utc=recorded,
-            )
-        )
-        completeness_values.append(batch.completeness_status)
-        recovery_refs.update(
-            ref
-            for ref in (
-                batch.source_artifact_id,
-                batch.projection_artifact_id,
-            )
-            if ref
-        )
 
+def _validated_projection_records(
+    batch: ImportBatch,
+    selected_domains: tuple[str, ...],
+    blockers: list[str],
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    payload = dict(batch.projection_payload or {})
+    expected = batch.projection_sha256 or ""
+    actual = projection_sha256(payload) if payload else ""
+    if not expected or actual != expected:
+        blockers.append(f"projection_digest_mismatch:{batch.batch_id}")
+        return [], True, True
+    if payload.get("batch_id") != batch.batch_id:
+        blockers.append(f"projection_batch_mismatch:{batch.batch_id}")
+        return [], True, True
+    if payload.get("stable_source_id") != batch.stable_source_id:
+        blockers.append(f"projection_source_mismatch:{batch.batch_id}")
+        return [], True, True
+    batch_records = payload.get("records")
+    if not isinstance(batch_records, list):
+        blockers.append(f"projection_records_invalid:{batch.batch_id}")
+        return [], True, True
+    valid: list[dict[str, Any]] = []
+    evidence_failed = False
+    for item in batch_records:
+        if not isinstance(item, dict) or item.get("record_type") not in _WORLD_RECORD_MODELS:
+            blockers.append(f"projection_record_unsupported:{batch.batch_id}")
+            evidence_failed = True
+            continue
+        record_domain = _record_domain(item)
+        if record_domain == "" or (
+            record_domain is not None and record_domain not in selected_domains
+        ):
+            continue
+        record_type = str(item["record_type"])
+        try:
+            _WORLD_RECORD_MODELS[record_type].model_validate(item.get("payload"))
+        except Exception:
+            blockers.append(f"projection_record_invalid:{batch.batch_id}:{record_type}")
+            evidence_failed = True
+            continue
+        valid.append(item)
+    return valid, evidence_failed, False
+
+
+def _deduplicate_projected_records(
+    candidates: list[tuple[str, tuple[str, str, str], dict[str, Any]]],
+    blockers: list[str],
+) -> list[dict[str, Any]]:
     deduplicated: dict[
         tuple[str, str, str],
         tuple[tuple[str, str, str], dict[str, Any]],
     ] = {}
     anonymous: list[tuple[str, dict[str, Any]]] = []
-    for source_id, rank, item in record_candidates:
+    for source_id, rank, item in candidates:
         identity = _record_identity(item)
         if identity is None:
             anonymous.append((source_id, item))
@@ -476,8 +462,8 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
         prior = deduplicated.get(key)
         if prior is None or rank > prior[0]:
             deduplicated[key] = (rank, item)
-
     source_by_identity: dict[tuple[str, str], str] = {}
+    records: list[dict[str, Any]] = []
     final_candidates = [
         (key[0], value[1]) for key, value in deduplicated.items()
     ] + anonymous
@@ -492,16 +478,86 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
             else:
                 source_by_identity[identity] = source_id
         records.append(item)
+    return records
 
+
+def _compose_projected_world(
+    selected_entries: list[tuple[ImportBatch, tuple[str, ...]]],
+    inputs: _ResolutionInputs,
+    blockers: list[str],
+) -> _ProjectedComposition:
+    records: list[dict[str, Any]] = []
+    if not selected_entries and inputs.legacy_models:
+        blockers.append("legacy_projection_missing")
+        if inputs.legacy_snapshot_time_invalid:
+            blockers.append("legacy_snapshot_time_invalid")
+        records.extend(
+            {
+                "record_type": type(record).__name__,
+                "payload": record.model_dump(mode="python"),
+            }
+            for record in inputs.legacy_models
+        )
+    selections: list[CapitalWorldSourceSelection] = []
+    recovery_refs: set[str] = set()
+    completeness_values: list[str] = []
+    evidence_failed = False
+    candidates: list[tuple[str, tuple[str, str, str], dict[str, Any]]] = []
+    for batch, selected_domains in selected_entries:
+        batch_records, invalid, fatal = _validated_projection_records(
+            batch,
+            selected_domains,
+            blockers,
+        )
+        evidence_failed = evidence_failed or invalid
+        candidates.extend(
+            (str(batch.stable_source_id), _batch_rank(batch), item)
+            for item in batch_records
+        )
+        if fatal:
+            continue
+        expected = batch.projection_sha256 or ""
+        selections.append(
+            CapitalWorldSourceSelection(
+                stable_source_id=str(batch.stable_source_id),
+                source_kind=batch.source_kind,
+                batch_id=batch.batch_id,
+                projection_artifact_id=str(batch.projection_artifact_id or ""),
+                projection_sha256=expected,
+                covered_domains=selected_domains,
+                observed_at_utc=_batch_observed(batch) or "",
+                recorded_at_utc=_batch_recorded(batch) or "",
+            )
+        )
+        completeness_values.append(batch.completeness_status)
+        recovery_refs.update(
+            ref
+            for ref in (batch.source_artifact_id, batch.projection_artifact_id)
+            if ref
+        )
+    records.extend(_deduplicate_projected_records(candidates, blockers))
     records.sort(
         key=lambda item: (
             str(item.get("record_type") or ""),
             str(item.get("payload") or ""),
         )
     )
+    return _ProjectedComposition(
+        selections=tuple(selections),
+        records=tuple(records),
+        recovery_refs=tuple(sorted(recovery_refs)),
+        completeness_values=tuple(completeness_values),
+        evidence_failed=evidence_failed,
+    )
+
+
+def _derive_world_trust(
+    composition: _ProjectedComposition,
+    blockers: list[str],
+) -> CapitalWorldTrust:
     positions = [
         Position.model_validate(item["payload"])
-        for item in records
+        for item in composition.records
         if item.get("record_type") == "Position"
     ]
     valuation_blocked = any(
@@ -512,34 +568,50 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
         blockers.append("portfolio_world_unavailable")
     if valuation_blocked:
         blockers.append("capital_valuation_blocked")
-    blockers = list(dict.fromkeys(blockers))
-
-    if "blocked" in completeness_values:
+    unique_blockers = tuple(dict.fromkeys(blockers))
+    if "blocked" in composition.completeness_values:
         completeness: Literal["complete", "partial", "blocked", "unavailable"] = "blocked"
-    elif "partial" in completeness_values:
+    elif "partial" in composition.completeness_values:
         completeness = "partial"
-    elif completeness_values:
+    elif composition.completeness_values:
         completeness = "complete"
     else:
         completeness = "unavailable"
-
     status: Literal["admitted", "partial", "blocked"]
-    if blockers or completeness in {"blocked", "unavailable"}:
+    if unique_blockers or completeness in {"blocked", "unavailable"}:
         status = "blocked"
     elif completeness == "partial":
         status = "partial"
     else:
         status = "admitted"
     evidence_integrity: Literal["intact", "unverified", "failed"] = (
-        "failed" if evidence_failed else ("intact" if selections else "unverified")
+        "failed"
+        if composition.evidence_failed
+        else "intact"
+        if composition.selections
+        else "unverified"
     )
     valuation_status: Literal["admitted", "blocked", "unavailable"] = (
-        "unavailable" if not positions else ("blocked" if valuation_blocked else "admitted")
+        "unavailable" if not positions else "blocked" if valuation_blocked else "admitted"
+    )
+    return CapitalWorldTrust(
+        status=status,
+        evidence_integrity=evidence_integrity,
+        completeness=completeness,
+        valuation_status=valuation_status,
+        blockers=unique_blockers,
     )
 
+
+def _world_basis_digest(
+    *,
+    base_currency: str,
+    legacy_snapshot: Snapshot | None,
+    selections: tuple[CapitalWorldSourceSelection, ...],
+) -> str:
     basis_material = {
         "schema": "finharness.capital_world_basis.v1",
-        "base_currency": clean_currency,
+        "base_currency": base_currency,
         "legacy_snapshot_id": (
             legacy_snapshot.snapshot_id if not selections and legacy_snapshot is not None else None
         ),
@@ -558,7 +630,40 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    basis_digest = hashlib.sha256(encoded).hexdigest()
+    return hashlib.sha256(encoded).hexdigest()
+
+def resolve_capital_world(
+    *,
+    engine: Engine,
+    as_of_utc: str | None = None,
+    known_at_utc: str | None = None,
+    base_currency: str = "USD",
+    use_case: CapitalWorldUseCase = "capital_review",
+) -> CapitalWorld:
+    """Resolve one deterministic, read-only Capital World from manifested imports."""
+    now = datetime.now(UTC).isoformat()
+    resolved_as_of = canonical_utc(as_of_utc or now, field="as_of_utc")
+    resolved_known_at = canonical_utc(known_at_utc or now, field="known_at_utc")
+    clean_currency = base_currency.strip().upper()
+    if len(clean_currency) != 3 or not clean_currency.isalpha():
+        raise CapitalWorldResolutionError("base_currency must be a three-letter code")
+
+    inputs = _load_resolution_inputs(engine, resolved_as_of)
+    blockers: list[str] = []
+    eligible = _eligible_batches(
+        inputs.batches,
+        resolved_as_of=resolved_as_of,
+        resolved_known_at=resolved_known_at,
+        blockers=blockers,
+    )
+    selected_entries = _select_domain_heads(eligible, blockers)
+    composition = _compose_projected_world(selected_entries, inputs, blockers)
+    trust = _derive_world_trust(composition, blockers)
+    basis_digest = _world_basis_digest(
+        base_currency=clean_currency,
+        legacy_snapshot=inputs.legacy_snapshot,
+        selections=composition.selections,
+    )
     return CapitalWorld(
         world_id=f"capital_world_{basis_digest[:24]}",
         basis_digest=basis_digest,
@@ -568,16 +673,10 @@ def resolve_capital_world(  # noqa: C901 -- one auditable world-resolution bound
             base_currency=clean_currency,
             use_case=use_case,
         ),
-        selected_sources=tuple(selections),
-        records=tuple(records),
-        trust=CapitalWorldTrust(
-            status=status,
-            evidence_integrity=evidence_integrity,
-            completeness=completeness,
-            valuation_status=valuation_status,
-            blockers=tuple(blockers),
-        ),
-        recovery_refs=tuple(sorted(recovery_refs)),
+        selected_sources=composition.selections,
+        records=composition.records,
+        trust=trust,
+        recovery_refs=composition.recovery_refs,
     )
 
 

@@ -28,7 +28,7 @@ The current request or assigned task owns the immediate result. GitHub Issues, l
 - `task beancount:import -- path/to/ledger.beancount` mirrors a Beancount ledger read-only through `bean-query`.
 - `GET /ready/truth` reports capital-truth admission separately from evidence integrity and fails closed on missing, corrupt, stale, partial, or blocked evidence.
 - Production capital imports bind a stable logical source identity, immutable raw and normalized Projection Artifacts, and one deterministic Capital World selected by business and knowledge time.
-- Exposure, Daily Brief, Cockpit, Decision scan, Agent capital context, readiness, and ActionIntent preflight consume the server-resolved Capital World rather than selecting independent latest snapshots.
+- Exposure, Daily Brief, Cockpit, Decision scan, Agent capital context, readiness, Scenario admission, and ActionIntent preflight consume or bind the server-resolved Capital World rather than selecting independent latest snapshots.
 
 The canonical command list is `Taskfile.yml`; route and response truth belongs to the effective FastAPI route graph and models, not this page.
 
@@ -43,10 +43,19 @@ The canonical command list is `Taskfile.yml`; route and response truth belongs t
 - `task acceptance:capital-review` proves canonical CSV import, admitted truth,
   Exposure, Daily Brief, Decision scan, governed human review, blocked valuation,
   stable source identity across a path move, historical/current Capital World
-  resolution, durable receipts, application restart, Artifact replay, and
-  backup-restore identity preservation.
+  resolution, missing-FX suppression, durable receipts, application restart,
+  Artifact replay, and backup-restore identity preservation.
 - It uses checked-in synthetic templates with runtime clocks and never connects a
   broker or grants execution authority.
+- `task dogfood:scf-capital` downloads the pinned Federal Reserve 2022 Survey of
+  Consumer Finances public extract, verifies its archive digest, selects one
+  deterministic first-implicate household near weighted-median net worth, maps its
+  aggregate balance sheet into the production importer, and verifies the resulting
+  Capital World and Agent context. It is a mature public-data interoperability
+  dogfood, not a current household truth claim or a production workload benchmark.
+- `task benchmark:capital-world` reports bounded local resolver latency for explicit
+  synthetic source counts. It is not a production SLO and must not be generalized to
+  concurrent, remote-Artifact, or all-workload performance.
 
 ### Human review
 

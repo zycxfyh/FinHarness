@@ -31,7 +31,7 @@ from finharness.statecore.capital_world import resolve_capital_world
 from finharness.statecore.import_models import ImportBatch
 from finharness.statecore.store import init_state_core, read_all
 
-SCHEMA = "finharness.capital_review_acceptance.v2"
+SCHEMA = "finharness.capital_review_acceptance.v3"
 FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "capital_review"
 
 
@@ -294,6 +294,60 @@ def _blocked(root: Path, now: datetime) -> dict[str, Any]:
     }
 
 
+def _mixed_fx_missing(root: Path, now: datetime) -> dict[str, Any]:
+    workspace = root / "mixed-fx-missing"
+    db = workspace / "state.sqlite"
+    receipts = workspace / "receipts"
+    source = workspace / "mixed-fx-missing.csv"
+    _materialize("mixed_fx_missing.csv.template", source, now)
+
+    engine = init_state_core(db)
+    try:
+        imported = ingest_personal_finance_export(
+            source, engine=engine, receipt_root=receipts
+        )
+        writes = _record_candidate(engine, receipts)
+        context = build_capital_summary_context(engine)
+    finally:
+        engine.dispose()
+
+    app = build_app(_app_args(db, receipts, "read-only"))
+    with TestClient(app) as client:
+        ready_response = client.get("/ready/truth")
+        ready = ready_response.json()
+        exposure = client.get("/exposure").json()
+        proposals = client.get("/proposals").json()
+    app.state.state_core_engine.dispose()
+
+    blockers = set(exposure["asset_valuation_blockers"])
+    _require(imported.completeness_status == "blocked", "missing FX import was not blocked")
+    _require(ready_response.status_code == 503, "missing FX truth looked usable")
+    _require(ready["capital_truth_admission"] == "blocked", "missing FX truth admitted")
+    _require(exposure["asset_valuation_admitted"] is False, "missing FX assets admitted")
+    _require(exposure["total_assets"] is None, "missing FX total assets emitted")
+    _require(exposure["net_worth"] is None, "missing FX net worth emitted")
+    _require(
+        any(code.endswith(":valuation_fx_missing") for code in blockers),
+        "missing FX blocker was lost",
+    )
+    _require(writes == (), "missing FX produced an allocation candidate")
+    _require(proposals == [], "missing FX appeared in the review queue")
+    trust = context.summary.get("trust")
+    _require(isinstance(trust, dict), "Agent context omitted trust")
+    _require(context.summary.get("world_id") == exposure["world_id"], "Agent world diverged")
+
+    return {
+        "status": "passed",
+        "world_id": exposure["world_id"],
+        "capital_truth_admission": ready["capital_truth_admission"],
+        "valuation_status": "fx_missing",
+        "valuation_blockers": sorted(blockers),
+        "candidate_count": 0,
+        "suppressed_fields": ["total_assets", "net_worth", "concentration"],
+        "execution_allowed": False,
+    }
+
+
 def _restore_backup(backup_dir: Path, destination: Path) -> tuple[Path, Path]:
     destination.mkdir(parents=True, exist_ok=True)
     restored_db = destination / "state.sqlite"
@@ -473,6 +527,7 @@ def run_acceptance(
             "journeys": {
                 "admitted_review_and_restart": _admitted(root, observed_at),
                 "blocked_data": _blocked(root, observed_at),
+                "mixed_currency_missing_fx": _mixed_fx_missing(root, observed_at),
                 "deterministic_multi_world": _multi_world(root, observed_at),
             },
             "workspace_preserved": preserved,

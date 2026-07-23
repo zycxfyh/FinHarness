@@ -7,4 +7,7 @@ tests/test_agent_work_loop_models.py
 tests/test_agent_cognition_flow.py
 tests/test_capital_truth_contract.py
 tests/test_decision_ontology.py
+tests/test_capital_world_benchmark.py
+tests/test_scenario_world_admission.py
+tests/test_scf_capital_dogfood.py
 tests/test_pytest_runner_sentinel.py
