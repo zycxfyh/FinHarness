@@ -63,6 +63,7 @@ def test_structured_model_result_is_accepted_only_after_invariant_check(
 ) -> None:
     baseline = _baseline()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
     monkeypatch.setattr(
         "finharness.openai_capital_audit_port._run_structured_model",
         lambda _baseline, model_name: baseline,
@@ -70,7 +71,8 @@ def test_structured_model_result_is_accepted_only_after_invariant_check(
     attempt = run_openai_capital_world_audit(baseline, model="gpt-test")
     assert attempt.status == "completed"
     assert attempt.audit is not None
-    assert attempt.audit.model_provider == "openai"
+    assert attempt.provider == "api.deepseek.com"
+    assert attempt.audit.model_provider == "api.deepseek.com"
     assert attempt.audit.model_name == "gpt-test"
     assert attempt.audit.execution_allowed is False
 
@@ -102,3 +104,40 @@ def test_model_cannot_weaken_deterministic_stop(monkeypatch) -> None:
     assert attempt.status == "rejected"
     assert "model_weakened_semantic_stop" in attempt.findings
     assert "model_omitted_deterministic_blockers" in attempt.findings
+
+
+def test_model_cannot_omit_stop_conditions_or_evaluations(monkeypatch) -> None:
+    baseline = _baseline()
+    candidate = baseline.model_copy(
+        update={"stop_conditions": ["Different stop."], "required_evaluations": ["other"]}
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "finharness.openai_capital_audit_port._run_structured_model",
+        lambda _baseline, model_name: candidate,
+    )
+    attempt = run_openai_capital_world_audit(baseline)
+    assert attempt.status == "rejected"
+    assert "model_omitted_deterministic_stop_conditions" in attempt.findings
+    assert "model_omitted_required_evaluations" in attempt.findings
+
+
+def test_deepseek_endpoint_defaults_to_v4_pro(monkeypatch) -> None:
+    baseline = _baseline()
+    captured: dict[str, str] = {}
+
+    def fake_run(_baseline, *, model_name: str):
+        captured["model"] = model_name
+        return baseline
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.delenv("FINHARNESS_AGENT_MODEL", raising=False)
+    monkeypatch.setattr(
+        "finharness.openai_capital_audit_port._run_structured_model",
+        fake_run,
+    )
+    attempt = run_openai_capital_world_audit(baseline)
+    assert attempt.status == "completed"
+    assert captured["model"] == "deepseek-v4-pro"
+    assert attempt.model == "deepseek-v4-pro"
