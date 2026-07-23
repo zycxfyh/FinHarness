@@ -275,6 +275,16 @@ tasks:
     cmds:
       - uv run python scripts/run_research_smoke.py
 
+  benchmark:capital-world:
+    desc: Measure bounded local Capital World resolution latency without asserting a production SLO
+    cmds:
+      - uv run python scripts/benchmark_capital_world.py {{.CLI_ARGS}}
+
+  dogfood:scf-capital:
+    desc: Run a read-only Capital World dogfood over the pinned Federal Reserve SCF 2022 public extract
+    cmds:
+      - uv run python scripts/run_scf_capital_dogfood.py {{.CLI_ARGS}}
+
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths
     cmds:
