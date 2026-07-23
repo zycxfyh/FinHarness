@@ -14,6 +14,10 @@ from scripts.run_scf_capital_dogfood import (
     write_finharness_export,
 )
 
+from finharness.personal_finance import ingest_personal_finance_export
+from finharness.statecore.capital_world import resolve_capital_world
+from finharness.statecore.store import init_state_core
+
 
 def _row(*, yy1: str, y1: str, weight: str, net_worth: str) -> dict[str, str]:
     assets = str(float(net_worth) + 100000)
@@ -87,4 +91,24 @@ def test_scf_zip_and_generated_export_are_deterministic(tmp_path: Path) -> None:
     assert sum(float(row["balance"] or 0) for row in generated) == float(
         selected["DEBT"]
     )
+    assert all(row["valued_at_utc"] for row in generated)
+
+    engine = init_state_core(tmp_path / "state.sqlite")
+    try:
+        imported = ingest_personal_finance_export(
+            destination,
+            engine=engine,
+            receipt_root=tmp_path / "receipts",
+        )
+        world = resolve_capital_world(
+            engine=engine,
+            as_of_utc="2026-07-23T00:00:00+00:00",
+            known_at_utc="2099-01-01T00:00:00+00:00",
+            use_case="agent_context",
+        )
+    finally:
+        engine.dispose()
+    assert imported.completeness_status == "complete"
+    assert world.trust.status == "admitted"
+    assert world.trust.blockers == ()
     assert len(SCF_SHA256) == 64

@@ -223,6 +223,7 @@ def write_finharness_export(
                     "balance": format(amount.quantize(Decimal("0.01")), "f"),
                     "currency": "USD",
                     "as_of_utc": as_of_utc,
+                    "valued_at_utc": as_of_utc,
                     "effective_at_utc": as_of_utc,
                     "observed_at_utc": as_of_utc,
                 }
@@ -259,6 +260,7 @@ def write_finharness_export(
                 "category": "income",
                 "frequency": "annual",
                 "as_of_utc": as_of_utc,
+                "valued_at_utc": as_of_utc,
                 "effective_at_utc": as_of_utc,
                 "observed_at_utc": as_of_utc,
             }
@@ -309,8 +311,16 @@ def run_dogfood(
         context = build_capital_summary_context(engine)
     finally:
         engine.dispose()
-    if world.trust.status not in {"admitted", "partial"}:
-        raise ScfDogfoodError(f"SCF Capital World was blocked: {world.trust.blockers}")
+    if imported.completeness_status != "complete":
+        raise ScfDogfoodError(
+            "SCF import did not preserve complete explicit clocks: "
+            f"{imported.completeness_status}"
+        )
+    if world.trust.status != "admitted":
+        raise ScfDogfoodError(
+            f"SCF Capital World was not admitted: {world.trust.status} "
+            f"{world.trust.blockers}"
+        )
     return {
         "schema": SCHEMA,
         "dataset": {
