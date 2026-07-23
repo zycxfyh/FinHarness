@@ -9,7 +9,6 @@ CONSUMERS = (
     "src/finharness/daily_brief.py",
     "src/finharness/allocation.py",
     "src/finharness/agent_context.py",
-    "src/finharness/action_intent_preflight.py",
     "src/finharness/readiness.py",
     "src/finharness/api/routes_cockpit.py",
 )
@@ -55,7 +54,6 @@ def test_capital_consumers_bind_the_resolved_world() -> None:
     required = {
         "src/finharness/exposure.py": "resolve_capital_world",
         "src/finharness/daily_brief.py": "resolve_capital_world",
-        "src/finharness/action_intent_preflight.py": "resolve_capital_world",
         "src/finharness/readiness.py": "resolve_capital_world",
         "src/finharness/api/routes_cockpit.py": "resolve_capital_world",
         "src/finharness/agent_context.py": "world_id",

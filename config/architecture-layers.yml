@@ -542,12 +542,10 @@ layers:
       - "finharness.decision_*"
       - "finharness.review_*"
       - "finharness.proposal_*"
-      - "finharness.authorization"
   - name: legacy
     module_globs:
       - "finharness.paper_validation"
       - "finharness.paper_validation_*"
-      - "finharness.api.routes_paper_validation"
   - name: archive
     module_globs: ["experiments.archive", "experiments.archive.*"]
   - name: core
@@ -571,21 +569,12 @@ capabilities:
     owner_layer: statecore
     semantics: Execute a canonical StateCore write, upsert, materialization, or mutation lifecycle.
     provider_modules:
-      - finharness.statecore.action_intent_authority_bindings
-      - finharness.statecore.action_intent_simulations
-      - finharness.statecore.action_intents
       - finharness.statecore.agent_authority_grants
       - finharness.statecore.capital_mandates
-      - finharness.statecore.capital_objective_fits
-      - finharness.statecore.paper_accounts
-      - finharness.statecore.paper_executions
-      - finharness.statecore.paper_order_tickets
       - finharness.statecore.proposals
       - finharness.statecore.receipt_index
       - finharness.statecore.snapshot_ingest
       - finharness.statecore.store
-      - finharness.statecore.trade_plan_candidates
-      - finharness.statecore.trade_plan_review_gates
 
 # No current path requires an exception. Future exceptions must be exact,
 # capability-specific, Issue-owned, and review-gated.

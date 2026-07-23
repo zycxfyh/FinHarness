@@ -31,7 +31,7 @@ GROUP_PROJECT_IMPORTS: dict[str, list[str]] = {
     ],
     "agent": [
         "finharness.agent_tools",
-        "finharness.cognitive_graph",
+        "finharness.agent_work_loop",
     ],
     "eval": [],
     "paper": [],

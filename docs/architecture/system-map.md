@@ -104,41 +104,8 @@ domain model / read model / write(command) model / adapters / invariants
   signals 派生成 risk objects,不是 persistent risk DB、risk acceptance、scoring
   或 scenario generation;receipt 写失败必须清理 queryable mirror。
 
-### 6. Capital Action Intent (legacy — superseded by Execution Kernel)
 
-- **职责**:~~(旧)把当前 proposal 翻译成 candidate-only capital action intent~~。
-  已被 Execution Kernel 取代。旧对象通过 `execution/legacy_bridge.py` 桥接分离:
-  执行相关事实投影到 OrderDraft/ExecutionOrder/ApprovalRecord/ExecutionReport;
-  agentic artifacts 留在 agentic layers。
-- **status**: legacy. No new callers. Superseded by System 7b (Execution Kernel).
-- **migration**: `execution/legacy_bridge.py` separates execution facts (→ OrderDraft/ExecutionOrder/ApprovalRecord/ExecutionReport) from agentic artifacts.
-- **old routes preserved read-only**: `GET/POST /action-intents/*`, `GET /trade-plan-candidates/*`, etc.
-
-### 7. Paper Validation Runtime (legacy — superseded by Execution Kernel)
-
-- **职责**:~~(旧)isolated paper state 验证计划后果~~。
-  已被 Execution Kernel 取代。paper order/execution/account/position 对象通过
-  `execution/legacy_bridge.py` 投影到 ExecutionOrder/ExecutionReport/PositionDelta。
-- **status**: legacy. No new callers.
-- **domain**:`statecore/paper_order_tickets.py`、`PaperOrderTicketCandidate`;
-  `statecore/paper_executions.py`、`PaperExecutionReceipt`;
-  `statecore/paper_accounts.py`、`PaperAccount`、`PaperPosition`。
-- **API**:`api/routes_paper_validation.py`;
-  `POST /trade-plan-candidates/{id}/paper-order-ticket-candidates`;
-  `POST /paper-order-ticket-candidates/{id}/simulated-executions`;
-  `POST /paper-accounts/{id}/execution-applications`;
-  `GET /paper-order-ticket-candidates`;
-  `GET /paper-execution-receipts`;
-  `GET /paper-accounts`;
-  `GET /paper-accounts/{id}/positions`。
-- **invariants**:paper ticket 必须引用 current trade plan、review gate、action
-  intent、preflight hash、simulation receipt 和 active matching paper account;
-  rejected paper execution 没有 fill/notional/fees 且必须有 rejection reason;
-  application 只接受 `simulated_filled`,拒绝 stale account/execution receipt、
-  replay、insufficient cash/position 和 live/broker markers;所有对象保持
-  `environment=paper`,不更新真实账户、不提交 broker。
-
-### 7b. Execution Kernel (canonical — **current mainline**)
+### 6. Execution Kernel (canonical — **current mainline**)
 
 - **职责**:正面承载执行生命周期。OrderDraft → PreTradeCheck → ApprovalRecord
   → ExecutionOrder → SimulatedBrokerAdapter.submit_order() → ExecutionReport
@@ -154,7 +121,6 @@ domain model / read model / write(command) model / adapters / invariants
   `execution/adapters/simulated_broker.py`。
 - **commands**:`execution/commands.py` (submit_order)；simulated submit capability
   在 adapter resolve/call 前强制执行。
-- **bridge**:`execution/legacy_bridge.py` (旧 ActionIntent/PaperValidation → Execution 分离)。
 - **API**:`api/routes_execution.py`:
   `POST /execution/order-drafts`、
   `POST /execution/order-drafts/{id}/pretrade-checks`、

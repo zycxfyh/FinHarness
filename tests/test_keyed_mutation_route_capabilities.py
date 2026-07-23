@@ -469,13 +469,13 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(audit["non_safe_route_count"], 29)
+        self.assertEqual(audit["non_safe_route_count"], 19)
         self.assertEqual(
             audit["mode_counts"],
             {
                 "typed_domain_reconciliation": 4,
                 "terminal_replay_only": 0,
-                "keyed_mutation_prohibited": 25,
+                "keyed_mutation_prohibited": 15,
             },
         )
         self.assertEqual(

@@ -39,7 +39,6 @@ CapitalWorldUseCase = Literal[
     "decision_scan",
     "agent_context",
     "scenario",
-    "action_preflight",
 ]
 
 
@@ -182,9 +181,7 @@ def _select_source_domain_head(
     }
     heads = [batch for batch in candidates if batch.batch_id not in superseded_ids]
     if len(heads) != 1:
-        blockers.append(
-            f"ambiguous_source_head:{source_id}:{domain}:{max_observed}"
-        )
+        blockers.append(f"ambiguous_source_head:{source_id}:{domain}:{max_observed}")
         return None
     return heads[0]
 
@@ -247,7 +244,6 @@ def _record_identity(item: dict[str, Any]) -> tuple[str, str] | None:
     return (record_type, str(value)) if value else None
 
 
-
 @dataclass(frozen=True)
 class _ResolutionInputs:
     batches: tuple[ImportBatch, ...]
@@ -278,9 +274,7 @@ def _load_resolution_inputs(engine: Engine, resolved_as_of: str) -> _ResolutionI
             ).all()
         )
         portfolio_snapshots = tuple(
-            session.exec(
-                select(Snapshot).where(Snapshot.kind == "portfolio")
-            ).all()
+            session.exec(select(Snapshot).where(Snapshot.kind == "portfolio")).all()
         )
         valid_legacy_snapshots: list[tuple[str, Snapshot]] = []
         invalid_legacy_snapshots: list[Snapshot] = []
@@ -324,9 +318,7 @@ def _load_resolution_inputs(engine: Engine, resolved_as_of: str) -> _ResolutionI
                 [
                     legacy_snapshot,
                     *session.exec(
-                        select(Position).where(
-                            Position.snapshot_id == legacy_snapshot.snapshot_id
-                        )
+                        select(Position).where(Position.snapshot_id == legacy_snapshot.snapshot_id)
                     ).all(),
                 ]
             )
@@ -370,11 +362,7 @@ def _select_domain_heads(
     selected_by_batch: dict[str, tuple[ImportBatch, set[str]]] = {}
     for source_id in sorted(eligible):
         domains = sorted(
-            {
-                domain
-                for batch in eligible[source_id]
-                for domain in batch.covered_domains
-            }
+            {domain for batch in eligible[source_id] for domain in batch.covered_domains}
         )
         for domain in domains:
             head = _select_source_domain_head(
@@ -388,10 +376,7 @@ def _select_domain_heads(
             entry = selected_by_batch.setdefault(head.batch_id, (head, set()))
             entry[1].add(domain)
     return sorted(
-        (
-            (batch, tuple(sorted(domains)))
-            for batch, domains in selected_by_batch.values()
-        ),
+        ((batch, tuple(sorted(domains))) for batch, domains in selected_by_batch.values()),
         key=lambda item: (
             item[0].stable_source_id or "",
             _batch_rank(item[0]),
@@ -464,17 +449,13 @@ def _deduplicate_projected_records(
             deduplicated[key] = (rank, item)
     source_by_identity: dict[tuple[str, str], str] = {}
     records: list[dict[str, Any]] = []
-    final_candidates = [
-        (key[0], value[1]) for key, value in deduplicated.items()
-    ] + anonymous
+    final_candidates = [(key[0], value[1]) for key, value in deduplicated.items()] + anonymous
     for source_id, item in final_candidates:
         identity = _record_identity(item)
         if identity is not None:
             prior_source = source_by_identity.get(identity)
             if prior_source is not None and prior_source != source_id:
-                blockers.append(
-                    f"source_ownership_conflict:{identity[0]}:{identity[1]}"
-                )
+                blockers.append(f"source_ownership_conflict:{identity[0]}:{identity[1]}")
             else:
                 source_by_identity[identity] = source_id
         records.append(item)
@@ -511,8 +492,7 @@ def _compose_projected_world(
         )
         evidence_failed = evidence_failed or invalid
         candidates.extend(
-            (str(batch.stable_source_id), _batch_rank(batch), item)
-            for item in batch_records
+            (str(batch.stable_source_id), _batch_rank(batch), item) for item in batch_records
         )
         if fatal:
             continue
@@ -531,9 +511,7 @@ def _compose_projected_world(
         )
         completeness_values.append(batch.completeness_status)
         recovery_refs.update(
-            ref
-            for ref in (batch.source_artifact_id, batch.projection_artifact_id)
-            if ref
+            ref for ref in (batch.source_artifact_id, batch.projection_artifact_id) if ref
         )
     records.extend(_deduplicate_projected_records(candidates, blockers))
     records.sort(
@@ -561,8 +539,7 @@ def _derive_world_trust(
         if item.get("record_type") == "Position"
     ]
     valuation_blocked = any(
-        position.valuation_status not in {"valued", "valued_converted"}
-        for position in positions
+        position.valuation_status not in {"valued", "valued_converted"} for position in positions
     )
     if not positions:
         blockers.append("portfolio_world_unavailable")
@@ -632,6 +609,7 @@ def _world_basis_digest(
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
+
 def resolve_capital_world(
     *,
     engine: Engine,
@@ -687,9 +665,7 @@ def resolve_previous_capital_world(
 ) -> CapitalWorld | None:
     """Resolve the immediately preceding legal observation basis."""
     if current_world.selected_sources:
-        current_observed = max(
-            item.observed_at_utc for item in current_world.selected_sources
-        )
+        current_observed = max(item.observed_at_utc for item in current_world.selected_sources)
         with Session(engine) as session:
             batches = list(session.exec(select(ImportBatch)).all())
         prior_clocks = sorted(

@@ -290,6 +290,11 @@ tasks:
     cmds:
       - uv run --group data --group research --group agent python scripts/run_capital_readonly_dogfood.py {{.CLI_ARGS}}
 
+  acceptance:capital-agent-core:
+    desc: Prove the thin Constitution, Mission, Delegation, simulated Effect, Consequence, and recovery loop
+    cmds:
+      - uv run python scripts/run_capital_agent_core_acceptance.py
+
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths
     cmds:
@@ -391,11 +396,6 @@ tasks:
     cmds:
       - uv run --group data --group research --group agent python scripts/run_local_capital_agent.py {{.CLI_ARGS}}
 
-  agent:research:
-    desc: Run the legacy market-research Agent example with its supported dependency profiles
-    cmds:
-      - uv run --group data --group research --group agent python scripts/run_agent_once.py {{.CLI_ARGS}}
-
   agent:work-loop-acceptance:
     desc: Prove bounded Agent Work Loop semantic closure and persisted artifact links
     cmds:
@@ -490,13 +490,3 @@ tasks:
     desc: Evaluate generated finance risk note
     cmds:
       - pnpm exec promptfoo eval -c evals/promptfoo/risk-note.yaml --no-cache
-
-  workflow:cognitive:
-    desc: Run LangGraph cognitive engineering flow; pass args with -- --topic "..."
-    cmds:
-      - uv run python scripts/run_cognitive_flow.py {{.CLI_ARGS}}
-
-  workflow:engineering-delivery:
-    desc: Run Engineering Delivery Graph; pass evidence args with -- --goal "..."
-    cmds:
-      - uv run python scripts/run_engineering_delivery_graph.py {{.CLI_ARGS}}

@@ -183,7 +183,7 @@ class ExecutionAccount(SQLModel, table=True):
 class OrderDraft(SQLModel, table=True):
     """A draft order — the canonical starting point for execution.
 
-    This is NOT an ActionIntent. It carries side, quantity, order type,
+    It carries side, quantity, order type,
     and an explicit execution account. It is the first artifact in the
     positive execution lifecycle.
     """
@@ -254,7 +254,7 @@ class PreTradeCheck(SQLModel, table=True):
     """A pre-trade check run against an order draft.
 
     Records findings, required approval level, and overall status.
-    This is NOT an ActionIntentAuthorityBinding.
+    It records deterministic pre-trade findings.
     """
 
     __tablename__ = "pretrade_checks"
@@ -278,7 +278,7 @@ class PreTradeCheck(SQLModel, table=True):
 class ApprovalRecord(SQLModel, table=True):
     """A human approval decision on an order draft.
 
-    This is NOT a TradePlanReviewGate.
+    It records the admission decision used by the current execution path.
     """
 
     __tablename__ = "approval_records"
