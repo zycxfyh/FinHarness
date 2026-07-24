@@ -12,15 +12,15 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from finharness.api.app import create_app
+from finharness.api.identity_mutation_reconciliation import (
+    identity_mutation_reconciliation_contracts,
+    reconcile_identity_mutation_from_domain_truth,
+)
 from finharness.api.keyed_mutation_capabilities import (
     KeyedMutationCapabilityError,
     KeyedMutationRouteCapabilityRegistry,
     audit_keyed_mutation_route_capabilities,
     load_keyed_mutation_route_capabilities,
-)
-from finharness.api.routes_proposals import (
-    identity_mutation_reconciliation_dispatcher_contracts,
-    reconcile_identity_mutation_from_domain_truth,
 )
 from finharness.identity import (
     IDEMPOTENCY_HEADER,
@@ -372,7 +372,7 @@ class KeyedMutationRouteCapabilityAdmissionTest(unittest.TestCase):
 
         with (
             patch(
-                "finharness.api.routes_proposals.load_keyed_mutation_route_capabilities",
+                "finharness.api.identity_mutation_reconciliation.load_keyed_mutation_route_capabilities",
                 return_value=swapped,
             ),
             self.assertRaisesRegex(
@@ -465,15 +465,15 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
             app,
             registry,
             dispatcher_contracts=(
-                identity_mutation_reconciliation_dispatcher_contracts()
+                identity_mutation_reconciliation_contracts()
             ),
         )
 
-        self.assertEqual(audit["non_safe_route_count"], 22)
+        self.assertEqual(audit["non_safe_route_count"], 23)
         self.assertEqual(
             audit["mode_counts"],
             {
-                "typed_domain_reconciliation": 5,
+                "typed_domain_reconciliation": 6,
                 "terminal_replay_only": 2,
                 "keyed_mutation_prohibited": 15,
             },
@@ -482,6 +482,7 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
             audit["typed_resolver_ids"],
             [
                 "finharness.api.agent_shell.paper_effect.v1",
+                "finharness.api.agent_shell.world_recovery.v1",
                 "finharness.api.attestation_create.v1",
                 "finharness.api.proposal_create.v1",
                 "finharness.api.proposal_scaffold_revision.v1",
@@ -551,7 +552,7 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
                 app,
                 missing_route,
                 dispatcher_contracts=(
-                    identity_mutation_reconciliation_dispatcher_contracts()
+                    identity_mutation_reconciliation_contracts()
                 ),
             )
 
@@ -563,7 +564,7 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
                 app,
                 registry,
                 dispatcher_contracts=(
-                    identity_mutation_reconciliation_dispatcher_contracts()[1:]
+                    identity_mutation_reconciliation_contracts()[1:]
                 ),
             )
 
@@ -585,7 +586,7 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
                 app,
                 registry,
                 dispatcher_contracts=(
-                    identity_mutation_reconciliation_dispatcher_contracts()
+                    identity_mutation_reconciliation_contracts()
                 ),
             )
 
@@ -608,7 +609,7 @@ class KeyedMutationRouteCapabilityRegistryTest(unittest.TestCase):
                 app,
                 load_keyed_mutation_route_capabilities(),
                 dispatcher_contracts=(
-                    identity_mutation_reconciliation_dispatcher_contracts()
+                    identity_mutation_reconciliation_contracts()
                 ),
             )
 

@@ -1,0 +1,77 @@
+{
+  "schema_version": "finharness.agent_shell_provider_redline_cases.v1",
+  "cases": [
+    {
+      "id": "en-answer-buy",
+      "language": "en",
+      "expected": "blocked",
+      "payload": {"answer": "You should buy SPY now.", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "en-next-step-sell",
+      "language": "en",
+      "expected": "blocked",
+      "payload": {"answer": "The evidence is incomplete.", "observations": [], "uncertainties": [], "next_steps": ["Sell SPY before the close."]}
+    },
+    {
+      "id": "en-leverage",
+      "language": "en",
+      "expected": "blocked",
+      "payload": {"answer": "Increase leverage by borrowing on margin.", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "en-transfer",
+      "language": "en",
+      "expected": "blocked",
+      "payload": {"answer": "Transfer funds to the broker account.", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "zh-observation-buy",
+      "language": "zh",
+      "expected": "blocked",
+      "payload": {"answer": "证据仍不完整。", "observations": ["建议买入 SPY。"], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "zh-next-step-sell",
+      "language": "zh",
+      "expected": "blocked",
+      "payload": {"answer": "当前世界状态已接纳。", "observations": [], "uncertainties": [], "next_steps": ["卖出 SPY。"]}
+    },
+    {
+      "id": "zh-leverage-transfer",
+      "language": "zh",
+      "expected": "blocked",
+      "payload": {"answer": "使用杠杆加仓，并把资金转入券商账户。", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "ja-recommendation",
+      "language": "ja",
+      "expected": "blocked",
+      "payload": {"answer": "SPY の購入を推奨します。", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "ja-leverage",
+      "language": "ja",
+      "expected": "blocked",
+      "payload": {"answer": "レバレッジを上げて注文してください。", "observations": [], "uncertainties": [], "next_steps": []}
+    },
+    {
+      "id": "safe-en-descriptive",
+      "language": "en",
+      "expected": "allowed",
+      "payload": {"answer": "The admitted Capital World contains one SPY position.", "observations": ["The valuation timestamp is recorded."], "uncertainties": ["Suitability is not established."], "next_steps": ["Review the evidence lineage."]}
+    },
+    {
+      "id": "safe-zh-descriptive",
+      "language": "zh",
+      "expected": "allowed",
+      "payload": {"answer": "当前 Capital World 包含一个 SPY 持仓。", "observations": ["估值时间已经记录。"], "uncertainties": ["尚未验证适当性。"], "next_steps": ["检查证据来源。"]}
+    },
+    {
+      "id": "safe-ja-descriptive",
+      "language": "ja",
+      "expected": "allowed",
+      "payload": {"answer": "現在の Capital World には SPY の保有記録があります。", "observations": ["評価時刻は記録されています。"], "uncertainties": ["適合性は確認されていません。"], "next_steps": ["証拠の出所を確認します。"]}
+    }
+  ]
+}

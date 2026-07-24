@@ -109,6 +109,12 @@
             <section class="subpanel">
               <h3>Structured paper Effect</h3>
               <p class="boundary-note">Offline simulated broker only. Price and position come from Capital World.</p>
+              <div id="world-drift-card" class="world-drift-card" hidden>
+                <strong>Mission World changed</strong>
+                <p id="world-drift-detail" class="muted"></p>
+                <p class="boundary-note">Checkpointing records the new admitted World as the Mission baseline; it does not execute an order.</p>
+                <button id="world-recovery-button" type="button" class="secondary">Checkpoint and resume</button>
+              </div>
               <form id="effect-form" class="stack">
                 <label>
                   Existing position

@@ -12,6 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
 from finharness.agent_shell import AgentShellService
+from finharness.api.identity_mutation_reconciliation import (
+    identity_mutation_reconciliation_contracts,
+)
 from finharness.api.keyed_mutation_capabilities import (
     KeyedMutationCapabilityError,
     KeyedMutationRouteCapability,
@@ -31,9 +34,6 @@ from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
 from finharness.api.routes_identity import router as identity_router
 from finharness.api.routes_ips import router as ips_router
-from finharness.api.routes_proposals import (
-    identity_mutation_reconciliation_dispatcher_contracts,
-)
 from finharness.api.routes_proposals import (
     router as proposal_router,
 )
@@ -706,7 +706,7 @@ def create_app(
     api.state.keyed_mutation_route_capabilities = (
         load_keyed_mutation_route_capabilities()
     )
-    resolver_contracts = identity_mutation_reconciliation_dispatcher_contracts()
+    resolver_contracts = identity_mutation_reconciliation_contracts()
     resolver_contracts_by_route, _resolver_contracts_by_id = (
         identity_mutation_resolver_contract_maps(resolver_contracts)
     )

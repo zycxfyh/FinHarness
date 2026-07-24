@@ -31,6 +31,12 @@ const world = {
   recovery_refs: [],
 };
 
+const driftedWorld = {
+  ...world,
+  world_id: "capital_world_test_drifted",
+  basis_digest: "capital_world:test-digest:drifted",
+};
+
 const missionBundle = {
   launch_id: "launch_test",
   request_id: "mission:test:browser",
@@ -147,6 +153,7 @@ async function waitFor(predicate, label) {
   });
 
   const requests = [];
+  let worldRecovered = false;
   dom.window.fetch = (endpoint, options = {}) => {
     const method = options.method || "GET";
     requests.push({ endpoint, method, options });
@@ -156,6 +163,49 @@ async function waitFor(predicate, label) {
     }
     if (endpoint === "/agent/missions" && method === "POST") {
       return response(missionBundle, 201);
+    }
+    if (endpoint.endsWith("/world-drift") && method === "GET") {
+      return response({
+        mission_id: "mission_test",
+        drifted: !worldRecovered,
+        mission_world_id: worldRecovered ? driftedWorld.world_id : world.world_id,
+        mission_world_basis_digest: worldRecovered
+          ? driftedWorld.basis_digest
+          : world.basis_digest,
+        current_world: driftedWorld,
+        can_checkpoint_and_resume: !worldRecovered,
+        live_execution_allowed: false,
+      });
+    }
+    if (endpoint.endsWith("/world-recovery") && method === "POST") {
+      worldRecovered = true;
+      return response({
+        recovery_id: "world_recovery_test",
+        request_id: "world-recovery:test:browser",
+        mission_id: "mission_test",
+        previous_world_id: world.world_id,
+        previous_world_basis_digest: world.basis_digest,
+        current_world: driftedWorld,
+        checkpoint: {
+          checkpoint_id: "checkpoint_test",
+          mission_id: "mission_test",
+          world_id: driftedWorld.world_id,
+          world_basis_digest: driftedWorld.basis_digest,
+          belief_refs: [],
+          effect_refs: [],
+          note: "Checkpoint current World",
+          created_at_utc: "2026-07-24T00:00:30+00:00",
+        },
+        mission: {
+          ...missionBundle.mission,
+          current_world_id: driftedWorld.world_id,
+          current_world_basis_digest: driftedWorld.basis_digest,
+          checkpoint_ref: "mission-checkpoints/checkpoint_test.json",
+        },
+        domain_receipt_ref: "/tmp/world-recovery.json",
+        recovered_at_utc: "2026-07-24T00:00:30+00:00",
+        live_execution_allowed: false,
+      });
     }
     if (endpoint.endsWith("/messages") && method === "POST") {
       return response({
@@ -210,6 +260,21 @@ async function waitFor(predicate, label) {
   );
   await waitFor(() => !document.querySelector("#active-mission").hidden, "Mission render");
   assert.match(document.querySelector("#mission-summary").textContent, /mission_test/);
+  await waitFor(
+    () => !document.querySelector("#world-drift-card").hidden,
+    "World drift card",
+  );
+  assert.match(
+    document.querySelector("#world-drift-detail").textContent,
+    /capital_world_test_drifted/,
+  );
+  document.querySelector("#world-recovery-button").click();
+  await waitFor(
+    () => document.querySelector("#effect-result").textContent.includes("checkpoint_test"),
+    "World recovery",
+  );
+  assert.equal(document.querySelector("#world-drift-card").hidden, true);
+  assert.match(document.querySelector("#mission-summary").textContent, /capital_world_test_drifted/);
 
   document.querySelector("#message-input").value = "What is uncertain?";
   document.querySelector("#message-form").dispatchEvent(
@@ -233,7 +298,7 @@ async function waitFor(predicate, label) {
   assert.match(document.querySelector("#effect-result").textContent, /verified price 1000/);
 
   const mutations = requests.filter((item) => item.method === "POST");
-  assert.equal(mutations.length, 3);
+  assert.equal(mutations.length, 4);
   for (const mutation of mutations) {
     assert.ok(mutation.options.headers["Idempotency-Key"]);
     assert.equal(

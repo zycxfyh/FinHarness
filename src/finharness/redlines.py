@@ -24,6 +24,11 @@ ADVICE_EXECUTION_PATTERNS: tuple[str, ...] = (
     r"sell",
     r"recommend\w*",
     r"execut\w*",
+    r"leverage",
+    r"margin",
+    r"transfer[\s_-]?funds?",
+    r"建议|推荐|买入|卖出|下单|执行交易|目标价|目标仓位|仓位大小|杠杆|保证金|转账|转入资金|资金转移",
+    r"購入|売却|買う|売る|推奨|注文|目標価格|レバレッジ|証拠金|送金",
 )
 
 PREDICTION_PATTERNS: tuple[str, ...] = (

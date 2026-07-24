@@ -7,14 +7,18 @@ import json
 import sys
 from pathlib import Path
 
-from finharness.api.routes_proposals import (
+from finharness.agent_shell import AgentShellService
+from finharness.api.identity_mutation_reconciliation import (
     identity_mutation_reconciliation_resolver_id,
     reconcile_identity_mutation_from_domain_truth,
 )
+from finharness.capital_agent import CapitalAgentStore
+from finharness.capital_runtime import CapitalRuntimePort
 from finharness.identity import (
     IdentityMutationError,
     load_identity_mutation_receipt,
 )
+from finharness.project_paths import ROOT
 from finharness.statecore.store import (
     open_state_core,
     state_core_db_path,
@@ -36,6 +40,26 @@ def main(argv: list[str]) -> int:
         "--receipt-root",
         type=Path,
         help=("StateCore receipt root. Defaults to the parent of the identity receipt directory."),
+    )
+    parser.add_argument(
+        "--agent-root",
+        type=Path,
+        default=ROOT / ".artifacts" / "capital-agent",
+    )
+    parser.add_argument(
+        "--shell-root",
+        type=Path,
+        default=ROOT / ".artifacts" / "agent-shell",
+    )
+    parser.add_argument(
+        "--runtime-root",
+        type=Path,
+        default=ROOT / ".artifacts" / "agent-runtime",
+    )
+    parser.add_argument(
+        "--runtime-working-root",
+        type=Path,
+        default=ROOT / ".artifacts" / "agent-runtime-work",
     )
     args = parser.parse_args(argv)
 
@@ -70,6 +94,23 @@ def main(argv: list[str]) -> int:
         receipt_root = (
             args.receipt_root if args.receipt_root is not None else args.receipt.parent.parent
         )
+        runtime_binary = ROOT / "target" / "debug" / "finharness-runtime"
+        runner_binary = ROOT / "target" / "debug" / "finharness-task-runner"
+        runtime_port = None
+        if runtime_binary.is_file() and runner_binary.is_file():
+            runtime_port = CapitalRuntimePort(
+                runtime_binary=runtime_binary,
+                runner_binary=runner_binary,
+                runtime_root=args.runtime_root.resolve(),
+                working_root=args.runtime_working_root.resolve(),
+            )
+        service = AgentShellService(
+            agent_store=CapitalAgentStore(args.agent_root.resolve()),
+            shell_root=args.shell_root.resolve(),
+            state_db_path=args.state_core_db.resolve(),
+            execution_receipt_root=receipt_root / "execution",
+            runtime_port=runtime_port,
+        )
         engine = open_state_core(args.state_core_db)
         try:
             result = reconcile_identity_mutation_from_domain_truth(
@@ -78,6 +119,7 @@ def main(argv: list[str]) -> int:
                 receipt_root=receipt_root,
                 reconciled_by=args.reconciled_by,
                 reason=args.reason,
+                resolver_services={"agent_shell_service": service},
             )
         finally:
             engine.dispose()

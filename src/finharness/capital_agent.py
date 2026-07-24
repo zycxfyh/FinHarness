@@ -503,6 +503,9 @@ class CapitalAgentStore:
         )
         return self._create(belief, belief.belief_id)
 
+    def read_checkpoint(self, checkpoint_id: str) -> MissionCheckpoint:
+        return self._read(MissionCheckpoint, checkpoint_id)
+
     def checkpoint_mission(
         self,
         mission_id: str,
@@ -511,19 +514,27 @@ class CapitalAgentStore:
         belief_refs: tuple[str, ...] = (),
         effect_refs: tuple[str, ...] = (),
         note: str,
+        checkpoint_id: str | None = None,
+        created_at_utc: str | None = None,
     ) -> tuple[AgentMission, MissionCheckpoint]:
         mission = self.read_mission(mission_id)
         if mission.state == "closed":
             raise CapitalAgentConflictError("closed mission cannot checkpoint")
         checkpoint = MissionCheckpoint(
-            checkpoint_id=_id("checkpoint"),
+            checkpoint_id=(
+                _text(checkpoint_id, "checkpoint_id") if checkpoint_id else _id("checkpoint")
+            ),
             mission_id=mission_id,
             world_id=world.world_id,
             world_basis_digest=world.basis_digest,
             belief_refs=belief_refs,
             effect_refs=effect_refs,
             note=_text(note, "note"),
-            created_at_utc=_now(),
+            created_at_utc=(
+                _parse_utc(created_at_utc, "created_at_utc").isoformat()
+                if created_at_utc
+                else _now()
+            ),
         )
         checkpoint = self._create(checkpoint, checkpoint.checkpoint_id)
         updated = self._transition(
@@ -533,7 +544,11 @@ class CapitalAgentStore:
             checkpoint_ref=self.ref(MissionCheckpoint, checkpoint.checkpoint_id),
             current_world_id=world.world_id,
             current_world_basis_digest=world.basis_digest,
-            updated_at_utc=_now(),
+            updated_at_utc=(
+                _parse_utc(created_at_utc, "created_at_utc").isoformat()
+                if created_at_utc
+                else _now()
+            ),
         )
         return updated, checkpoint
 

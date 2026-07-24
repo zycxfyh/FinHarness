@@ -20,9 +20,7 @@ from finharness.api.dependencies import (
 )
 from finharness.api.keyed_mutation_capabilities import (
     IdentityMutationResolverContract,
-    KeyedMutationCapabilityError,
     KeyedMutationRouteMode,
-    identity_mutation_resolver_contract_maps,
     load_keyed_mutation_route_capabilities,
 )
 from finharness.identity import (
@@ -1926,107 +1924,10 @@ _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS = (
 )
 
 
-def identity_mutation_reconciliation_dispatcher_contracts(
-) -> tuple[IdentityMutationResolverContract, ...]:
-    from finharness.api.routes_agent_shell import (
-        agent_shell_identity_mutation_reconciliation_dispatcher_contracts,
-    )
-
-    return (
-        *_IDENTITY_MUTATION_RECONCILIATION_CONTRACTS,
-        *agent_shell_identity_mutation_reconciliation_dispatcher_contracts(),
-    )
-
-
-def _require_identity_mutation_resolver_contract(
-    mutation: dict[str, Any],
-    *,
-    resolver_id: str,
-    request_binding: dict[str, Any],
-) -> IdentityMutationResolverContract:
-    try:
-        _by_route, by_resolver = identity_mutation_resolver_contract_maps(
-            identity_mutation_reconciliation_dispatcher_contracts()
-        )
-    except KeyedMutationCapabilityError as exc:
-        raise IdentityMutationError(str(exc)) from exc
-    contract = by_resolver.get(resolver_id)
-    if contract is None:
-        raise IdentityMutationError(
-            "no typed reconciliation resolver for this capability"
-        )
-
-    method = request_binding.get("method")
-    path = request_binding.get("path")
-    if method != contract.method or not isinstance(path, str):
-        raise IdentityMutationError(
-            "mutation route differs from executable resolver contract"
-        )
-    route_regex, _path_format, _convertors = compile_path(
-        contract.canonical_path_template
-    )
-    if route_regex.fullmatch(path) is None:
-        raise IdentityMutationError(
-            "mutation route differs from executable resolver contract"
-        )
-    if mutation.get("schema") == "finharness.api_mutation_identity_receipt.v2":
-        binding = mutation.get("route_capability")
-        if not isinstance(binding, dict):
-            raise IdentityMutationError(
-                "mutation route capability binding is missing"
-            )
-        if (
-            binding.get("capability_id") != contract.capability_id
-            or binding.get("resolver_id") != contract.resolver_id
-            or binding.get("method") != contract.method
-            or binding.get("canonical_path_template")
-            != contract.canonical_path_template
-        ):
-            raise IdentityMutationError(
-                "mutation route/resolver mapping differs from executable contract"
-            )
-    return contract
-
-
-def reconcile_identity_mutation_from_domain_truth(
-    receipt_path: str | Path,
-    *,
-    engine: Engine,
-    receipt_root: str | Path,
-    reconciled_by: str,
-    reason: str,
-    agent_shell_service: object | None = None,
-) -> dict[str, Any]:
-    """Dispatch one pending mutation to its typed resolver."""
-
-    mutation_path = Path(receipt_path)
-    mutation = load_identity_mutation_receipt(mutation_path)
-
-    (
-        receipt_id,
-        request_binding,
-        resolver_id,
-        proposal_id,
-    ) = _require_pending_mutation_route(mutation)
-
-    contract = _require_identity_mutation_resolver_contract(
-        mutation,
-        resolver_id=resolver_id,
-        request_binding=request_binding,
-    )
-    handler_kwargs: dict[str, Any] = {
-        "mutation": mutation,
-        "receipt_id": receipt_id,
-        "request_binding": request_binding,
-        "proposal_id": proposal_id,
-        "engine": engine,
-        "receipt_root": Path(receipt_root),
-        "reconciled_by": reconciled_by,
-        "reason": reason,
-    }
-    if contract.resolver_id == "finharness.api.agent_shell.paper_effect.v1":
-        handler_kwargs["agent_shell_service"] = agent_shell_service
-    return contract.handler(mutation_path, **handler_kwargs)
+def proposal_identity_mutation_reconciliation_contracts() -> tuple[
+    IdentityMutationResolverContract, ...
+]:
+    return _IDENTITY_MUTATION_RECONCILIATION_CONTRACTS
 
 
 class AttestationCreateRequest(BaseModel):
