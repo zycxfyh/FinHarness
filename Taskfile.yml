@@ -147,6 +147,8 @@ tasks:
       - node frontend/tests/cockpit_execution.test.cjs
       - node frontend/tests/exposure_unknown_state.test.cjs
       - node frontend/tests/dashboard_unknown_capital.test.cjs
+      - node frontend/tests/agent_shell_contract.test.cjs
+      - node frontend/tests/agent_shell_journey.test.cjs
 
   test:browser:
     desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.
@@ -247,6 +249,12 @@ tasks:
     cmds:
       - task: test:all
 
+  agent:shell:
+    desc: Build and serve the loopback-only local Agent Shell with offline simulated Effects
+    cmds:
+      - task: runtime:build
+      - uv run python scripts/serve_local_agent.py {{.CLI_ARGS}}
+
   api:serve:
     desc: Serve the persistent local cockpit read-only (writes fail closed)
     cmds:
@@ -312,6 +320,12 @@ tasks:
     cmds:
       - task: runtime:build
       - uv run python scripts/run_capital_runtime_acceptance.py
+
+  acceptance:agent-shell:
+    desc: Prove the first authenticated Mission, conversation, and real Runtime paper-Effect journey
+    cmds:
+      - task: runtime:build
+      - uv run python scripts/run_agent_shell_acceptance.py
 
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths

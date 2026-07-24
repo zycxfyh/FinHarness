@@ -362,16 +362,24 @@ class CapitalAgentStore:
         max_simulated_notional: Decimal,
         prohibited_effects: tuple[str, ...] = (),
         supersedes: str | None = None,
+        constitution_id: str | None = None,
+        created_at_utc: str | None = None,
     ) -> PrincipalConstitution:
         constitution = PrincipalConstitution(
-            constitution_id=_id("constitution"),
+            constitution_id=_text(constitution_id, "constitution_id")
+            if constitution_id
+            else _id("constitution"),
             principal_id=_text(principal_id, "principal_id"),
             goals=tuple(_text(item, "goal") for item in goals),
             liquidity_floor=liquidity_floor,
             max_simulated_notional=max_simulated_notional,
             prohibited_effects=tuple(sorted(set(prohibited_effects))),
             supersedes=supersedes,
-            created_at_utc=_now(),
+            created_at_utc=(
+                _parse_utc(created_at_utc, "created_at_utc").isoformat()
+                if created_at_utc
+                else _now()
+            ),
         )
         return self._create(constitution, constitution.constitution_id)
 
@@ -387,13 +395,15 @@ class CapitalAgentStore:
         success_conditions: tuple[str, ...],
         constitution_id: str,
         world: CapitalWorld,
+        mission_id: str | None = None,
+        created_at_utc: str | None = None,
     ) -> AgentMission:
         constitution = self.read_constitution(constitution_id)
         if constitution.principal_id != principal_id:
             raise CapitalAgentConflictError("constitution principal mismatch")
-        now = _now()
+        now = _parse_utc(created_at_utc, "created_at_utc").isoformat() if created_at_utc else _now()
         mission = AgentMission(
-            mission_id=_id("mission"),
+            mission_id=_text(mission_id, "mission_id") if mission_id else _id("mission"),
             principal_id=_text(principal_id, "principal_id"),
             agent_id=_text(agent_id, "agent_id"),
             objective=_text(objective, "objective"),
@@ -410,6 +420,17 @@ class CapitalAgentStore:
 
     def read_mission(self, mission_id: str) -> AgentMission:
         return self._read(AgentMission, mission_id)
+
+    def list_missions(self, *, principal_id: str | None = None) -> tuple[AgentMission, ...]:
+        directory = self.root / _DIR[AgentMission]
+        if not directory.exists():
+            return ()
+        missions = tuple(
+            self._read(AgentMission, path.stem) for path in sorted(directory.glob("*.json"))
+        )
+        if principal_id is None:
+            return missions
+        return tuple(item for item in missions if item.principal_id == principal_id)
 
     def pause_mission(self, mission_id: str, *, reason: str) -> AgentMission:
         mission = self.read_mission(mission_id)
@@ -450,6 +471,9 @@ class CapitalAgentStore:
             closed_at_utc=now,
         )
 
+    def read_belief(self, belief_id: str) -> BeliefArtifact:
+        return self._read(BeliefArtifact, belief_id)
+
     def create_belief(
         self,
         *,
@@ -459,17 +483,23 @@ class CapitalAgentStore:
         review_condition: str,
         evidence_refs: tuple[str, ...] = (),
         counter_evidence_refs: tuple[str, ...] = (),
+        belief_id: str | None = None,
+        created_at_utc: str | None = None,
     ) -> BeliefArtifact:
         self.read_mission(mission_id)
         belief = BeliefArtifact(
-            belief_id=_id("belief"),
+            belief_id=_text(belief_id, "belief_id") if belief_id else _id("belief"),
             mission_id=mission_id,
             claim=_text(claim, "claim"),
             confidence=confidence,
             evidence_refs=evidence_refs,
             counter_evidence_refs=counter_evidence_refs,
             review_condition=_text(review_condition, "review_condition"),
-            created_at_utc=_now(),
+            created_at_utc=(
+                _parse_utc(created_at_utc, "created_at_utc").isoformat()
+                if created_at_utc
+                else _now()
+            ),
         )
         return self._create(belief, belief.belief_id)
 
@@ -516,17 +546,21 @@ class CapitalAgentStore:
         max_notional: Decimal,
         max_uses: int,
         expires_at_utc: str,
+        delegation_id: str | None = None,
+        created_at_utc: str | None = None,
     ) -> DelegationEnvelope:
         constitution = self.read_constitution(constitution_id)
         if constitution.principal_id != principal_id:
             raise CapitalAgentConflictError("constitution principal mismatch")
         if max_notional > constitution.max_simulated_notional:
             raise CapitalAgentConflictError("delegation exceeds constitution notional")
-        now = _now()
+        now = _parse_utc(created_at_utc, "created_at_utc").isoformat() if created_at_utc else _now()
         if _parse_utc(expires_at_utc, "expires_at_utc") <= _parse_utc(now, "created_at_utc"):
             raise ValueError("delegation expiry must be in the future")
         delegation = DelegationEnvelope(
-            delegation_id=_id("delegation"),
+            delegation_id=_text(delegation_id, "delegation_id")
+            if delegation_id
+            else _id("delegation"),
             constitution_ref=self.ref(PrincipalConstitution, constitution_id),
             principal_id=_text(principal_id, "principal_id"),
             agent_id=_text(agent_id, "agent_id"),

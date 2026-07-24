@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FinHarness Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="shell-header">
+      <div>
+        <p class="eyebrow">LOCAL CAPITAL AGENT</p>
+        <h1>FinHarness Agent</h1>
+        <p class="subtitle">Mission-bound decision support and recoverable paper Effects.</p>
+      </div>
+      <div class="header-status">
+        <span id="connection-status" class="pill">Connecting</span>
+        <span class="pill boundary">live_execution_allowed=false</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="rail">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="step">01</p>
+              <h2>Session</h2>
+            </div>
+            <button id="refresh-button" type="button" class="secondary">Refresh</button>
+          </div>
+          <dl id="session-facts" class="facts"></dl>
+        </section>
+
+        <section class="panel">
+          <p class="step">02</p>
+          <h2>Capital World</h2>
+          <div id="world-status" class="world-status"></div>
+          <div id="position-list" class="position-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <section class="panel hero-panel">
+          <p class="step">03</p>
+          <h2>Start a Mission</h2>
+          <p class="muted">Define the outcome and hard paper boundary. Free text never becomes an Effect.</p>
+          <form id="mission-form" class="form-grid">
+            <label class="wide">
+              Objective
+              <textarea id="mission-objective" required rows="3" placeholder="Reduce concentration while preserving the liquidity floor."></textarea>
+            </label>
+            <label class="wide">
+              Success conditions
+              <textarea id="mission-success" required rows="3" placeholder="One condition per line"></textarea>
+            </label>
+            <label>
+              Liquidity floor
+              <input id="liquidity-floor" type="number" min="0" step="0.01" value="0" required />
+            </label>
+            <label>
+              Constitution max notional
+              <input id="constitution-max" type="number" min="0.01" step="0.01" value="2500" required />
+            </label>
+            <label>
+              Delegation max notional
+              <input id="delegation-max" type="number" min="0.01" step="0.01" value="2000" required />
+            </label>
+            <label>
+              Delegation uses
+              <input id="delegation-uses" type="number" min="1" max="100" value="3" required />
+            </label>
+            <label class="wide">
+              Initial belief
+              <textarea id="initial-belief" required rows="2" placeholder="The current position may exceed the intended concentration boundary."></textarea>
+            </label>
+            <label class="wide">
+              Review condition
+              <input id="review-condition" required value="Review if Capital World identity or valuation changes." />
+            </label>
+            <div class="wide action-row">
+              <button id="mission-submit" type="submit">Start Mission</button>
+              <span id="mission-message" class="form-message"></span>
+            </div>
+          </form>
+        </section>
+
+        <section id="active-mission" class="panel" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="step">04</p>
+              <h2>Active Mission</h2>
+            </div>
+            <span id="mission-state" class="pill"></span>
+          </div>
+          <div id="mission-summary" class="summary-card"></div>
+
+          <div class="two-column">
+            <section class="subpanel">
+              <h3>Conversation</h3>
+              <p class="muted">Read-only reasoning. Messages cannot create orders.</p>
+              <div id="conversation-log" class="conversation-log"></div>
+              <form id="message-form" class="stack">
+                <textarea id="message-input" rows="3" required placeholder="What is known, uncertain, and worth checking next?"></textarea>
+                <button type="submit">Send message</button>
+              </form>
+            </section>
+
+            <section class="subpanel">
+              <h3>Structured paper Effect</h3>
+              <p class="boundary-note">Offline simulated broker only. Price and position come from Capital World.</p>
+              <form id="effect-form" class="stack">
+                <label>
+                  Existing position
+                  <select id="effect-symbol" required></select>
+                </label>
+                <label>
+                  Side
+                  <select id="effect-side" required>
+                    <option value="sell">Sell</option>
+                    <option value="buy">Buy</option>
+                  </select>
+                </label>
+                <label>
+                  Quantity
+                  <input id="effect-quantity" type="number" min="0.00000001" step="any" required />
+                </label>
+                <label>
+                  Rationale
+                  <textarea id="effect-rationale" rows="3" required placeholder="Bounded paper test of the Mission hypothesis."></textarea>
+                </label>
+                <button id="effect-submit" type="submit">Run paper Effect</button>
+              </form>
+              <div id="effect-result" class="effect-result"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="fact-template">
+      <div class="fact-row"><dt></dt><dd></dd></div>
+    </template>
+    <script src="./app.js"></script>
+  </body>
+</html>

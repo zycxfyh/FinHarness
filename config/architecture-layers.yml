@@ -526,6 +526,9 @@ layers:
     module_globs: ["finharness.api", "finharness.api.*"]
   - name: execution
     module_globs: ["finharness.execution", "finharness.execution.*"]
+  - name: product
+    module_globs:
+      - "finharness.agent_shell"
   - name: agent
     module_globs:
       - "finharness.agent_*"
@@ -604,7 +607,7 @@ rules:
       - "finharness.execution.services"
       - "finharness.execution.adapters.*"
   - id: canonical-does-not-call-legacy-write-services
-    source_layers: [statecore, decisioning, execution, agent, research, core]
+    source_layers: [statecore, decisioning, execution, product, agent, research, core]
     forbidden_target_modules:
       - "finharness.paper_validation"
   - id: api-does-not-call-archive

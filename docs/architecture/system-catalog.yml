@@ -263,12 +263,16 @@ systems:
   - id: agent_cognition_runtime
     name: Agent Cognition Runtime / Work Orchestrator
     status: current
-    summary: The bounded read/explain cycle remains, plus a thin personal-capital core with immutable Constitution, durable Mission/checkpoint/resume, selected Beliefs, bounded single-principal Delegation, world-bound simulated Effects, and a recoverable Rust Job/Attempt Runtime for registered capital Workers. Scheduler, multi-Agent governance, and live external effects are absent.
+    summary: The bounded read/explain cycle remains, plus a thin personal-capital core with immutable Constitution, durable Mission/checkpoint/resume, selected Beliefs, bounded single-principal Delegation, world-bound simulated Effects, a recoverable Rust Job/Attempt Runtime, and one loopback-only Agent Shell that exposes Mission, conversation, and structured paper-Effect journeys. Scheduler, multi-user hosting, multi-Agent governance, and live external effects are absent.
     docs:
       - docs/architecture/agent-native-target-space.md
       - docs/architecture/agent-operating-surface.md
       - docs/architecture/agent-work-loop-plan.md
     runtime_roots:
+      - src/finharness/agent_shell.py
+      - src/finharness/api/routes_agent_shell.py
+      - scripts/serve_local_agent.py
+      - frontend-agent/
       - src/finharness/capital_agent.py
       - src/finharness/capital_runtime.py
       - src/finharness/runtime_worker.py
@@ -287,7 +291,7 @@ systems:
       - src/finharness/agent_operating_flow.py
       - src/finharness/review_workspace.py
       - src/finharness/agent_work_loop.py
-    mature_posture: Python owns capital and Agent semantics; the transplanted Rust kernel owns only execution identity, idempotency, process lifecycle, bounded Artifacts, and recovery. Registered operations prevent model-selected executables or environment, while broker and capital reconciliation remain domain-owned.
+    mature_posture: Python owns capital and Agent semantics; the local Agent Shell only orchestrates authenticated product journeys. The transplanted Rust kernel owns execution identity, idempotency, process lifecycle, bounded Artifacts, and recovery. Paper Effects create an identity-bound pending domain receipt before Runtime dispatch and complete it after reconciliation; if domain-receipt completion or outer acknowledgement is lost, typed reconciliation observes the same Runtime Job and reconstructs the response from complete Runtime and StateCore truth without redispatch. Registered operations prevent model-selected executables or environment, browser sessions never receive provider secrets, and broker/capital reconciliation remain domain-owned.
     checks:
       - task test:all
       - task test:pytest
@@ -296,6 +300,7 @@ systems:
       - uv run python scripts/run_capital_agent_core_acceptance.py
       - task test:runtime
       - task acceptance:capital-runtime
+      - task acceptance:agent-shell
     upgrade_trigger: Add scheduling, concurrent reservation, multi-principal governance, non-trade effects, Observer Agents, or live authority only after concrete dogfood exposes that need.
 
   - id: agent_autonomy_control

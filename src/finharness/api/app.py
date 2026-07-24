@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 
+from finharness.agent_shell import AgentShellService
 from finharness.api.keyed_mutation_capabilities import (
     KeyedMutationCapabilityError,
     KeyedMutationRouteCapability,
@@ -24,6 +25,7 @@ from finharness.api.keyed_mutation_capabilities import (
 from finharness.api.routes_agent_authority_grants import (
     router as agent_authority_grant_router,
 )
+from finharness.api.routes_agent_shell import router as agent_shell_router
 from finharness.api.routes_capital_mandates import router as capital_mandate_router
 from finharness.api.routes_cockpit import router as cockpit_router
 from finharness.api.routes_execution import router as execution_router
@@ -327,6 +329,41 @@ def _admit_browser_binding_and_route(
     )
 
 
+def _complete_or_leave_identity_mutation_pending(
+    request: Request,
+    response: Response,
+    body: bytes,
+    claim: IdentityMutationClaim,
+    *,
+    trace_id: str,
+) -> tuple[Response, IdentityMutationClaim]:
+    if getattr(request.state, "identity_mutation_leave_pending", False):
+        logger.error(
+            "identity_mutation_left_pending_for_recovery",
+            trace_id=trace_id,
+            method=request.method,
+            path=request.url.path,
+            identity_receipt_id=claim.receipt_id,
+            status_code=response.status_code,
+            mutation_outcome_ambiguous=True,
+            execution_allowed=False,
+        )
+        return response, claim
+    completed = complete_identity_mutation(
+        claim,
+        trace_id=trace_id,
+        status_code=response.status_code,
+        response_body=body,
+        content_type=response.headers.get("content-type"),
+    )
+    return response, IdentityMutationClaim(
+        "replay",
+        claim.receipt_id,
+        claim.receipt_path,
+        completed,
+    )
+
+
 async def _call_with_identity_protocol(
     api: FastAPI,
     request: Request,
@@ -526,15 +563,13 @@ async def _call_with_identity_protocol(
             claim,
         )
 
-    completed = complete_identity_mutation(
+    return _complete_or_leave_identity_mutation_pending(
+        request,
+        response,
+        body,
         claim,
         trace_id=trace_id,
-        status_code=response.status_code,
-        response_body=body,
-        content_type=response.headers.get("content-type"),
     )
-    replay_claim = IdentityMutationClaim("replay", claim.receipt_id, claim.receipt_path, completed)
-    return response, replay_claim
 
 
 def _bind_identity_receipt_header(
@@ -644,6 +679,7 @@ def create_app(
     local_operator_context: LocalOperatorContext | None = None,
     identity_provider: IdentityProvider | None = None,
     execution_capabilities: ExecutionCapabilities = DEFAULT_EXECUTION_CAPABILITIES,
+    agent_shell_service: AgentShellService | None = None,
 ) -> FastAPI:
     data_routers, missing_data_dependency = _load_optional_data_routers()
     api = FastAPI(
@@ -666,6 +702,7 @@ def create_app(
         else None
     )
     api.state.execution_capabilities = execution_capabilities
+    api.state.agent_shell_service = agent_shell_service
     api.state.keyed_mutation_route_capabilities = (
         load_keyed_mutation_route_capabilities()
     )
@@ -778,6 +815,7 @@ def create_app(
 
     api.include_router(cockpit_router)
     api.include_router(identity_router)
+    api.include_router(agent_shell_router)
     api.include_router(state_router)
     api.include_router(proposal_router)
     api.include_router(review_router)
@@ -801,6 +839,13 @@ def create_app(
             "/cockpit",
             StaticFiles(directory=frontend_dir, html=True),
             name="cockpit",
+        )
+    agent_frontend_dir = ROOT / "frontend-agent"
+    if agent_frontend_dir.exists():
+        api.mount(
+            "/agent-ui",
+            StaticFiles(directory=agent_frontend_dir, html=True),
+            name="agent-ui",
         )
     return api
 
