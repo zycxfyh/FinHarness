@@ -6,7 +6,7 @@
   "scripts": {
     "promptfoo:version": "pnpm exec promptfoo --version",
     "promptfoo:smoke": "PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 pnpm exec promptfoo eval -c evals/promptfoo/echo.yaml --no-cache",
-    "test:browser": "node frontend/tests/browser/cockpit_smoke.test.cjs"
+    "test:browser": "node frontend/tests/browser/cockpit_smoke.test.cjs && node frontend/tests/browser/agent_shell_smoke.test.cjs"
   },
   "keywords": [],
   "author": "",

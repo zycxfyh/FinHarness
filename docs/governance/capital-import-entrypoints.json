@@ -111,6 +111,13 @@
     },
     {
       "adapter_id": "personal-finance-export",
+      "exposure_id": "script-agent-shell-test-fixture",
+      "exposure_kind": "script",
+      "exposure_ref": "scripts/serve_agent_shell_test_fixture.py",
+      "production": true
+    },
+    {
+      "adapter_id": "personal-finance-export",
       "exposure_id": "script-scf-capital-dogfood",
       "exposure_kind": "script",
       "exposure_ref": "scripts/run_scf_capital_dogfood.py",

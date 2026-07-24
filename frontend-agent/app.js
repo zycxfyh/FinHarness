@@ -4,6 +4,7 @@
   const state = {
     bootstrap: null,
     mission: null,
+    worldDrift: null,
   };
 
   const selectors = {
@@ -25,12 +26,24 @@
     effectSymbol: document.querySelector("#effect-symbol"),
     effectSubmit: document.querySelector("#effect-submit"),
     effectResult: document.querySelector("#effect-result"),
+    worldDriftCard: document.querySelector("#world-drift-card"),
+    worldDriftDetail: document.querySelector("#world-drift-detail"),
+    worldRecoveryButton: document.querySelector("#world-recovery-button"),
     factTemplate: document.querySelector("#fact-template"),
   };
 
   function requestId(prefix) {
     const id = window.crypto.randomUUID().replaceAll("-", "");
     return `${prefix}:${id}`;
+  }
+
+  class ApiError extends Error {
+    constructor(message, detail, status) {
+      super(message);
+      this.name = "ApiError";
+      this.detail = detail;
+      this.status = status;
+    }
   }
 
   async function responseJson(response) {
@@ -41,7 +54,11 @@
     const response = await fetch(path, { headers: { Accept: "application/json" } });
     const body = await responseJson(response);
     if (!response.ok) {
-      throw new Error(body.detail?.message || body.detail || response.statusText);
+      throw new ApiError(
+        body.detail?.message || body.detail || response.statusText,
+        body.detail,
+        response.status,
+      );
     }
     return body;
   }
@@ -60,7 +77,11 @@
     });
     const payload = await responseJson(response);
     if (!response.ok) {
-      throw new Error(payload.detail?.message || payload.detail || response.statusText);
+      throw new ApiError(
+        payload.detail?.message || payload.detail || response.statusText,
+        payload.detail,
+        response.status,
+      );
     }
     return payload;
   }
@@ -118,6 +139,30 @@
     selectors.effectSubmit.disabled = !state.bootstrap?.simulated_effect_allowed || !world.positions.length;
   }
 
+  function renderWorldDrift(drift) {
+    state.worldDrift = drift;
+    const visible = Boolean(drift?.drifted);
+    selectors.worldDriftCard.hidden = !visible;
+    selectors.worldRecoveryButton.disabled = !drift?.can_checkpoint_and_resume;
+    if (!visible) {
+      selectors.worldDriftDetail.textContent = "";
+      return;
+    }
+    selectors.worldDriftDetail.textContent = `Mission: ${drift.mission_world_id} → Current: ${drift.current_world.world_id}`;
+  }
+
+  async function refreshWorldDrift() {
+    if (!state.mission) return;
+    try {
+      const drift = await apiGet(
+        `/agent/missions/${encodeURIComponent(state.mission.mission.mission_id)}/world-drift`,
+      );
+      renderWorldDrift(drift);
+    } catch (error) {
+      selectors.effectResult.textContent = `World drift check failed: ${error.message}`;
+    }
+  }
+
   function renderMission(bundle) {
     state.mission = bundle;
     selectors.activeMission.hidden = false;
@@ -138,6 +183,7 @@
       row.append(strong, document.createTextNode(value));
       selectors.missionSummary.append(row);
     }
+    void refreshWorldDrift();
   }
 
   function appendTurn(kind, text, details = []) {
@@ -247,6 +293,36 @@
     }
   });
 
+  selectors.worldRecoveryButton.addEventListener("click", async () => {
+    if (!state.mission || !state.worldDrift?.drifted) return;
+    selectors.worldRecoveryButton.disabled = true;
+    selectors.effectResult.textContent = "Checkpointing the current admitted Capital World…";
+    const key = requestId("world-recovery");
+    try {
+      const result = await apiPost(
+        `/agent/missions/${encodeURIComponent(state.mission.mission.mission_id)}/world-recovery`,
+        {
+          request_id: key,
+          action: "checkpoint_and_resume",
+          note: "Checkpoint the newly admitted Capital World before another paper Effect.",
+        },
+        key,
+      );
+      state.mission = {
+        ...state.mission,
+        mission: result.mission,
+        world: result.current_world,
+      };
+      renderMission(state.mission);
+      renderWorld(result.current_world);
+      renderWorldDrift(null);
+      selectors.effectResult.textContent = `Mission resumed at checkpoint ${result.checkpoint.checkpoint_id}.`;
+    } catch (error) {
+      selectors.effectResult.textContent = `World recovery failed: ${error.message}`;
+      selectors.worldRecoveryButton.disabled = false;
+    }
+  });
+
   selectors.effectForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.mission) return;
@@ -272,6 +348,9 @@
       card.textContent = `Completed · Job ${result.runtime.jobId} · Effect ${result.execution.execution_id} · verified price ${result.verified_reference_price}`;
       selectors.effectResult.append(card);
     } catch (error) {
+      if (error.detail?.code === "mission_world_changed" && error.detail.drift) {
+        renderWorldDrift(error.detail.drift);
+      }
       selectors.effectResult.innerHTML = `<p class="error"></p>`;
       selectors.effectResult.querySelector("p").textContent = error.message;
     } finally {

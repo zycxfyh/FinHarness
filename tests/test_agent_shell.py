@@ -1,29 +1,34 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
 import unittest
 from collections.abc import Mapping
+from contextlib import redirect_stdout
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from scripts.reconcile_identity_mutation import main as reconcile_identity_mutation_main
 from sqlmodel import Session
 
 from finharness.agent_shell import (
     LOCAL_PAPER_ACCOUNT_ID,
     AgentShellConflictError,
+    AgentShellMutationRecoveryRequired,
     AgentShellService,
     MissionConversationReply,
     ensure_local_paper_execution,
 )
 from finharness.api.app import create_app
-from finharness.api.routes_proposals import (
+from finharness.api.identity_mutation_reconciliation import (
     reconcile_identity_mutation_from_domain_truth,
 )
-from finharness.capital_agent import CapitalAgentStore
+from finharness.capital_agent import CapitalAgentNotFoundError, CapitalAgentStore
 from finharness.capital_runtime import RuntimeObservation
 from finharness.execution.adapters.simulated_broker import SimulatedBrokerAdapter
 from finharness.execution.broker import clear_broker_registry, register_broker_adapter
@@ -35,6 +40,7 @@ from finharness.identity import (
 )
 from finharness.personal_finance import ingest_personal_finance_export
 from finharness.project_paths import ROOT
+from finharness.statecore.capital_world import resolve_capital_world
 from finharness.statecore.execution_models import ExecutionAccount, ExecutionEnvironment
 from finharness.statecore.store import init_state_core
 
@@ -198,6 +204,14 @@ class AgentShellApiTest(unittest.TestCase):
             "belief_review_condition": "Review if Capital World changes",
         }
 
+    def _drifted_world(self):
+        current = resolve_capital_world(engine=self.engine, use_case="agent_context")
+        return replace(
+            current,
+            world_id=f"{current.world_id}:drifted",
+            basis_digest=f"{current.basis_digest}:drifted",
+        )
+
     def _start_mission(self):
         key = "mission:test:0001"
         response = self._post("/agent/missions", self._mission_body(key), key)
@@ -342,6 +356,420 @@ class AgentShellApiTest(unittest.TestCase):
                         session.add(account)
                         session.commit()
 
+    def test_world_drift_checkpoint_resume_and_effect(self) -> None:
+        mission = self._start_mission()
+        mission_id = mission["mission"]["mission_id"]
+        drifted_world = self._drifted_world()
+        with patch(
+            "finharness.agent_shell.resolve_capital_world",
+            return_value=drifted_world,
+        ):
+            drift = self.client.get(f"/agent/missions/{mission_id}/world-drift")
+            self.assertEqual(drift.status_code, 200, drift.text)
+            self.assertTrue(drift.json()["drifted"])
+            self.assertTrue(drift.json()["can_checkpoint_and_resume"])
+
+            blocked = self._post(
+                f"/agent/missions/{mission_id}/paper-effects",
+                {
+                    "request_id": "effect:world-drift:blocked",
+                    "symbol": "SPY",
+                    "side": "sell",
+                    "quantity": "1",
+                    "rationale": "Must not execute against stale Mission World",
+                },
+                "effect:world-drift:blocked",
+            )
+            self.assertEqual(blocked.status_code, 409, blocked.text)
+            self.assertEqual(blocked.json()["detail"]["code"], "mission_world_changed")
+            self.assertTrue(blocked.json()["detail"]["drift"]["drifted"])
+
+            key = "world-recovery:test:0001"
+            body = {
+                "request_id": key,
+                "action": "checkpoint_and_resume",
+                "note": "Accept the newly admitted Capital World.",
+            }
+            first = self._post(
+                f"/agent/missions/{mission_id}/world-recovery",
+                body,
+                key,
+            )
+            replay = self._post(
+                f"/agent/missions/{mission_id}/world-recovery",
+                body,
+                key,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json(), replay.json())
+            self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
+            payload = first.json()
+            self.assertEqual(payload["mission"]["current_world_id"], drifted_world.world_id)
+            self.assertEqual(payload["checkpoint"]["world_id"], drifted_world.world_id)
+
+            current = self.client.get(f"/agent/missions/{mission_id}/world-drift")
+            self.assertEqual(current.status_code, 200, current.text)
+            self.assertFalse(current.json()["drifted"])
+
+            effect = self._post(
+                f"/agent/missions/{mission_id}/paper-effects",
+                {
+                    "request_id": "effect:world-drift:after-recovery",
+                    "symbol": "SPY",
+                    "side": "sell",
+                    "quantity": "1",
+                    "rationale": "Execute only after explicit World recovery",
+                },
+                "effect:world-drift:after-recovery",
+            )
+            self.assertEqual(effect.status_code, 200, effect.text)
+
+    def test_paused_mission_world_recovery_resumes_and_allows_effect(self) -> None:
+        mission = self._start_mission()
+        mission_id = mission["mission"]["mission_id"]
+        paused = self.service.agent_store.pause_mission(
+            mission_id,
+            reason="Pause before accepting a new Capital World.",
+        )
+        self.assertEqual(paused.state, "paused")
+        drifted_world = self._drifted_world()
+        key = "world-recovery:paused:0001"
+        body = {
+            "request_id": key,
+            "action": "checkpoint_and_resume",
+            "note": "Checkpoint the new World and actually resume the Mission.",
+        }
+        with patch(
+            "finharness.agent_shell.resolve_capital_world",
+            return_value=drifted_world,
+        ):
+            drift = self.client.get(f"/agent/missions/{mission_id}/world-drift")
+            self.assertEqual(drift.status_code, 200, drift.text)
+            self.assertTrue(drift.json()["can_checkpoint_and_resume"])
+            recovered = self._post(
+                f"/agent/missions/{mission_id}/world-recovery",
+                body,
+                key,
+            )
+            self.assertEqual(recovered.status_code, 200, recovered.text)
+            self.assertEqual(recovered.json()["mission"]["state"], "active")
+            effect = self._post(
+                f"/agent/missions/{mission_id}/paper-effects",
+                {
+                    "request_id": "effect:paused:after-recovery",
+                    "symbol": "SPY",
+                    "side": "sell",
+                    "quantity": "1",
+                    "rationale": "A resumed Mission may use its bounded paper Delegation.",
+                },
+                "effect:paused:after-recovery",
+            )
+            self.assertEqual(effect.status_code, 200, effect.text)
+
+    def _pending_world_recovery_before_checkpoint(
+        self,
+        *,
+        key: str,
+    ) -> tuple[Path, Path, dict[str, object], str, object]:
+        mission = self._start_mission()
+        mission_id = mission["mission"]["mission_id"]
+        drifted_world = self._drifted_world()
+        body: dict[str, object] = {
+            "request_id": key,
+            "action": "checkpoint_and_resume",
+            "note": "Recover deterministically after the pre-checkpoint crash window.",
+        }
+        before = set(self._identity_receipts())
+
+        def interrupt_after_pending_receipt() -> None:
+            raise AgentShellMutationRecoveryRequired(
+                "pending-world-recovery-receipt",
+                "simulated process loss before checkpoint",
+            )
+
+        self.service.after_world_recovery_receipt_hook = interrupt_after_pending_receipt
+        try:
+            with patch(
+                "finharness.agent_shell.resolve_capital_world",
+                return_value=drifted_world,
+            ):
+                first = self._post(
+                    f"/agent/missions/{mission_id}/world-recovery",
+                    body,
+                    key,
+                )
+        finally:
+            self.service.after_world_recovery_receipt_hook = None
+        self.assertEqual(first.status_code, 503, first.text)
+        pending_paths = sorted(set(self._identity_receipts()) - before)
+        self.assertEqual(len(pending_paths), 1)
+        pending_path = pending_paths[0]
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        domain_path = (
+            self.root
+            / "state-receipts"
+            / "agent-shell-world-recoveries"
+            / f"{pending['receipt_id']}.json"
+        )
+        domain = json.loads(domain_path.read_text(encoding="utf-8"))
+        self.assertEqual(domain["state"], "pending")
+        record = domain["record"]
+        self.assertIsInstance(record, dict)
+        assert isinstance(record, dict)
+        checkpoint_path = self.root / "agent" / "checkpoints" / f"{record['checkpoint_id']}.json"
+        self.assertFalse(checkpoint_path.exists())
+        return pending_path, domain_path, body, mission_id, drifted_world
+
+    def test_pending_world_recovery_applies_missing_checkpoint(self) -> None:
+        pending_path, domain_path, body, mission_id, drifted_world = (
+            self._pending_world_recovery_before_checkpoint(key="world-recovery:pre-checkpoint:0001")
+        )
+        with patch(
+            "finharness.api.routes_agent_shell.resolve_capital_world",
+            return_value=drifted_world,
+        ):
+            reconciled = reconcile_identity_mutation_from_domain_truth(
+                pending_path,
+                engine=self.engine,
+                receipt_root=self.root / "state-receipts",
+                reconciled_by="operator:agent-shell-test",
+                reason="Apply the deterministic checkpoint omitted by the crashed process.",
+                resolver_services={"agent_shell_service": self.service},
+            )
+        self.assertEqual(reconciled["state"], "reconciled_applied")
+        completed = json.loads(domain_path.read_text(encoding="utf-8"))
+        self.assertEqual(completed["state"], "completed")
+        self.assertEqual(completed["response"]["mission"]["state"], "active")
+        replay = self._post(
+            f"/agent/missions/{mission_id}/world-recovery",
+            body,
+            str(body["request_id"]),
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json(), completed["response"])
+
+    def test_identity_reconcile_cli_wires_agent_shell_service(self) -> None:
+        pending_path, domain_path, _body, _mission_id, drifted_world = (
+            self._pending_world_recovery_before_checkpoint(key="world-recovery:cli-wiring:0001")
+        )
+        output = io.StringIO()
+        with (
+            patch(
+                "finharness.api.routes_agent_shell.resolve_capital_world",
+                return_value=drifted_world,
+            ),
+            redirect_stdout(output),
+        ):
+            exit_code = reconcile_identity_mutation_main(
+                [
+                    str(pending_path),
+                    "--apply",
+                    "--reconciled-by",
+                    "operator:cli-test",
+                    "--reason",
+                    "Prove task identity:reconcile wires the Agent Shell service.",
+                    "--state-core-db",
+                    str(self.root / "state.sqlite"),
+                    "--receipt-root",
+                    str(self.root / "state-receipts"),
+                    "--agent-root",
+                    str(self.root / "agent"),
+                    "--shell-root",
+                    str(self.root / "shell"),
+                    "--runtime-root",
+                    str(self.root / "runtime"),
+                    "--runtime-working-root",
+                    str(self.root / "runtime-work"),
+                ]
+            )
+        self.assertEqual(exit_code, 0, output.getvalue())
+        self.assertEqual(
+            json.loads(domain_path.read_text(encoding="utf-8"))["state"],
+            "completed",
+        )
+
+    def _completed_world_recovery_with_pending_identity(
+        self,
+        *,
+        key: str,
+    ) -> tuple[Path, dict[str, object], dict[str, object], object]:
+        mission = self._start_mission()
+        mission_id = mission["mission"]["mission_id"]
+        drifted_world = self._drifted_world()
+        body: dict[str, object] = {
+            "request_id": key,
+            "action": "checkpoint_and_resume",
+            "note": "Complete the World recovery before outer acknowledgement.",
+        }
+        before = set(self._identity_receipts())
+        with (
+            patch(
+                "finharness.agent_shell.resolve_capital_world",
+                return_value=drifted_world,
+            ),
+            patch(
+                "finharness.api.app.complete_identity_mutation",
+                side_effect=OSError("simulated World recovery terminal loss"),
+            ),
+            TestClient(self.app, raise_server_exceptions=False) as client,
+        ):
+            binding = client.get("/identity/browser-mutation-binding")
+            self.assertEqual(binding.status_code, 200, binding.text)
+            first = client.post(
+                f"/agent/missions/{mission_id}/world-recovery",
+                json=body,
+                headers={
+                    "Idempotency-Key": key,
+                    "X-FinHarness-Browser-Mutation-Binding": binding.json()["binding_id"],
+                },
+            )
+        self.assertEqual(first.status_code, 500)
+        pending_paths = sorted(set(self._identity_receipts()) - before)
+        self.assertEqual(len(pending_paths), 1)
+        pending_path = pending_paths[0]
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        self.assertEqual(pending["state"], "pending")
+        domain_path = (
+            self.root
+            / "state-receipts"
+            / "agent-shell-world-recoveries"
+            / f"{pending['receipt_id']}.json"
+        )
+        domain = json.loads(domain_path.read_text(encoding="utf-8"))
+        self.assertEqual(domain["state"], "completed")
+        return pending_path, domain, body, drifted_world
+
+    def test_completed_world_recovery_revalidates_canonical_artifacts(self) -> None:
+        pending_path, domain, body, drifted_world = (
+            self._completed_world_recovery_with_pending_identity(
+                key="world-recovery:terminal-loss:0001"
+            )
+        )
+        with patch(
+            "finharness.api.routes_agent_shell.resolve_capital_world",
+            return_value=drifted_world,
+        ):
+            reconciled = reconcile_identity_mutation_from_domain_truth(
+                pending_path,
+                engine=self.engine,
+                receipt_root=self.root / "state-receipts",
+                reconciled_by="operator:agent-shell-test",
+                reason="Revalidated completed World recovery against canonical artifacts.",
+                resolver_services={"agent_shell_service": self.service},
+            )
+        self.assertEqual(reconciled["state"], "reconciled_applied")
+        response = domain["response"]
+        self.assertIsInstance(response, dict)
+        assert isinstance(response, dict)
+        mission_id = str(response["mission_id"])
+        replay = self._post(
+            f"/agent/missions/{mission_id}/world-recovery",
+            body,
+            str(body["request_id"]),
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json(), response)
+        self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
+
+    def test_completed_world_recovery_rejects_missing_checkpoint(self) -> None:
+        pending_path, domain, _body, drifted_world = (
+            self._completed_world_recovery_with_pending_identity(
+                key="world-recovery:terminal-loss:missing-checkpoint"
+            )
+        )
+        response = domain["response"]
+        self.assertIsInstance(response, dict)
+        assert isinstance(response, dict)
+        checkpoint = response["checkpoint"]
+        self.assertIsInstance(checkpoint, dict)
+        assert isinstance(checkpoint, dict)
+        checkpoint_path = (
+            self.root / "agent" / "checkpoints" / f"{checkpoint['checkpoint_id']}.json"
+        )
+        checkpoint_path.unlink()
+        with (
+            patch(
+                "finharness.api.routes_agent_shell.resolve_capital_world",
+                return_value=drifted_world,
+            ),
+            self.assertRaisesRegex(CapitalAgentNotFoundError, "checkpoints"),
+        ):
+            reconcile_identity_mutation_from_domain_truth(
+                pending_path,
+                engine=self.engine,
+                receipt_root=self.root / "state-receipts",
+                reconciled_by="operator:agent-shell-test",
+                reason="Must fail when the canonical checkpoint is missing.",
+                resolver_services={"agent_shell_service": self.service},
+            )
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        self.assertEqual(pending["state"], "pending")
+
+    def test_world_recovery_receipt_loss_is_typed_reconcilable(self) -> None:
+        mission = self._start_mission()
+        mission_id = mission["mission"]["mission_id"]
+        drifted_world = self._drifted_world()
+        key = "world-recovery:receipt-loss:0001"
+        body = {
+            "request_id": key,
+            "action": "checkpoint_and_resume",
+            "note": "Recover a completed World checkpoint receipt.",
+        }
+        before = set(self._identity_receipts())
+        with (
+            patch(
+                "finharness.agent_shell.resolve_capital_world",
+                return_value=drifted_world,
+            ),
+            patch(
+                "finharness.agent_shell._complete_world_recovery_domain_receipt",
+                side_effect=OSError("simulated World receipt completion loss"),
+            ),
+        ):
+            first = self._post(
+                f"/agent/missions/{mission_id}/world-recovery",
+                body,
+                key,
+            )
+        self.assertEqual(first.status_code, 503, first.text)
+        pending_paths = sorted(set(self._identity_receipts()) - before)
+        self.assertEqual(len(pending_paths), 1)
+        pending_path = pending_paths[0]
+        pending = json.loads(pending_path.read_text(encoding="utf-8"))
+        self.assertEqual(pending["state"], "pending")
+        domain_path = (
+            self.root
+            / "state-receipts"
+            / "agent-shell-world-recoveries"
+            / f"{pending['receipt_id']}.json"
+        )
+        domain = json.loads(domain_path.read_text(encoding="utf-8"))
+        self.assertEqual(domain["state"], "pending")
+
+        with patch(
+            "finharness.api.routes_agent_shell.resolve_capital_world",
+            return_value=drifted_world,
+        ):
+            reconciled = reconcile_identity_mutation_from_domain_truth(
+                pending_path,
+                engine=self.engine,
+                receipt_root=self.root / "state-receipts",
+                reconciled_by="operator:agent-shell-test",
+                reason="Verified deterministic Mission checkpoint and World baseline.",
+                resolver_services={"agent_shell_service": self.service},
+            )
+        self.assertEqual(reconciled["state"], "reconciled_applied")
+        completed = json.loads(domain_path.read_text(encoding="utf-8"))
+        self.assertEqual(completed["state"], "completed")
+        replay = self._post(
+            f"/agent/missions/{mission_id}/world-recovery",
+            body,
+            key,
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json(), completed["response"])
+        self.assertEqual(replay.headers["X-FinHarness-Idempotent-Replay"], "true")
+
     def test_paper_effect_domain_receipt_failure_stays_pending_and_recovers(
         self,
     ) -> None:
@@ -386,7 +814,7 @@ class AgentShellApiTest(unittest.TestCase):
             receipt_root=self.root / "state-receipts",
             reconciled_by="operator:agent-shell-test",
             reason="Recovered completed Runtime truth after domain receipt failure.",
-            agent_shell_service=self.service,
+            resolver_services={"agent_shell_service": self.service},
         )
         self.assertEqual(reconciled["state"], "reconciled_applied")
         completed_domain = json.loads(domain_path.read_text(encoding="utf-8"))
@@ -451,7 +879,7 @@ class AgentShellApiTest(unittest.TestCase):
             receipt_root=self.root / "state-receipts",
             reconciled_by="operator:agent-shell-test",
             reason="Verified completed Runtime and StateCore execution truth.",
-            agent_shell_service=self.service,
+            resolver_services={"agent_shell_service": self.service},
         )
         self.assertEqual(reconciled["state"], "reconciled_applied")
         replay = self._post(path, body, key)

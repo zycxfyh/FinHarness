@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -30,6 +31,7 @@ from finharness.capital_agent import (
     EffectAdmission,
     EffectExecutionRecord,
     EffectIntent,
+    MissionCheckpoint,
     PrincipalConstitution,
 )
 from finharness.capital_runtime import RuntimeObservation
@@ -69,6 +71,14 @@ class AgentShellError(RuntimeError):
 
 class AgentShellConflictError(AgentShellError):
     """A stable request identity was reused with different semantics."""
+
+
+class AgentShellWorldChangedError(AgentShellConflictError):
+    """The Mission is still bound to an older Capital World."""
+
+    def __init__(self, drift: MissionWorldDrift) -> None:
+        super().__init__("Capital World changed; checkpoint and resume the Mission")
+        self.drift = drift
 
 
 class AgentShellUnavailableError(AgentShellError):
@@ -133,6 +143,47 @@ class AgentWorldSummary(BaseModel):
     blockers: tuple[str, ...]
     positions: tuple[AgentWorldPosition, ...]
     recovery_refs: tuple[str, ...]
+
+
+class MissionWorldDrift(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mission_id: str
+    drifted: bool
+    mission_world_id: str
+    mission_world_basis_digest: str
+    current_world: AgentWorldSummary
+    can_checkpoint_and_resume: bool
+    live_execution_allowed: Literal[False] = False
+
+
+class WorldRecoveryRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    request_id: str = Field(pattern=r"^[A-Za-z0-9._:-]{8,128}$")
+    action: Literal["checkpoint_and_resume"] = "checkpoint_and_resume"
+    note: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("note")
+    @classmethod
+    def strip_note(cls, value: str) -> str:
+        return value.strip()
+
+
+class WorldRecoveryResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recovery_id: str
+    request_id: str
+    mission_id: str
+    previous_world_id: str
+    previous_world_basis_digest: str
+    current_world: AgentWorldSummary
+    checkpoint: MissionCheckpoint
+    mission: AgentMission
+    domain_receipt_ref: str
+    recovered_at_utc: str
+    live_execution_allowed: Literal[False] = False
 
 
 class StartMissionRequest(BaseModel):
@@ -285,6 +336,30 @@ class _LaunchRecord:
         }
 
 
+@dataclass(frozen=True)
+class _WorldRecoveryRecord:
+    recovery_id: str
+    request_id: str
+    request_sha256: str
+    principal_id: str
+    agent_runtime_id: str
+    mission_id: str
+    checkpoint_id: str
+    belief_id: str
+    previous_mission_state: str
+    created_at_utc: str
+    previous_world_id: str
+    previous_world_basis_digest: str
+    target_world_id: str
+    target_world_basis_digest: str
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": "finharness.agent_shell_world_recovery_record.v1",
+            **self.__dict__,
+        }
+
+
 @dataclass
 class AgentShellService:
     agent_store: CapitalAgentStore
@@ -293,6 +368,8 @@ class AgentShellService:
     execution_receipt_root: Path
     runtime_port: RuntimePort | None = None
     model_name: str | None = None
+    after_paper_effect_runtime_hook: Callable[[], None] | None = None
+    after_world_recovery_receipt_hook: Callable[[], None] | None = None
 
     def bootstrap(self, *, operator: OperatorContext, engine: Engine) -> AgentBootstrap:
         runtime_identity = _require_runtime_identity(operator)
@@ -418,6 +495,217 @@ class AgentShellService:
             simulated_effect_allowed=self.runtime_port is not None,
         )
 
+    def world_drift(
+        self,
+        mission_id: str,
+        *,
+        operator: OperatorContext,
+        engine: Engine,
+    ) -> MissionWorldDrift:
+        bundle = self.mission_bundle(mission_id, operator=operator, engine=engine)
+        world = resolve_capital_world(engine=engine, use_case="agent_context")
+        drifted = (
+            bundle.mission.current_world_id != world.world_id
+            or bundle.mission.current_world_basis_digest != world.basis_digest
+        )
+        return MissionWorldDrift(
+            mission_id=mission_id,
+            drifted=drifted,
+            mission_world_id=bundle.mission.current_world_id,
+            mission_world_basis_digest=bundle.mission.current_world_basis_digest,
+            current_world=_world_summary(world),
+            can_checkpoint_and_resume=(
+                drifted
+                and bundle.mission.state in {"active", "paused"}
+                and world.trust.status == "admitted"
+            ),
+        )
+
+    def recover_world(
+        self,
+        mission_id: str,
+        request: WorldRecoveryRequest,
+        *,
+        operator: OperatorContext,
+        engine: Engine,
+        identity_claim: IdentityMutationClaim,
+        domain_receipt_root: Path,
+    ) -> WorldRecoveryResult:
+        runtime_identity = _require_runtime_identity(operator)
+        bundle = self.mission_bundle(mission_id, operator=operator, engine=engine)
+        world = resolve_capital_world(engine=engine, use_case="agent_context")
+        if world.trust.status != "admitted":
+            raise AgentShellConflictError("World recovery requires one admitted Capital World")
+        drift = self.world_drift(mission_id, operator=operator, engine=engine)
+        if not drift.drifted:
+            raise AgentShellConflictError("Mission already uses the current Capital World")
+        if not drift.can_checkpoint_and_resume:
+            raise AgentShellConflictError("Mission cannot checkpoint and resume")
+        record = self._begin_world_recovery(
+            request,
+            operator=operator,
+            mission=bundle.mission,
+            belief=bundle.belief,
+            world=world,
+        )
+        receipt_path = agent_shell_world_recovery_receipt_path(
+            domain_receipt_root,
+            identity_claim.receipt_id,
+        )
+        pending = _begin_world_recovery_domain_receipt(
+            receipt_path,
+            identity_claim=identity_claim,
+            operator=operator,
+            request=request,
+            record=record,
+            target_world=_world_summary(world),
+        )
+        if self.after_world_recovery_receipt_hook is not None:
+            self.after_world_recovery_receipt_hook()
+        mission, checkpoint = self.apply_world_recovery_checkpoint(
+            mission_id,
+            world=world,
+            belief_id=record.belief_id,
+            previous_mission_state=record.previous_mission_state,
+            previous_world_id=record.previous_world_id,
+            previous_world_basis_digest=record.previous_world_basis_digest,
+            note=request.note,
+            checkpoint_id=record.checkpoint_id,
+            created_at_utc=record.created_at_utc,
+        )
+        result = WorldRecoveryResult(
+            recovery_id=record.recovery_id,
+            request_id=request.request_id,
+            mission_id=mission_id,
+            previous_world_id=record.previous_world_id,
+            previous_world_basis_digest=record.previous_world_basis_digest,
+            current_world=_world_summary(world),
+            checkpoint=checkpoint,
+            mission=mission,
+            domain_receipt_ref=receipt_path.as_posix(),
+            recovered_at_utc=record.created_at_utc,
+        )
+        try:
+            _complete_world_recovery_domain_receipt(
+                receipt_path,
+                pending=pending,
+                result=result,
+            )
+        except (OSError, ReceiptIntegrityError, AgentShellConflictError) as exc:
+            raise AgentShellMutationRecoveryRequired(
+                receipt_path.as_posix(),
+                "Mission World recovered but its domain receipt requires recovery",
+            ) from exc
+        if runtime_identity.agent_runtime_id != record.agent_runtime_id:
+            raise AgentShellConflictError("World recovery Agent Runtime changed")
+        return result
+
+    def apply_world_recovery_checkpoint(
+        self,
+        mission_id: str,
+        *,
+        world: CapitalWorld,
+        belief_id: str,
+        previous_mission_state: str,
+        previous_world_id: str,
+        previous_world_basis_digest: str,
+        note: str,
+        checkpoint_id: str,
+        created_at_utc: str,
+    ) -> tuple[AgentMission, MissionCheckpoint]:
+        """Apply or finish one deterministic checkpoint-and-resume transition."""
+
+        mission = self.agent_store.read_mission(mission_id)
+        if previous_mission_state not in {"active", "paused"}:
+            raise AgentShellConflictError("World recovery previous Mission state is invalid")
+        if mission.state == "closed":
+            raise AgentShellConflictError("closed Mission cannot recover its World")
+        previous_world_matches = (
+            mission.current_world_id == previous_world_id
+            and mission.current_world_basis_digest == previous_world_basis_digest
+        )
+        target_world_matches = (
+            mission.current_world_id == world.world_id
+            and mission.current_world_basis_digest == world.basis_digest
+        )
+        if not previous_world_matches and not target_world_matches:
+            raise AgentShellConflictError("Mission World changed outside this recovery")
+        if previous_world_matches and mission.state != previous_mission_state:
+            raise AgentShellConflictError("Mission state changed outside this recovery")
+        belief = self.agent_store.read_belief(belief_id)
+        if belief.mission_id != mission_id:
+            raise AgentShellConflictError("World recovery Belief differs from Mission")
+        mission, checkpoint = self.agent_store.checkpoint_mission(
+            mission_id,
+            world=world,
+            belief_refs=(self.agent_store.ref(BeliefArtifact, belief_id),),
+            note=note,
+            checkpoint_id=checkpoint_id,
+            created_at_utc=created_at_utc,
+        )
+        if mission.state == "paused":
+            mission = self.agent_store.resume_mission(mission_id, world=world)
+        if mission.state != "active":
+            raise AgentShellConflictError("World recovery did not resume the Mission")
+        return mission, checkpoint
+
+    def _begin_world_recovery(
+        self,
+        request: WorldRecoveryRequest,
+        *,
+        operator: OperatorContext,
+        mission: AgentMission,
+        belief: BeliefArtifact,
+        world: CapitalWorld,
+    ) -> _WorldRecoveryRecord:
+        runtime_identity = _require_runtime_identity(operator)
+        recovery_id = _stable_id(
+            "world_recovery",
+            {
+                "mission_id": mission.mission_id,
+                "request_id": request.request_id,
+                "principal_id": operator.principal.principal_id,
+                "agent_runtime_id": runtime_identity.agent_runtime_id,
+            },
+        )
+        request_sha = canonical_json_sha256(request.model_dump(mode="json"))
+        path = self.shell_root / "world-recoveries" / f"{recovery_id}.json"
+        if path.exists():
+            payload = _read_json(path)
+            if payload.get("request_sha256") != request_sha:
+                raise AgentShellConflictError(
+                    "World recovery request_id reused with different semantics"
+                )
+            return _WorldRecoveryRecord(
+                **{
+                    field: str(payload[field])
+                    for field in _WorldRecoveryRecord.__dataclass_fields__
+                }
+            )
+        created_at = datetime.now(UTC).isoformat()
+        record = _WorldRecoveryRecord(
+            recovery_id=recovery_id,
+            request_id=request.request_id,
+            request_sha256=request_sha,
+            principal_id=operator.principal.principal_id,
+            agent_runtime_id=runtime_identity.agent_runtime_id,
+            mission_id=mission.mission_id,
+            checkpoint_id=_stable_id("checkpoint", {"recovery_id": recovery_id}),
+            belief_id=belief.belief_id,
+            previous_mission_state=mission.state,
+            created_at_utc=created_at,
+            previous_world_id=mission.current_world_id,
+            previous_world_basis_digest=mission.current_world_basis_digest,
+            target_world_id=world.world_id,
+            target_world_basis_digest=world.basis_digest,
+        )
+        if durable_create_json_exclusive(path, record.payload()):
+            return record
+        payload = _read_json(path)
+        if payload != record.payload():
+            raise AgentShellConflictError("World recovery record conflict")
+        return record
+
     def converse(
         self,
         mission_id: str,
@@ -489,8 +777,8 @@ class AgentShellService:
             mission.current_world_id != world.world_id
             or mission.current_world_basis_digest != world.basis_digest
         ):
-            raise AgentShellConflictError(
-                "Capital World changed; resume or checkpoint the Mission before an Effect"
+            raise AgentShellWorldChangedError(
+                self.world_drift(mission_id, operator=operator, engine=engine)
             )
         position, price = _position_basis(world, request.symbol)
         if request.side == "sell" and position.quantity < request.quantity:
@@ -545,6 +833,8 @@ class AgentShellService:
             execution=execution,
             domain_receipt_ref=domain_receipt_path.as_posix(),
         )
+        if self.after_paper_effect_runtime_hook is not None:
+            self.after_paper_effect_runtime_hook()
         try:
             _complete_paper_effect_domain_receipt(
                 domain_receipt_path,
@@ -706,6 +996,98 @@ class AgentShellService:
         )
 
 
+def agent_shell_world_recovery_receipt_path(
+    receipt_root: str | Path,
+    identity_receipt_id: str,
+) -> Path:
+    clean_id = identity_receipt_id.strip()
+    if not clean_id or not all(
+        character.isalnum() or character in {"_", "-"} for character in clean_id
+    ):
+        raise AgentShellConflictError("identity receipt id is invalid")
+    return Path(receipt_root) / "agent-shell-world-recoveries" / f"{clean_id}.json"
+
+
+def _begin_world_recovery_domain_receipt(
+    path: Path,
+    *,
+    identity_claim: IdentityMutationClaim,
+    operator: OperatorContext,
+    request: WorldRecoveryRequest,
+    record: _WorldRecoveryRecord,
+    target_world: AgentWorldSummary,
+) -> dict[str, Any]:
+    payload = {
+        "schema": "finharness.agent_shell_world_recovery_receipt.v1",
+        "kind": "agent_shell_world_recovery",
+        "state": "pending",
+        "receipt_id": f"agent_shell_world_recovery_{identity_claim.receipt_id}",
+        "created_at_utc": record.created_at_utc,
+        "mutation_context": _agent_shell_mutation_context(
+            identity_claim,
+            operator=operator,
+            effect_kind="api_agent_shell_world_recovery",
+        ),
+        "request": request.model_dump(mode="json"),
+        "record": record.payload(),
+        "target_world": target_world.model_dump(mode="json"),
+        "response": None,
+        "execution_allowed": False,
+        "live_execution_allowed": False,
+    }
+    payload["content_sha256"] = canonical_json_sha256(payload)
+    if durable_create_json_exclusive(path, payload):
+        return payload
+    existing = _read_json(path)
+    if existing != payload:
+        raise AgentShellConflictError("World recovery domain receipt conflict")
+    return existing
+
+
+def _complete_world_recovery_domain_receipt(
+    path: Path,
+    *,
+    pending: dict[str, Any],
+    result: WorldRecoveryResult,
+) -> dict[str, Any]:
+    if pending.get("state") == "completed":
+        if pending.get("response") != result.model_dump(mode="json"):
+            raise AgentShellConflictError("completed World recovery receipt differs")
+        return pending
+    completed = {
+        **{key: value for key, value in pending.items() if key != "content_sha256"},
+        "state": "completed",
+        "completed_at_utc": datetime.now(UTC).isoformat(),
+        "previous_content_sha256": pending["content_sha256"],
+        "response": result.model_dump(mode="json"),
+    }
+    completed["content_sha256"] = canonical_json_sha256(completed)
+    if not durable_compare_and_swap_json(
+        path,
+        expected_content_sha256=str(pending["content_sha256"]),
+        expected_state="pending",
+        payload=completed,
+    ):
+        existing = _read_json(path)
+        if existing == completed:
+            return existing
+        raise AgentShellConflictError("World recovery receipt completion conflict")
+    return completed
+
+
+def complete_world_recovery_domain_receipt_for_recovery(
+    path: str | Path,
+    *,
+    pending: dict[str, Any],
+    result: WorldRecoveryResult,
+) -> dict[str, Any]:
+    return _complete_world_recovery_domain_receipt(
+        Path(path),
+        pending=pending,
+        result=result,
+    )
+
+
 def agent_shell_effect_receipt_path(
     receipt_root: str | Path,
     identity_receipt_id: str,
@@ -718,10 +1100,11 @@ def agent_shell_effect_receipt_path(
     return Path(receipt_root) / "agent-shell-effects" / f"{clean_id}.json"
 
 
-def _paper_effect_mutation_context(
+def _agent_shell_mutation_context(
     identity_claim: IdentityMutationClaim,
     *,
     operator: OperatorContext,
+    effect_kind: str,
 ) -> dict[str, Any]:
     actor_binding = bind_authenticated_actor_to_mutation(
         identity_claim,
@@ -736,7 +1119,7 @@ def _paper_effect_mutation_context(
         raise IdentityMutationError("paper Effect mutation binding is incomplete")
     return {
         "schema": "finharness.api_domain_mutation_binding.v2",
-        "effect_kind": "api_agent_shell_paper_effect",
+        "effect_kind": effect_kind,
         "identity_mutation_receipt_id": identity_claim.receipt_id,
         "identity_mutation_request_body_sha256": request_binding.get("body_sha256"),
         "identity_mutation_request_target": request_binding.get("target"),
@@ -769,9 +1152,10 @@ def _begin_paper_effect_domain_receipt(
         "receipt_id": f"agent_shell_effect_{identity_claim.receipt_id}",
         "state": "pending",
         "created_at_utc": datetime.now(UTC).isoformat(),
-        "mutation_context": _paper_effect_mutation_context(
+        "mutation_context": _agent_shell_mutation_context(
             identity_claim,
             operator=operator,
+            effect_kind="api_agent_shell_paper_effect",
         ),
         "request": request.model_dump(mode="json"),
         "effect_intent": intent.model_dump(mode="json"),
@@ -1097,12 +1481,17 @@ __all__ = [
     "AgentShellMutationRecoveryRequired",
     "AgentShellService",
     "AgentShellUnavailableError",
+    "AgentShellWorldChangedError",
     "MissionBundle",
     "MissionConversationReply",
     "MissionMessageRequest",
+    "MissionWorldDrift",
     "PaperEffectRequest",
     "PaperEffectResult",
     "StartMissionRequest",
+    "WorldRecoveryRequest",
+    "WorldRecoveryResult",
     "complete_paper_effect_domain_receipt_for_recovery",
+    "complete_world_recovery_domain_receipt_for_recovery",
     "ensure_local_paper_execution",
 ]

@@ -50,8 +50,11 @@ jobs:
           relevant=false
           while IFS= read -r path; do
             case "$path" in
-              frontend/*|src/finharness/api/*|scripts/*cockpit*|\
+              frontend/*|frontend-agent/*|src/finharness/api/*|\
+              src/finharness/agent_shell.py|scripts/*cockpit*|\
               scripts/run_browser_*|scripts/run_local_review_smoke_server.py|\
+              scripts/serve_agent_shell_test_fixture.py|\
+              scripts/run_agent_shell_process_recovery_acceptance.py|\
               tests/*browser*|Taskfile.yml|package.json|pnpm-lock.yaml|\
               .github/workflows/browser.yml)
                 relevant=true
@@ -67,7 +70,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   browser-smoke:
-    name: Cockpit browser golden paths (optional)
+    name: Product browser golden paths (optional)
     needs: scope
     if: >-
       github.event_name != 'pull_request' ||
@@ -110,16 +113,19 @@ jobs:
       - name: Install Chromium + system libraries
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run cockpit browser golden-path smoke
+      - name: Run product browser golden-path smoke
         env:
           FINHARNESS_PYTHON: .venv/bin/python
         run: task test:browser
+
+      - name: Prove Agent Shell process recovery
+        run: task acceptance:agent-shell-process-recovery
 
       - name: Upload browser smoke artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cockpit-browser-smoke-artifacts
+          name: product-browser-smoke-artifacts
           path: frontend/tests/browser/artifacts/
           if-no-files-found: ignore
           retention-days: 7

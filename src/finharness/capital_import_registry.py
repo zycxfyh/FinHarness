@@ -126,6 +126,12 @@ PRODUCTION_CAPITAL_IMPORT_EXPOSURES: tuple[CapitalImportExposureSpec, ...] = (
         adapter_id="personal-finance-export",
     ),
     CapitalImportExposureSpec(
+        exposure_id="script-agent-shell-test-fixture",
+        exposure_kind="script",
+        exposure_ref="scripts/serve_agent_shell_test_fixture.py",
+        adapter_id="personal-finance-export",
+    ),
+    CapitalImportExposureSpec(
         exposure_id="script-scf-capital-dogfood",
         exposure_kind="script",
         exposure_ref="scripts/run_scf_capital_dogfood.py",

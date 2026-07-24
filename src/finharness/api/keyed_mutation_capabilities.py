@@ -49,6 +49,7 @@ class IdentityMutationResolverContract:
     method: str
     canonical_path_template: str
     handler: Callable[..., dict[str, Any]]
+    service_key: str | None = None
 
     @property
     def route_identity(self) -> tuple[str, str]:

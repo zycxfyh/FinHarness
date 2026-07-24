@@ -84,3 +84,6 @@ textarea { resize: vertical; }
   .form-grid .wide { grid-column: auto; }
   .action-row { align-items: stretch; flex-direction: column; }
 }
+
+.world-drift-card { border: 1px solid rgba(230, 184, 92, 0.55); border-radius: 12px; padding: 0.85rem; margin: 0.85rem 0; background: rgba(97, 68, 18, 0.18); }
+.world-drift-card p { margin: 0.5rem 0; overflow-wrap: anywhere; }

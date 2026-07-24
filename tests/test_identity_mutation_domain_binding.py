@@ -15,10 +15,10 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
 from finharness.api.app import create_app
-from finharness.api.routes_proposals import (
-    identity_mutation_source_ref,
+from finharness.api.identity_mutation_reconciliation import (
     reconcile_identity_mutation_from_domain_truth,
 )
+from finharness.api.routes_proposals import identity_mutation_source_ref
 from finharness.identity import (
     IDEMPOTENCY_HEADER,
     IDEMPOTENT_REPLAY_HEADER,

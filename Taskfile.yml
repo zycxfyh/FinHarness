@@ -151,9 +151,10 @@ tasks:
       - node frontend/tests/agent_shell_journey.test.cjs
 
   test:browser:
-    desc: D8 real-browser cockpit golden-path smoke (Playwright + Chromium). NOT in `check`; CI-optional execution target.
+    desc: Real-browser product golden paths for Cockpit and Agent Shell (Playwright + Chromium). NOT in `check`.
     cmds:
       - node frontend/tests/browser/cockpit_smoke.test.cjs
+      - node frontend/tests/browser/agent_shell_smoke.test.cjs
       - node frontend/tests/browser/local_review_mode.test.cjs
       - node frontend/tests/browser/browser_mutation_identity_binding.test.cjs
       - node frontend/tests/browser/browser_mutation_response_loss.test.cjs
@@ -326,6 +327,17 @@ tasks:
     cmds:
       - task: runtime:build
       - uv run python scripts/run_agent_shell_acceptance.py
+
+  acceptance:agent-shell-process-recovery:
+    desc: Prove one paper Effect survives an API process crash after Runtime completion without redispatch
+    cmds:
+      - task: runtime:build
+      - uv run python scripts/run_agent_shell_process_recovery_acceptance.py
+
+  acceptance:agent-shell-provider-redlines:
+    desc: Evaluate the shared provider-output redline over the pinned English, Chinese, and Japanese corpus
+    cmds:
+      - uv run python scripts/run_agent_shell_provider_redline_eval.py
 
   acceptance:capital-review:
     desc: Prove canonical import, blocked-data, governed review, restart, and replay paths

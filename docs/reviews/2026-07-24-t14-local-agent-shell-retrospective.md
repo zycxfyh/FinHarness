@@ -1,7 +1,7 @@
 # Review: T14 Local Agent Shell
 
 Date: 2026-07-24
-Status: actioned-pending-final-merge
+Status: P0 complete; P1 actions implemented and release-gated
 Related PR: #493
 Candidate head before final review hardening: `4abc29cf5bba6470ccf86464ed738f83928651c0`
 Classification: architecture, product boundary, identity, recovery, process
@@ -317,6 +317,24 @@ The project value is architectural: Capital World, Mission, Delegation, Runtime,
 - full UI rewrite;
 - alpha or recommendation models;
 - large documentation or governance frameworks.
+
+## P0/P1 action log
+
+### P0 completion
+
+**Observed.** PR #493 was squash-merged without bypass. Final main became `e89cbc9a37fa6878c838182bcaf249f1b77dd75f`; commit identity, security, dependency profiles, browser golden paths, fuzz, and a fresh real Agent Shell acceptance all succeeded. The remote branch and T14 workspace were removed.
+
+### P1 hardening implemented
+
+**Observed.** The five P1 actions from this review were implemented on a branch created from the exact final-main commit:
+
+1. API process recovery now kills the process after Runtime completion, restarts over the same stores, typed-reconciles the pending receipt, and proves one intent, one execution, and the same Runtime Job. The same acceptance runs against the real systemd Runtime on a capable host and a persisted deterministic Runtime observation on a hosted runner without systemd.
+2. The Agent UI has a real Chromium Mission/conversation/paper-Effect journey through the API and domain execution path; hosted Chromium uses the portable persisted Runtime fixture, while a separate acceptance owns the real systemd proof.
+3. Mission World drift is inspectable and blocks Effects until a keyed, deterministic checkpoint/resume advances the Mission baseline; this recovery is typed-reconcilable.
+4. The shared provider redline has a pinned English/Chinese/Japanese corpus with exact blocked and allowed cases.
+5. Typed resolver aggregation moved to a domain-neutral registry, removing global registry ownership and Agent special-casing from Proposal routes.
+
+**Observed.** P2 remained deliberately excluded.
 
 ## 10. One-sentence summary
 
